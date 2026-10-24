@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "kind": "n01-readonly-producer-handoff",
+  "consumer": {
+    "repository": "taco3064/gh-nibfin",
+    "issue": 18,
+    "planId": "G01"
+  },
+  "producer": {
+    "repository": "taco3064/nibfin",
+    "issue": 84,
+    "issueId": "I_kwDOVRsWxs8AAAABZnDPTw",
+    "pr": 136,
+    "commit": "0a2e276ad5b37d94b485bbcf8c7288743b9d158f",
+    "tree": "d99a5bf0f524bce392b1b3b12dbee12006885037",
+    "completionHash": "e727b19567e53347c091ccd61c542c7ce268ddb9fcf488913bf9d355d29188b1",
+    "completionReceiptHash": "214d083599dc7747f1fdaaab2275bc12e030a2e029a1d3f372e0d621ccd62f8b"
+  },
+  "artifact": {
+    "path": "nibfin-core.tgz",
+    "bytes": 3980,
+    "sha256": "956b12fb80620e18576212d371989b0448cf39878533b813e8cba838a40c1759",
+    "gitBlob": "4f9d754249b11a523cf81d901a157c170c0d2e15",
+    "expectedContentSource": "Accepted N01 candidate artifact, independently compared byte-for-byte to all four files at the verified merged producer commit"
+  },
+  "package": {
+    "name": "@nibfin/core",
+    "version": "0.1.0",
+    "type": "module",
+    "entry": "src/index.mjs",
+    "publicImport": "@nibfin/core",
+    "engines": {
+      "node": ">=22 <23",
+      "npm": ">=10 <11"
+    },
+    "bin": null,
+    "installScripts": false,
+    "runtimeDependencies": []
+  },
+  "files": {
+    "package.json": {
+      "gitBlob": "91ec9c530b731131678cb4dd155759ea9d278b5e",
+      "sha256": "539b82a1de4be6f40bb2da4ed2f417e1ad72047c92418e5b1706b943526527a6",
+      "bytes": 459,
+      "url": "https://github.com/taco3064/nibfin/blob/0a2e276ad5b37d94b485bbcf8c7288743b9d158f/package.json"
+    },
+    "README.md": {
+      "gitBlob": "3fdb13688c23f2e7025dc8ba3ce72ba8f3ba18a0",
+      "sha256": "a06c70e6ba726f46f9ea9f4519f2ac810bf764c74bf91386ff63f7d955467da1",
+      "bytes": 1482,
+      "url": "https://github.com/taco3064/nibfin/blob/0a2e276ad5b37d94b485bbcf8c7288743b9d158f/README.md"
+    },
+    "docs/package.md": {
+      "gitBlob": "3711600872892112d744561b19eb4a557e87f981",
+      "sha256": "9e628b2b116ee4fe6011a685ed25e258fd91e08474e9da797e24124bbd27f0fc",
+      "bytes": 5655,
+      "url": "https://github.com/taco3064/nibfin/blob/0a2e276ad5b37d94b485bbcf8c7288743b9d158f/docs/package.md"
+    },
+    "src/index.mjs": {
+      "gitBlob": "591f445fcc90d580f135ff643953f65fe07e4c95",
+      "sha256": "247e4f3bebc5e1e6811b0ec176caa11de4a2f164a938c9298f015bee2b3d0662",
+      "bytes": 1098,
+      "url": "https://github.com/taco3064/nibfin/blob/0a2e276ad5b37d94b485bbcf8c7288743b9d158f/src/index.mjs"
+    }
+  }
+}
