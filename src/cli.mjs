@@ -1,0 +1,48 @@
+import { pathToFileURL } from 'node:url';
+import { withCore, producer } from './core.mjs';
+
+export const version = '0.1.0-baseline';
+const commands = new Map([
+  ['init', 'Initialize repository workflows/labels; optionally enable automatic registration.'],
+  ['runner create', 'Create a fixed-Agent environment with N unregistered instances (default 2; positive integer total).'],
+  ['runner register', 'Register existing instances with GitHub; never implicitly create instances.'],
+  ['runner unregister', 'Unregister one instance while retaining its environment and other registrations.'],
+  ['runner list', 'List local environments, identities, registrations and service state without secrets.'],
+  ['runner remove', 'Member-controlled removal of a local environment; report remote cleanup failures.'],
+  ['upgrade', 'Check/update Nibfin versions; preserve compatibility and authorization boundaries.'],
+]);
+const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
+  [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
+}\n\nBusiness operations are not implemented in this baseline.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+
+// Maintained consumer API: real producer exports, without an eighth CLI command.
+export { withCore };
+export async function main(args) {
+  if (process.versions.node.split('.')[0] !== '22') throw new Error('Install Node.js 22.x and retry.');
+  if (!args.length || (args.length === 1 && args[0] === '--help')) {
+    process.stdout.write(usage);
+    return 0;
+  }
+  if (args.length === 1 && args[0] === '--version') {
+    await withCore(core => {
+      // Exercise the public producer entry, without replicating identity logic.
+      core.githubId('42');
+      process.stdout.write(`gh-nibfin ${version}; @nibfin/core@0.1.0; producer ${producer}\nLocal baseline only; platform installation and complete runtime unverified.\n`);
+    });
+    return 0;
+  }
+  const command = args.join(' ');
+  if (commands.has(command) && JSON.stringify(args) === JSON.stringify(command.split(' '))) {
+    process.stderr.write(`${command}: not implemented; this baseline exposes responsibilities only. See --help and the later command implementation Issues.\n`);
+    return 2;
+  }
+  process.stderr.write(`Invalid command or options: ${JSON.stringify(args)}. Use gh nibfin --help.\n`);
+  return 2;
+}
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try { process.exitCode = await main(process.argv.slice(2)); }
+  catch (error) {
+    process.stderr.write(`gh-nibfin: ${error.code === 'ENOENT' ? 'Required Core handoff missing; restore the reviewed handoff.' : error.message} Retry with Node 22.x and the intact reviewed package.\n`);
+    process.exitCode = 1;
+  }
+}
