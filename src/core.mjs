@@ -28,7 +28,7 @@ function octal(bytes) {
 // Structural inspection is exported for adversarial tests, never a trust override.
 export function parseArchive(bytes, expectedNames = names) {
   const expanded = expectedNames !== names;
-  if (bytes.length > (expanded ? 100000 : 16384)) reject('archive too large');
+  if (bytes.length > (expanded ? 150000 : 16384)) reject('archive too large');
   let tar;
   try { tar = gunzipSync(bytes, { maxOutputLength: expanded ? 500000 : 32768 }); }
   catch { reject('malformed or oversized gzip'); }
@@ -118,7 +118,7 @@ export async function withCore(consume, { directory = handoff, temporaryRoot = t
     const bridge = join(root, 'consumer.mjs');
     await fs.writeFile(bridge, "export * from '@nibfin/core';\n", { flag: 'wx' });
     const core = await import(pathToFileURL(bridge).href);
-    return await consume(core);
+    return await consume(core,{root});
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
@@ -153,8 +153,10 @@ export function validateRegistrationMetadata(files) {
       pkg.optionalDependencies || pkg.peerDependencies ||
       ['preinstall','install','postinstall','prepare'].some(key => pkg.scripts?.[key])) reject('unapproved N15 metadata');
 }
-export async function withRegistrationCore(consume, {directory = n15, temporaryRoot = tmpdir()} = {}) {
-  const {assets, files} = await verifyRegistrationCore(directory);
+export async function withRegistrationCore(consume, options = {}) {
+  return installRegistrationCore(consume, await verifyRegistrationCore(options.directory), options.temporaryRoot);
+}
+async function installRegistrationCore(consume, {assets,files}, temporaryRoot = tmpdir()) {
   const root = await fs.mkdtemp(join(temporaryRoot, 'nibfin registration consumer '));
   let consuming = false;
   try {
@@ -172,7 +174,29 @@ export async function withRegistrationCore(consume, {directory = n15, temporaryR
     await fs.writeFile(bridge,"export * from '@nibfin/core';\n",{flag:'wx'});
     const core = await import(pathToFileURL(bridge).href);
     consuming = true;
-    return await consume(core);
+    return await consume(core,{root});
   } catch (error) { if (consuming) throw error; reject('N15 installation/consumer failed; verify offline Node 22/npm 10 prerequisites and intact handoff'); }
   finally { await fs.rm(root,{recursive:true,force:true}); }
+}
+
+// N17 is additive: N01/N15 consumers keep their historical immutable pins.
+const n17 = new URL('../docs/handoffs/n17/', import.meta.url);
+export async function verifyAutomaticCore(directory = n17) {
+  const raw = await readBounded(new URL('provenance.json',directory),20000);
+  if (sha(raw) !== 'cedeb9377560fa8004228b1808f603d5e194493c093d09f8897ffb5865a3eb2d') reject('N17 provenance');
+  const p = JSON.parse(raw), bytes = await readBounded(new URL('nibfin-core.tgz',directory),150000);
+  if (bytes.length !== p.archive.bytes || sha(bytes) !== p.archive.sha256) reject('N17 archive');
+  const files = parseArchive(bytes,Object.keys(p.files));
+  for (const [name,value] of files) if (value.length !== p.files[name].bytes || sha(value) !== p.files[name].sha256) reject('N17 source');
+  validateRegistrationMetadata(files);
+  const {assets} = await verifyRegistrationCore(); // Retains existing locked jose integrity.
+  if (sha(assets['jose-6.2.13.tgz']) !== p.joseSha256) reject('N17 dependency');
+  return {files,assets:{...assets,'nibfin-core.tgz':bytes}};
+}
+export async function withAutomaticCore(consume, options = {}) {
+  return installRegistrationCore(async (core,context) => {
+    for (const name of ['registrationArtifactReader','openRegistrationResponse','createRegistrationHost'])
+      if (typeof core[name] !== 'function') reject('N17 export');
+    return consume(core,context);
+  },await verifyAutomaticCore(options.directory),options.temporaryRoot);
 }

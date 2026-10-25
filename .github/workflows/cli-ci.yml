@@ -20,3 +20,5 @@ jobs:
         run: python3 tooling/check.py
       - name: Verify the immutable installed Core observation contract offline
         run: node docs/handoffs/n15/verify.mjs
+      - name: Verify the immutable installed registration response contract offline
+        run: node docs/handoffs/n17/verify.mjs

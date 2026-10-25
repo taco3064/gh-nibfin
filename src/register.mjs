@@ -3,7 +3,9 @@ import {join, resolve, parse} from 'node:path';
 import {userInfo} from 'node:os';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {withRegistrationCore} from './core.mjs';
+import {withRegistrationCore,withAutomaticCore} from './core.mjs';
+import {verifyRunnerDistribution} from './runner-distribution.mjs';
+import {requestAutomatic,automaticBinding} from './automatic.mjs';
 import {processEnvironment, githubObservation, observeProcess} from './create.mjs';
 class Diagnostic extends Error {}
 const fail = message => { throw new Diagnostic(message); };
@@ -13,14 +15,15 @@ export function registrationOptions(args) {
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i], value = args[i+1];
     if (!['--runner','--repo','--org','--group','--method'].includes(key) || key in values ||
-        !value || value.startsWith('--') || /[\x00-\x1f\x7f]/.test(value)) fail('Use --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method manual]; each option once.');
+        !value || value.startsWith('--') || /[\x00-\x1f\x7f]/.test(value)) fail('Use --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method auto|manual]; each option once.');
     values[key] = value;
   }
   if (!/^[a-z][a-z0-9-]{0,47}$/.test(values['--runner'] ?? '') ||
       Boolean(values['--repo']) === Boolean(values['--org']) || values['--repo'] && values['--group']) fail('Choose one existing --runner and exactly one --repo or --org; --group is Org-only.');
-  if (values['--method'] && values['--method'] !== 'manual') fail('Only manual registration is implemented; auto requires a separate Owner-enabled surface.');
+  if (values['--method'] && !['manual','auto'].includes(values['--method'])) fail('Choose auto or manual registration.');
+  if (values['--method'] === 'auto' && values['--org']) fail('Automatic organization-level registration requires a protected repository context not installed by this client; use the authorized manual Org route.');
   if (values['--group']?.length > 128) fail('Runner group name too long.');
-  return {name:values['--runner'], repo:values['--repo'], org:values['--org'], group:values['--group']};
+  return {name:values['--runner'], repo:values['--repo'], org:values['--org'], group:values['--group'],method:values['--method'] ?? 'manual'};
 }
 // Explicit argument arrays, no shell; discard all potentially credential-bearing output.
 // Kill the process group so config descendants cannot survive cancellation/timeout.
@@ -175,7 +178,7 @@ async function registerUnlocked(args, dependencies = {}) {
         if (binding.schemaVersion !== 1 || binding.disposition !== 'registered' || binding.instanceId !== item.id || binding.memberId !== member ||
             !id(binding.runnerId) || !id(binding.registration?.id) || !['repository','organization'].includes(binding.registration.level) ||
             binding.label !== core.memberRunnerLabel(member) || binding.platform !== 'linux' || binding.target?.id !== binding.registration.id ||
-            binding.service?.account !== account.username || !['online','offline'].includes(binding.status) || typeof binding.busy !== 'boolean' ||
+            binding.service?.account !== account.username || (!automaticBinding(binding) && (!['online','offline'].includes(binding.status) || typeof binding.busy !== 'boolean')) ||
             binding.registration.level === 'organization' && !/^[a-z0-9-]+$/.test(binding.registration.organization ?? '') ||
             boundIds.has(binding.registration.level+':'+binding.registration.id+':'+binding.runnerId)) fail('Pending/unknown or conflicting binding requires manual reconciliation before registration.');
         boundIds.add(binding.registration.level+':'+binding.registration.id+':'+binding.runnerId);
@@ -212,6 +215,10 @@ async function registerUnlocked(args, dependencies = {}) {
         try { const path = join(instance.registration,name); await safePath(path,{directory:false}); await fs.access(path,fs.constants.X_OK); }
         catch { fail('Missing or unsafe official runner application config.sh/bin/runsvc.sh; prepare a pinned official distribution in this instance registration directory.'); }
       }
+      if (options.method === 'auto') {
+        try {await (dependencies.distributionVerifier ?? verifyRunnerDistribution)(instance.registration,{signal:dependencies.signal});}
+        catch {fail('Automatic registration requires the pinned official Linux x64 v2.331.0 archive, matching extracted bytes, private directories and local tar; no request submitted.');}
+      }
       const proc = dependencies.process ?? registrationProcess;
       const invoke = async (command, argv, cwd = instance.registration) => {
         const result = await proc(command,argv,{cwd,env:environment,signal:dependencies.signal,timeoutMs:dependencies.timeoutMs ?? 30000});
@@ -221,46 +228,77 @@ async function registerUnlocked(args, dependencies = {}) {
       environment.XDG_RUNTIME_DIR = `/run/user/${account.uid}`;
       await invoke('systemctl',['--user','show-environment']);
       const prefix = options.repo ? `/repos/${coordinates.owner}/${coordinates.repository}` : `/orgs/${coordinates.owner}`;
-      const signal = AbortSignal.any([AbortSignal.timeout(120000), ...(dependencies.signal ? [dependencies.signal] : [])]);
+      const signal = AbortSignal.any([AbortSignal.timeout(dependencies.waitMs ?? 120000), ...(dependencies.signal ? [dependencies.signal] : [])]);
       const transport = dependencies.transport ?? core.localGhTransport();
       // This capability authorizes only this one manual token endpoint, not Core lifecycle writes.
       let targetId;
       const provider = core.createGithubProvider({transport,attempts:1,authorize:request => request.method === 'POST' &&
-        request.endpoint === prefix+'/actions/runners/registration-token' && request.target === targetId});
+        (options.method === 'manual' ? request.endpoint === prefix+'/actions/runners/registration-token' : /^\/repos\/[a-z0-9-]+\/[a-z0-9_.-]+\/actions\/workflows\/[1-9][0-9]*\/dispatches$/.test(request.endpoint) && request.endpoint.startsWith(prefix+'/actions/')) && request.target === targetId});
       const targetResult = await provider.request({endpoint:prefix,target:member,operation:'registration-target',correlation:'manual',signal});
       if (targetResult.outcome !== 'read') providerFailure(targetResult,level);
       const target = targetResult.data; targetId = target?.id;
       if (!id(targetId) || (options.repo ? target.private !== false || target.visibility !== 'public' ||
           target.full_name?.toLowerCase() !== `${coordinates.owner}/${coordinates.repository}` || !id(target.owner?.id) ||
           !['User','Organization'].includes(target.owner?.type) : target.type !== 'Organization' || target.login?.toLowerCase() !== coordinates.owner)) fail('Target identity/public visibility mismatch.');
+      if (options.method === 'auto' && !(target.permissions?.push === true || target.permissions?.maintain === true || target.permissions?.admin === true)) fail('Automatic registration requires current repository Write/Maintain/Admin access.');
       const scope = {level,id:targetId,...(options.org ? {organization:coordinates.owner} : {})};
       state = {schemaVersion:1,instanceId:instance.id,memberId:member,registration:scope,
         target:{id:targetId,owner:coordinates.owner,...(options.repo ? {repository:coordinates.repository,ownerId:target.owner.id,ownerType:target.owner.type} : {})},label:core.memberRunnerLabel(member),
         disposition:'pending',service:{status:'not-installed',account:account.username},runnerName:`nibfin-${record.name.slice(0,12)}-${createHash('sha256').update(record.name+':'+instance.id).digest('hex').slice(0,24)}`};
-      // Durable reservation precedes token issuance and all potentially remote effects.
-      await publish(state); pending = true;
-      const issued = await provider.request({method:'POST',endpoint:prefix+'/actions/runners/registration-token',target:targetId,
-        operation:'manual-registration',correlation:'manual',signal});
-      if (issued.outcome !== 'submitted') providerFailure(issued,level);
-      let token = issued.data?.token;
-      const expiry = Date.parse(issued.data?.expires_at);
+      let issued;
+      if (options.method === 'auto') {
+        issued = await requestAutomatic(core,{provider,repository:`${coordinates.owner}/${coordinates.repository}`,repositoryId:targetId,
+          member,instance,state,publish:async value=>{await publish(value);pending=true;},signal,
+          ...Object.fromEntries(['configuration','confirm','archive','wait','now','waitMs'].filter(k=>dependencies[k]!==undefined).map(k=>[k,dependencies[k]]))});
+        if (issued.cancelled) return issued;
+      } else {
+        // Durable reservation precedes token issuance and all potentially remote effects.
+        await publish(state); pending = true;
+        const result = await provider.request({method:'POST',endpoint:prefix+'/actions/runners/registration-token',target:targetId,
+          operation:'manual-registration',correlation:'manual',signal});
+        if (result.outcome !== 'submitted') providerFailure(result,level);
+        issued = result.data;
+      }
+      let token = issued?.token;
+      const expiry = Date.parse(issued?.expires_at);
       if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,2048}$/.test(token) || !Number.isFinite(expiry) || expiry <= Date.now() || expiry > Date.now()+3660000) fail('Malformed or expired registration data; reconcile the pending instance.');
       const url = `https://github.com/${coordinates.owner}${options.repo ? '/'+coordinates.repository : ''}`;
       const configArgs = ['--unattended','--url',url,'--token',token,'--name',state.runnerName,'--labels',state.label,'--work',instance.workspace];
       if (options.group) configArgs.push('--runnergroup',options.group);
       try { await invoke(join(instance.registration,'config.sh'),configArgs); }
-      finally { token = undefined; configArgs.fill(''); issued.data = undefined; }
+      finally { token = undefined; configArgs.fill(''); issued = undefined; }
       await safePath(join(instance.registration,'.runner'),{directory:false});
       await safePath(join(instance.registration,'.credentials'),{directory:false});
       if ((await fs.stat(join(instance.registration,'.credentials'))).mode & 0o077) fail('Official registration credentials must be private to the execution account.');
       // .runner uses agentId rather than REST id; preserve its numeric source spelling.
       const local = JSON.parse(await fs.readFile(join(instance.registration,'.runner'),'utf8'),(key,value,context) =>
         key === 'agentId' && typeof value === 'number' ? context.source : value);
+      if (options.method === 'auto') {
+        for(const name of ['.credentials','.credentials_rsaparams']) {
+          const path=join(instance.registration,name);await safePath(path,{directory:false});
+          const st=await fs.stat(path);if(st.mode & 0o077 || st.size<2 || st.size>65536)fail('Missing or unsafe official private credentials.');
+          const value=JSON.parse(await fs.readFile(path,'utf8'));
+          if(!value || typeof value !== 'object' || Array.isArray(value) || !Object.keys(value).length)fail('Malformed official private credentials.');
+        }
+        const credentials=JSON.parse(await fs.readFile(join(instance.registration,'.credentials'),'utf8'));
+        if (credentials?.scheme !== 'OAuth' || !credentials.data || typeof credentials.data !== 'object' ||
+            Array.isArray(credentials.data) || !Object.keys(credentials.data).length ||
+            Object.values(credentials.data).some(v=>typeof v !== 'string' || !v)) fail('Malformed official credentials; reconcile configuration.');
+      }
       const runnerId = local.agentId;
       if (!id(runnerId) || local.agentName !== state.runnerName || local.gitHubUrl?.replace(/\/$/,'').toLowerCase() !== url || local.workFolder !== instance.workspace) fail('Official local Runner identity/path mismatch or incomplete configuration.');
       state.runnerId = runnerId;
+      state.configuration = {state:'completed',runnerId};state.platform='linux';
       let observation;
-      if (options.repo) {
+      if (options.method === 'auto') {
+        state.method = 'auto';state.status=null;state.busy=null;state.remote = {state:'unknown',reason:'no_authorized_observation'};
+        observation={platform:'linux',status:null,busy:null};
+        if (dependencies.observeRemote) {
+          try {const remote=await dependencies.observeRemote({state,signal});
+            if (remote?.outcome === 'mismatch') {state.remote.reason='observed_mismatch';fail('Independent remote mismatch; reconcile configuration.');}
+          } catch (error) {if (state.remote.reason === 'observed_mismatch') throw error;state.remote.reason='observation_unavailable';}
+        }
+      } else if (options.repo) {
         const result = await core.observeRunners(provider,{target:{...coordinates,id:targetId,ownerId:target.owner.id,ownerType:target.owner.type},
           registration:scope,records:[...localRecords.flatMap(r => r.instances).filter(i => i.binding?.registration.level === level && i.binding.registration.id === targetId).map(i =>
             ({instanceId:i.id,runnerId:i.binding.runnerId,memberId:member,repositoryId:targetId,registration:scope,platform:i.binding.platform})),
@@ -271,6 +309,9 @@ async function registerUnlocked(args, dependencies = {}) {
           fail(`Fresh N15 Runner readback ${['mismatch','unavailable','unsupported'].includes(result.outcome) ? result.outcome : 'incomplete'}; preserve pending identity for reconciliation.`);
         observation = result.instances.find(i => i.instanceId === instance.id).observation;
       } else observation = await orgReadback(provider,prefix,targetId,runnerId,state.label,options.group,signal);
+      await publish(state);
+      state.service.status='unknown';
+      await publish(state);
       await fs.copyFile(join(instance.registration,'bin/runsvc.sh'),join(instance.registration,'runsvc.sh'),fs.constants.COPYFILE_EXCL);
       await fs.chmod(join(instance.registration,'runsvc.sh'),0o700);
       await safePath(join(instance.registration,'runsvc.sh'),{directory:false});
@@ -281,11 +322,14 @@ async function registerUnlocked(args, dependencies = {}) {
       await fs.writeFile(unitPath,`[Unit]\nDescription=Nibfin instance runner\n[Service]\nWorkingDirectory=${quote(instance.registration)}\nExecStart=${quote(join(instance.registration,'runsvc.sh'),true)}\n${Object.entries(environment).filter(([key]) => key !== 'XDG_RUNTIME_DIR').map(([key,value]) => 'Environment='+quote(key+'='+value)).join('\n')}\nUnsetEnvironment=GH_TOKEN GITHUB_TOKEN GH_HOST NODE_OPTIONS NODE_PATH OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY\nRestart=on-failure\n[Install]\nWantedBy=default.target\n`,{flag:'wx',mode:0o600});
       await invoke('systemctl',['--user','link',unitPath]);
       state.service = {status:'installed',account:account.username,unit:unitName};
+      await publish(state);
+      state.service.status='unknown';
+      await publish(state);
       await invoke('systemctl',['--user','enable',unitName]);
       await invoke('systemctl',['--user','start',unitName]);
       await invoke('systemctl',['--user','is-active','--quiet',unitName]);
       state.service.status = 'active';
-      state = {...state,disposition:'registered',observedAt:new Date().toISOString(),platform:observation.platform,status:observation.status,busy:observation.busy,
+      state = {...state,disposition:'registered',...(options.method === 'auto' ? {configuredAt:new Date().toISOString()} : {observedAt:new Date().toISOString()}),platform:observation.platform,status:observation.status,busy:observation.busy,
         ...(observation.groupId ? {groupId:observation.groupId} : {})};
       await publish(state);
       // Keep the G03 descriptor immutable; binding.json is the per-instance lifecycle authority.
@@ -298,7 +342,7 @@ async function registerUnlocked(args, dependencies = {}) {
       fail('Registration prerequisite or state publication failed; inspect private per-instance binding/configuration and reconcile before retrying. No automatic re-registration.');
     } finally { if (locked) {await fs.rm(join(lock,'lifecycle-owner.json'),{force:true});await fs.rmdir(lock);} }
   };
-  try { return await (dependencies.core ? execute(dependencies.core) : withRegistrationCore(execute)); }
+  try { return await (dependencies.core ? execute(dependencies.core) : (options.method === 'auto' ? withAutomaticCore(execute) : withRegistrationCore(execute))); }
   catch (error) {
     if (error instanceof Diagnostic) throw error;
     fail('Registration unavailable; verify intact reviewed package, private environment records, application and account prerequisites. Reconcile any existing instance state before retrying.');

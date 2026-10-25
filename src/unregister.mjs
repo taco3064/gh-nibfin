@@ -1,3 +1,4 @@
+import {automaticBinding} from './automatic.mjs';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
@@ -61,7 +62,7 @@ export function binding(b, instance, record, core, account) {
       b.target?.id!==b.registration.id || !['repository','organization'].includes(b.registration.level) ||
       b.label!==core.memberRunnerLabel(record.githubId) || b.platform!=='linux' ||
       b.service?.account!==account.username || b.service.unit!==`nibfin-${record.name}-${instance.id}.service` ||
-      !['online','offline'].includes(b.status) || typeof b.busy!=='boolean') fail();
+      (!automaticBinding(b) && (!['online','offline'].includes(b.status) || typeof b.busy!=='boolean'))) fail();
   const repo=b.registration.level==='repository';
   if(b.runnerName!==undefined && !/^nibfin-[a-z0-9-]{1,80}$/.test(b.runnerName)) fail();
   const c=core.repositoryCoordinates(b.target.owner,repo?b.target.repository:'placeholder');
@@ -69,7 +70,7 @@ export function binding(b, instance, record, core, account) {
       !['User','Organization'].includes(b.target.ownerType)) || !repo && b.registration.organization!==c.owner) fail();
   // Copy only validated identity fields; never persist arbitrary binding/provider data.
   return {schemaVersion:1,instanceId:instance.id,memberId:b.memberId,runnerId:b.runnerId,label:b.label,platform:'linux',
-    disposition:'unknown',status:b.status,busy:b.busy,...(b.runnerName?{runnerName:b.runnerName}:{}),
+    disposition:'unknown',status:b.status,busy:b.busy,...(automaticBinding(b)?{method:'auto',configuration:b.configuration,remote:b.remote}:{}),...(b.runnerName?{runnerName:b.runnerName}:{}),
     registration:{level:b.registration.level,id:b.registration.id,...(!repo?{organization:c.owner}:{})},
     target:{id:b.target.id,owner:c.owner,...(repo?{repository:c.repository,ownerId:b.target.ownerId,ownerType:b.target.ownerType}:{})},
     service:{account:account.username,unit:b.service.unit,status:'unknown'}};
@@ -189,7 +190,7 @@ export async function unregisterInstance(args, dependencies={}) {
       remote=await observeRemote();
       result.remote=remote?(remote.present?'present':'absent'):'unknown';
       const work=await (dependencies.work ?? workObservation)(instance);
-      if(mismatch || work!=='idle' || (remote?.busy ?? value.busy)) return result;
+      if(mismatch || work!=='idle' || (remote?.busy ?? value.busy ?? true)) return result;
       // A previous uncertain DELETE is reconciled only; do not blindly replay it.
       if(remote?.present && !priorAttempt && !dependencies.signal?.aborted) {
         result.attempted=true;await save(statePath,result);

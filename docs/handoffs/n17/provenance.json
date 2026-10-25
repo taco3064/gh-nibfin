@@ -1,0 +1,178 @@
+{
+  "producer": "taco3064/nibfin",
+  "commit": "1dc666ff9a273e59b7cac417408ab1de5c5ff623",
+  "handoffHash": "219bb9abbeb58a954a904a94e03f198dc59c7f7fadf1001372ff9d54ac37e28f",
+  "construction": "USTAR regular package.json plus package.files in declared order; mode 0644, uid/gid/mtime zero, gzip mtime zero; exact unmodified producer bytes",
+  "archive": {
+    "bytes": 121710,
+    "sha256": "b6a9bb36aeb22a4e20a1a5695a216dc42e7bd5878593e61b256af5da0c60d081"
+  },
+  "files": {
+    "package.json": {
+      "bytes": 1546,
+      "sha256": "ca11d52e65475194315e41387df96d366438dcf05b6e5d2d6cb86b5f072b1f9f"
+    },
+    "src/index.mjs": {
+      "bytes": 3367,
+      "sha256": "b307d349e7506efe6602e7e16d27d537e830b3b331d01cbb9c68836d2f8ec18d"
+    },
+    "docs/package.md": {
+      "bytes": 38104,
+      "sha256": "282490140c054bab8124675461eafc49bf3fed85d71e274f9b0db536629e936f"
+    },
+    "src/grants.mjs": {
+      "bytes": 10392,
+      "sha256": "eeaafeca8057a2a719923420ade7c73d754f8879b3681f7a4515116366b29355"
+    },
+    "src/evidence.mjs": {
+      "bytes": 13759,
+      "sha256": "b1a94970968c82a547122d8b4339d97815e73e4a45bb6eede540b91532abb135"
+    },
+    "docs/evidence.md": {
+      "bytes": 18969,
+      "sha256": "6fb321f9f9238dc3e74cd5bec4e0bfd152153ed8e35ecc40ca6e287a6e6f1ba8"
+    },
+    "src/provider.mjs": {
+      "bytes": 14171,
+      "sha256": "a4051b44fd653fcd3bb9c62b1047db4a3dc400d2ca719d8fd910a510d9f4a64b"
+    },
+    "src/runners.mjs": {
+      "bytes": 12373,
+      "sha256": "c8370907bbf274840dfeac94b55c650648a4116a3b6a1bce43e899fc92acac5e"
+    },
+    "src/obligations.mjs": {
+      "bytes": 9983,
+      "sha256": "111c0040fe61a7f6d8638fe04df5b2a264e5c43edcd05cfa7214ebd4191a962e"
+    },
+    "src/authority.mjs": {
+      "bytes": 5945,
+      "sha256": "93aae3040d9ebd25ac640a3066a4fda4ef9f5854ed9f4b54606f677168928a44"
+    },
+    "docs/authority.md": {
+      "bytes": 7850,
+      "sha256": "daf1e1b1d992b70043df987e8902d6c08f869b33a9ec58966101a1a622f22cb2"
+    },
+    "src/authorization.mjs": {
+      "bytes": 6197,
+      "sha256": "a8972b0ece0ec39dd97792bb1464c289da7a3f01bc9553c19971687fa35361b1"
+    },
+    "docs/authorization.md": {
+      "bytes": 5672,
+      "sha256": "ee7c4950e14d34991f86390d242ffb77a900fec47434d075b2e301d0e98fb3e8"
+    },
+    "src/lifecycle.mjs": {
+      "bytes": 10439,
+      "sha256": "617db5834e42b3d5ebd153713393f065447049f829fb80517d707706210d0a99"
+    },
+    "docs/lifecycle.md": {
+      "bytes": 7022,
+      "sha256": "5734d453b8339a78d348301bf1afd37dcf065ab0f040a919fc41579ff19f97d1"
+    },
+    "src/custody-upload.mjs": {
+      "bytes": 2681,
+      "sha256": "780d9d3494f99ae976741c9ffc52b2a2de2c12059050c33fb81f349192003607"
+    },
+    "src/custody.mjs": {
+      "bytes": 16863,
+      "sha256": "e9375c32120d8dc262bd51ff1926f6d3df2e0ec47322a23c431e308dd82f8f5a"
+    },
+    "src/custody-zip.mjs": {
+      "bytes": 3314,
+      "sha256": "18212533c15428a380852dbf317b1b6890afa183ff1fe183c29a54bf759652b9"
+    },
+    "docs/custody.md": {
+      "bytes": 10639,
+      "sha256": "5092817d33b0b11ee951351a330ae6b230b85acdad4cc23ebfd913259b791f90"
+    },
+    "src/actions.mjs": {
+      "bytes": 8821,
+      "sha256": "12395d852beb7a02aa05c75dcc922cd5f4d68dee94c7760e5a434b3d9afc0b7a"
+    },
+    "src/deployment.mjs": {
+      "bytes": 11903,
+      "sha256": "92ebe5e4fd62091a270646035b72bb6728ad14a55bef43a7beab1442a9da447f"
+    },
+    "docs/deployment.md": {
+      "bytes": 7285,
+      "sha256": "73c4663d5ca95b9350f0781bd1e02b66575fa56e2bf3d33a7fb662085ba7de77"
+    },
+    "src/instructions.mjs": {
+      "bytes": 2537,
+      "sha256": "8e87727cb399805261b03eecfcc9fe20fca5f2ede4c7ec339030c4e0f70bf616"
+    },
+    "docs/instructions.md": {
+      "bytes": 3899,
+      "sha256": "0fb26e53ecaa8e64b1da9f3ce1061917c42b14bed030da1d420da42e8fc8bdbf"
+    },
+    "skills/shape/SKILL.md": {
+      "bytes": 5693,
+      "sha256": "a919cac7049104eb2a7d776c61836655cceecb5c02d21276dd424075a75f4c85"
+    },
+    "skills/deliver/SKILL.md": {
+      "bytes": 4914,
+      "sha256": "cfc6b66c88d1ed66194c5bf276307721cbc85f2784514c3738197020ac04b560"
+    },
+    "skills/accept/SKILL.md": {
+      "bytes": 4921,
+      "sha256": "242abaf8521732a4177026fcacf4a6276b9a4e835810d03418d69470550ea20f"
+    },
+    "src/workspace.mjs": {
+      "bytes": 18996,
+      "sha256": "0afbad40db09c10351230502e2917b60776a4679d2237813bb7b2ac62d21b54e"
+    },
+    "docs/workspace.md": {
+      "bytes": 6068,
+      "sha256": "26c7a99836fe5f03663949ee54e0571b5135f690a819eec3d1ef36cdc8198fe1"
+    },
+    "src/selection.mjs": {
+      "bytes": 7556,
+      "sha256": "d603765fee01156f30ea1ed9594c15582ed22c46d583bf1d6aa86dee52df4d09"
+    },
+    "docs/selection.md": {
+      "bytes": 8120,
+      "sha256": "22d41f9b29797887f6123a62548f67cd37e9d58c93377cda736e774f7202a0a4"
+    },
+    "src/operations.mjs": {
+      "bytes": 15534,
+      "sha256": "7f26a40929bd830c83f577d1a666485973baafd75a7d56be8be716b93d33e20e"
+    },
+    "src/concurrency.mjs": {
+      "bytes": 2158,
+      "sha256": "0ac2fe5d9513430d0a604bba3ada7e2ffbdb56b595f47189116b9a1b8f717d7b"
+    },
+    "docs/operations.md": {
+      "bytes": 12161,
+      "sha256": "6de0b1f20b4d48b3a30603a24aff7a380a3e8deb79b818cdd5416d2a11dbce33"
+    },
+    "src/dynamic.mjs": {
+      "bytes": 10449,
+      "sha256": "21c7c16461f77d6f95db02c01f3783b7386f6dbb20205e01d291186d3d8dfb63"
+    },
+    "docs/dynamic.md": {
+      "bytes": 6581,
+      "sha256": "aa0ac1631c7e6971fb4dc8b85d452e4e8db986e17bc94b6134dbca7bc239c97b"
+    },
+    "src/relay.mjs": {
+      "bytes": 8553,
+      "sha256": "a81cbb8ed3c1d5009959ee536dff5b50323c5cac752011f4651a5105e4f2c3d8"
+    },
+    "docs/relay.md": {
+      "bytes": 10805,
+      "sha256": "be080c38725c56e6716466607e6a31332430be8c06a7fdc4789b7b5cf39243ad"
+    },
+    "src/registration.mjs": {
+      "bytes": 15531,
+      "sha256": "6d30d08094292e1d5001dac9eea60c0d5398e2cafa3f3c0c3ed5b5802544c666"
+    },
+    "docs/registration.md": {
+      "bytes": 9113,
+      "sha256": "669b77a86b00765e04200661c7cb43d1f8c2180993d97f2547cb35b5178a41bb"
+    }
+  },
+  "joseSha256": "f070cea39a544b750514d14e9697b5305aa0564804f319f05b266a1e35761f89",
+  "supporting": {
+    "producer-contract.md": "669b77a86b00765e04200661c7cb43d1f8c2180993d97f2547cb35b5178a41bb",
+    "producer-tests.mjs": "9d2951643b049a11c177aaf4e1dd9fd5162ee3557b6c0d8be83aa4cf27266318",
+    "custody-fixture.mjs": "ac7fcb8e014c13052f73244e0429decdb18b664d991f1c66f7ebe59581a0c714"
+  }
+}
