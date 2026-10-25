@@ -1,3 +1,4 @@
+import {unregisterInstance} from './unregister.mjs';
 import {listEnvironments, listText} from './list.mjs';
 import { registerInstance } from './register.mjs';
 import { createEnvironment } from './create.mjs';
@@ -16,7 +17,7 @@ const commands = new Map([
 ]);
 const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
   [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
-}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Unregister: runner unregister --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Omit instance only for one matching registration. --org removes the shared Org registration, not a single Repo binding. Requires Linux non-root user systemd; incomplete outcomes require reconciliation before reuse. Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
 
 // Maintained consumer API: real producer exports, without an eighth CLI command.
 export { withCore };
@@ -47,6 +48,13 @@ export async function main(args, dependencies) {
       process.stdout.write(`Registered instance ${result.instanceId}: Runner ${result.runnerId}, ${result.label}; ${result.status}, busy=${result.busy}; service ${result.service.status}.\n`);
       return 0;
     } catch (error) { process.stderr.write(`runner register: ${error.message}\n`); return 2; }
+  }
+  if (args[0] === 'runner' && args[1] === 'unregister') {
+    try {
+      const r=await unregisterInstance(args.slice(2),dependencies);
+      process.stdout.write(`Unregister ${r.instanceId}: local=${r.local}; service=${r.service}; remote=${r.remote}; ${r.complete ? (r.already ? 'already unregistered' : 'complete') : 'incomplete; reconcile private unregister.json, active work and remote identity before retry/reuse'}.\n`);
+      return r.complete ? 0 : 2;
+    } catch {process.stderr.write('runner unregister: Use --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Verify private records, Linux user-systemd/account prerequisites; reconcile uncertain work/removal before retry.\n');return 2;}
   }
   if (args[0] === 'runner' && args[1] === 'list') {
     const result = await listEnvironments(args.slice(2), dependencies);

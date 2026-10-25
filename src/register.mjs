@@ -64,7 +64,7 @@ export async function safePath(path, {directory = true, uid = userInfo().uid} = 
 async function absent(path) {
   try { await fs.lstat(path); return false; } catch (error) { if (error.code === 'ENOENT') return true; throw error; }
 }
-async function loadEnvironment(root, name, account) {
+export async function loadEnvironment(root, name, account) {
   const base = join(resolve(root),name);
   await safePath(base); await safePath(join(base,'environment.json'),{directory:false});
   const r = JSON.parse(await fs.readFile(join(base,'environment.json'),'utf8'));
@@ -193,8 +193,17 @@ export async function registerInstance(args, dependencies = {}) {
     });
     try {
       await fs.mkdir(lock,{mode:0o700}); locked = true;
+      // Recheck under the shared lock: selection above may predate another operation.
+      if (!await absent(join(instance.registration,'binding.json'))) fail('Binding changed; reconcile before registration.');
+      const residual = join(instance.registration,'unregister.json');
+      if (!await absent(residual)) {
+        await safePath(residual,{directory:false});
+        const previous = JSON.parse(await fs.readFile(residual,'utf8'));
+        if (previous.schemaVersion !== 1 || previous.instanceId !== instance.id || previous.identity?.instanceId !== instance.id ||
+            !id(previous.identity.runnerId) || previous.complete !== true || previous.local !== 'detached' || previous.service !== 'terminated' || previous.remote !== 'absent') fail('Unregister residual requires reconciliation before registration.');
+      }
       if ((await fs.readdir(instance.service)).some(name => name !== 'registration.lock')) fail('Conflicting local service resources require reconciliation before registration.');
-      for (const name of ['.runner','.credentials','.credentials_rsaparams','.service','runsvc.sh','binding.json.pending']) {
+      for (const name of ['.runner','.runner_migrated','.credentials','.credentials_migrated','.credentials_rsaparams','.credential_store','.service','runsvc.sh','binding.json.pending','unregister.json.pending']) {
         if (!await absent(join(instance.registration,name))) fail('Existing configuration/credentials or pending publication requires reconciliation.');
       }
       if (process.platform !== 'linux' || account.uid === 0 || account.uid !== userInfo().uid) fail('Supported prerequisite: Linux with non-root execution/service account and a user systemd manager.');
