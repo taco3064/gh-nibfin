@@ -86,6 +86,11 @@ or credential reads occur.
 
 ## Later real installation procedure — not performed
 
+The later [N15 observation handoff](docs/handoffs/n15/README.md) supplies the
+immutable producer interface and accepted package needed by runner registration
+work in #21. It is supplemental evidence; the current N01 product loader remains
+as described above until a normal reviewed implementation adopts that package.
+
 [GitHub's extension layout](https://docs.github.com/en/github-cli/github-cli/creating-github-cli-extensions)
 requires the executable at the repository root with the repository name.
 [Official installation/removal](https://docs.github.com/en/github-cli/github-cli/using-github-cli-extensions)

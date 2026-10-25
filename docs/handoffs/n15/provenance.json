@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "kind": "read-only-producer-handoff",
+  "producer": {
+    "repository": "taco3064/nibfin",
+    "issue": 98,
+    "issueId": "I_kwDOVRsWxs8AAAABZnD0jQ",
+    "pr": 148,
+    "commit": "e4e2a835f4236975d41ddb4f4bc5ada7dbae1b30",
+    "tree": "d9a603bce5971c05c6fe54cd31fb77ef3ff023ff",
+    "completionHash": "8cd3b47295b2402e00214092b8d41a3ee8f6a7f9abcd2a644147271c27b8b939",
+    "completionReceiptHash": "7c2b54e5dc54e315373609ff9cffa9565d2d7425fb0a120ec9dc6e393af12f7a",
+    "acceptedCandidateHash": "e39e1d8e66ee9cb0aa665dc3dac75c720a6cbb07973d6333f060e0657eaa922e"
+  },
+  "artifact": {
+    "path": "nibfin-core.tgz",
+    "producerPath": "out/nibfin-core.tgz",
+    "sha256": "01f6b5fbd01ebbba37ea6723db7bdfff25f5cc44c68e832206974248e5717fef",
+    "size": 71426
+  },
+  "files": {
+    "package.json": {
+      "gitBlob": "52c4a48f58de95af3aa7bc01db0241583c9bc374",
+      "sha256": "bed6c91291a4742cb0532a4bdbb94e60fe1e8146b2c5dd8d1f6066becffa9713",
+      "bytes": 1017
+    },
+    "docs/authority.md": {
+      "gitBlob": "e736f0b08d4e0146b4eba74b27989652ebaaa3da",
+      "sha256": "daf1e1b1d992b70043df987e8902d6c08f869b33a9ec58966101a1a622f22cb2",
+      "bytes": 7850
+    },
+    "docs/authorization.md": {
+      "gitBlob": "2b7fefbedfc2a80716741c91149014f81e713d7e",
+      "sha256": "ee7c4950e14d34991f86390d242ffb77a900fec47434d075b2e301d0e98fb3e8",
+      "bytes": 5672
+    },
+    "docs/custody.md": {
+      "gitBlob": "de15e9dd2ecf9d67cfdd8469d2ff511e6e6cd12b",
+      "sha256": "b8f6089537af55883770a5d6aa479b3d8f42b9fcf7d5090dbe08378c69443f65",
+      "bytes": 10913
+    },
+    "docs/deployment.md": {
+      "gitBlob": "c05c22a2ec5eb47fe1797abb18d1e47d2f6656aa",
+      "sha256": "73c4663d5ca95b9350f0781bd1e02b66575fa56e2bf3d33a7fb662085ba7de77",
+      "bytes": 7285
+    },
+    "docs/evidence.md": {
+      "gitBlob": "443f8a3c2a7c332cddde934846f48192f80766a8",
+      "sha256": "6fb321f9f9238dc3e74cd5bec4e0bfd152153ed8e35ecc40ca6e287a6e6f1ba8",
+      "bytes": 18969
+    },
+    "docs/lifecycle.md": {
+      "gitBlob": "f015c631e7a52fd5d9ba547b82f07d4a9332baf8",
+      "sha256": "5734d453b8339a78d348301bf1afd37dcf065ab0f040a919fc41579ff19f97d1",
+      "bytes": 7022
+    },
+    "docs/package.md": {
+      "gitBlob": "4073865c72d58eb76070314d99b866f64a1eadf5",
+      "sha256": "2e82a4a1e942a6f1f861add98d12012fa7f6a2efc2186d26f5ae417697fb383b",
+      "bytes": 37203
+    },
+    "README.md": {
+      "gitBlob": "776fd555e959cab30fb27bb15a1487e463714375",
+      "sha256": "72b185cbfaf0fa29f8b088adfc6118a6072c1fee138d53f888dcfdf40ffb3a08",
+      "bytes": 2065
+    },
+    "src/actions.mjs": {
+      "gitBlob": "0940c72ced7e2b2e4f8855b5c73fd2b99511f708",
+      "sha256": "12395d852beb7a02aa05c75dcc922cd5f4d68dee94c7760e5a434b3d9afc0b7a",
+      "bytes": 8821
+    },
+    "src/authority.mjs": {
+      "gitBlob": "d2746448265126697f435cc99bfa163e7510d0b0",
+      "sha256": "93aae3040d9ebd25ac640a3066a4fda4ef9f5854ed9f4b54606f677168928a44",
+      "bytes": 5945
+    },
+    "src/authorization.mjs": {
+      "gitBlob": "fb420019dee4c0e2b5aa88e783cd59192ca34544",
+      "sha256": "a8972b0ece0ec39dd97792bb1464c289da7a3f01bc9553c19971687fa35361b1",
+      "bytes": 6197
+    },
+    "src/custody-upload.mjs": {
+      "gitBlob": "e1e55897db644f7a05f34d5241d600961ed87b6b",
+      "sha256": "780d9d3494f99ae976741c9ffc52b2a2de2c12059050c33fb81f349192003607",
+      "bytes": 2681
+    },
+    "src/custody-zip.mjs": {
+      "gitBlob": "65f06028c6ea3369f9f952d6f3785f5b0208eae2",
+      "sha256": "18212533c15428a380852dbf317b1b6890afa183ff1fe183c29a54bf759652b9",
+      "bytes": 3314
+    },
+    "src/custody.mjs": {
+      "gitBlob": "97d6c2f040667cd6b7142dfa0753ea722f53d5fc",
+      "sha256": "e9375c32120d8dc262bd51ff1926f6d3df2e0ec47322a23c431e308dd82f8f5a",
+      "bytes": 16863
+    },
+    "src/deployment.mjs": {
+      "gitBlob": "94c903a97a81ffc1db8d68451b93eb8730985630",
+      "sha256": "92ebe5e4fd62091a270646035b72bb6728ad14a55bef43a7beab1442a9da447f",
+      "bytes": 11903
+    },
+    "src/evidence.mjs": {
+      "gitBlob": "56ec2b7785dc108794d0c128a0caa398f7d3b305",
+      "sha256": "b1a94970968c82a547122d8b4339d97815e73e4a45bb6eede540b91532abb135",
+      "bytes": 13759
+    },
+    "src/grants.mjs": {
+      "gitBlob": "35c223f63396fb7e0330a36a2e07532e82c1b129",
+      "sha256": "eeaafeca8057a2a719923420ade7c73d754f8879b3681f7a4515116366b29355",
+      "bytes": 10392
+    },
+    "src/index.mjs": {
+      "gitBlob": "48f4d670798194170e2739091dbe89f326226ed1",
+      "sha256": "81fa44c08b4c36f454e2a58cf7d1493a7bd7f8f88353a4124bf3203751d1c952",
+      "bytes": 2628
+    },
+    "src/lifecycle.mjs": {
+      "gitBlob": "396fefb11f0cfa3042145ceeb48abcb6b13bbddc",
+      "sha256": "448395b61fa0f988523e3db473572bd17e1c39af112835a7ca582c36f88017da",
+      "bytes": 10286
+    },
+    "src/obligations.mjs": {
+      "gitBlob": "bc5ff1603de31c2f37e60cf9933e5de3166f4b14",
+      "sha256": "111c0040fe61a7f6d8638fe04df5b2a264e5c43edcd05cfa7214ebd4191a962e",
+      "bytes": 9983
+    },
+    "src/provider.mjs": {
+      "gitBlob": "6dbf3a5390c183309b0aadc69c2b9b5d828b8536",
+      "sha256": "b48e197f3eeabf901d466a32742d7857f8ef533feb0923aed987601d2da6b872",
+      "bytes": 13893
+    },
+    "src/runners.mjs": {
+      "gitBlob": "b7079966ac43399208ea7c87c4a24d61120b2890",
+      "sha256": "f7c950553fadc3b266d9c856348921a9b4118c70f8d640e7fbd40b616b0b3dd5",
+      "bytes": 12081
+    }
+  },
+  "supporting": {
+    "test/runners.test.mjs": {
+      "gitBlob": "5729353edbefdf394eab6fe482716ba42626162a",
+      "sha256": "b2df24fc2ebb21ba2d61779363ba51dfdd1e93c980dd0c26bd51a7ef231a53ee",
+      "bytes": 16176
+    },
+    "package-lock.json": {
+      "gitBlob": "ce894cd436c52a59326845ec208088aaa012549c",
+      "sha256": "b9e76bfa9757721ce2069dbb0a030cc290b46935566018b0ff952f1f91857e5e",
+      "bytes": 679
+    }
+  },
+  "dependency": {
+    "name": "jose",
+    "version": "6.2.13",
+    "resolved": "https://registry.npmjs.org/jose/-/jose-6.2.13.tgz",
+    "integrity": "sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ==",
+    "sha256": "f070cea39a544b750514d14e9697b5305aa0564804f319f05b266a1e35761f89",
+    "bytes": 49879,
+    "purpose": "Genuine locked dependency for offline installed-package contract verification; not a fixture substitute"
+  },
+  "assets": {
+    "nibfin-core.tgz": {
+      "bytes": 71426,
+      "sha256": "01f6b5fbd01ebbba37ea6723db7bdfff25f5cc44c68e832206974248e5717fef"
+    },
+    "producer-contract.md": {
+      "bytes": 37203,
+      "sha256": "2e82a4a1e942a6f1f861add98d12012fa7f6a2efc2186d26f5ae417697fb383b"
+    },
+    "producer-tests.mjs": {
+      "bytes": 16176,
+      "sha256": "b2df24fc2ebb21ba2d61779363ba51dfdd1e93c980dd0c26bd51a7ef231a53ee"
+    },
+    "producer-lock.json": {
+      "bytes": 679,
+      "sha256": "b9e76bfa9757721ce2069dbb0a030cc290b46935566018b0ff952f1f91857e5e"
+    },
+    "jose-6.2.13.tgz": {
+      "bytes": 49879,
+      "sha256": "f070cea39a544b750514d14e9697b5305aa0564804f319f05b266a1e35761f89"
+    }
+  },
+  "verification": {
+    "acceptedArchiveComparedToImmutableMergedTree": true,
+    "packageFileCount": 23,
+    "dependencyComparedToProducerLock": true,
+    "liveRegistrationPerformed": false,
+    "productLoaderChanged": false
+  }
+}
