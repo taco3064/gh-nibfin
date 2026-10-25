@@ -140,7 +140,7 @@ export async function orgReadback(provider, prefix, target, runnerId, label, gro
   }
   return {id:runnerId,platform:'linux',status:runner.status,busy:runner.busy};
 }
-export async function registerInstance(args, dependencies = {}) {
+async function registerUnlocked(args, dependencies = {}) {
   const options = registrationOptions(args);
   const execute = async core => {
     const account = dependencies.account ?? userInfo(), root = dependencies.root ?? join(userInfo().homedir,'.local/share/nibfin/environments');
@@ -193,6 +193,7 @@ export async function registerInstance(args, dependencies = {}) {
     });
     try {
       await fs.mkdir(lock,{mode:0o700}); locked = true;
+      await fs.writeFile(join(lock,'lifecycle-owner.json'),JSON.stringify({pid:process.pid}),{flag:'wx',mode:0o600});
       // Recheck under the shared lock: selection above may predate another operation.
       if (!await absent(join(instance.registration,'binding.json'))) fail('Binding changed; reconcile before registration.');
       const residual = join(instance.registration,'unregister.json');
@@ -295,11 +296,54 @@ export async function registerInstance(args, dependencies = {}) {
       }
       if (error instanceof Diagnostic) throw error;
       fail('Registration prerequisite or state publication failed; inspect private per-instance binding/configuration and reconcile before retrying. No automatic re-registration.');
-    } finally { if (locked) await fs.rmdir(lock); }
+    } finally { if (locked) {await fs.rm(join(lock,'lifecycle-owner.json'),{force:true});await fs.rmdir(lock);} }
   };
   try { return await (dependencies.core ? execute(dependencies.core) : withRegistrationCore(execute)); }
   catch (error) {
     if (error instanceof Diagnostic) throw error;
     fail('Registration unavailable; verify intact reviewed package, private environment records, application and account prerequisites. Reconcile any existing instance state before retrying.');
   }
+}
+
+// One local environment lifecycle owner. Stale locks recover only after the
+// recorded process no longer exists; no signals are sent to another process.
+export async function withEnvironmentLock(root, name, action) {
+  if(!/^[a-z][a-z0-9-]{0,47}$/.test(name)) throw Error('Invalid environment selection.');
+  await safePath(root);
+  const path=join(root,`.${name}.lifecycle.lock`);
+  let handle,recovery;
+  try {
+    try {handle=await fs.open(path,'wx',0o600);}
+    catch(e) {
+      if(e.code!=='EEXIST') throw e;
+      const conflict=()=>{throw Error('Lifecycle conflict; reconcile before retrying.');};
+      await safePath(path,{directory:false});
+      const old=await fs.stat(path),pid=await fs.readFile(path,'utf8');
+      if(!/^[1-9][0-9]{0,9}$/.test(pid)) conflict();
+      try {process.kill(Number(pid),0);conflict();} catch(error) {if(error.code!=='ESRCH') throw error;}
+      // Serialize stale-lock reclamation. Never unlink a replacement lock after
+      // another contender has recovered the dead process's file.
+      recovery=path+'.recovery';
+      try {await fs.mkdir(recovery,{mode:0o700});} catch {recovery=undefined;conflict();}
+      const current=await fs.stat(path);
+      if(current.dev!==old.dev || current.ino!==old.ino || current.birthtimeMs!==old.birthtimeMs) conflict();
+      await fs.unlink(path);handle=await fs.open(path,'wx',0o600);
+    }
+    await handle.writeFile(String(process.pid));await handle.sync();
+    if(recovery) {await fs.rmdir(recovery);recovery=undefined;}
+    return await action();
+  } finally {
+    if(handle) {await handle.close();await fs.unlink(path);}
+    if(recovery) await fs.rmdir(recovery);
+  }
+}
+
+export async function registerInstance(args, dependencies = {}) {
+  const {name}=registrationOptions(args);
+  const root=dependencies.root ?? join(userInfo().homedir,'.local/share/nibfin/environments');
+  return withEnvironmentLock(root,name,async()=>{
+    try {await fs.lstat(join(root,name,'.removing'));throw Error('Removal requires reconciliation before registration.');}
+    catch(e) {if(e.code!=='ENOENT') throw e;}
+    return registerUnlocked(args,dependencies);
+  });
 }

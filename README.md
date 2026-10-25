@@ -3,8 +3,8 @@
 Local GitHub CLI extension with help, version diagnostics and seven bounded
 command paths. Runner creation implements local allocation and diagnostics through
 the Core boundary described below. Manual Runner registration is implemented for
-the Linux user-systemd process boundary. Read-only runner listing is implemented;
-other business operations return exit status 2.
+the Linux user-systemd process boundary. Read-only runner listing, environment-retaining unregister and environment removal
+are implemented at that local boundary; init/upgrade return exit status 2.
 This is not a complete Nibfin runtime or a supported-platform claim.
 
 Public repositories owned by personal accounts or Organizations are in product
@@ -39,7 +39,7 @@ Neither command is actual GitHub CLI installation verification.
 
 The seven paths have these responsibilities:
 
-| Path | Responsibility (create/register/list implemented locally; others pending) |
+| Path | Responsibility (init/upgrade pending; local lifecycle paths implemented) |
 | --- | --- |
 | init | Initialize repository workflows/labels and optional automatic registration. |
 | runner create | Create one fixed-Agent environment with a positive integer total of unregistered instances; default 2. |
@@ -52,7 +52,7 @@ The seven paths have these responsibilities:
 Help/version are options, not additional commands. Unknown options, extra tokens
 and incomplete paths fail with usage guidance. Baseline refusals perform no
 initialization, authentication, network access, service operation or registration.
-Creation, manual registration and read-only listing parameters are described below; other parameter execution belongs to later Issues.
+Implemented lifecycle parameters are described below; init/upgrade execution belongs to later Issues.
 
 ## Verified Core boundary
 
@@ -421,3 +421,72 @@ libseccomp, executable scratch). They cover selection, Repo/Org scope, large IDs
 termination, uncertain writes/readback, cleanup/publication failures, preservation
 and secret suppression. These are local contract observations, not real GitHub,
 systemd or model lifecycle evidence; real lifecycle coverage belongs to #27/#28.
+
+### Remove an entire local environment
+
+```sh
+gh nibfin runner remove --runner demo
+# For an explicitly selected, noninteractive removal:
+gh nibfin runner remove --runner demo --yes
+```
+
+`--runner` selects the whole environment, including every registered, unregistered
+or partially unregistered instance. Without `--yes`, the confirmation lists the
+selected environment, destructive local scope and recorded Repo/Org registrations.
+Only affirmative yes proceeds; decline, EOF and noninteractive input cancel.
+`--yes` skips confirmation only. Removing an Organization registration affects its
+entire shared registration, not just one repository. Other environments, their
+services and Agent logins, host-global gh/Agent logins and shared tools are retained.
+
+No Repository Owner approval, working GitHub login or remote management permission
+is needed for safe local exit. The implemented boundary is non-root Linux with an
+observable user-systemd manager, owned real paths and matching execution account.
+The command checks owned unit sources, no foreign drop-ins/stop propagation,
+inactive state and empty managed process groups, then disables and removes owned
+services. An unproved stop retains resources and returns exit 2. No cleanup script
+from the environment is executed. Environment credentials, workspaces and prepared
+Runner applications are deleted only after all instances are safely stopped.
+No model is invoked or logged in. Windows/macOS and live service/provider/model
+combinations remain Unverified here; #27/#28 own supported-profile lifecycle proof.
+
+Local lifecycle exclusion and a removal marker prevent registration/reuse during
+removal. Dead recorded process locks can be recovered; ambiguous, unowned or
+incompletely written locks require operator reconciliation, not blind deletion.
+Private removal state is saved at
+`~/.local/share/nibfin/environments/.removals/NAME.json` before destructive effects.
+The stopped directory is atomically moved to `.removals/NAME.resources` before
+recursive deletion, so an interrupted deletion can be resumed by the same remove
+command. A filesystem generation identity prevents a later invocation from deleting
+a newly created environment with the same name. Use a new name when recreating an
+environment; preserve the original residue until its reconciliation is complete.
+
+Each instance reports service, local resources, remote registration and unresolved
+effects separately. Remote deletion uses only validated recorded IDs, the actual
+account's stored gh login and official Repo/Org endpoints through the pinned Core
+provider. Inherited Actions tokens are excluded. Complete validated readback is
+required to confirm absence; a DELETE acknowledgment, 404, timeout or inaccessible
+inventory is insufficient. A previous uncertain DELETE is read back without replay.
+One remote failure does not suppress the remaining targets or safe local removal.
+
+Exit 0 requires complete local deletion, published state, confirmed remote absence
+(or no registration) and no unresolved effects. Exit 2 can report `local=removed`
+alongside remote/effect residue. Nonempty workspaces, Worker history and write-intent
+records do not force continued local resource use when their necessary readback
+coordinates can be preserved safely. The private residue retains source filename,
+operation, repository, request ID and validated Issue/PR/Runner/run identifiers or
+commit hashes; it never replays these operations. Tokens, raw logs and provider
+payloads are excluded. Unknown fields, malformed records or missing required
+coordinates cannot be reduced to an unresolved flag: services stop, but the
+original operation evidence and environment remain retained with exit 2. The CLI
+names those service evidence files. Have the owning runtime reconcile them before
+retrying; do not delete the only copy to force cleanup. Publication failure also
+retains source evidence. Captured identities remain available on repeated removal.
+A stopped process or deleted registration does not prove prior privileged effects were revoked. Use the private record's exact
+identities to reconcile with the owning runtime/authorized administrator; never
+replay an unknown write or erase residue simply to obtain exit 0. Repeating remove
+reads the same record and is distinguishable from an unknown environment name.
+
+`test/remove.test.mjs` uses disposable multi-instance files, injected official
+provider/service observations and bounded disposable process termination. Run
+`python3 tooling/check.py` and `node docs/handoffs/n15/verify.mjs`; these are local
+contract checks, not actual account, Runner, model or platform lifecycle evidence.

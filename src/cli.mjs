@@ -1,3 +1,4 @@
+import {removeEnvironment} from './remove.mjs';
 import {unregisterInstance} from './unregister.mjs';
 import {listEnvironments, listText} from './list.mjs';
 import { registerInstance } from './register.mjs';
@@ -17,7 +18,7 @@ const commands = new Map([
 ]);
 const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
   [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
-}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Unregister: runner unregister --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Omit instance only for one matching registration. --org removes the shared Org registration, not a single Repo binding. Requires Linux non-root user systemd; incomplete outcomes require reconciliation before reuse. Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Unregister: runner unregister --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Omit instance only for one matching registration. --org removes the shared Org registration, not a single Repo binding. Requires Linux non-root user systemd; incomplete outcomes require reconciliation before reuse. Remove: runner remove --runner NAME [--yes]. Removes the ENTIRE environment, Agent credentials and all instances; prompts unless --yes. Org removal affects its entire shared registration. Local and remote outcomes are independent; exit 2 requires private .removals reconciliation. Linux non-root user-systemd only. Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
 
 // Maintained consumer API: real producer exports, without an eighth CLI command.
 export { withCore };
@@ -55,6 +56,17 @@ export async function main(args, dependencies) {
       process.stdout.write(`Unregister ${r.instanceId}: local=${r.local}; service=${r.service}; remote=${r.remote}; ${r.complete ? (r.already ? 'already unregistered' : 'complete') : 'incomplete; reconcile private unregister.json, active work and remote identity before retry/reuse'}.\n`);
       return r.complete ? 0 : 2;
     } catch {process.stderr.write('runner unregister: Use --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Verify private records, Linux user-systemd/account prerequisites; reconcile uncertain work/removal before retry.\n');return 2;}
+  }
+  if (args[0] === 'runner' && args[1] === 'remove') {
+    try {
+      const r=await removeEnvironment(args.slice(2),dependencies);
+      if(r.cancelled) {process.stdout.write('Removal cancelled; no resources changed.\n');return 2;}
+      process.stdout.write(`Remove ${r.name}: local=${r.local}; ${r.complete?'complete':'incomplete; reconcile remote/effect/service residue'}.\n`);
+      for(const i of r.instances) process.stdout.write(`${i.id}: service=${i.service}; local=${i.local}; remote=${i.remote}; effects=${i.effects}.\n`);
+      for(const i of r.instances) if(i.retainedSources?.length) process.stdout.write(`${i.id}: original operation evidence retained in service/${i.retainedSources.join(', service/')}; owning runtime must reconcile the unrecognized record before deletion.\n`);
+      if(!r.complete) process.stdout.write(`Private reconciliation record: ${r.residue}\n`);
+      return r.complete?0:2;
+    } catch {process.stderr.write('runner remove: Use --runner NAME [--yes]. Verify owned paths/account and user-systemd; inspect retained resources and private .removals records before retrying.\n');return 2;}
   }
   if (args[0] === 'runner' && args[1] === 'list') {
     const result = await listEnvironments(args.slice(2), dependencies);

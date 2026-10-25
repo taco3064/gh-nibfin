@@ -53,13 +53,17 @@ test('executable diagnostics, exact seven paths and strict grammar', async () =>
       assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer 0a2e276/ : /default 2; positive integer total/);
     }
   }
-  const paths = ['init', 'runner remove', 'upgrade'];
+  const paths = ['init', 'upgrade'];
   for (const path of paths) {
     const result = cli(path.split(' '));
     assert.equal(result.status, 2);
     assert.match(result.stderr, /not implemented/);
     assert.match(cli(['--help']).stdout, new RegExp(path));
   }
+  const removal = cli(['runner','remove']);
+  assert.equal(removal.status, 2);
+  assert.match(removal.stderr, /Use --runner NAME \[--yes\]/);
+  assert.match(cli(['--help']).stdout, /runner remove --runner NAME/);
   for (const args of [['runner'], ['help'], ['version'], ['status'], ['runner', 'unknown'], ['--unknown'], ['init', 'extra'], ['init', '--help'], ['--version', 'extra'], ['runner create'], ['init', 'a b', '$(false)']]) {
     const result = cli(args);
     assert.equal(result.status, 2);

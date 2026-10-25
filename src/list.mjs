@@ -75,7 +75,13 @@ export async function listEnvironments(args, dependencies = {}) {
     result.complete=false;result.diagnostics.push({code,...(environment ? {environment} : {}),...(instanceId ? {instanceId} : {})});
   };
   let entries;
-  try {await safePath(root);entries=await fs.readdir(root,{withFileTypes:true});if(entries.length>128) invalid();}
+  try {
+    await safePath(root);entries=await fs.readdir(root,{withFileTypes:true});
+    const metadata=e=>e.name==='.removals' || /^\.[a-z][a-z0-9-]{0,47}\.lifecycle\.lock(?:\.recovery)?$/.test(e.name);
+    for(const e of entries.filter(metadata)) await safePath(join(root,e.name),{directory:e.name==='.removals' || e.name.endsWith('.recovery')});
+    entries=entries.filter(e=>!metadata(e));
+    if(entries.length>128) invalid();
+  }
   catch (error) {
     if (error.code === 'ENOENT' && !options.name) return result;
     problem(error.code === 'ENOENT' ? 'environment_missing' : 'storage_unavailable');return result;

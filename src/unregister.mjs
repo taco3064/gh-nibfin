@@ -18,15 +18,15 @@ export function unregisterOptions(args) {
       v['--instance'] !== undefined && !/^[a-zA-Z0-9-]{1,80}$/.test(v['--instance'])) fail();
   return {name:v['--runner'],repo:v['--repo'],org:v['--org'],instance:v['--instance']};
 }
-async function read(path) {
+export async function read(path, limit=65536) {
   try {
     await safePath(path,{directory:false});
     const h = await fs.open(path,fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-    try {const b=Buffer.alloc(65537), r=await h.read(b,0,b.length,0);if(r.bytesRead>65536) fail();return JSON.parse(b.subarray(0,r.bytesRead));}
+    try {const b=Buffer.alloc(limit+1), r=await h.read(b,0,b.length,0);if(r.bytesRead>limit) fail();return JSON.parse(b.subarray(0,r.bytesRead));}
     finally {await h.close();}
   } catch(e) {if(e.code==='ENOENT') return undefined;throw e;}
 }
-async function publish(path, value) {
+export async function publish(path, value) {
   const temp=path+'.pending';
   const h=await fs.open(temp,'wx',0o600);
   try {await h.writeFile(JSON.stringify(value,null,2)+'\n');await h.sync();} finally {await h.close();}
@@ -34,8 +34,8 @@ async function publish(path, value) {
   const d=await fs.open(join(path,'..'),'r');try {await d.sync();} finally {await d.close();}
 }
 // Require actual systemd observations, including the unit's origin and empty cgroup.
-export function terminationObservation(unit, environment, timeoutMs) {
-  const keys=['LoadState','ActiveState','MainPID','TasksCurrent','FragmentPath','UnitFileState','ControlGroup','DropInPaths','KillMode','NeedDaemonReload','TriggeredBy','PropagatesStopTo'];
+export function terminationObservation(unit, environment, timeoutMs, extraKeys=[]) {
+  const keys=['LoadState','ActiveState','MainPID','TasksCurrent','FragmentPath','UnitFileState','ControlGroup','DropInPaths','KillMode','NeedDaemonReload','TriggeredBy','PropagatesStopTo',...extraKeys];
   const r=spawnSync('systemctl',['--user','show',unit,...keys.map(k=>'--property='+k)],
     {env:environment,cwd:'/tmp',shell:false,encoding:'utf8',timeout:timeoutMs,maxBuffer:8192});
   if (r.error || r.status!==0) return {};
@@ -55,7 +55,7 @@ export async function workObservation(instance) {
   for(const name of ['execution.json','write-intent.json']) if(await read(join(instance.service,name)) !== undefined) return 'unknown';
   return 'idle';
 }
-function binding(b, instance, record, core, account) {
+export function binding(b, instance, record, core, account) {
   if(!b || b.schemaVersion!==1 || b.instanceId!==instance.id || b.memberId!==record.githubId ||
       !['registered','unknown'].includes(b.disposition) || !id(b.runnerId) || !id(b.registration?.id) ||
       b.target?.id!==b.registration.id || !['repository','organization'].includes(b.registration.level) ||
@@ -74,7 +74,7 @@ function binding(b, instance, record, core, account) {
     target:{id:b.target.id,owner:c.owner,...(repo?{repository:c.repository,ownerId:b.target.ownerId,ownerType:b.target.ownerType}:{})},
     service:{account:account.username,unit:b.service.unit,status:'unknown'}};
 }
-async function managedUnit(path, instance) {
+export async function managedUnit(path, instance) {
   await safePath(path,{directory:false});
   const text=await fs.readFile(path,'utf8');
   if(text.length>65536) fail();
@@ -116,6 +116,8 @@ export async function unregisterInstance(args, dependencies={}) {
     const result={schemaVersion:1,instanceId:instance.id,identity:value,local:'retained',service:'unknown',remote:'unknown',complete:false};
     try {
       await fs.mkdir(lock,{mode:0o700});locked=true;
+      await fs.writeFile(join(lock,'lifecycle-owner.json'),JSON.stringify({pid:process.pid}),{flag:'wx',mode:0o600});
+      try {await fs.lstat(join(root,options.name,'.removing'));return result;} catch(e) {if(e.code!=='ENOENT') throw e;}
       const current=await read(bindingPath), raw=await read(statePath);
       let previous;
       if(raw) {
@@ -218,7 +220,7 @@ export async function unregisterInstance(args, dependencies={}) {
       if(locked) {
         // Preserve dispositions on all partial paths. Failure cannot report success.
         try {if(intent) await save(statePath,result);} catch {result.complete=false;result.local='publication-unknown';}
-        try {await fs.rmdir(lock);} catch {result.complete=false;}
+        try {await fs.rm(join(lock,'lifecycle-owner.json'),{force:true});await fs.rmdir(lock);} catch {result.complete=false;}
       }
     }
   };
