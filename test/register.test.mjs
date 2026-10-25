@@ -275,3 +275,175 @@ test('AC4 literal numeric large local/API IDs survive parsing; malformed private
     }
   });
 });
+
+// Automatic fixtures invoke the installed N17 public entry and maintained
+// producer protection, then real disposable config/systemctl subprocesses.
+const {withAutomaticCore,verifyAutomaticCore} = await import('../src/core.mjs');
+const {createHash} = await import('node:crypto');
+const {pathToFileURL} = await import('node:url');
+const {validateSource,automaticBinding} = await import('../src/automatic.mjs');
+const {binding:validateLifecycleBinding} = await import('../src/unregister.mjs');
+const {autoCore,zipFixture} = await withAutomaticCore(async (autoCore,{root})=>{
+  const source=await fs.readFile(new URL('../docs/handoffs/n17/custody-fixture.mjs',import.meta.url),'utf8');
+  const path=join(root,'fixture.mjs');
+  await fs.writeFile(path,source.replace("'../src/index.mjs'",JSON.stringify(join(root,'consumer.mjs'))));
+  return {autoCore,zipFixture:(await import(pathToFileURL(path).href)).zipFixture};
+});
+const workflowText='run-name: ${{ inputs.requestId }}\n# verifier-owned protected integration fixture';
+const approved={contract:'n17-dispatch-v1',repository:'example/a',repositoryId:'51',workflowId:'71',
+  path:'.github/workflows/register.yml',ref:'main',headSha:'a'.repeat(40),
+  workflowSha256:createHash('sha256').update(workflowText).digest('hex')};
+async function autoFixture(action,patch={}) {
+  return fixture(async f=>{
+    let run,encrypted,hostResult,posts=0,polls=0,clock=Date.now();const memberCalls=[];
+    const c={...approved,...patch.configuration};
+    const old=f.dependencies.transport;
+    Object.assign(f.dependencies,{core:autoCore,distributionVerifier:async()=>{},configuration:async()=>c,confirm:async()=>patch.confirm!==false,
+      wait:async()=>{clock+=1001;},now:()=>clock,waitMs:5000,timeoutMs:patch.timeoutMs??30000,
+      archive:async()=>{if(patch.downloadFailure)throw Error(secret);return {status:200,bytes:patch.zip?patch.zip(encrypted):zipFixture([['response.json',encrypted]])};},
+      transport:async request=>{
+        memberCalls.push(request);
+        if (request.endpoint.includes('/actions/runners')) assert.fail('No member Runner management call allowed');
+        const prefix='/repos/example/a';let data;
+        if(request.endpoint===prefix) return response({...repo(),permissions:{push:true},...patch.target});
+        if(request.endpoint===prefix+'/actions/workflows/71') data={id:'71',path:c.path,state:'active'};
+        else if(request.endpoint===prefix+'/git/ref/heads/main') data={object:{sha:c.headSha,type:'commit'}};
+        else if(request.endpoint.startsWith(prefix+'/contents/')) data={encoding:'base64',content:Buffer.from(workflowText).toString('base64')};
+        else if(request.endpoint.endsWith('/dispatches')) {
+          posts++;assert.equal(request.method,'POST');const body=JSON.parse(request.body);
+          assert.deepEqual(Object.keys(body),['ref','inputs']);assert.equal(body.ref,'main');assert.equal(body.inputs.level,'repository');
+          if(patch.dispatchLoss) throw Error(secret);
+          run={id:'91',run_attempt:1,workflow_id:'71',path:c.path,head_sha:c.headSha,head_branch:'main',event:'workflow_dispatch',
+            display_title:body.inputs.requestId,actor:{id:'8'},triggering_actor:{id:'8'},repository:{id:'51',full_name:'example/a'},status:'completed',conclusion:'success',...patch.run};
+          const host=autoCore.createRegistrationHost({authenticate:async()=>({authenticated:true,event:'workflow_dispatch',
+            requestId:body.inputs.requestId,requester:{id:'8',login:'member'},repository:'example/a',repositoryId:'51',runId:'91',attempt:'1',level:'repository',publicKey:body.inputs.publicKey}),
+            policy:async()=>({enabled:patch.policy!==false,repository:'example/a',repositoryId:'51',capabilities:{'administration:write':true}}),
+            transport:async r=>{
+              let d;
+              if(r.method==='POST') d={token:secret,expires_at:new Date(Date.now()+(patch.shortExpiry?1000:3600000)).toISOString()};
+              else if(r.endpoint===prefix)d={...repo(),owner:{id:'7',type:'User',login:'example'}};
+              else if(r.endpoint==='/users/member')d={id:'8',login:'member'};
+              else d={permission:patch.permission??'write',user:{id:'8',login:'member'}};
+              return response(d);
+            },channel:{publish:async({bytes})=>{encrypted=bytes;return {outcome:'delivered',ref:{}};}}});
+          hostResult=await host.issue('protected-fixture-handle');
+          if(hostResult.outcome!=='delivered'){run.conclusion='failure';}
+          if(patch.envelope && encrypted)encrypted=patch.envelope(encrypted);
+          return {status:204,headers:{},body:''};
+        } else if(request.endpoint.includes('/workflows/71/runs?')) {
+          polls++;data=page('workflow_runs',polls<=(patch.delayed??0)?[]:patch.ambiguous?[run,run]:run?[run]:[]);
+        } else if(request.endpoint===prefix+'/actions/runs/91') data=patch.readRun?patch.readRun(run):run;
+        else if(request.endpoint.endsWith('/artifacts?per_page=100')) {
+          const bytes=patch.zip?patch.zip(encrypted):zipFixture([['response.json',encrypted]]);
+          data=page('artifacts',patch.noArtifact?[]:[{id:'92',name:`registration-${run.display_title}-1`,expired:false,
+            expires_at:'2030-01-01T00:00:00Z',workflow_run:{id:'91'},size_in_bytes:bytes.length,...patch.artifact}]);
+        } else return old(request);
+        return response(data);
+      }});
+    for(const instance of f.record.instances) {
+      const path=join(instance.registration,'config.sh');let s=await fs.readFile(path,'utf8');
+      s=s.replace("fs.writeFileSync('.credentials','"+secret+"'", "fs.writeFileSync('.credentials',JSON.stringify({scheme:'OAuth',data:{clientId:'fixture'}})");
+      s+="\nfs.writeFileSync('.credentials_rsaparams',JSON.stringify({fixture:'private-key-material'}),{mode:0o600});";
+      if(instance.id==='local-2')s=s.replace("agentId:'9007199254740993'","agentId:'9007199254740994'");
+      if(patch.config)s=patch.config(s);
+      await fs.writeFile(path,s,{mode:0o700});
+    }
+    const proc=f.dependencies.process;
+    f.dependencies.process=async(cmd,args,opts)=>{
+      if(patch.service && args.includes(patch.service))return {ok:false,reason:'timeout'};
+      if(patch.cancelConfig && cmd.endsWith('config.sh')) {const c=new AbortController(),timer=setTimeout(()=>c.abort(),50);
+        try{return await proc(cmd,args,{...opts,signal:c.signal});}finally{clearTimeout(timer);}}
+      return proc(cmd,args,opts);
+    };
+    if(patch.remote403)f.dependencies.observeRemote=async()=>{throw Error('403 '+secret);};
+    const register=()=>f.register(['--repo','example/a','--method','auto']);
+    await action({...f,register,memberCalls,posts:()=>posts,host:()=>hostResult});
+  });
+}
+test('auto: installed protected response and real process completion for non-admin members, separate unknown remote',async()=>{
+  for(const permission of ['write','maintain','admin']) await autoFixture(async f=>{
+    const result=await f.register();assert.ok(automaticBinding(result));assert.equal(result.runnerId,'9007199254740993');
+    assert.equal(result.service.status,'active');assert.equal(result.status,null);assert.equal(result.busy,null);
+    assert.equal(result.remote.state,'unknown');assert.equal(f.posts(),1);assert.equal(f.host().outcome,'delivered');
+    assert.equal(validateLifecycleBinding(result,f.record.instances[0],f.record,autoCore,userInfo()).runnerId,result.runnerId);
+    assert.ok(!(JSON.stringify(await f.binding())).includes(secret));
+  },{permission,remote403:true,delayed:1});
+});
+test('auto: two requests use exactly the two original slots, cancellation and no-slot preserve count',async()=>{
+  await autoFixture(async f=>{await f.register();await f.register();assert.equal(f.posts(),2);await rejected(f.register,/No remaining/);});
+  await autoFixture(async f=>{assert.deepEqual(await f.register(),{cancelled:true});assert.equal(f.posts(),0);}, {confirm:false});
+});
+test('auto: denied eligibility and protected policy, unavailable installation and dispatch uncertainty cannot configure or redispatch',async()=>{
+  for(const patch of [{permission:'read'},{permission:'triage'},{policy:false},{target:{permissions:{pull:true}}},
+    {target:{private:true}},{target:{id:'999'}},{configuration:{workflowSha256:'b'.repeat(64)}},{dispatchLoss:true}]) {
+    await autoFixture(async f=>{await rejected(f.register);assert.equal(f.processes.filter(p=>p.cmd.endsWith('config.sh')).length,0);
+      if(f.posts()){const posts=f.posts();await rejected(f.register);assert.equal(f.posts(),posts);}},patch);
+  }
+});
+test('auto: authentic source and exact artifact provenance reject wrong bindings and ambiguous runs',async()=>{
+  const patches=[{ambiguous:true},{readRun:r=>({...r,id:'93'})},{run:{status:'in_progress',conclusion:null}},{shortExpiry:true,delayed:2},{run:{workflow_id:'72'}},{run:{path:'.github/workflows/evil.yml'}},{run:{head_sha:'b'.repeat(40)}},
+    {run:{head_branch:'other'}},{run:{event:'push'}},{run:{actor:{id:'9'}}},{run:{triggering_actor:{id:'9'}}},
+    {run:{run_attempt:2}},{run:{repository:{id:'52'}}},{run:{conclusion:'failure'}},{run:{conclusion:'cancelled'}},
+    {run:{display_title:'unrelated'}},{artifact:{workflow_run:{id:'92'}}},{artifact:{expired:true}},{noArtifact:true},{downloadFailure:true},
+    {zip:b=>zipFixture([['response.json',b],['extra','x']])},{zip:b=>zipFixture([['../response.json',b]])},
+    {envelope:b=>{const e=JSON.parse(b);e.context.requesterId='9';return Buffer.from(JSON.stringify(e));}}];
+  for(const patch of patches)await autoFixture(async f=>{await rejected(f.register);assert.equal(f.posts(),1);
+    assert.equal(f.processes.filter(p=>p.cmd.endsWith('config.sh')).length,0);await rejected(f.register);assert.equal(f.posts(),1);},patch);
+});
+test('auto: false-success settings/credentials and uncertain service effects preserve identity and block repeat requests',async()=>{
+  for(const patch of [{config:s=>s+'\nprocess.exit(1);'},
+    {config:s=>s+'\nsetInterval(()=>{},1000);',timeoutMs:150}, {config:s=>s+'\nsetInterval(()=>{},1000);',cancelConfig:true}, {config:s=>s.replace("fs.writeFileSync('.runner'","false && fs.writeFileSync('.runner'")},
+    {config:s=>s.replace("agentId:'9007199254740993'","agentId:'0'")},{config:s=>s.replace("gitHubUrl:get('--url')","gitHubUrl:'https://github.com/wrong/target'")},
+    {config:s=>s.replace("agentName:get('--name')","agentName:'stale'")},{config:s=>s.replace("workFolder:get('--work')","workFolder:'/tmp/wrong'")},
+    {config:s=>s.replace("scheme:'OAuth'","scheme:'malformed'")},
+    {config:s=>s.replace("fs.writeFileSync('.credentials_rsaparams'","false && fs.writeFileSync('.credentials_rsaparams'")},...['link','enable','start','is-active'].map(service=>({service}))]) {
+    await autoFixture(async f=>{await rejected(f.register);assert.equal((await f.binding()).disposition,'unknown');
+      await rejected(f.register);assert.equal(f.posts(),1);
+      if(patch.service){assert.equal((await f.binding()).configuration.state,'completed');assert.notEqual((await f.binding()).service.status,'active');}},patch);
+  }
+});
+test('auto: N17 provenance/archive changes reject before installing, actual exports retained',async()=>{
+  const directory=await fs.mkdtemp(join(tmpdir(),'n17 tamper '));
+  try {for(const name of ['provenance.json','nibfin-core.tgz'])await fs.copyFile(new URL('../docs/handoffs/n17/'+name,import.meta.url),join(directory,name));
+    for(const name of ['provenance.json','nibfin-core.tgz']) {
+      const original=await fs.readFile(join(directory,name));await fs.writeFile(join(directory,name),Buffer.concat([original,Buffer.from('x')]));
+      await assert.rejects(()=>verifyAutomaticCore(pathToFileURL(directory+'/')));await fs.writeFile(join(directory,name),original);
+    }
+  } finally {await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test('auto: list and safe lifecycle consumers retain unknown remote without inventing idle or authorizing deletion',async()=>{
+  const {listEnvironments}=await import('../src/list.mjs');
+  const {unregisterInstance}=await import('../src/unregister.mjs');
+  const {removeEnvironment}=await import('../src/remove.mjs');
+  await autoFixture(async f=>{
+    await f.register();
+    const listed=await listEnvironments(['--runner','demo'],{...f.dependencies,service:async()=>({state:'active'})});
+    const i=listed.environments[0].instances[0];assert.equal(i.registration.runnerId,'9007199254740993');
+    assert.equal(i.local.state,'active');assert.equal(i.remote.state,'unknown');assert.equal(i.remote.busy,null);
+    const result=await unregisterInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,termination:async()=>({})});
+    assert.equal(result.complete,false);assert.equal(result.remote,'unknown');assert.equal(f.posts(),1);
+    assert.ok((await fs.readdir(f.record.instances[0].registration)).includes('.runner'));
+  });
+  await autoFixture(async f=>{
+    await f.register();const result=await removeEnvironment(['--runner','demo','--yes'],{...f.dependencies,termination:async()=>({})});
+    assert.equal(result.complete,false);assert.equal(f.posts(),1);
+  });
+});
+test('auto: missing/tampered official distribution is a prerequisite failure before any request',async()=>{
+  const {verifyRunnerDistribution}=await import('../src/runner-distribution.mjs');
+  await autoFixture(async f=>{
+    f.dependencies.distributionVerifier=verifyRunnerDistribution;
+    await rejected(f.register,/pinned official/);assert.equal(f.posts(),0);
+  });
+});
+test('auto: CLI command output reports local success and remote unknown without secrets',async()=>{
+  await autoFixture(async f=>{
+    let out='',err='';const stdout=process.stdout.write,stderr=process.stderr.write;
+    process.stdout.write=s=>{out+=s;return true;};process.stderr.write=s=>{err+=s;return true;};
+    try{assert.equal(await main(['runner','register','--runner','demo','--repo','example/a','--method','auto'],f.dependencies),0);}
+    finally{process.stdout.write=stdout;process.stderr.write=stderr;}
+    assert.match(out,/configuration completed; remote unknown/);assert.match(out,/service active/);
+    assert.doesNotMatch(out+err,/SECRET_SENTINEL|PRIVATE KEY|https:.*[?]sig=/);
+  });
+});

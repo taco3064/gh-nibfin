@@ -228,8 +228,7 @@ instance's registration directory records lifecycle state separately from the
 immutable environment descriptor. Exhaustion fails. Pending/unknown bindings block
 further registration until reconciled; no `--replace`, implicit instance expansion
 or replacement by matching name/Label is used. Options must occur once; repo/org
-are exclusive, group is Org-only, and omitted method means manual. Explicit auto
-is rejected; this command never enables automatic-registration policy.
+are exclusive, group is Org-only, and omitted method means manual. Explicit auto uses the protected workflow client described below; this command never enables automatic-registration policy.
 
 Both personal and Organization-owned **public repositories** use `--repo`.
 `--org` is distinct and verifies Organization/Runner/group identity only; it
@@ -490,3 +489,82 @@ reads the same record and is distinguishable from an unknown environment name.
 provider/service observations and bounded disposable process termination. Run
 `python3 tooling/check.py` and `node docs/handoffs/n15/verify.mjs`; these are local
 contract checks, not actual account, Runner, model or platform lifecycle evidence.
+
+
+### Owner-enabled automatic registration (module implementation)
+
+`gh nibfin runner register --runner local-codex --repo example/project --method auto`
+selects an existing free instance and prompts before requesting. Cancellation or
+noninteractive input without confirmation submits no request. Bounded waiting is
+120 seconds, including source validation and artifact retrieval. Timeout, lost
+response or partial configuration retains private reconciliation state; reconcile
+that request/Run/Attempt before retrying. The client never silently redispatches,
+creates additional slots, or falls back to a member registration-token POST.
+
+The installation administrator must provide an approved, account-owned private
+`~/.config/nibfin/registration.json` (mode 0600), outside repository checkout:
+
+```json
+{"contract":"n17-dispatch-v1","repository":"example/project","repositoryId":"42","workflowId":"71","path":".github/workflows/register.yml","ref":"main","headSha":"<approved 40-character commit>","workflowSha256":"<approved SHA-256 of exact workflow bytes>"}
+```
+
+This is a local installation trust decision, not configuration downloaded from a
+response or an Owner credential. Confirm the protected workflow/ref and its exact
+bytes through the installation's approved distribution. The client checks the
+active workflow, current branch commit and file bytes before dispatch. Missing or
+changed integration fails explicitly. Do not populate pins from an untrusted run.
+
+The approved hosted integration must use `run-name: ${{ inputs.requestId }}` and
+accept `requestId`, `level` and `publicKey` workflow_dispatch inputs. It must bind
+those inputs to the authenticated actor, target repository, exact Run/Attempt and
+N17 protected host; only that host checks current Owner opt-in and member
+Write/Maintain/Admin eligibility and obtains the official token. No request may
+choose the hosted credential, executable, checkout or policy. The client POSTs
+`/repos/{repository}/actions/workflows/{workflowId}/dispatches` once, then lists
+that workflow's runs and accepts exactly one request-named Run with the approved
+workflow path/ID, commit/ref, repository, event and actor, at Attempt 1. Failed,
+cancelled, ambiguous and rerun sources fail. A response title alone is insufficient:
+its meaning depends on the approved workflow bytes and all source checks.
+
+N17's installed reader validates the exact Run-scoped artifact and bounded sole
+`response.json`; its real decryptor enforces request/requester/repository/level/
+registration/Run/Attempt/recipient binding and expiry. The ephemeral private key
+stays transient in this process. No decrypted token or private key is persisted in
+public metadata. The configurator receives the short-lived token through its
+official argument interface; host process administrators remain trusted.
+
+Prepare the official Linux x64 v2.331.0 Runner archive in the selected instance's
+registration directory as `actions-runner-linux-x64-2.331.0.tar.gz`, and extract
+that distribution there. Its SHA-256 is
+`5fcc01bd546ba5c3f1291c2803658ebd3cedb3836489eda3be357d41bfcf28a7`.
+The automatic path checks this immutable archive and every extracted shipped file
+before requesting. Directories must be private and account-owned; local `tar` is
+required. No download or installer runs. This configuration baseline corresponds
+to actions/runner commit `39f6c643d3032f8795fa71f1482731ca90c8e038`,
+`src/Runner.Listener/Configuration/ConfigurationManager.cs` lines 307–354 and
+420–444 (server-returned identity saved in settings). Fixtures exercise that
+contract, not a real Runner installation or registration.
+
+Successful configuration requires successful process exit plus fresh matching
+settings and private OAuth credentials. Output reports configuration completion,
+local service state and remote unknown separately. Automatic registration makes
+no mandatory member Runner inventory request; unavailable optional observation,
+including 403, cannot prevent legitimate service startup. Local identity proves
+neither effective remote labels/access nor Online/Busy or dispatch eligibility.
+The later trusted Core resolver must independently check actual eligibility.
+
+Personal-owned and Organization-owned public repositories use this same
+repository-level flow. Organization-level automatic requests lack an installed
+repository context in this client and fail before dispatch; use authorized
+manual Org registration. Ownership, registration level and Owner opt-in are
+separate. Missing protected integration calls for the official manual route with
+an authorized manager, never Owner-token sharing, logs, email or a registration
+Issue. This repository implements a consumer; nibfin #122 owns live hosted
+integration, and #27/#28 own actual supported-profile registration/lifecycle proof.
+No live channel, registration, service installation or eligibility is claimed by
+the local fixtures.
+
+N17 is pinned separately from N01/N15; see `docs/handoffs/n17`. In a disposable
+verifier-owned copy run `python3 tooling/check.py`,
+`node docs/handoffs/n15/verify.mjs` and `node docs/handoffs/n17/verify.mjs`.
+Node 22/npm 10, Python 3 and Linux libseccomp remain check prerequisites.
