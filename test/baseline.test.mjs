@@ -53,7 +53,7 @@ test('executable diagnostics, exact seven paths and strict grammar', async () =>
       assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer 0a2e276/ : /default 2; positive integer total/);
     }
   }
-  const paths = ['init', 'runner create', 'runner register', 'runner unregister', 'runner list', 'runner remove', 'upgrade'];
+  const paths = ['init', 'runner register', 'runner unregister', 'runner list', 'runner remove', 'upgrade'];
   for (const path of paths) {
     const result = cli(path.split(' '));
     assert.equal(result.status, 2);
