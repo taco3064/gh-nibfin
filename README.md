@@ -1,8 +1,9 @@
 # gh-nibfin
 
-Local GitHub CLI extension baseline: help, version diagnostics and seven bounded
-command paths. Business operations explicitly return exit status 2 as not
-implemented. This is not a complete Nibfin runtime or a supported-platform claim.
+Local GitHub CLI extension with help, version diagnostics and seven bounded
+command paths. Runner creation implements local allocation and diagnostics through
+the Core boundary described below. Other business operations return exit status 2.
+This is not a complete Nibfin runtime or a supported-platform claim.
 
 Public repositories owned by personal accounts or Organizations are in product
 scope. Repo ownership, Repository/Organization Runner registration level and
@@ -30,12 +31,12 @@ It fails if it cannot enforce networking denial. The inherited syscall filter
 rejects socket creation and network operations, probes the denial, and runs Node
 and child processes with a minimal credential-free environment. Unix socketpair
 IPC remains available for Node's process plumbing. `node --test
-test/baseline.test.mjs` runs the same tests without this network-isolation proof.
+test/*.test.mjs` runs the same tests without this network-isolation proof.
 Neither command is actual GitHub CLI installation verification.
 
-The seven paths describe later responsibilities:
+The seven paths have these responsibilities:
 
-| Path | Responsibility (not implemented here) |
+| Path | Responsibility (create implemented locally; others pending) |
 | --- | --- |
 | init | Initialize repository workflows/labels and optional automatic registration. |
 | runner create | Create one fixed-Agent environment with a positive integer total of unregistered instances; default 2. |
@@ -48,7 +49,7 @@ The seven paths describe later responsibilities:
 Help/version are options, not additional commands. Unknown options, extra tokens
 and incomplete paths fail with usage guidance. Baseline refusals perform no
 initialization, authentication, network access, service operation or registration.
-Parameter execution belongs to later Issues.
+Creation parameters are described below; other parameter execution belongs to later Issues.
 
 ## Verified Core boundary
 
@@ -127,3 +128,74 @@ and cleanup observations. On failure retain sanitized diagnostics, perform the
 same removal/read-back and disposable-user cleanup, and record failure honestly.
 These suites prove installation only within their tested configurations; local
 module/process tests do not establish full product or platform support.
+
+## Runner creation: local command boundary
+
+```sh
+gh nibfin runner create --name local-codex --agent codex --count 4
+```
+
+Count is the total for this one environment, not per Repo/Org: omitted means 2;
+1 through 128 are supported. Larger values fail rather than truncate. Names must
+start with a lowercase letter, contain only lowercase letters, digits or hyphens,
+and be at most 48 characters. Agent is `codex`, `claude` or `gemini`; these names
+select identity, not a claim that every native backend/platform is installed.
+The reviewed interface here is Linux/Codex: Claude/Gemini creation reports a
+missing matching adapter rather than invoking a Codex backend for another Agent.
+Options occur once; unknown options, extra operands and missing values fail.
+
+Storage is `~/.local/share/nibfin/environments/NAME`, using the OS account
+home returned by `userInfo()` rather than an inherited `HOME` override, with private directories (0700) and an `environment.json` record (0600).
+Each `instance-N` contains separate `workspace`, `registration` and `service`
+directories. UUID local identities are not GitHub Runner IDs. All instances refer
+to the one environment `login` directory; another environment has another login
+space. Records explicitly say `unregistered` and `not-installed`. Creation does
+not register, install/start services, start models, or require a target Repo,
+Issue, existing Runner ID or Owner Grant. It conveys no delivery authorization.
+
+Existing names cannot be overwritten, resized or switched to another Agent.
+Choose another name for another Agent/account. Symlinks and non-directory storage
+components are rejected. Allocation reserves the name exclusively; only the
+current attempt's newly reserved directory is removed after failure. A record is
+published by renaming a private pending file after prerequisites pass. Readers
+must require `environment.json`; directories without it are incomplete attempts.
+After successful rollback retry normally. An incomplete-cleanup diagnostic names
+the environment: inspect it under the storage root and preserve any login data
+before manually removing residual resources. Existing environments and unrelated
+files are never rollback targets. Host administrators remain trusted; this layout
+is not a new isolation platform or protection against hostile host mutation.
+
+The command checks Git/gh availability, gh auth status and the stable GitHub user
+ID using the actual execution account's gh configuration. Actions tokens, provider
+keys, alternate inherited Agent login homes and Node injection settings are not
+passed to diagnostic subprocesses. It never logs in for the member. Run it as the
+intended service account; an interactive user's login does not establish service,
+container or WSL login. Backend readiness receives that execution account and the
+environment-specific login selection. Backend errors and unavailable/unknown
+readiness fail safely with tool/login/isolation recovery guidance. Raw provider
+responses, tokens and login contents are neither printed nor persisted. HTTP
+401/403 in gh failures are sanitized diagnostics, not authorization grants.
+
+The production loader currently provides **only the pinned N01 identity package**.
+It lacks `createAgentEnvironments` and `createLinuxCodexBackend`; create therefore
+reports the missing capability after gh checks and publishes no environment.
+A reviewed immutable later package must enter through the maintained loader before
+native creation can succeed; there is no download, floating pin or fake-ready
+fallback. No later package is included or certified by this change. Core owns
+descriptor validation and backend login/isolation logic; the CLI calls `describe`
+and `readiness`, never backend model lifecycle methods to allocate instances.
+
+`python3 tooling/check.py` discovers both retained test files and enforces network
+denial with a minimal credential-free environment. Command tests use an explicit
+imported `main` dependency boundary with local Core/process contract doubles,
+including an executable Node harness from a checkout path containing spaces.
+There is no product flag/environment toggle that enables these doubles. Tests
+inspect real disposable filesystem records and exercise default/1/4/invalid
+counts, separation, collisions, symlinks, process diagnostics, unavailable Core,
+partial publication and rollback failures. These are local injected observations,
+not actual Agent login, model execution, native isolation or installed-platform
+success. #27/#28 retain actual installed-environment/service/login lifecycle proof.
+The supplied upstream API anchor is nibfin commit
+`7d3b8f9261cdf61f0d29d7176fa51a5317830f5c`; an attempted read of its source and
+lifecycle documentation returned HTTP 403 in this execution. No claim of inspecting
+those source bytes or measuring their backend behavior is made.

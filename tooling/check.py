@@ -39,4 +39,4 @@ if not node:
     raise SystemExit('Install Node.js 22.x')
 root = pathlib.Path(__file__).resolve().parent.parent
 os.chdir(root)
-os.execve(node, [node, '--test', 'test/baseline.test.mjs'], {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': '/nonexistent', 'LANG': 'C', 'TMPDIR': '/tmp'})
+os.execve(node, [node, '--test', *map(str, sorted(root.glob('test/*.test.mjs')))], {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': '/nonexistent', 'LANG': 'C', 'TMPDIR': '/tmp'})

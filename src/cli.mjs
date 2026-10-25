@@ -1,3 +1,4 @@
+import { createEnvironment } from './create.mjs';
 import { pathToFileURL } from 'node:url';
 import { withCore, producer } from './core.mjs';
 
@@ -13,11 +14,11 @@ const commands = new Map([
 ]);
 const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
   [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
-}\n\nBusiness operations are not implemented in this baseline.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
 
 // Maintained consumer API: real producer exports, without an eighth CLI command.
 export { withCore };
-export async function main(args) {
+export async function main(args, dependencies) {
   if (process.versions.node.split('.')[0] !== '22') throw new Error('Install Node.js 22.x and retry.');
   if (!args.length || (args.length === 1 && args[0] === '--help')) {
     process.stdout.write(usage);
@@ -30,6 +31,13 @@ export async function main(args) {
       process.stdout.write(`gh-nibfin ${version}; @nibfin/core@0.1.0; producer ${producer}\nLocal baseline only; platform installation and complete runtime unverified.\n`);
     });
     return 0;
+  }
+  if (args[0] === 'runner' && args[1] === 'create') {
+    try {
+      const record = await createEnvironment(args.slice(2), dependencies);
+      process.stdout.write(`Created ${record.name}: ${record.instances.length} unregistered ${record.agent} instances.\n`);
+      return 0;
+    } catch (error) { process.stderr.write(`runner create: ${error.message}\n`); return 2; }
   }
   const command = args.join(' ');
   if (commands.has(command) && JSON.stringify(args) === JSON.stringify(command.split(' '))) {
