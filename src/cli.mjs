@@ -1,3 +1,4 @@
+import { registerInstance } from './register.mjs';
 import { createEnvironment } from './create.mjs';
 import { pathToFileURL } from 'node:url';
 import { withCore, producer } from './core.mjs';
@@ -14,7 +15,7 @@ const commands = new Map([
 ]);
 const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
   [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
-}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method manual]. Other business operations are not implemented.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
 
 // Maintained consumer API: real producer exports, without an eighth CLI command.
 export { withCore };
@@ -38,6 +39,13 @@ export async function main(args, dependencies) {
       process.stdout.write(`Created ${record.name}: ${record.instances.length} unregistered ${record.agent} instances.\n`);
       return 0;
     } catch (error) { process.stderr.write(`runner create: ${error.message}\n`); return 2; }
+  }
+  if (args[0] === 'runner' && args[1] === 'register') {
+    try {
+      const result = await registerInstance(args.slice(2), dependencies);
+      process.stdout.write(`Registered instance ${result.instanceId}: Runner ${result.runnerId}, ${result.label}; ${result.status}, busy=${result.busy}; service ${result.service.status}.\n`);
+      return 0;
+    } catch (error) { process.stderr.write(`runner register: ${error.message}\n`); return 2; }
   }
   const command = args.join(' ');
   if (commands.has(command) && JSON.stringify(args) === JSON.stringify(command.split(' '))) {

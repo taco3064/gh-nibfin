@@ -2,7 +2,8 @@
 
 Local GitHub CLI extension with help, version diagnostics and seven bounded
 command paths. Runner creation implements local allocation and diagnostics through
-the Core boundary described below. Other business operations return exit status 2.
+the Core boundary described below. Manual Runner registration is implemented for
+the Linux user-systemd process boundary; other business operations return exit status 2.
 This is not a complete Nibfin runtime or a supported-platform claim.
 
 Public repositories owned by personal accounts or Organizations are in product
@@ -16,9 +17,10 @@ execution permission or Owner authorization.
 Installation prerequisites are Node.js 22.x, npm 10.x, a POSIX `/bin/sh` interpreter,
 Git, and a GitHub CLI version with `gh extension install`/`remove` support. The root
 `gh-nibfin` is executable and resolves `src/cli.mjs` relative to its own location.
-No installed gh, login, npm dependency installation or network is needed for local
-baseline checks. The loader uses Node built-ins; npm is an installation ecosystem
-prerequisite, not a loader subprocess.
+No installed gh, login, Agent credential or network is needed for local checks.
+Registration tests install the exact local N15 and JOSE archives with npm 10.x,
+offline and with scripts disabled, in disposable space. Historical N01 checks
+remain dependency-free.
 
 ```sh
 ./gh-nibfin --help
@@ -36,7 +38,7 @@ Neither command is actual GitHub CLI installation verification.
 
 The seven paths have these responsibilities:
 
-| Path | Responsibility (create implemented locally; others pending) |
+| Path | Responsibility (create/register implemented locally; others pending) |
 | --- | --- |
 | init | Initialize repository workflows/labels and optional automatic registration. |
 | runner create | Create one fixed-Agent environment with a positive integer total of unregistered instances; default 2. |
@@ -49,7 +51,7 @@ The seven paths have these responsibilities:
 Help/version are options, not additional commands. Unknown options, extra tokens
 and incomplete paths fail with usage guidance. Baseline refusals perform no
 initialization, authentication, network access, service operation or registration.
-Creation parameters are described below; other parameter execution belongs to later Issues.
+Creation and manual registration parameters are described below; other parameter execution belongs to later Issues.
 
 ## Verified Core boundary
 
@@ -88,8 +90,11 @@ or credential reads occur.
 
 The later [N15 observation handoff](docs/handoffs/n15/README.md) supplies the
 immutable producer interface and accepted package needed by runner registration
-work in #21. It is supplemental evidence; the current N01 product loader remains
-as described above until a normal reviewed implementation adopts that package.
+in #21. Registration now uses the explicit `withRegistrationCore` loader in
+`src/core.mjs`. Historical `withCore`, `--version` and create capability checks
+retain N01. Both handoffs are immutable and share the version string 0.1.0;
+their commit/archive identities differ. N15 has lifecycle descriptors but no
+native Linux backend, so its presence does not establish create readiness.
 
 [GitHub's extension layout](https://docs.github.com/en/github-cli/github-cli/creating-github-cli-extensions)
 requires the executable at the repository root with the repository name.
@@ -181,16 +186,16 @@ readiness fail safely with tool/login/isolation recovery guidance. Raw provider
 responses, tokens and login contents are neither printed nor persisted. HTTP
 401/403 in gh failures are sanitized diagnostics, not authorization grants.
 
-The production loader currently provides **only the pinned N01 identity package**.
+The creation path still selects **the pinned N01 identity package**.
 It lacks `createAgentEnvironments` and `createLinuxCodexBackend`; create therefore
 reports the missing capability after gh checks and publishes no environment.
 A reviewed immutable later package must enter through the maintained loader before
 native creation can succeed; there is no download, floating pin or fake-ready
-fallback. No later package is included or certified by this change. Core owns
+fallback. Registration selects N15 separately and does not manufacture a backend. Core owns
 descriptor validation and backend login/isolation logic; the CLI calls `describe`
 and `readiness`, never backend model lifecycle methods to allocate instances.
 
-`python3 tooling/check.py` discovers both retained test files and enforces network
+`python3 tooling/check.py` discovers all retained test files and enforces network
 denial with a minimal credential-free environment. Command tests use an explicit
 imported `main` dependency boundary with local Core/process contract doubles,
 including an executable Node harness from a checkout path containing spaces.
@@ -204,3 +209,99 @@ The supplied upstream API anchor is nibfin commit
 `7d3b8f9261cdf61f0d29d7176fa51a5317830f5c`; an attempted read of its source and
 lifecycle documentation returned HTTP 403 in this execution. No claim of inspecting
 those source bytes or measuring their backend behavior is made.
+
+
+## Manual registration of existing instances
+
+```sh
+gh nibfin runner register --runner local-codex --repo example/project
+# Alternatively, Organization-level registration with its own permissions:
+gh nibfin runner register --runner local-codex --org example --group 'Build runners' --method manual
+```
+
+`--runner` selects an existing G03 environment, not a newly allocated Runner.
+Each invocation selects its first unregistered instance in persisted descriptor
+order. A second invocation selects the next instance, possibly for another target;
+count, Agent and shared login paths never change. A private `binding.json` in each
+instance's registration directory records lifecycle state separately from the
+immutable environment descriptor. Exhaustion fails. Pending/unknown bindings block
+further registration until reconciled; no `--replace`, implicit instance expansion
+or replacement by matching name/Label is used. Options must occur once; repo/org
+are exclusive, group is Org-only, and omitted method means manual. Explicit auto
+is rejected; this command never enables automatic-registration policy.
+
+Both personal and Organization-owned **public repositories** use `--repo`.
+`--org` is distinct and verifies Organization/Runner/group identity only; it
+neither invents a target repository nor establishes repository/workflow access.
+Repository registration uses the N15 public `observeRunners` export and requires a
+complete match of actual stable target/owner and local Runner/member identities.
+Known registered bindings for that member in other complete local environments
+are validated and included; conflicting local IDs stop before token issuance.
+Offline and online-busy observations remain separate from unavailable evidence.
+Registration/service readiness is not Issue execution, Owner Grant or merge permission.
+
+Before operating, prepare each selected instance's existing `registration/`
+directory with a separately extracted, version-pinned official
+[actions/runner distribution](https://github.com/actions/runner/releases), including
+executable `config.sh` and `bin/runsvc.sh`, and its normal bin/externals dependencies.
+Use a release appropriate to that host/architecture, verify its official checksum,
+and record its exact version/digest in the authorized live suite. Do not reuse
+another instance's `.runner`/`.credentials`, share application directories, or
+preconfigure a Runner. This command never downloads or upgrades an application.
+The local executable fixtures use Node 22 and fixture contract revision 1; no
+official Runner application version was executed or certified here.
+
+The implemented service boundary requires **non-root Linux**, an existing user
+systemd manager for the actual execution account, and writable private G03 paths.
+`systemctl --user show-environment` checks availability before token issuance.
+After configuration, the command copies the prepared official `bin/runsvc.sh`
+exclusively to `runsvc.sh`. The per-instance unit invokes that entry point, as
+required for [custom Runner services](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application#customizing-the-self-hosted-runner-service).
+The command links/enables/starts that unit and checks `is-active`; it does not
+request sudo, install a system service, configure lingering, or infer boot/session
+availability. The administrator must arrange the user manager/session lifetime.
+Missing executables, privilege/account mismatch or an unavailable manager fail;
+Windows/macOS and Linux without that mechanism have no implemented service path
+here. All actual host/service combinations remain **Unverified** until #27/#28.
+
+Run as the intended service account with its own stored `gh auth login` and the
+same stable member ID recorded at create. Inherited GH_TOKEN/GITHUB_TOKEN overrides
+are removed; login is never automated. Login, Repo Write and Org membership do
+not grant Runner management. The official scoped registration-token endpoint is
+authoritative: Repository Administration write/read or Organization self-hosted
+Runner management/read rights and applicable policy are required. Sanitized
+401/authentication, 403/denied, 404/not-found-or-inaccessible and rate-limit errors
+identify recovery needs; 404 is not proof the target does not exist. No automatic
+retry of a token write occurs. Short-lived token/expiry are validated, passed only
+to the selected configuration process and never written to binding records or
+public diagnostics. Configuration is an argument array with bounded group
+termination/cancellation; child output is discarded. Official registration
+credentials remain private in that instance and are not rollback targets.
+
+After any possibly effective operation, failure retains a pending/unknown binding
+and any known Runner ID/service disposition. A publication failure may leave
+`binding.json.pending`; keep it and `.runner`/`.credentials` for authorized manual
+readback. Inspect the exact target/Runner ID, private service unit and official
+Runner state; resolve unknown operations before attempting registration again.
+Do not delete credentials/reservations merely to retry, infer identity from a
+Label/name, or destroy another completed instance. There is no automatic rollback
+or new reconciliation CLI command in this surface.
+
+The N15 loader pins reviewed provenance, all 23 Core files, the 71,426-byte archive
+SHA-256 `01f6b5fbd01ebbba37ea6723db7bdfff25f5cc44c68e832206974248e5717fef`
+and genuine `jose@6.2.13` bytes/producer-lock SHA-512 integrity before execution.
+It preserves structural archive rejection and imports only an isolated offline,
+scripts-disabled installation; it never uses caller node_modules or `/upstream`.
+Temporary installations are removed on success and failure. Installation problems
+require intact archives and supported local tools, not remote resource provisioning.
+
+Run `python3 tooling/check.py` for command, installed-consumer, provider,
+configuration/service executable and failure tests under credential-free seccomp
+network denial. Also run `node docs/handoffs/n15/verify.mjs` for the ten original
+producer tests through an offline installed public package. Both use verifier-owned
+disposable files/processes; no cache, fixture credential or generated package is a
+candidate artifact. These checks prove local contracts only. Actual authorized
+Repository registration/lifecycle belongs to #27/#28; multi-member integration
+belongs to nibfin #122. Actual Org registration is separately permissioned and
+unrun combinations remain Unverified. Independent Acceptance and Core lifecycle
+gates still apply; neither local checks nor registration confer delivery authority.
