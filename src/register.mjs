@@ -48,7 +48,7 @@ export function registrationProcess(command, args, {cwd, env, signal, timeoutMs 
     });
   });
 }
-async function safePath(path, {directory = true, uid = userInfo().uid} = {}) {
+export async function safePath(path, {directory = true, uid = userInfo().uid} = {}) {
   const absolute = resolve(path); if (/[\x00-\x1f\x7f]/.test(absolute)) fail('Unsafe control character in resource path.');
   let current = parse(absolute).root;
   for (const part of absolute.slice(current.length).split('/')) {
@@ -90,7 +90,7 @@ function providerFailure(result, level) {
   fail(`GitHub ${category}${Number.isInteger(result.diagnostic?.status) ? ' HTTP '+result.diagnostic.status : ''}; verify stored gh login, target access and ${level === 'repository' ? 'Repository Administration write/read' : 'Organization self-hosted runners management/read'} rights and policy. Inaccessible does not mean nonexistent; uncertain writes require reconciliation.`);
 }
 // Org-only registration has no target repository; do not fabricate N15 access context.
-async function inventory(provider, endpoint, envelope, target, signal) {
+export async function inventory(provider, endpoint, envelope, target, signal) {
   const values = [], seen = new Set(); let total;
   for (let page = 1; page <= 100; page++) {
     const result = await provider.request({endpoint:endpoint+`?per_page=100&page=${page}`, target, operation:'registration-readback',correlation:'manual',signal});
@@ -119,7 +119,7 @@ async function inventory(provider, endpoint, envelope, target, signal) {
   }
   fail('Organization pagination limit exceeded.');
 }
-async function orgReadback(provider, prefix, target, runnerId, label, group, signal) {
+export async function orgReadback(provider, prefix, target, runnerId, label, group, signal) {
   const identity = await provider.request({endpoint:prefix,target,expectedId:target,operation:'registration-readback',correlation:'manual',signal});
   if (identity.outcome !== 'read') providerFailure(identity,'organization');
   if (identity.data.type !== 'Organization' || identity.data.login?.toLowerCase() !== prefix.slice(6)) fail('Fresh Organization identity mismatch.');

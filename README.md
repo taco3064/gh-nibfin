@@ -3,7 +3,8 @@
 Local GitHub CLI extension with help, version diagnostics and seven bounded
 command paths. Runner creation implements local allocation and diagnostics through
 the Core boundary described below. Manual Runner registration is implemented for
-the Linux user-systemd process boundary; other business operations return exit status 2.
+the Linux user-systemd process boundary. Read-only runner listing is implemented;
+other business operations return exit status 2.
 This is not a complete Nibfin runtime or a supported-platform claim.
 
 Public repositories owned by personal accounts or Organizations are in product
@@ -38,7 +39,7 @@ Neither command is actual GitHub CLI installation verification.
 
 The seven paths have these responsibilities:
 
-| Path | Responsibility (create/register implemented locally; others pending) |
+| Path | Responsibility (create/register/list implemented locally; others pending) |
 | --- | --- |
 | init | Initialize repository workflows/labels and optional automatic registration. |
 | runner create | Create one fixed-Agent environment with a positive integer total of unregistered instances; default 2. |
@@ -51,7 +52,7 @@ The seven paths have these responsibilities:
 Help/version are options, not additional commands. Unknown options, extra tokens
 and incomplete paths fail with usage guidance. Baseline refusals perform no
 initialization, authentication, network access, service operation or registration.
-Creation and manual registration parameters are described below; other parameter execution belongs to later Issues.
+Creation, manual registration and read-only listing parameters are described below; other parameter execution belongs to later Issues.
 
 ## Verified Core boundary
 
@@ -305,3 +306,64 @@ Repository registration/lifecycle belongs to #27/#28; multi-member integration
 belongs to nibfin #122. Actual Org registration is separately permissioned and
 unrun combinations remain Unverified. Independent Acceptance and Core lifecycle
 gates still apply; neither local checks nor registration confer delivery authority.
+
+### Read-only runner inventory
+
+`gh nibfin runner list [--runner NAME] [--json]` inspects the execution account's
+`~/.local/share/nibfin/environments`. NAME selects an environment, including all
+its existing instances. No Agent login or execution is needed. Environments and
+instances sort by local identity; this order is not dispatch priority. The private
+`environment.json` supplies fixed Agent/account/instance identities; each instance's
+`registration/binding.json` supersedes the initial descriptor lifecycle state.
+Missing storage is empty; incomplete creation directories, corrupt/inaccessible
+records, duplicate identities and unsafe paths produce an incomplete inventory.
+The command never reads Agent login or Runner credential files or changes state.
+
+JSON stdout contains exactly one object: `schemaVersion: 1`, `complete`,
+`environments` and `diagnostics`. Each environment has `name`, `agent`, `githubId`,
+`account` and `instances`. Each instance has `id`, `registration`, `local` and
+`remote`. IDs remain decimal strings, including large IDs. Registered records
+include member Label, registration level/ID, target coordinates/IDs and owner type,
+platform, nullable group ID and a separately marked `historical` observation.
+No absent login name is invented. Unknown/malformed registration is explicit.
+Text exposes the same substantive fields. Unknown optional fields use null;
+unknown remote status and Busy are null, never an implied offline or false.
+
+`local.state` is active, inactive, not-installed or unknown. Current probes use
+Linux user systemd `show` with a validated unit and execution-account runtime
+directory. Missing tools, timeouts, unsupported platforms and account mismatch
+are unknown with a safe reason. With no installed unit recorded, not-installed
+means no service identity is recorded; stored active status is never proof.
+No service is started, stopped or repaired.
+
+Valid registered instances attempt fresh GET-only readback through the reviewed
+N15 Core/provider using the execution account's stored `gh` login; inherited
+Actions tokens and provider credentials are excluded. Repository registrations
+work independently of personal/Organization ownership. Organization registrations
+use official organization inventories and, when recorded, group membership;
+without a target repository they make no repository/group access or execution
+eligibility claim. Registration level and owner type imply no auto-registration
+policy. Private repositories remain outside product scope.
+
+`remote.state: verified` supplies fresh `status` (online/offline), boolean `busy`,
+`source: github` and observation time. Inventory failure, denied access, absent
+login, timeout or malformed/incomplete pagination remains unknown with a safe
+reason and, for N15 repository observations, structured diagnostic codes/categories.
+A missing/replaced ID is stale/mismatched registration, never offline; names or
+Labels cannot substitute for its ID. Historical binding observations never become
+fresh status. A running local process does not establish remote Online. Reads
+across APIs are not atomic, and diagnostics grant no execution authorization.
+
+Exit 0 means complete local enumeration, including explicitly unavailable optional
+remote/service observations. Exit 2 means invalid arguments, missing named
+environment or incomplete/untrustworthy local inventory. JSON errors use the same
+schema and `complete: false`; any retained entries are partial evidence. No raw
+provider/process error output is printed. Invalid flags are rejected before I/O.
+Reads and subprocesses are bounded; readback has a 15-second deadline per scope.
+
+Run `python3 tooling/check.py` with Node 22, npm 10 and Linux/libseccomp. Retained
+list tests use disposable records, official-response fixtures and verifier-owned
+service/gh executable fixtures. These prove local command behavior, not live GitHub,
+installed systemd service, model login or cross-platform integration. Issues #27/#28
+own real local/remote comparisons. No live registration/model credentials are
+required for these diagnostics tests.
