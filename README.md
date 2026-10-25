@@ -367,3 +367,57 @@ service/gh executable fixtures. These prove local command behavior, not live Git
 installed systemd service, model login or cross-platform integration. Issues #27/#28
 own real local/remote comparisons. No live registration/model credentials are
 required for these diagnostics tests.
+
+### Unregister one registration (local contract implementation)
+
+```sh
+gh nibfin runner unregister --runner demo --repo OWNER/REPO --instance INSTANCE_ID
+gh nibfin runner unregister --runner demo --org ORG --instance INSTANCE_ID
+```
+
+Both target and environment are required. Omit `--instance` only when exactly one
+registration matches that target; ambiguity never selects the first instance.
+Repository runners work with personal or Organization-owned public repositories.
+`--org` removes the Organization registration shared across its eligible repos;
+using `--repo` never removes that shared runner or changes its access policies.
+
+This implementation uses the existing Linux non-root user-systemd integration.
+It checks the selected unit's source, stops/disables it and verifies termination
+(inactive, no main PID and an empty tracked cgroup). A missing manager, unsafe
+ownership, running descendants or unsupported observation prevents cleanup.
+Agent login, environment descriptor, instance count, workspace, prepared official
+Runner application and neighboring services/credentials remain intact. Only the
+selected registration credentials, binding and owned service configuration detach.
+
+The process account's stored `gh` login supplies official REST reads and exact-ID
+Repo/Org DELETE; inherited `GH_TOKEN`/`GITHUB_TOKEN` do not override that login.
+A complete authorized runner inventory establishes absence; offline status, a
+DELETE acknowledgment or inaccessible 404 does not. Exit 0 requires termination,
+local detachment, remote absence and published state. Exit 2 reports separate
+local/service/remote dispositions and keeps private `registration/unregister.json`
+with original IDs for reconciliation. A confirmed repeat says already unregistered.
+
+Unknown privileged writes or active work retain registration resources after a
+safe service stop. The pinned handoff has no durable runtime execution journal;
+this CLI conservatively treats a nonempty workspace, Runner Worker history or
+local execution/write-intent records as requiring runtime/operator reconciliation.
+It never deletes that evidence or assumes a stopped process proves prior writes
+finished. This boundary does not certify live lifecycle safety for used runners.
+
+For incomplete removal, inspect private instance state and reconcile the original
+Runner ID, service termination and any execution effects with the owning runtime
+or authorized administrator. Do not delete a lock, pending file or residual merely
+to permit reuse. Interrupted atomic publications and stale operation locks require
+operator reconciliation. A prior uncertain DELETE is read back on re-entry and
+never automatically resubmitted, even if still present; an authorized administrator
+must resolve it. Remote denial/offline conditions still allow independently safe
+local detachment. Residuals block registration; fully reconciled unregister retains
+the existing capacity for registration again. No automatic model login, remote
+provisioning or live Runner removal is part of local verification.
+
+Retained unregister tests use disposable files, recording services and injected
+official-shaped responses under `python3 tooling/check.py` (Node 22, Python 3,
+libseccomp, executable scratch). They cover selection, Repo/Org scope, large IDs,
+termination, uncertain writes/readback, cleanup/publication failures, preservation
+and secret suppression. These are local contract observations, not real GitHub,
+systemd or model lifecycle evidence; real lifecycle coverage belongs to #27/#28.
