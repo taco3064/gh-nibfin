@@ -55,15 +55,20 @@ export async function verifyRunnerDistribution(directory,{signal}={}) {
 
 // First-party pinned acquisition, called only by registration, never by --check.
 // The archive is authenticated before any executable is extracted or invoked.
-export async function prepareRunnerDistribution(directory,{signal}={}){
+export async function prepareRunnerDistribution(directory,{signal,archive}={}){
   try{await fs.lstat(join(directory,'config.sh'));return await verifyRunnerDistribution(directory,{signal});}
   catch(e){if(e.code!=='ENOENT')throw e;}
   const entries=await fs.readdir(directory);
   if(entries.some(n=>n!=='unregister.json'))throw Error('Unrecognized Runner installation residue; preserve and reconcile before registration.');
   const scratch=await fs.mkdtemp(join(tmpdir(),'nibfin-runner-download-'));
   try{
-    const {get}=await import('node:https');
     const snapshot=join(scratch,runnerDistribution.archive);
+    if(archive){
+      await safePath(archive,{directory:false});
+      if((await fs.stat(archive)).size>500000000)throw Error('Runner archive oversized.');
+      await fs.copyFile(archive,snapshot,fs.constants.COPYFILE_EXCL);
+    }else{
+    const {get}=await import('node:https');
     const handle=await fs.open(snapshot,'wx',0o600);let size=0;
     const fetch=async(url,hops=0)=>{
       if(hops>4)throw Error('Runner redirect limit.');
@@ -78,6 +83,7 @@ export async function prepareRunnerDistribution(directory,{signal}={}){
       });
     };
     try{await fetch(`https://github.com/actions/runner/releases/download/v${runnerDistribution.version}/${runnerDistribution.archive}`);await handle.sync();}finally{await handle.close();}
+    }
     if(await hash(snapshot)!==runnerDistribution.sha256)throw Error('Official Runner archive integrity mismatch.');
     const extracted=join(scratch,'extracted');await fs.mkdir(extracted,{mode:0o700});
     await promisify(execFile)('tar',['--extract','--gzip','--file',snapshot,'--directory',extracted,'--no-same-owner'],{signal,timeout:30000,maxBuffer:4096,env:{PATH:process.env.PATH,LANG:'C'}});

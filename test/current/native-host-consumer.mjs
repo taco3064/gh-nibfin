@@ -11,7 +11,7 @@ test('first-party staging retains actual installed runtime and exactly two unreg
   const root=join(context.root,'native-control');let downloads=0,verifications=0;
   // Explicit application-acquisition doubles. Runtime files and private filesystem
   // are real; this test does not establish official Runner or service readiness.
-  const prepare=async directory=>{downloads++;await fs.writeFile(join(directory,'config.sh'),'PINNED RUNNER FIXTURE',{flag:'wx',mode:0o600});};
+  const prepare=async(directory,{archive}={})=>{if(!archive)downloads++;await fs.writeFile(join(directory,'config.sh'),'PINNED RUNNER FIXTURE',{flag:'wx',mode:0o600});};
   const verify=async directory=>{verifications++;assert.equal(await fs.readFile(join(directory,'config.sh'),'utf8'),'PINNED RUNNER FIXTURE');};
   const host=nativeControlHost({root,prepare,verify}),request={core,context,executionPool:pool()};
   assert.equal((await host.check(request)).diagnostics[0].code,'native-host-not-staged');
