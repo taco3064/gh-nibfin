@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {userInfo} from 'node:os';
 import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import * as core from '@nibfin/core';
 import {managedHostRecords} from './host-store.mjs';
 const controllers=[];
@@ -27,6 +28,11 @@ try{
     const host=core.createRescueHost({configuration:entry.configuration,secret,attribute:entry.attribute,onError:entry.onError});
     controllers.push(await host.start());
   }
+  if(typeof process.env.NOTIFY_SOCKET!=='string'||!/^[/@]/.test(process.env.NOTIFY_SOCKET))throw Error();
+  const notification=spawnSync('/usr/bin/systemd-notify',['--ready','--status=Nibfin recovery notifier ready'],
+    {env:{LANG:'C',NOTIFY_SOCKET:process.env.NOTIFY_SOCKET},stdio:'ignore',timeout:15000});
+  if(notification.error||notification.status!==0)throw Error();
+  process.stdout.write('Nibfin recovery notifier ready: '+controllers.length+' repositories.\n');
   await new Promise(resolve=>{for(const signal of ['SIGINT','SIGTERM'])process.once(signal,resolve);});
 }catch{process.stderr.write('Nibfin notifier unavailable; inspect private host source, policy, records and account configuration.\n');process.exitCode=2;}
 finally{for(const controller of controllers)controller.close();await storage?.close();}
