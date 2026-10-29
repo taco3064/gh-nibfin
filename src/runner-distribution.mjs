@@ -72,7 +72,7 @@ export async function prepareRunnerDistribution(directory,{signal}={}){
         const name=join(relative,e.name),source=join(extracted,name),target=join(directory,name);
         if(e.isDirectory()){await fs.mkdir(target,{mode:0o700});await copy(name);}
         else if(e.isFile()){await fs.copyFile(source,target,fs.constants.COPYFILE_EXCL);const mode=(await fs.stat(source)).mode;await fs.chmod(target,mode&0o111?0o700:0o600);}
-        else throw Error('Unsupported official Runner file type.');
+        else throw Error('Unsupported official Runner file type: '+name);
       }
     };
     await copy();await fs.copyFile(snapshot,join(directory,runnerDistribution.archive),fs.constants.COPYFILE_EXCL);
