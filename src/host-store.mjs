@@ -120,7 +120,8 @@ export async function openFileHostStore(core,{directory}={}){
       &&intent.identity===transitionIdentity(core,intent.plan),'transition-intent');
     const state=await read(),prior=state.transitions[intent.identity];
     if(prior){need(same(core,prior.intent,intent),'transition-conflict');return {status:'retained',identity:intent.identity,prior:'unresolved'};}
-    const plan=core.planInstallationTransition({version:1,current:intent.plan.expected,next:intent.plan.next,work:state.work});
+    const plan=core.planInstallationTransition({version:1,current:intent.plan.expected,next:intent.plan.next,work:state.work},
+      {maintenance:intent.plan.maintenance==='preserve-pause',transaction:intent.plan.transaction});
     need(plan.status==='planned'&&plan.operation==='switch'&&same(core,plan,intent.plan)
       &&same(core,state.installation,plan.expected),'transition-checkpoint');
     await commit(state,{...state,transitions:{...state.transitions,[intent.identity]:{intent:structuredClone(intent),status:'pending'}}});
@@ -141,7 +142,8 @@ export async function openFileHostStore(core,{directory}={}){
         switchPins:request=>exclusive(async()=>{
           fields(request,'expected next protectedState intent');const before=await read();
           const retained=before.transitions[request.intent];need(retained?.status==='pending','transition-retention');
-          const plan=core.planInstallationTransition({version:1,current:request.expected,next:request.next,work:before.work});
+          const plan=core.planInstallationTransition({version:1,current:request.expected,next:request.next,work:before.work},
+            {maintenance:retained.intent.plan.maintenance==='preserve-pause',transaction:retained.intent.plan.transaction});
           need(plan.status==='planned'&&plan.operation==='switch'&&same(core,plan,retained.intent.plan)
             &&plan.protectedState===request.protectedState&&same(core,before.installation,request.expected),'transition-checkpoint');
           // The coordinator must verify the entire staged runtime and terminated

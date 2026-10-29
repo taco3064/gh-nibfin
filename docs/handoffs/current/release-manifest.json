@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "source": {
     "kind": "candidate",
-    "base": "a75a43ff4326134a83384eb4fc1dd2ae29344e3b",
+    "base": "3f46061bc7adf12e7594cdcdf539a220402f318c",
     "commit": null,
     "inputs": [
       {
@@ -33,7 +33,7 @@
       },
       {
         "path": "docs/authority.md",
-        "sha256": "947b35dd387e783e17f3ebbbe36fbd5dbd7e0d947e9ceb574f962e875f779c3c"
+        "sha256": "74d65e1c77ac23d31fa36ebbf43df272b76c88b6a837c4ebb3977d7b9a6aeb99"
       },
       {
         "path": "docs/authorization.md",
@@ -161,7 +161,7 @@
       },
       {
         "path": "docs/role-host.md",
-        "sha256": "a4bc4c0f7990b506a33c1326dc4d1dc6ffa81c2884990241ab2801a0e1b57d69"
+        "sha256": "64d4c7998788b4cf787320b19b434b26daf8bd653e7f62abfb3e8daad00501f6"
       },
       {
         "path": "docs/rootless-hardening.md",
@@ -261,7 +261,7 @@
       },
       {
         "path": "package.json",
-        "sha256": "206baea5c058cd8c591d175d2b51c3fdafa3c45a143e1a43843aa707c9d7b457"
+        "sha256": "61fba01d82a90ca539ddf2da9a4bb10781fed9180b44d255e08cd5265e15b268"
       },
       {
         "path": "skills/accept/SKILL.md",
@@ -277,7 +277,7 @@
       },
       {
         "path": "skills/shape/SKILL.md",
-        "sha256": "1d87329fc8ce4e420da35ba8dd7b6c9252eee9d4f0e7dd03ce7bb09d729c6c3c"
+        "sha256": "3bd908364e46a52f55355bac678fa30a928a0051dbc11e6dc6479a4bb87f9dd9"
       },
       {
         "path": "src/accept.mjs",
@@ -297,7 +297,7 @@
       },
       {
         "path": "src/agent-session.mjs",
-        "sha256": "ef66c323035e264c716257f336caf72c6a4c703d3ed48d69df70b9276f66c50d"
+        "sha256": "1ce6e675d2cffe168de0394f4932def6b3abb28351de4fba3d3260141c026b0c"
       },
       {
         "path": "src/archive.mjs",
@@ -313,7 +313,7 @@
       },
       {
         "path": "src/candidate-contract.mjs",
-        "sha256": "e6d44731f9af03f92a0e0ae4b2d4465fa502ba88cdfd8ed65dec4060d3a42a3a"
+        "sha256": "1d5bcc6439089fca3cc806566d98322145c5be1ae0cec66c557a4bed395a66dc"
       },
       {
         "path": "src/candidate-publication.mjs",
@@ -333,7 +333,7 @@
       },
       {
         "path": "src/claude-entry.mjs",
-        "sha256": "cb0c3872815cfe704b20023c9e2fd999122a873b4b30baf2dbac941826b4e07d"
+        "sha256": "e5ed3d459e3979f480faf940ef4f669dc8ca44db42a3813388a94f8f025fa3d8"
       },
       {
         "path": "src/claude.mjs",
@@ -341,11 +341,11 @@
       },
       {
         "path": "src/codex-entry.mjs",
-        "sha256": "ca7def64b1bd79a9806a773f53359caa07b8d178c2011f5a5e57b973a5acf05b"
+        "sha256": "ad15deaa7b809eb563968a72acba315e7e4e15615252eaa444a7ab4c146617b5"
       },
       {
         "path": "src/codex.mjs",
-        "sha256": "b3fb278b280161f05e463b753a13c128a582fbdcd56ab957a7f2d697e9ef683a"
+        "sha256": "b2d457c827e382cd216d0acfdd4c4e7cada471f99b40d1589ee1f93c3d755c66"
       },
       {
         "path": "src/collaboration.mjs",
@@ -401,7 +401,7 @@
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "1ffdcd0fe975a9b2f630605490c96a273db4db554675946532ffd88faf17fa7f"
+        "sha256": "c44ee95f383d7a5ccf733c60d2648fd9fcf60726dfbcc509f085c35debc3181b"
       },
       {
         "path": "src/distribution.mjs",
@@ -441,7 +441,7 @@
       },
       {
         "path": "src/gemini-entry.mjs",
-        "sha256": "73e9d60190f123662355b058471508330fe6b5332e58f60cb65678ac184f4fc4"
+        "sha256": "17921e444f6b788fdce1ff368becbec350fcb92f4c3998c7135da40c850d0d6c"
       },
       {
         "path": "src/gemini.mjs",
@@ -477,11 +477,11 @@
       },
       {
         "path": "src/index.mjs",
-        "sha256": "b301496ee3e1bc5a6c1e3238e6f35abb30a90260b1682feb72e502184fcc39be"
+        "sha256": "45749d86781370687eb3e6023fc119e68c52dea0bbac61e6ae71ef532d7f3d8d"
       },
       {
         "path": "src/installation.mjs",
-        "sha256": "9c013e657fae78623a72a1f79b9952ffbd8aea4445f517fde62e01d1e6ecec87"
+        "sha256": "1bb2e05f396a65c15ed2bf2489830df2b98caa4a95f1f946cbc2c3b03fd7d373"
       },
       {
         "path": "src/instructions.mjs",
@@ -493,7 +493,7 @@
       },
       {
         "path": "src/lifecycle.mjs",
-        "sha256": "3afeb7d9bdeeed88f9a9e97d48baa57f5841176d1628befaba8c54d6f6699f18"
+        "sha256": "980aeddc12c6a4cd9e49bdbc50d44d17cb1d1a71fa71b34880c2bd0f2c30afd4"
       },
       {
         "path": "src/node-verification.mjs",
@@ -501,7 +501,7 @@
       },
       {
         "path": "src/obligations.mjs",
-        "sha256": "fc7f74d6dba35f046cd7e6bdd4ce6c8489768e1054019574d7de902e0490b7e4"
+        "sha256": "14e612e28a0db3a15d28219c72e6bbc683213847d0dd61c3acecb60562d22471"
       },
       {
         "path": "src/operations.mjs",
@@ -561,15 +561,19 @@
       },
       {
         "path": "src/requirement-source.mjs",
-        "sha256": "71de0190382e0ec72bbd283f48ba19099e145308cc59a582ca815d500c02add5"
+        "sha256": "057dca9264d2b3b67e6f37e2d3024014f9f58b698b3c132c2b04ec68dca4c62d"
       },
       {
         "path": "src/requirement-sources/github-issue.mjs",
-        "sha256": "43c7802ed145e25c7c917cbc813e1846289d840c846ba493278edb60e468d657"
+        "sha256": "80bc887b998e2067aa00622299ea45c958c46b2802a8b95e933d5698230019ea"
       },
       {
         "path": "src/requirement-sources/index.mjs",
         "sha256": "33fae15e2b99050d23986d67f4465bc503ff2f2f62fce016e09e1a48627ebf74"
+      },
+      {
+        "path": "src/requirements-document.mjs",
+        "sha256": "ea017df78264bbb275187bf74591f9bf8b28c1688bc26466a3e4fee6c8e14117"
       },
       {
         "path": "src/rescue-agent.mjs",
@@ -625,7 +629,7 @@
       },
       {
         "path": "src/role-host.mjs",
-        "sha256": "8a878832ef7f22886590ef90ca78026e707db0afc61bd2cefd6932114edf69fd"
+        "sha256": "5f67a9434b6c5fd97595f8500119864e9dbc9f84e1270dde73da4c3e78af194a"
       },
       {
         "path": "src/role-session.mjs",
@@ -657,7 +661,7 @@
       },
       {
         "path": "src/shape.mjs",
-        "sha256": "77f55eff10e83da0178baf1225a7947485e571a5da422a387f4734608d5ca4c9"
+        "sha256": "5e67e4fa9a51d58232365185b9dcaade60701410e890a602d9fd117afc867c43"
       },
       {
         "path": "src/verification-child.mjs",
@@ -861,7 +865,7 @@
       },
       {
         "path": "test/installation.test.mjs",
-        "sha256": "4b7818fa1aa41630144cd4c34e94115f2a3ce6369b44502003e55306c5f5fc6c"
+        "sha256": "a19ab150fefdb83ea59ac9800b4cab1b1a5f26ef23698e03a9c96327c33c3b6e"
       },
       {
         "path": "test/instructions.test.mjs",
@@ -881,7 +885,7 @@
       },
       {
         "path": "test/lifecycle.test.mjs",
-        "sha256": "540e297d03b9eb8370bbe49ec2d713150e4a602cbd8b4d94367975d1a3bce31c"
+        "sha256": "4523952314b8bf5d4c96e3f5f34a66c5fbda19e5c178b12585b0350bfcc6fb73"
       },
       {
         "path": "test/obligations.test.mjs",
@@ -944,6 +948,10 @@
         "sha256": "c8ce3d91550b4d50ee656b4db1732e30c2373ecf900bd792c4a7ff7f64225ce4"
       },
       {
+        "path": "test/requirements-document.test.mjs",
+        "sha256": "70fa596317c4234e4622d0b80744565a581e582ad8526885991ae7a86b511f92"
+      },
+      {
         "path": "test/rescue-agent.test.mjs",
         "sha256": "89fb0bc211032f00cc4de9a56dd37758525c897e0b517e50d69c2249fd882d94"
       },
@@ -969,7 +977,7 @@
       },
       {
         "path": "test/role-host.test.mjs",
-        "sha256": "45b5a0a25a0ae2227d321276dbb3abbf06c366cbaae488033ffdba39062e2660"
+        "sha256": "41cb1068504809322238934779f397a89823ae36f92c3008367921891f831a50"
       },
       {
         "path": "test/runner-job-gate.test.mjs",
@@ -1029,7 +1037,7 @@
       },
       {
         "path": "tooling/archive.mjs",
-        "sha256": "c84989bea5941c039a4e2269daa23a2d1ec91d2ff0231c73df257aea20ec4a95"
+        "sha256": "a40640d9dec706dbe199b5edace4e869fa54354a0c5ba0aa35f8484e64cb9b7f"
       },
       {
         "path": "tooling/candidate-publication-fixture.mjs",
@@ -1041,7 +1049,7 @@
       },
       {
         "path": "tooling/codex-fixture.mjs",
-        "sha256": "9d90681fb6533cd3eb0a43809466cc79065d9567496dae5c2c109661caa6b24d"
+        "sha256": "b71b98a6b25ef8515c4c12ac122ea11d49d5947c79228f08c972bfee7ff85675"
       },
       {
         "path": "tooling/completion-fixture.mjs",
@@ -1168,7 +1176,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "c51a39b22a8146441636211282de0230b336464f90d35737f4cc258e249341d7"
+    "contentSha256": "dfcf08f51647360deccb077442b17b520519d1e9ce4ab98484b4805cba059427"
   },
   "components": {
     "core": {
@@ -1196,7 +1204,7 @@
         },
         {
           "path": "docs/authority.md",
-          "sha256": "947b35dd387e783e17f3ebbbe36fbd5dbd7e0d947e9ceb574f962e875f779c3c"
+          "sha256": "74d65e1c77ac23d31fa36ebbf43df272b76c88b6a837c4ebb3977d7b9a6aeb99"
         },
         {
           "path": "docs/authorization.md",
@@ -1324,7 +1332,7 @@
         },
         {
           "path": "docs/role-host.md",
-          "sha256": "a4bc4c0f7990b506a33c1326dc4d1dc6ffa81c2884990241ab2801a0e1b57d69"
+          "sha256": "64d4c7998788b4cf787320b19b434b26daf8bd653e7f62abfb3e8daad00501f6"
         },
         {
           "path": "docs/rootless-hardening.md",
@@ -1420,7 +1428,7 @@
         },
         {
           "path": "package.json",
-          "sha256": "206baea5c058cd8c591d175d2b51c3fdafa3c45a143e1a43843aa707c9d7b457"
+          "sha256": "61fba01d82a90ca539ddf2da9a4bb10781fed9180b44d255e08cd5265e15b268"
         },
         {
           "path": "skills/accept/SKILL.md",
@@ -1436,7 +1444,7 @@
         },
         {
           "path": "skills/shape/SKILL.md",
-          "sha256": "1d87329fc8ce4e420da35ba8dd7b6c9252eee9d4f0e7dd03ce7bb09d729c6c3c"
+          "sha256": "3bd908364e46a52f55355bac678fa30a928a0051dbc11e6dc6479a4bb87f9dd9"
         },
         {
           "path": "src/accept.mjs",
@@ -1456,7 +1464,7 @@
         },
         {
           "path": "src/agent-session.mjs",
-          "sha256": "ef66c323035e264c716257f336caf72c6a4c703d3ed48d69df70b9276f66c50d"
+          "sha256": "1ce6e675d2cffe168de0394f4932def6b3abb28351de4fba3d3260141c026b0c"
         },
         {
           "path": "src/archive.mjs",
@@ -1472,7 +1480,7 @@
         },
         {
           "path": "src/candidate-contract.mjs",
-          "sha256": "e6d44731f9af03f92a0e0ae4b2d4465fa502ba88cdfd8ed65dec4060d3a42a3a"
+          "sha256": "1d5bcc6439089fca3cc806566d98322145c5be1ae0cec66c557a4bed395a66dc"
         },
         {
           "path": "src/candidate-publication.mjs",
@@ -1492,7 +1500,7 @@
         },
         {
           "path": "src/claude-entry.mjs",
-          "sha256": "cb0c3872815cfe704b20023c9e2fd999122a873b4b30baf2dbac941826b4e07d"
+          "sha256": "e5ed3d459e3979f480faf940ef4f669dc8ca44db42a3813388a94f8f025fa3d8"
         },
         {
           "path": "src/claude.mjs",
@@ -1500,11 +1508,11 @@
         },
         {
           "path": "src/codex-entry.mjs",
-          "sha256": "ca7def64b1bd79a9806a773f53359caa07b8d178c2011f5a5e57b973a5acf05b"
+          "sha256": "ad15deaa7b809eb563968a72acba315e7e4e15615252eaa444a7ab4c146617b5"
         },
         {
           "path": "src/codex.mjs",
-          "sha256": "b3fb278b280161f05e463b753a13c128a582fbdcd56ab957a7f2d697e9ef683a"
+          "sha256": "b2d457c827e382cd216d0acfdd4c4e7cada471f99b40d1589ee1f93c3d755c66"
         },
         {
           "path": "src/collaboration.mjs",
@@ -1560,7 +1568,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "1ffdcd0fe975a9b2f630605490c96a273db4db554675946532ffd88faf17fa7f"
+          "sha256": "c44ee95f383d7a5ccf733c60d2648fd9fcf60726dfbcc509f085c35debc3181b"
         },
         {
           "path": "src/distribution.mjs",
@@ -1600,7 +1608,7 @@
         },
         {
           "path": "src/gemini-entry.mjs",
-          "sha256": "73e9d60190f123662355b058471508330fe6b5332e58f60cb65678ac184f4fc4"
+          "sha256": "17921e444f6b788fdce1ff368becbec350fcb92f4c3998c7135da40c850d0d6c"
         },
         {
           "path": "src/gemini.mjs",
@@ -1636,11 +1644,11 @@
         },
         {
           "path": "src/index.mjs",
-          "sha256": "b301496ee3e1bc5a6c1e3238e6f35abb30a90260b1682feb72e502184fcc39be"
+          "sha256": "45749d86781370687eb3e6023fc119e68c52dea0bbac61e6ae71ef532d7f3d8d"
         },
         {
           "path": "src/installation.mjs",
-          "sha256": "9c013e657fae78623a72a1f79b9952ffbd8aea4445f517fde62e01d1e6ecec87"
+          "sha256": "1bb2e05f396a65c15ed2bf2489830df2b98caa4a95f1f946cbc2c3b03fd7d373"
         },
         {
           "path": "src/instructions.mjs",
@@ -1652,7 +1660,7 @@
         },
         {
           "path": "src/lifecycle.mjs",
-          "sha256": "3afeb7d9bdeeed88f9a9e97d48baa57f5841176d1628befaba8c54d6f6699f18"
+          "sha256": "980aeddc12c6a4cd9e49bdbc50d44d17cb1d1a71fa71b34880c2bd0f2c30afd4"
         },
         {
           "path": "src/node-verification.mjs",
@@ -1660,7 +1668,7 @@
         },
         {
           "path": "src/obligations.mjs",
-          "sha256": "fc7f74d6dba35f046cd7e6bdd4ce6c8489768e1054019574d7de902e0490b7e4"
+          "sha256": "14e612e28a0db3a15d28219c72e6bbc683213847d0dd61c3acecb60562d22471"
         },
         {
           "path": "src/operations.mjs",
@@ -1720,15 +1728,19 @@
         },
         {
           "path": "src/requirement-source.mjs",
-          "sha256": "71de0190382e0ec72bbd283f48ba19099e145308cc59a582ca815d500c02add5"
+          "sha256": "057dca9264d2b3b67e6f37e2d3024014f9f58b698b3c132c2b04ec68dca4c62d"
         },
         {
           "path": "src/requirement-sources/github-issue.mjs",
-          "sha256": "43c7802ed145e25c7c917cbc813e1846289d840c846ba493278edb60e468d657"
+          "sha256": "80bc887b998e2067aa00622299ea45c958c46b2802a8b95e933d5698230019ea"
         },
         {
           "path": "src/requirement-sources/index.mjs",
           "sha256": "33fae15e2b99050d23986d67f4465bc503ff2f2f62fce016e09e1a48627ebf74"
+        },
+        {
+          "path": "src/requirements-document.mjs",
+          "sha256": "ea017df78264bbb275187bf74591f9bf8b28c1688bc26466a3e4fee6c8e14117"
         },
         {
           "path": "src/rescue-agent.mjs",
@@ -1784,7 +1796,7 @@
         },
         {
           "path": "src/role-host.mjs",
-          "sha256": "8a878832ef7f22886590ef90ca78026e707db0afc61bd2cefd6932114edf69fd"
+          "sha256": "5f67a9434b6c5fd97595f8500119864e9dbc9f84e1270dde73da4c3e78af194a"
         },
         {
           "path": "src/role-session.mjs",
@@ -1816,7 +1828,7 @@
         },
         {
           "path": "src/shape.mjs",
-          "sha256": "77f55eff10e83da0178baf1225a7947485e571a5da422a387f4734608d5ca4c9"
+          "sha256": "5e67e4fa9a51d58232365185b9dcaade60701410e890a602d9fd117afc867c43"
         },
         {
           "path": "src/verification-child.mjs",
@@ -1887,7 +1899,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "6fdba0f33e3c1abac0be6999593d951b149d3a7b3f50c1fdd0f4f7f51cc13004"
+      "sha256": "628e82ccde0705b084e7e1a681bf2fd6486bc542a0884ef27cd6e993bbe24db8"
     },
     "skills": {
       "version": "0.1.0",
@@ -1910,10 +1922,10 @@
         },
         {
           "path": "skills/shape/SKILL.md",
-          "sha256": "1d87329fc8ce4e420da35ba8dd7b6c9252eee9d4f0e7dd03ce7bb09d729c6c3c"
+          "sha256": "3bd908364e46a52f55355bac678fa30a928a0051dbc11e6dc6479a4bb87f9dd9"
         }
       ],
-      "sha256": "0d5698ddc86e7e616d6ccb68e5515eefb868c0791abd521b347ba3a0658b4a32"
+      "sha256": "9b071c7fb0d94d4df6ed4b10606d4c222c8884923435cd43a95488d327f9e2b7"
     },
     "workflow": {
       "version": "0.1.0",
@@ -2010,10 +2022,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "825c5988d6bc56da04934d9086d4ccb483c13167dd6c8bae60647dc4c88db3f9"
+    "sha256": "8c63357e009faab12092903a91bf829ace566c0d7b782e801e81c6d3f79621c1"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "c7e9e57d6025c64b216688d095f47e7d3d2988d1a118ba27d5e5cb0ba0cf3d55"
+    "sha256": "d19b2acaa83e9529213262d0f73eded3c12467f75716b35654891951c0ee56cf"
   }
 }
