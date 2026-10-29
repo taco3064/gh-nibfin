@@ -96,8 +96,9 @@ export function existingControlHost({path,process:run=systemctl}={}){
     }
     const configuration={version:1,binding:c.binding,core:context.identity.components.core.sha256,directory:c.directory,
       installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins}};
-    await writePrivate(join(c.directory,'notifier.json'),configuration);
     const unit=`[Unit]\nDescription=Nibfin durable recovery notifications\n[Service]\nType=notify\nNotifyAccess=all\nTimeoutStartSec=45\nExecStart=/usr/local/bin/node ${daemon} ${join(c.directory,'notifier.json')}\nEnvironment=HOME=${userInfo().homedir}\nUnsetEnvironment=GH_TOKEN GITHUB_TOKEN NODE_OPTIONS NODE_PATH\nRestart=on-failure\nNoNewPrivileges=true\n[Install]\nWantedBy=default.target\n`;
+    if(old&&old.unit!==sha(unit))throw Error('Existing notifier service definition changed; use reconciled upgrade before replacement.');
+    await writePrivate(join(c.directory,'notifier.json'),configuration);
     if(!old)await fs.writeFile(unitPath,unit,{flag:'wx',mode:0o600});
     await writePrivate(join(c.directory,'installation.json'),{version:1,core:configuration.core,binding:c.binding.sha256,unit:sha(unit),launcher:sha(launcher),adapters,configuration:sha(await fs.readFile(join(c.directory,'notifier.json'))),
       files:Object.fromEntries(context.manifest.components.core.files.map(f=>[f.path,f.sha256]))});
