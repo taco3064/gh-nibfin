@@ -6,7 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {parseArchive,verifyRegistrationCore} from './core.mjs';
 
-export const currentProducer='9a3dc1148df17725c2e6484367a347ec03afd201';
+export const currentProducer='0c67785b9afc92116f055d4d2a5653b7d6eb927b';
 export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'56c8224f6cce98ea1deb6b6e4b1e9ec6bc29d365f1f648cdc708f0c7d61cad1e'});
 const handoff=new URL('../docs/handoffs/current/',import.meta.url);
 const hashes=Object.freeze({'nibfin-core.tgz':'a69ff28f776672e00bd5172aa37b9c3dca80492cd50ce20102fc1c533877a877',
