@@ -6,8 +6,47 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawn} from 'node:child_process';
 import {withCurrentCore,currentPin} from '../../src/current-core.mjs';
+import {observeAdmissionPlan} from '../../src/admission.mjs';
+import {managedWorkflowPlan} from '../../src/workflow-inputs.mjs';
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const blob=b=>createHash('sha1').update(`blob ${Buffer.byteLength(b)}\0`).update(b).digest('hex');
+
+test('installed shared admission observes immutable source and protected membership, with two physical registrations for three targets',async()=>{
+  await withCurrentCore(async(core,context)=>{
+    const identity=(repository,repositoryId)=>({version:1,repository,repositoryId,ownerId:'7',ownerType:'User'}),
+      source=identity('example/project','42'),targets=[source,identity('example/cli','43'),identity('example/action','44')],
+      executionPool=core.validateExecutionPool({version:1,source,targets:[...targets].sort((a,b)=>a.repository.localeCompare(b.repository,'en'))}),
+      installation={version:1,repository:source.repository,repositoryId:'42',executionPool,
+        installation:{packageVersion:currentPin.packageVersion,pins:context.identity.pins}},
+      commit='a'.repeat(40),files=new Map(managedWorkflowPlan(core,{executionPool,repository:source.repository}).files);
+    files.set('.nibfin/runtime.json',JSON.stringify({version:1,package:currentPin,allowedActorIds:['7'],executionPool}));
+    installation.files={'.nibfin/runtime.json':sha(files.get('.nibfin/runtime.json'))};
+    const calls=[],routes=new Map(targets.map(t=>['/repos/'+t.repository,{id:t.repositoryId,full_name:t.repository,private:false,visibility:'public',owner:{id:'7',type:'User'},permissions:{admin:true}}]));
+    const content=(path,bytes)=>({type:'file',path,encoding:'base64',content:Buffer.from(bytes).toString('base64'),size:Buffer.byteLength(bytes),sha:blob(bytes)});
+    routes.set('/repos/example/project/commits/main',{sha:commit});
+    for(const[path,bytes]of files)routes.set('/repos/example/project/contents/'+path+'?ref='+commit,content(path,bytes));
+    const provider=core.createGithubProvider({attempts:1,transport:async r=>{calls.push(r);assert.equal(r.method,'GET');return{status:routes.has(r.endpoint)?200:404,body:JSON.stringify(routes.get(r.endpoint)??{})};}});
+    const input={repository:source.repository,provider,installation,workerSha256:'b'.repeat(64),runnerDirectory:'/home/member/registration',
+      state:{registration:{level:'repository',id:'42'},target:{id:'42',ownerId:'7',ownerType:'User'},memberId:'7',runnerId:'21',runnerName:'worker-1'}};
+    const all=[];
+    for(const id of ['21','22']){
+      const result=await observeAdmissionPlan(core,{...input,state:{...input.state,runnerId:id,runnerName:'worker-'+id}});
+      assert.equal(result.sourceCommit,commit);assert.equal(result.policies.length,7);all.push(...result.policies);
+      const stages=result.policies.filter(p=>p.workflowDependencies);
+      assert.equal(stages.length,6);assert.ok(stages.every(p=>p.repositoryId==='42'));
+      for(const p of stages)assert.ok(p.workflowDependencies[0].path.includes(p.workflowPath.match(/stage-([0-9]+)/)[1]));
+    }
+    assert.equal(new Set(all.map(p=>p.runnerId)).size,2);
+    assert.ok(calls.filter(r=>r.endpoint.includes('/contents/')).every(r=>r.endpoint.endsWith('?ref='+commit)));
+    await assert.rejects(observeAdmissionPlan(core,{...input,installation:undefined}),/Protected shared installation/);
+    await assert.rejects(observeAdmissionPlan(core,{...input,installation:{...installation,executionPool:{...executionPool,targets:[source]}}}));
+    const callee='/repos/example/project/contents/.github/workflows/nibfin-delivery-43.yml?ref='+commit,original=routes.get(callee);
+    routes.set(callee,content('.github/workflows/nibfin-delivery-43.yml','modified callee'));
+    await assert.rejects(observeAdmissionPlan(core,input),/differs/);routes.set(callee,original);
+    const other=routes.get('/repos/example/cli');routes.set('/repos/example/cli',{...other,id:'99'});
+    await assert.rejects(observeAdmissionPlan(core,input),/Execution pool/);routes.set('/repos/example/cli',other);
+  });
+});
 
 // Fresh installed Core and unchanged installed shell/Node Hook. Only authenticated
 // provider reads are replaced. The Worker is a disposable Linux process double,
@@ -19,9 +58,9 @@ test('installed Hook accepts Repository .runner identity and explicitly scoped O
       observeCapability:async()=>({status:'unknown'})});
     assert.equal((await installation.check()).status,'blocked');
     assert.throws(()=>core.createLinuxCodexBackend({agent:'codex',task:{role:'readiness'},process:{}}));
-    for(const kind of ['repository','organization','legacy-org','wrong-actor','denied-read','shell-fallback']){
+    for(const kind of ['repository','organization','legacy-org','wrong-actor','denied-read','shell-fallback','dependency','dependency-missing','dependency-changed']){
       const level=kind==='organization'||kind==='legacy-org'?kind:'repository';
-      const allowed=['repository','organization'].includes(kind);
+      const allowed=['repository','organization','dependency'].includes(kind),dependent=kind.startsWith('dependency');
       const base=join(root,'probe-'+kind);await fs.mkdir(base,{mode:0o700});
       await fs.mkdir(join(base,'bin'),{mode:0o700});
       const executable=join(base,'bin/Runner.Worker');
@@ -30,7 +69,8 @@ test('installed Hook accepts Repository .runner identity and explicitly scoped O
       const repository='example-org/public-project',workflowPath='.github/workflows/nibfin-stage.yml';
       const bytes='name: Approved source\n';
       const policy=core.runnerJobPolicy({version:1,repository,repositoryId:'42',ownerId:'43',runnerId:'44',runnerName:'member',
-        runnerDirectory:base,workerSha256,workflowPath,workflowSha256:sha(bytes),jobName:'execute',allowedActorIds:['45'],ref:'refs/heads/main',...(level==='organization'?{registrationLevel:'organization'}:{})});
+        runnerDirectory:base,workerSha256,workflowPath,workflowSha256:sha(bytes),jobName:'execute',allowedActorIds:['45'],ref:'refs/heads/main',...(level==='organization'?{registrationLevel:'organization'}:{}),
+        ...(dependent?{workflowDependencies:[{path:'.github/workflows/nibfin-delivery-42.yml',sha256:sha(bytes)}]}:{})});
       const local={agentId:'44',agentName:'member',gitHubUrl:level==='repository'?'https://github.com/'+repository:'https://github.com/example-org'};
       await fs.writeFile(join(base,'.runner'),JSON.stringify(local),{mode:0o600});
       const observation={context:{repository,runId:'46',attempt:1},
@@ -40,14 +80,17 @@ test('installed Hook accepts Repository .runner identity and explicitly scoped O
         workflow:{type:'file',path:workflowPath,encoding:'base64',content:Buffer.from(bytes).toString('base64'),size:Buffer.byteLength(bytes),sha:blob(bytes)},
         localRunner:{id:'44',name:'member',repository:local.gitHubUrl.replace(/^https:\/\/github.com\//,'').replace(/\/$/,''),workerSha256,...(level==='organization'?{registrationLevel:'organization'}:{})}};
       if(kind==='wrong-actor')observation.run.actor.id='99';
+      if(dependent)observation.workflowDependencies=[{...observation.workflow,path:policy.workflowDependencies[0].path}];
+      if(kind==='dependency-changed')observation.workflowDependencies[0].sha='e'.repeat(40);
       const expected=core.verifyRunnerJobAdmission(policy,observation);
-      assert.equal(expected.allowed,!['legacy-org','wrong-actor'].includes(kind));
+      assert.equal(expected.allowed,!['legacy-org','wrong-actor','dependency-changed'].includes(kind));
       if(level==='legacy-org')assert.equal(expected.code,'local-runner');
       const policyPath=join(base,'policy.json');await fs.writeFile(policyPath,JSON.stringify(policy),{mode:0o600});
       const fixture={
         ['/repos/'+repository+'/actions/runs/46']:observation.run,
         ['/repos/'+repository+'/actions/runs/46/attempts/1/jobs?per_page=100']:{total_count:1,jobs:[observation.job]},
         ['/repos/'+repository+'/contents/'+workflowPath+'?ref='+observation.run.head_sha]:observation.workflow};
+      if(dependent&&kind!=='dependency-missing')fixture['/repos/'+repository+'/contents/'+policy.workflowDependencies[0].path+'?ref='+observation.run.head_sha]=observation.workflowDependencies[0];
       if(kind==='denied-read')delete fixture['/repos/'+repository+'/actions/runs/46'];
       const fixturePath=join(base,'provider.json');await fs.writeFile(fixturePath,JSON.stringify(fixture),{mode:0o600});
       const preload=join(base,'transport.mjs');

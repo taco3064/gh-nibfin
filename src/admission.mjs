@@ -1,10 +1,21 @@
 import fs from 'node:fs/promises';
 import {join,dirname} from 'node:path';
 import {userInfo} from 'node:os';
+import {createHash} from 'node:crypto';
 import {currentPin,verifyCurrentCore} from './current-core.mjs';
 import {managedWorkflowPlan} from './workflow-inputs.mjs';
+import {observeExecutionPool} from './execution-pool.mjs';
 import {privatePath,ensurePrivateDirectory,readPrivate,writePrivate,sha} from './local-state.mjs';
 const base=()=>join(userInfo().homedir,'.local/share/nibfin');
+function contents(value,path){
+  if(value?.type!=='file'||value.path!==path||value.encoding!=='base64'||typeof value.content!=='string'
+    ||value.content.length>100000||!Number.isSafeInteger(value.size)||value.size<1||value.size>65536
+    ||!/^[A-Za-z0-9+/=\r\n]+$/.test(value.content))throw Error('Admission content identity unavailable.');
+  const encoded=value.content.replace(/[\r\n]/g,''),bytes=Buffer.from(encoded,'base64');
+  if(bytes.length!==value.size||bytes.toString('base64')!==encoded
+    ||createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')!==value.sha)throw Error('Admission Git blob identity differs.');
+  return bytes;
+}
 export const policyDirectory=id=>{
   if(!/^[a-zA-Z0-9-]{1,80}$/.test(id))throw Error('Invalid admission instance.');return join(base(),'admission',id);
 };
@@ -30,6 +41,59 @@ async function retainRuntime(context){
     }
   };await compare();return join(nodes,'@nibfin/core');
 }
+/** Read-only installation adapter. Membership comes from the protected local
+ * Owner installation, never from the public runtime file or a Job input. */
+export async function observeAdmissionPlan(core,{state,provider,signal,repository,installation,workerSha256,runnerDirectory}={}){
+  const get=async endpoint=>{
+    const r=await provider.request({endpoint,target:state.registration.id,operation:'admission-install',correlation:'admission',signal});
+    if(r.outcome!=='read')throw Error('Authenticated admission read unavailable.');return r.data;
+  };
+  const c=core.repositoryCoordinates(...repository.split('/'));
+  if(c.key!==repository||repository.split('/').length!==2||state.registration.level==='organization'&&c.owner!==state.registration.organization)
+    throw Error('Wrong admission repository.');
+  const target=await get('/repos/'+repository);
+  if(target.private!==false||target.visibility!=='public'||target.full_name?.toLowerCase()!==repository
+    ||!/^[1-9][0-9]*$/.test(target.id??'')||!/^[1-9][0-9]*$/.test(target.owner?.id??'')
+    ||state.registration.level==='repository'&&(target.id!==state.registration.id||target.id!==state.target.id
+      ||target.owner.id!==state.target.ownerId||target.owner.type!==state.target.ownerType)
+    ||state.registration.level==='organization'&&(target.owner.type!=='Organization'||target.owner.id!==state.registration.id))
+    throw Error('Admission target identity/scope mismatch.');
+  const commit=await get('/repos/'+repository+'/commits/main');
+  if(!/^[a-f0-9]{40}$/.test(commit?.sha??''))throw Error('Admission immutable source commit unavailable.');
+  const read=async path=>contents(await get('/repos/'+repository+'/contents/'+path+'?ref='+commit.sha),path);
+  const ownerBytes=await read('.nibfin/runtime.json'),ownerPolicy=JSON.parse(ownerBytes);
+  if(ownerPolicy.version!==1||ownerPolicy.package?.coreSha256!==currentPin.coreSha256
+    ||!Array.isArray(ownerPolicy.allowedActorIds)||!ownerPolicy.allowedActorIds.length)throw Error('Owner installation/admission policy is incompatible.');
+  let pool;
+  if(installation?.executionPool!==undefined||ownerPolicy.executionPool!==undefined){
+    if(installation?.version!==1||installation.repository!==repository||installation.repositoryId!==target.id
+      ||installation.installation?.packageVersion!==currentPin.packageVersion
+      ||core.canonicalJSON(installation.installation.pins)!==core.canonicalJSON(core.distributionIdentity().pins)
+      ||installation.files?.['.nibfin/runtime.json']!==sha(ownerBytes)
+      ||installation.executionPool===undefined)throw Error('Protected shared installation unavailable; public runtime data cannot select membership.');
+    pool=await observeExecutionPool(core,{previous:installation.executionPool,repo:repository,provider,memberId:state.memberId,signal});
+    if(pool.source.repository!==repository||pool.source.repositoryId!==target.id||pool.source.ownerId!==target.owner.id
+      ||state.registration.level!=='repository'||core.canonicalJSON(pool)!==core.canonicalJSON(ownerPolicy.executionPool))
+      throw Error('Shared admission requires the exact protected physical source and membership.');
+  }
+  const plan=managedWorkflowPlan(core,{executionPool:pool,repository}),expected=plan.files;
+  const stages=pool?plan.deployments.map(d=>[d.stagePath,d.deliveryPath]):[['.github/workflows/nibfin-stage.yml','.github/workflows/nibfin-delivery.yml']];
+  const files=new Map();
+  for(const path of new Set(stages.flat().concat('.github/workflows/nibfin-rescue.yml'))){
+    const bytes=await read(path),approved=expected.get(path);
+    if(typeof approved!=='string'||!bytes.equals(Buffer.from(approved)))throw Error('Admission workflow source differs from immutable managed installation.');
+    files.set(path,bytes);
+  }
+  const policies=[];
+  for(const [path,dependency] of [...stages,['.github/workflows/nibfin-rescue.yml',null]]){
+    for(const jobName of dependency?['stage / execute','stage / compute']:['rescue'])policies.push({version:1,repository,repositoryId:target.id,
+      ownerId:target.owner.id,runnerId:state.runnerId,runnerName:state.runnerName,runnerDirectory,workerSha256,
+      workflowPath:path,workflowSha256:sha(files.get(path)),jobName,allowedActorIds:ownerPolicy.allowedActorIds,
+      ref:'refs/heads/main',registrationLevel:state.registration.level,
+      ...(dependency?{workflowDependencies:[{path:dependency,sha256:sha(files.get(dependency))}]}:{})});
+  }
+  return {sourceCommit:commit.sha,policies:core.runnerJobPolicies({schemaVersion:1,policies})};
+}
 export async function prepareAdmission(core,context,{state,instance,provider,signal,configuration}={}){
   if(process.platform!=='linux'||process.arch!=='x64')throw Error('Admission requires the supported Linux process layout.');
   if(!context?.files)throw Error('Verified installed public admission package unavailable.');
@@ -43,26 +107,11 @@ export async function prepareAdmission(core,context,{state,instance,provider,sig
     if(!Array.isArray(c.repositories)||!c.repositories.length||c.repositories.length>8||new Set(c.repositories).size!==c.repositories.length)throw Error('Configure a bounded exact repository set for Organization admission.');
     repositories=c.repositories;
   }
-  const policies=[],expected=managedWorkflowPlan(core).files;
-  const get=async(endpoint,target)=>{const r=await provider.request({endpoint,target,operation:'admission-install',correlation:'admission',signal});if(r.outcome!=='read')throw Error('Authenticated admission read unavailable.');return r.data;};
+  const policies=[],sourceCommits={};
   for(const repository of repositories){
-    const c=core.repositoryCoordinates(...repository.split('/'));
-    if(c.key!==repository||repository.split('/').length!==2||state.registration.level==='organization'&&c.owner!==state.registration.organization)throw Error('Wrong Organization admission repository.');
-    const target=await get('/repos/'+repository,state.registration.id);
-    if(target.private!==false||target.visibility!=='public'||target.full_name?.toLowerCase()!==repository||!/^[1-9][0-9]*$/.test(target.id??'')
-      ||state.registration.level==='organization'&&(target.owner?.type!=='Organization'||target.owner.id!==state.registration.id))throw Error('Admission target identity/scope mismatch.');
-    const installed=await get('/repos/'+repository+'/contents/.nibfin/runtime.json?ref=main',target.id);
-    if(installed.type!=='file'||installed.encoding!=='base64'||typeof installed.content!=='string'||installed.content.length>100000)throw Error('Owner installation policy unavailable.');
-    const ownerPolicy=JSON.parse(Buffer.from(installed.content,'base64'));
-    if(ownerPolicy.version!==1||ownerPolicy.package?.coreSha256!==currentPin.coreSha256||!Array.isArray(ownerPolicy.allowedActorIds)||!ownerPolicy.allowedActorIds.length)throw Error('Owner installation/admission policy is incompatible.');
-    for(const [path,jobs] of [['.github/workflows/nibfin-stage.yml',['stage / execute','stage / compute']],['.github/workflows/nibfin-rescue.yml',['rescue']]]){
-      const source=await get('/repos/'+repository+'/contents/'+path+'?ref=main',target.id),body=expected.get(path);
-      if(source.type!=='file'||source.encoding!=='base64'||typeof source.content!=='string'||source.content.length>100000
-        ||!Buffer.from(source.content,'base64').equals(Buffer.from(body)))throw Error('Admission workflow source differs from immutable managed installation.');
-      for(const jobName of jobs)policies.push({version:1,repository,repositoryId:target.id,ownerId:target.owner.id,
-        runnerId:state.runnerId,runnerName:state.runnerName,runnerDirectory:instance.registration,workerSha256:sha(worker),workflowPath:path,
-        workflowSha256:sha(body),jobName,allowedActorIds:ownerPolicy.allowedActorIds,ref:'refs/heads/main',registrationLevel:state.registration.level});
-    }
+    const installation=await readPrivate(join(base(),'installations',repository.replace('/','--'),'installation.json'),{missing:true});
+    const observed=await observeAdmissionPlan(core,{state,provider,signal,repository,installation,workerSha256:sha(worker),runnerDirectory:instance.registration});
+    policies.push(...observed.policies);sourceCommits[repository]=observed.sourceCommit;
   }
   const validated=core.runnerJobPolicies({schemaVersion:1,policies});
   const root=await retainRuntime(context),directory=policyDirectory(instance.id);await ensurePrivateDirectory(directory);
@@ -70,7 +119,7 @@ export async function prepareAdmission(core,context,{state,instance,provider,sig
   const previous=await readPrivate(path,{missing:true});if(previous)throw Error('Existing admission policy requires reconciliation before registration.');
   await writePrivate(path,{schemaVersion:1,policies:validated},{exclusive:true});
   const hook=join(root,'host/runner-job-hook.sh');
-  const record={version:1,core:currentPin.coreSha256,policy:sha(await fs.readFile(path)),hook,hookSha256:sha(await file(hook)),workerSha256:sha(worker)};
+  const record={version:1,core:currentPin.coreSha256,policy:sha(await fs.readFile(path)),hook,hookSha256:sha(await file(hook)),workerSha256:sha(worker),sourceCommits};
   await writePrivate(join(directory,'installation.json'),record,{exclusive:true});
   return {environment:{ACTIONS_RUNNER_HOOK_JOB_STARTED:hook,NIBFIN_RUNNER_JOB_POLICY:path},record};
 }
