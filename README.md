@@ -46,7 +46,7 @@ Neither command is actual GitHub CLI installation verification.
 
 The seven paths have these responsibilities:
 
-| Path | Responsibility (init/upgrade pending; local lifecycle paths implemented) |
+| Path | Responsibility (complete native host onboarding remains in progress) |
 | --- | --- |
 | init | Initialize repository workflows/labels and optional automatic registration. |
 | runner create | Create one fixed-Agent environment with a positive integer total of unregistered instances; default 2. |
@@ -59,7 +59,9 @@ The seven paths have these responsibilities:
 Help/version are options, not additional commands. Unknown options, extra tokens
 and incomplete paths fail with usage guidance. Baseline refusals perform no
 initialization, authentication, network access, service operation or registration.
-Implemented lifecycle parameters are described below; init/upgrade execution belongs to later Issues.
+Implemented lifecycle parameters are described below. The maintained init and
+upgrade entries retain explicit refusals for incomplete native onboarding; see
+[integration status and maintenance prerequisites](docs/onboarding-integration.md).
 
 ## Verified Core boundary
 

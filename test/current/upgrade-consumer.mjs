@@ -81,6 +81,8 @@ test('unsafe work never reaches service or filesystem effects; check is read-onl
   assert.deepEqual(upgradeOptions([]),{operation:'check'});
   assert.deepEqual(upgradeOptions(['--rollback']),{operation:'rollback'});
   for(const args of [['--apply','--rollback'],['--force'],['--apply','other']])assert.throws(()=>upgradeOptions(args));
+  const resource={name:'state',current:f.directory,next:f.directory+'-next',previous:f.directory+'-previous'};
+  await assert.rejects(coordinateUpgrade({...f.options,resources:[resource]}),/journal-resource-overlap/);
 }));
 
 test('a killed coordinator releases its kernel lease without deleting the private lock file or resetting its journal',()=>fixture(async f=>{
