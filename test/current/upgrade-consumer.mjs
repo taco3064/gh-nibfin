@@ -2,9 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
+import {spawn} from 'node:child_process';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {initializeFileHostStore} from '../../src/host-store.mjs';
-import {coordinateUpgrade,rollbackUpgrade,upgradeOptions} from '../../src/upgrade.mjs';
+import {coordinateUpgrade,rollbackUpgrade,upgradeOptions,maintenanceLock} from '../../src/upgrade.mjs';
 
 // Actual private filesystem and installed Core/store. Service observations are
 // explicit doubles; these tests do not certify a real Runner or systemd upgrade.
@@ -77,4 +78,31 @@ test('unsafe work never reaches service or filesystem effects; check is read-onl
   assert.deepEqual(upgradeOptions([]),{operation:'check'});
   assert.deepEqual(upgradeOptions(['--rollback']),{operation:'rollback'});
   for(const args of [['--apply','--rollback'],['--force'],['--apply','other']])assert.throws(()=>upgradeOptions(args));
+}));
+
+test('a killed coordinator releases its kernel lease without deleting the private lock file or resetting its journal',()=>fixture(async f=>{
+  const module=new URL('../../src/upgrade.mjs',import.meta.url).href;
+  const script=`import{maintenanceLock}from ${JSON.stringify(module)};await maintenanceLock(${JSON.stringify(f.directory)},async()=>{
+    process.stdout.write('acquired\\n');await new Promise(()=>{});
+  });`;
+  const child=spawn(process.execPath,['--input-type=module','-e',script],{env:{PATH:process.env.PATH,HOME:f.directory,LANG:'C'},stdio:['ignore','pipe','pipe']});
+  const ended=new Promise(resolve=>child.once('close',resolve));
+  try{
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('Child lease did not acquire')),10000);
+      child.stdout.once('data',bytes=>{clearTimeout(timer);assert.equal(bytes.toString(),'acquired\n');resolve();});
+      child.once('error',error=>{clearTimeout(timer);reject(error);});
+      ended.then(()=>{clearTimeout(timer);reject(Error('Child lease ended early'));});
+    });
+    const path=join(f.directory,'maintenance.lock'),before=await fs.stat(path);
+    await assert.rejects(maintenanceLock(f.directory,()=>assert.fail('Concurrent lease acquired')),/maintenance-lock-unavailable/);
+    child.kill('SIGKILL');await ended;
+    let acquired=false;
+    for(let n=0;n<100&&!acquired;n++){
+      try{await maintenanceLock(f.directory,()=>{acquired=true;});}
+      catch(e){if(!e.message.includes('maintenance-lock-unavailable'))throw e;await new Promise(resolve=>setTimeout(resolve,20));}
+    }
+    assert.equal(acquired,true);const after=await fs.stat(path);assert.equal(after.ino,before.ino);
+    assert.deepEqual((await f.store.read()).work,f.work);
+  }finally{child.kill('SIGKILL');await ended;}
 }));
