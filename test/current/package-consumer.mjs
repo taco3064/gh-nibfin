@@ -6,6 +6,28 @@ import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {withCurrentCore,verifyCurrentCore,currentPin} from '../../src/current-core.mjs';
 
+test('installed requirement adapters use protected selectors and preserve fresh native Issue content without provider fallback',async()=>{
+  await withCurrentCore(async core=>{
+    const target={repository:'example-org/core',repositoryId:'42',issueId:'I_101',databaseId:'61',number:'101'},calls=[];
+    let body='Current Scope\n完整原文';
+    const provider=core.createGithubProvider({attempts:1,transport:async r=>{
+      calls.push(r);assert.equal(r.method,'GET');
+      return {status:200,body:JSON.stringify(r.endpoint==='/repos/example-org/core'
+        ?{id:'42',full_name:'example-org/core',private:false,visibility:'public'}
+        :{id:'61',node_id:'I_101',number:101,body,repository_url:'https://api.github.com/repos/example-org/core',
+          url:'https://api.github.com/repos/example-org/core/issues/101'})};
+    }});
+    const input={source:{kind:'github-issue',target},provider,cycle:'cycle',approvalId:'installed-owner-policy'};
+    const first=await core.observeRequirementAuthority(input);assert.equal(first.outcome,'observed');
+    assert.deepEqual(core.supportedRequirementSources,[{kind:'github-issue',version:1}]);
+    assert.equal(first.authority.components[0].body,body);body+='\nNew live requirements';
+    const next=await core.observeRequirementAuthority(input);assert.equal(next.outcome,'observed');
+    assert.notEqual(first.authority.identity,next.authority.identity);assert.equal(calls.length,4);
+    for(const kind of ['jira','linear','notion'])assert.equal((await core.observeRequirementAuthority({...input,source:{kind,target}})).outcome,'unavailable');
+    assert.equal(calls.length,4);assert.equal(core.verifyAuthority(next.authority).ok,false);
+  });
+});
+
 test('exact installed public APIs construct and report explicit unavailable member readiness; no fabricated ready flag',async()=>{
   await withCurrentCore(async(core,{root,identity})=>{
     const source=core.createInstallation({version:1,expected:currentPin,profile:'source',
