@@ -158,7 +158,7 @@
         },
         {
           "path": "docs/runner-job-admission.md",
-          "sha256": "bb0a9ec4645fbdb415dea14f6378f41e7c7d72dd468bb25ab36246de8681c055"
+          "sha256": "20300b482565cd21da0347e59e08282e6f03d40055d7bc58d61f161796bb1d4e"
         },
         {
           "path": "docs/scope.md",
@@ -218,7 +218,7 @@
         },
         {
           "path": "host/runner-job-hook.mjs",
-          "sha256": "b83a88d4851440eb266cca26beb3f3e764a21b91b30df898dbab5d434030c5a5"
+          "sha256": "cfae358e6638ad4ee6dcf8ba5e78c4ae095b56952b8749b6a36f98101b591b0f"
         },
         {
           "path": "host/runner-job-hook.sh",
@@ -386,7 +386,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "d27afafc516fcc63475484f859de60f84628841ed59753f6856cba913c652265"
+          "sha256": "670f77c0f2ac35a735df2c5533e4e4157f44d89d9cf56849c26ec5daa93de24a"
         },
         {
           "path": "src/distribution.mjs",
@@ -602,7 +602,7 @@
         },
         {
           "path": "src/runner-job-gate.mjs",
-          "sha256": "bc87b18dcb6e7ce5714b7cb73a3308abded6d091fc23d4bcb4600bcaa7107bee"
+          "sha256": "3d423384ddd3968d038ce4470d70b4b6744f8bd7535d34f18c8341912ebe8309"
         },
         {
           "path": "src/runner-lifecycle.mjs",
@@ -697,7 +697,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "56c8224f6cce98ea1deb6b6e4b1e9ec6bc29d365f1f648cdc708f0c7d61cad1e"
+      "sha256": "60676d29c29fbee5e147b3ac297b9402f0d4780fb9f5ad936afba64e9d4a01fd"
     },
     "skills": {
       "version": "0.1.0",
@@ -874,7 +874,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "d27afafc516fcc63475484f859de60f84628841ed59753f6856cba913c652265"
+    "sourceMapSha256": "670f77c0f2ac35a735df2c5533e4e4157f44d89d9cf56849c26ec5daa93de24a"
   },
   "entries": [
     {
@@ -1188,7 +1188,7 @@
         {
           "type": "source-contract",
           "reference": "test/runner-job-gate.test.mjs",
-          "sha256": "a5d83d5e6c109af52764288196d2ba52b1c118a52c8760320a4354c58f6d7e8a",
+          "sha256": "70a63335802b5cf48275cf4c5f48e931307c54857ab5d305ce734ec041c6f0e3",
           "capability": "source-contract",
           "configuration": "5f09c14f2210e01eaf6952e58b56af6ca229f1847cc2aee23bdb614c1abb83ad"
         }

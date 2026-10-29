@@ -7,8 +7,8 @@ results do not cover this snapshot. The planned localhost Dashboard is unchanged
 
 ## Runtime and responsibility owners
 
-The single production runtime is the Nibfin PR249 public source package at
-`0c67785b9afc92116f055d4d2a5653b7d6eb927b`; exact archive, manifest, component and
+The single production runtime is the Nibfin PR250 public source package at
+`c478de50d02ad730d3fe88cd2c5303a462875cbe`; exact archive, manifest, component and
 dependency pins are in [the current handoff](handoffs/current/README.md).
 Historical N01/N15/N17 loaders remain for retained compatibility fixtures.
 
@@ -170,3 +170,12 @@ profiles, client/server mismatch and a missing explicit selection remain blocked
 These installed-producer transport fixtures do not establish a native host,
 model login or actual Runner/service installation verdict.
 
+
+Shared source admission reads all caller/callee files at one authenticated main
+commit. Pool membership and the runtime/actor-policy digest must match the
+protected local Owner installation; public runtime JSON cannot select membership.
+Each generated logical stage gets execute/compute policies on the physical source
+registration, with its fixed reusable delivery callee pinned as a dependency.
+The real Hook rechecks that callee at the actual Run commit before Job steps.
+No new physical Runner registrations are created by policy planning. These checks
+are source and installed-process evidence; production activation remains pending.
