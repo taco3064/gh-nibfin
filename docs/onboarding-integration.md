@@ -86,6 +86,8 @@ The maintained Core owns Rescue record structure, content identities and pin
 transition decisions. The CLI adapter supplies durable atomic file replacement,
 private permissions, compare-and-swap under cross-process exclusion, and native
 filesystem subscriptions. Notifications use no polling, cron or idle Actions.
+The user service uses systemd readiness notification and a bounded startup
+deadline: it becomes active only after every notifier has started successfully.
 Runtime selection, original work and transition intents are retained together.
 An unresolved transition survives restart and cannot automatically repeat its
 write. Selection can switch only after a trusted coordinator verifies the complete
