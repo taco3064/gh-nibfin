@@ -4,7 +4,7 @@ import {userInfo} from 'node:os';
 import {withCurrentCore,currentPin,currentProducer} from './current-core.mjs';
 import {githubObservation,observeProcess,processEnvironment} from './create.mjs';
 import {managedWorkflowPlan} from './workflow-inputs.mjs';
-import {existingControlHost} from './host-install.mjs';
+import {nativeControlHost} from './native-host.mjs';
 import {observeExecutionPool} from './execution-pool.mjs';
 import {sha,readPrivate,writePrivate,ensurePrivateDirectory,localLock,privatePath} from './local-state.mjs';
 const targets=new WeakMap();
@@ -122,7 +122,7 @@ export async function inspectInstallation(core,context,{repo,automatic,provider,
 export async function initializeRepository(args,dependencies={}){
   const selected=installationOptions(args);
   if(!dependencies.core)return withCurrentCore((core,context)=>initializeRepository(args,{...dependencies,core,context}));
-  const host=dependencies.host??existingControlHost();
+  const host=dependencies.host??nativeControlHost();
   const {core,context}=dependencies,provider=dependencies.provider??installationProvider(core,{transport:dependencies.transport,repo:selected.repo,write:!selected.check});
   const memberId=dependencies.memberId??await githubObservation({run:dependencies.run??observeProcess,environment:processEnvironment('/nonexistent'),account:userInfo()});
   targets.set(provider,memberId);
@@ -134,6 +134,10 @@ export async function initializeRepository(args,dependencies={}){
     const report=await inspect();if(!report.administration)return {status:'blocked',diagnostics:report.diagnostics};
     if(!report.desired)return report;
     if(report.diagnostics.some(d=>d.capability==='executionPool'))return {status:'blocked',diagnostics:report.diagnostics};
+    if(host.prepare){
+      const prepared=await host.prepare({core,context,repo:selected.repo,executionPool:report.executionPool});
+      if(prepared?.status!=='ready')return {status:'blocked',phase:prepared?.status??'unknown',diagnostics:prepared?.diagnostics??[{capability:'host',code:'native-preparation-unconfirmed'}]};
+    }
     const nextInstallation={packageVersion:currentPin.packageVersion,pins:context.identity.pins};
     if(report.previous&&JSON.stringify(report.previous.installation)!==JSON.stringify(nextInstallation))return {status:'blocked',diagnostics:[{capability:'installation',code:'runtime-transition-required',action:'Use the existing upgrade boundary after reconciling active work, holds and unknown writes.'}]};
     if(report.missingLabels===null)return {status:'blocked',diagnostics:report.diagnostics};
