@@ -1,6 +1,6 @@
 # Current reviewed public runtime
 
-The production loader selects Nibfin PR246, merged at
+The production loader selects Nibfin PR248, merged at
 `bd59c2e01b14a66cd870f0af0268928e231f7e85`, package `@nibfin/core@0.1.0`.
 The exact reviewed inputs are retained here:
 

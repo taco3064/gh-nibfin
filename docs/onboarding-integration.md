@@ -50,6 +50,28 @@ all workflow deployment capabilities is not complete. This limitation is not an
 additional mandatory end-user command or a second controller installation. A
 successful source plan or repository-file fixture is not host readiness.
 
+### Shared personal-repository pool input
+
+Owner `init` can select a finite pool with `--execution-repo OWNER/SOURCE` and
+`--pool-repos OWNER/SOURCE,OWNER/SECOND,OWNER/THIRD`. Both options are required
+together and the initialized repository must be a member. The CLI reads each
+actual public repository, its stable ID, personal Owner ID and administration
+permission, then delegates descriptor validation to the installed Core. No
+Runner is created or registered by this selection.
+
+The private installation record retains the descriptor. Repeat `init` and
+`--check` reread all identities and reject transfers, replacements or changed
+membership. The repository runtime file only describes the pool: it cannot
+select or replace this protected local configuration. Switching an existing
+installation into a pool also requires the reconciled transition boundary.
+
+The existing notifier-only host does not implement shared execution. Its check
+returns a specific blocked diagnostic, and pooled init stops before repository
+writes or service installation. Automatic protected-host installation, actual
+cross-repository routing and two-instance registration remain incomplete. The
+installed-consumer fixture uses a synthetic host and proves only descriptor
+construction, retention and forwarding, not real shared Runner operation.
+
 A separate assigned member uses their own OS account, stored `gh auth login`, and
 model login. They do not receive the Owner's model credentials or Runner
 administration permission merely through Write access. Repository ownership

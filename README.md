@@ -1,7 +1,7 @@
 # gh-nibfin
 
 Local GitHub CLI extension with seven command paths. The current integration
-selects the immutable reviewed Nibfin PR246 package; see the
+selects the immutable reviewed Nibfin PR248 package; see the
 [current package inputs](docs/handoffs/current/README.md) and
 [current integration guide](docs/onboarding-integration.md) for exact identities.
 Initialization, creation and registration adapters are being integrated with its
