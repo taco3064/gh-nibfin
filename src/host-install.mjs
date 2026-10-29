@@ -4,6 +4,7 @@ import {userInfo} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {readPrivate,privatePath,ensurePrivateDirectory,sha,writePrivate} from './local-state.mjs';
+import {managedHostRecords} from './host-store.mjs';
 // Trusted local host bindings are the public createRescueHost configuration,
 // supplied by the existing control host. They never enter a member environment.
 const configPath=()=>join(userInfo().homedir,'.config/nibfin/host.json');
@@ -19,11 +20,18 @@ function systemctl(args){
   return {ok:!r.error&&r.status===0,output:r.status===0?r.stdout:''};
 }
 export function existingControlHost({path,process:run=systemctl}={}){
-  async function source(){const c=await hostConfiguration(path);return {c,binding:await import(pathToFileURL(c.binding.path).href+'?identity='+c.binding.sha256)};}
+  async function source(core,{context,initialize=false}){
+    const c=await hostConfiguration(path),binding=await import(pathToFileURL(c.binding.path).href+'?identity='+c.binding.sha256);
+    if(initialize)await ensurePrivateDirectory(c.directory);
+    const storage=await managedHostRecords(core,{directory:c.directory,hosts:binding.hosts,
+      installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},initialize});
+    return {c,binding:{...binding,hosts:storage.hosts},storage};
+  }
   async function check({core,context,repo,executionPool}){
     if(executionPool)return {status:'blocked',diagnostics:[{capability:'executionPool',code:'protected-shared-host-onboarding-incomplete'}]};
+    let storage;
     try{
-      const {c,binding}=await source();
+      const loaded=await source(core,{context});storage=loaded.storage;const {c,binding}=loaded;
       if(!Array.isArray(binding.hosts)||binding.hosts.length<1||binding.hosts.length>32)throw Error();
       const matches=binding.hosts.filter(h=>h.configuration?.policy?.repository===repo);
       if(matches.length!==1)throw Error();
@@ -33,6 +41,11 @@ export function existingControlHost({path,process:run=systemctl}={}){
       const installed=await readPrivate(join(c.directory,'installation.json'));
       if(installed.core!==context.identity.components.core.sha256||installed.binding!==c.binding.sha256)throw Error();
       if(installed.launcher!==sha(await fs.readFile(new URL('./notifier.mjs',import.meta.url)))||sha(await fs.readFile(join(c.directory,'notifier.mjs')))!==installed.launcher||sha(await fs.readFile(join(c.directory,'notifier.json')))!==installed.configuration)throw Error();
+      if(!installed.adapters||Object.keys(installed.adapters).sort().join(' ')!=='host-store.mjs local-state.mjs')throw Error();
+      for(const [name,digest] of Object.entries(installed.adapters)){
+        await privatePath(join(c.directory,name));
+        if(sha(await fs.readFile(join(c.directory,name)))!==digest||sha(await fs.readFile(new URL('./'+name,import.meta.url)))!==digest)throw Error();
+      }
       const unit=join(c.directory,'nibfin-rescue-wakeups.service');await privatePath(unit);
       if(sha(await fs.readFile(unit))!==installed.unit)throw Error();
       const observed=run(['show','nibfin-rescue-wakeups.service','--property=ActiveState','--property=FragmentPath','--property=User']);
@@ -42,11 +55,13 @@ export function existingControlHost({path,process:run=systemctl}={}){
         if(sha(await fs.readFile(join(c.directory,'node_modules/@nibfin/core',file)))!==digest)throw Error();
       }
       return {status:'ready'};
-    }catch{return {status:'blocked',diagnostics:[{capability:'recovery',code:'missing-incompatible-or-inactive-host-notifier',action:'Configure the existing authorized public Core host binding in the execution account host.json; init installs its one notifier. Member create never installs a host.'}]};}
+    }catch{return {status:'blocked',diagnostics:[{capability:'recovery',code:'missing-incompatible-or-inactive-host-notifier',action:'Restore the authorized host source, private state and compatible notifier; init installs its one notifier. Member create never installs a host.'}]};}
+    finally{await storage?.close();}
   }
   async function install({core,context,repo,executionPool}){
     if(executionPool)throw Error('The existing notifier-only host cannot install shared execution. Complete the official protected host onboarding first.');
-    const {c,binding}=await source();const entry=binding.hosts?.find(h=>h.configuration?.policy?.repository===repo);
+    let storage;try{
+    const loaded=await source(core,{context,initialize:true});storage=loaded.storage;const {c,binding}=loaded;const entry=binding.hosts?.find(h=>h.configuration?.policy?.repository===repo);
     if(!entry)throw Error('The authorized control host has no matching public repository binding.');
     core.validateRescuePolicy(entry.configuration.policy);
     // Validate the real existing host composition before installing a service.
@@ -71,15 +86,23 @@ export function existingControlHost({path,process:run=systemctl}={}){
     };await compare();
     const daemon=join(c.directory,'notifier.mjs'),launcher=await fs.readFile(new URL('./notifier.mjs',import.meta.url));
     try{const before=await fs.readFile(daemon);if(!before.equals(launcher))throw Error('Modified notifier launcher preserved.');}catch(e){if(e.code!=='ENOENT')throw e;await fs.writeFile(daemon,launcher,{flag:'wx',mode:0o600});}
-    const configuration={version:1,binding:c.binding,core:context.identity.components.core.sha256};
+    const adapters={};
+    for(const name of ['host-store.mjs','local-state.mjs']){
+      const bytes=await fs.readFile(new URL('./'+name,import.meta.url)),target=join(c.directory,name);adapters[name]=sha(bytes);
+      try{await privatePath(target);if(!(await fs.readFile(target)).equals(bytes))throw Error('Modified host adapter preserved.');}
+      catch(error){if(error.code!=='ENOENT')throw error;await fs.writeFile(target,bytes,{flag:'wx',mode:0o600});}
+    }
+    const configuration={version:1,binding:c.binding,core:context.identity.components.core.sha256,directory:c.directory,
+      installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins}};
     await writePrivate(join(c.directory,'notifier.json'),configuration);
     const unit=`[Unit]\nDescription=Nibfin durable recovery notifications\n[Service]\nExecStart=/usr/local/bin/node ${daemon} ${join(c.directory,'notifier.json')}\nEnvironment=HOME=${userInfo().homedir}\nUnsetEnvironment=GH_TOKEN GITHUB_TOKEN NODE_OPTIONS NODE_PATH\nRestart=on-failure\nNoNewPrivileges=true\n[Install]\nWantedBy=default.target\n`;
     if(!old)await fs.writeFile(unitPath,unit,{flag:'wx',mode:0o600});
-    await writePrivate(join(c.directory,'installation.json'),{version:1,core:configuration.core,binding:c.binding.sha256,unit:sha(unit),launcher:sha(launcher),configuration:sha(await fs.readFile(join(c.directory,'notifier.json'))),
+    await writePrivate(join(c.directory,'installation.json'),{version:1,core:configuration.core,binding:c.binding.sha256,unit:sha(unit),launcher:sha(launcher),adapters,configuration:sha(await fs.readFile(join(c.directory,'notifier.json'))),
       files:Object.fromEntries(context.manifest.components.core.files.map(f=>[f.path,f.sha256]))});
     for(const args of [['link',unitPath],['daemon-reload'],['enable','nibfin-rescue-wakeups.service'],['start','nibfin-rescue-wakeups.service']])
       if(!run(args).ok)throw Error('Host notifier installation interrupted; retain original service/configuration for reconciliation.');
     return check({core,context,repo});
+    }finally{await storage?.close();}
   }
   return {check,install};
 }

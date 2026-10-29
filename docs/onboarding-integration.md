@@ -72,6 +72,31 @@ cross-repository routing and two-instance registration remain incomplete. The
 installed-consumer fixture uses a synthetic host and proves only descriptor
 construction, retention and forwarding, not real shared Runner operation.
 
+### Managed host state and transition retention
+
+New host compositions can omit executable `records` callbacks. The installer
+allocates one private file store for the complete protected repository set, and
+the notifier opens that same store after restart. Existing external record
+owners are retained; mixed ownership, missing/corrupt state and changed identities
+are rejected rather than replaced with empty records. A new store starts paused.
+The protected lifecycle owner must supply the real work checkpoint; initialization
+never clears a pause or fabricates an accepted conversation or receipt.
+
+The maintained Core owns Rescue record structure, content identities and pin
+transition decisions. The CLI adapter supplies durable atomic file replacement,
+private permissions, compare-and-swap under cross-process exclusion, and native
+filesystem subscriptions. Notifications use no polling, cron or idle Actions.
+Runtime selection, original work and transition intents are retained together.
+An unresolved transition survives restart and cannot automatically repeat its
+write. Selection can switch only after a trusted coordinator verifies the complete
+staged runtime and terminated service boundary; rollback preserves original work.
+
+These are host storage/selection capabilities, not a complete `upgrade` command or
+automatic executable deployment. Package staging, actual service coordination and
+the remaining first-party host composition still require integration. Filesystem,
+restart and child-process tests exercise real storage; the transition verifier in
+those tests is explicitly a fixture and does not certify a runtime/service upgrade.
+
 A separate assigned member uses their own OS account, stored `gh auth login`, and
 model login. They do not receive the Owner's model credentials or Runner
 administration permission merely through Write access. Repository ownership
