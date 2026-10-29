@@ -64,7 +64,7 @@ async function stageRunner(root,name,{prepare,verify,copyFrom}){
  if(!await absent(target)){await verify(target);return;}
  const staging=join(root,'.'+name+'-staging-'+randomUUID());await fs.mkdir(staging,{mode:0o700});
  try{
-  if(copyFrom){await verify(copyFrom);await fs.cp(copyFrom,staging,{recursive:true,force:false,errorOnExist:true,verbatimSymlinks:true});await verify(staging);}
+  if(copyFrom){await verify(copyFrom);await prepare(staging,{archive:join(copyFrom,runnerDistribution.archive)});}
   else await prepare(staging);
   // Acquisition does not configure or execute Runner binaries. Credentials or
   // registration residue must never be copied to another physical Runner.
