@@ -44,11 +44,19 @@ executing the aborting Hook. Modified managed files are preserved. An unconfirme
 write retains the original private intent; repeat setup reconciles those exact
 bytes before doing another write.
 
-Initialization currently requires an existing, privately configured public Core
-host composition. Automatic bootstrap of that existing host, webhook/backfill and
-all workflow deployment capabilities is not complete. This limitation is not an
-additional mandatory end-user command or a second controller installation. A
-successful source plan or repository-file fixture is not host readiness.
+Initialization now selects the maintained native host rather than importing a
+user-authored JavaScript composition. For an explicit shared pool, it stages the
+verified Core, client inputs and exactly two pinned Runner applications under the
+account's private control root. The second application is extracted from the
+same authenticated archive; registration state and model credentials are never
+copied between Runners. `--check` performs no acquisition or filesystem writes.
+Existing staged bytes are verified before reuse, and modified files are preserved.
+
+This initial native preparation does not yet install the control service, register
+Runners or reconcile original work. It reports `staged`, not readiness. Until
+preparation establishes all host capabilities, init returns blocked before any
+repository mutation. A package acquisition or source fixture never establishes
+delivery, recovery or actual shared Runner operation.
 
 ### Shared personal-repository pool input
 
@@ -65,12 +73,12 @@ membership. The repository runtime file only describes the pool: it cannot
 select or replace this protected local configuration. Switching an existing
 installation into a pool also requires the reconciled transition boundary.
 
-The existing notifier-only host does not implement shared execution. Its check
-returns a specific blocked diagnostic, and pooled init stops before repository
-writes or service installation. Automatic protected-host installation, actual
-cross-repository routing and two-instance registration remain incomplete. The
-installed-consumer fixture uses a synthetic host and proves only descriptor
-construction, retention and forwarding, not real shared Runner operation.
+The legacy notifier-only adapter is retained as an explicit compatibility API;
+it is no longer the default installation path. Native preparation currently stops
+before repository writes or service activation. Complete control-service assembly,
+actual cross-repository routing and two-instance registration remain incomplete.
+Acquisition doubles in the installed-consumer tests establish staging and ordering
+only; they do not certify real Runner services or a live delivery.
 
 ### Managed host state and transition retention
 
