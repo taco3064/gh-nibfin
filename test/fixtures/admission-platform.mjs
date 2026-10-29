@@ -7,7 +7,9 @@ import assert from 'node:assert/strict';
 export function admissionPlatform(root){
   return {
     admission:async(core,context,{instance})=>{
-      const directory=join(root,'platform-admission-'+instance.id);await fs.mkdir(directory,{mode:0o700});
+      // Instance IDs are scoped to an environment in these retained fixtures.
+      // Keep their service artifacts with the actual instance, including moves.
+      const directory=join(instance.service,'platform-admission');await fs.mkdir(directory,{mode:0o700});
       const hook=join(directory,'fixture-hook.sh'),policy=join(directory,'fixture-policy.json');
       await fs.writeFile(hook,'#!/bin/sh\nexit 1\n',{flag:'wx',mode:0o700});await fs.writeFile(policy,JSON.stringify({fixture:true,instance:instance.id}),{flag:'wx',mode:0o600});
       return {environment:{ACTIONS_RUNNER_HOOK_JOB_STARTED:hook,NIBFIN_RUNNER_JOB_POLICY:policy},record:{fixture:true}};
