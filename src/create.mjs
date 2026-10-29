@@ -16,7 +16,7 @@ export function options(args) {
   const values = {};
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i];
-    if (!['--name', '--agent', '--count', '--image', '--socket'].includes(key) || key in values ||
+    if (!['--name', '--agent', '--count', '--image', '--socket','--runtime-profile'].includes(key) || key in values ||
         !args[i + 1] || args[i + 1].startsWith('--')) fail('Use --name NAME --agent AGENT [--count N]; each option exactly once.');
     values[key] = args[i + 1];
   }
@@ -26,7 +26,8 @@ export function options(args) {
   const count = Number(text);
   if (!/^[1-9][0-9]*$/.test(text) || !Number.isSafeInteger(count) || count > 128) fail('Count must be a positive integer from 1 to 128 (total instances in this environment).');
   if(values['--image']&&!/^sha256:[a-f0-9]{64}$/.test(values['--image']))fail('Use an immutable --image sha256 digest.');
-  return { name: values['--name'], agent: values['--agent'], count, ...(values['--image']?{image:values['--image']}:{}), ...(values['--socket']?{socket:values['--socket']}:{}) };
+  if(values['--runtime-profile']&&(values['--agent']!=='codex'||!/^linux-amd64-codex[a-z0-9-]*$/.test(values['--runtime-profile'])))fail('Select an explicitly reviewed Codex runtime profile.');
+  return { name: values['--name'], agent: values['--agent'], count, ...(values['--image']?{image:values['--image']}:{}), ...(values['--socket']?{socket:values['--socket']}:{}) ,...(values['--runtime-profile']?{runtimeProfile:values['--runtime-profile']}:{})};
 }
 
 // No inherited Actions tokens, provider keys, alternate login homes or Node injection.
@@ -94,6 +95,8 @@ export async function createEnvironment(input,dependencies={}){
   if(!/^sha256:[a-f0-9]{64}$/.test(image??''))fail('Select the preprovisioned reviewed Agent image with --image sha256:DIGEST.');
   const core=await dependencies.core(),factory={codex:core.createLinuxCodexBackend,claude:core.createLinuxClaudeBackend,gemini:core.createLinuxGeminiBackend}[agent];
   if(typeof factory!=='function'||typeof core.createAgentEnvironments!=='function')fail('Selected Agent backend capability unavailable in the reviewed public package.');
+  const runtimeProfile=optionsValue.runtimeProfile??configuration.runtimeProfile;
+  if(runtimeProfile!==undefined&&(agent!=='codex'||typeof runtimeProfile!=='string'||!Object.hasOwn(core.linuxCodexProfiles??{},runtimeProfile)))fail('Runtime profile is not in the verified producer catalog.');
   const root=await privateDirectory(dependencies.root??join(userInfo().homedir,'.local/share/nibfin/environments'),io),destination=join(root,name);
   if(!dependencies.lockHeld)return withEnvironmentLock(root,name,()=>createEnvironment(input,{...dependencies,lockHeld:true}));
   const loginSpace=join(destination,'login'),environment=processEnvironment(loginSpace);
@@ -109,7 +112,8 @@ export async function createEnvironment(input,dependencies={}){
       try{await io.lstat(join(destination,'environment.pending'));fail('Original publication is unresolved; reconcile environment.pending before retry.');}catch(e){if(e.code!=='ENOENT')throw e;}
       if(pending.runtimeResources?.some(r=>r.status!=='removed'))fail('Retained runtime resources require original-operation reconciliation before retry.');
       if(pending.version!==1||pending.name!==name||pending.agent!==agent||pending.count!==count||pending.githubId!==githubId||pending.uid!==account.uid
-        ||pending.image!==image||pending.socket!==socket||pending.core!==currentPin.coreSha256)fail('Environment name already exists with a different account/Agent/count/runtime; preserve its pending creation.');
+        ||pending.image!==image||pending.socket!==socket||pending.core!==currentPin.coreSha256
+        ||(pending.runtimeProfile??null)!==(runtimeProfile??null))fail('Environment name already exists with a different account/Agent/count/runtime; preserve its pending creation.');
     }catch(e){if(e.code!=='ENOENT')throw e;if(pending)throw e;
       await io.mkdir(destination,{mode:0o700});owned=true;await io.mkdir(loginSpace,{mode:0o700});
       const instances=[];
@@ -119,7 +123,7 @@ export async function createEnvironment(input,dependencies={}){
         for(const path of [instance.workspace,instance.registration,instance.service])await io.mkdir(path,{mode:0o700});instances.push(instance);
       }
       core.createAgentEnvironments().describe({id:name,agent,loginSpace,instances});
-      pending={version:1,name,agent,count,githubId,uid:account.uid,image,socket,core:currentPin.coreSha256,instances};
+      pending={version:1,name,agent,count,githubId,uid:account.uid,image,socket,core:currentPin.coreSha256,instances,...(runtimeProfile?{runtimeProfile}:{})};
       await io.writeFile(join(destination,'creation.json'),JSON.stringify(pending),{flag:'wx',mode:0o600});journal=true;
     }
     const expected=pending.instances.map((i,n)=>({id:i.id,...Object.fromEntries(['workspace','registration','service'].map(k=>[k,join(destination,`instance-${n+1}`,k)]))}));
@@ -135,6 +139,7 @@ export async function createEnvironment(input,dependencies={}){
     for(const instance of descriptor.instances){
       const dispatch=dependencies.backendProcess??core.codexProcess;
       const backend=factory({root:destination,image,socket,environment:descriptor,instanceId:instance.id,
+        ...(runtimeProfile?{runtimeProfile}:{}),
         task:()=>{throw Error('Creation has no delivery authority.');},process:async request=>{
           const args=request.args.slice(2);let resource;
           if(args[0]==='create')resource={kind:'container',name:args[args.indexOf('--name')+1],instance:instance.id,status:'unknown'};
@@ -165,7 +170,7 @@ export async function createEnvironment(input,dependencies={}){
       probe:async({capability})=>({status:reports.length===count&&reports.every(backendReady)?'verified':'blocked',...(capability==='github-identity'?{userId:githubId}:{})})});
     if(preflight.status!=='ready')fail('Packaged preflight blocked this account/tools/network configuration.');
     const record={schemaVersion:1,name,agent,loginSpace,githubId,account:{uid:account.uid,username:account.username},
-      runtime:{image,socket,core:currentPin.coreSha256},instances:descriptor.instances.map(i=>({...i,loginSpace,status:'unregistered',serviceStatus:'not-installed'}))};
+      runtime:{image,socket,core:currentPin.coreSha256,...(runtimeProfile?{runtimeProfile}:{})},instances:descriptor.instances.map(i=>({...i,loginSpace,status:'unregistered',serviceStatus:'not-installed'}))};
     await io.writeFile(join(destination,'environment.pending'),JSON.stringify(record,null,2)+'\n',{flag:'wx',mode:0o600});
     await io.rename(join(destination,'environment.pending'),join(destination,'environment.json'));await io.rm(join(destination,'creation.json'));
     return record;
