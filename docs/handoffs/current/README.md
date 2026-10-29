@@ -1,7 +1,7 @@
 # Current reviewed public runtime
 
 The production loader selects the Nibfin PR252 source snapshot at
-`58636bf124cc0363d61ba0155888232e2f1cb602`, package `@nibfin/core@0.1.0`.
+`3f46061bc7adf12e7594cdcdf539a220402f318c`, package `@nibfin/core@0.1.0`.
 The exact reviewed inputs are retained here:
 
 | Input | SHA-256 |
