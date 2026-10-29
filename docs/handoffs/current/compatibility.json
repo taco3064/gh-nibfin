@@ -26,7 +26,7 @@
         },
         {
           "path": "docs/authority.md",
-          "sha256": "daf1e1b1d992b70043df987e8902d6c08f869b33a9ec58966101a1a622f22cb2"
+          "sha256": "d5b1b6c887d52b9aaf3135a3f443dec6b9eae6b6e82dc273f941a8731345b754"
         },
         {
           "path": "docs/authorization.md",
@@ -246,7 +246,7 @@
         },
         {
           "path": "package.json",
-          "sha256": "74abc64538282c4e5971686179c5590d6d2a7c7894f9e75077d8269b29444ec1"
+          "sha256": "ec01b7d2f38993e8b77b27c1eadf6d31c3f232d5f326e1c979015aa5021bf58a"
         },
         {
           "path": "skills/accept/SKILL.md",
@@ -290,7 +290,7 @@
         },
         {
           "path": "src/authority.mjs",
-          "sha256": "93aae3040d9ebd25ac640a3066a4fda4ef9f5854ed9f4b54606f677168928a44"
+          "sha256": "8f4779934b0e6f92727eb8ea54540a8884c82a9582311ec291f66f087e77ab74"
         },
         {
           "path": "src/authorization.mjs",
@@ -382,11 +382,11 @@
         },
         {
           "path": "src/distribution-contract.mjs",
-          "sha256": "9ac8ac2ae15a9689ce56c017242d554cccd6fd6792313cf943eabfbfb592cb0e"
+          "sha256": "cbb1915d9efca4c5ce6ecf3795ed81dff3d6880ff46a17da383942a5eb1c76a9"
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "670f77c0f2ac35a735df2c5533e4e4157f44d89d9cf56849c26ec5daa93de24a"
+          "sha256": "81825413b29a71b1f91731a5415a9f965c6e05b2636946c7451304a26b8f0543"
         },
         {
           "path": "src/distribution.mjs",
@@ -462,7 +462,7 @@
         },
         {
           "path": "src/index.mjs",
-          "sha256": "d998199138060b8f32629d68719f1634ec47c311bdfa9a074bac00ab99c387b8"
+          "sha256": "32f1d1507dabe47dde6241b996e08390c0c392021b1407913a577ca34a08ec63"
         },
         {
           "path": "src/installation.mjs",
@@ -471,6 +471,10 @@
         {
           "path": "src/instructions.mjs",
           "sha256": "8e87727cb399805261b03eecfcc9fe20fca5f2ede4c7ec339030c4e0f70bf616"
+        },
+        {
+          "path": "src/issue-authority.mjs",
+          "sha256": "109ade6e8aa0101a2a2b2b3ac3e09dec27c9fc4502ff67b24252261b234c68bf"
         },
         {
           "path": "src/lifecycle.mjs",
@@ -697,7 +701,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "60676d29c29fbee5e147b3ac297b9402f0d4780fb9f5ad936afba64e9d4a01fd"
+      "sha256": "3ecd0bf634acbe2bd598fd33ba949cd67625ae75d39521f6b794f51cc2374145"
     },
     "skills": {
       "version": "0.1.0",
@@ -874,7 +878,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "670f77c0f2ac35a735df2c5533e4e4157f44d89d9cf56849c26ec5daa93de24a"
+    "sourceMapSha256": "81825413b29a71b1f91731a5415a9f965c6e05b2636946c7451304a26b8f0543"
   },
   "entries": [
     {
