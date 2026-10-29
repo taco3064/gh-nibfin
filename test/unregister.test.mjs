@@ -82,7 +82,7 @@ test('AC2/5/7 exact official removal, large IDs, preservation, repeat and safe r
     assert.equal((await fs.readdir(f.record.instances[0].registration)).includes('.credentials'),false);
     assert.ok(f.processes.every(a=>!a.some(v=>v.includes('local-2') || v.includes('local-3'))));
     // Registration reaches the prepared-application check, rather than residual or capacity rejection.
-    await assert.rejects(()=>registerInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,run:async()=>({ok:true,identity:'8'})}),/application/);
+    await assert.rejects(()=>registerInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,prepareDistribution:async()=>{throw Error('Fixture application absent');},run:async()=>({ok:true,identity:'8'})}),/application/);
   } finally {delete process.env.GH_TOKEN;delete process.env.GITHUB_TOKEN;}
 }));
 test('AC2/6 Org scope distinct from Org-owned repository; repo selector never stops shared Org service',async()=>{
@@ -109,7 +109,7 @@ test('AC2/4 read failures allow safe local exit but cannot prove absence or perm
     assert.equal(f.calls.filter(c=>c.method==='DELETE').length,0);
     assert.ok(!JSON.stringify(await f.state()).includes(secret));
     assert.ok(await fs.readFile(join(f.record.instances[0].registration,'binding.json')));
-    await assert.rejects(()=>registerInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,run:async()=>({ok:true,identity:'8'})}),/reconciliation/);
+    await assert.rejects(()=>registerInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,prepareDistribution:async()=>{throw Error('Fixture application absent');},run:async()=>({ok:true,identity:'8'})}),/reconciliation/);
   });
 });
 test('AC3 termination acknowledgement, unsafe units, active work and unknown writes retain credentials',async()=>{
@@ -242,7 +242,7 @@ test('AC4 simultaneous unregister and in-flight registration share local exclusi
   f.dependencies.process=async(...args)=>{
     if(!checked) {
       checked=true;
-      await assert.rejects(()=>registerInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,run:async()=>({ok:true,identity:'8'})}),/reconciliation/);
+      await assert.rejects(()=>registerInstance(['--runner','demo','--repo','example/a'],{...f.dependencies,prepareDistribution:async()=>{throw Error('Fixture application absent');},run:async()=>({ok:true,identity:'8'})}),/reconciliation/);
       const competing=await f.unregister();assert.equal(competing.complete,false);assert.equal(competing.local,'retained');
     }
     return original(...args);

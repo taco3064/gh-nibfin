@@ -6,6 +6,8 @@ import {tmpdir,userInfo} from 'node:os';
 import {registerInstance,registrationOptions,registrationProcess} from '../src/register.mjs';
 import {withRegistrationCore} from '../src/core.mjs';
 import {main} from '../src/cli.mjs';
+import {admissionPlatform} from './fixtures/admission-platform.mjs';
+import {runnerDistribution} from '../src/runner-distribution.mjs';
 const secret = 'SECRET_SENTINEL';
 // All config/service executables are verifier-owned fixtures for the
 // official argument contract, fixture revision 1 on Node 22. No official Runner
@@ -52,7 +54,7 @@ console.log('${secret}'); console.error('${secret}');
       '/orgs/example/actions/runner-groups/3/runners?per_page=100&page=1':page('runners',[runner()]),...patch.routes};
     const bin=join(root,'fixture bin');await fs.mkdir(bin);
     await fs.writeFile(join(bin,'systemctl'),`#!/usr/bin/env node\nconst fs=require('node:fs');\nif(process.env.GH_TOKEN || process.env.GITHUB_TOKEN) process.exit(9);\nfs.appendFileSync('fixture-service.jsonl',JSON.stringify(process.argv.slice(2))+'\\n');\nconsole.error('${secret}');`,{mode:0o700});
-    const dependencies = {root,core,run:async (cmd,args,env) => {
+    const dependencies = {root,core,...admissionPlatform(root),prepareDistribution:async directory=>{await fs.access(join(directory,'config.sh'));return runnerDistribution;},distributionVerifier:async()=>runnerDistribution,run:async (cmd,args,env) => {
       assert.equal(env.GH_TOKEN,undefined);assert.equal(env.GITHUB_TOKEN,undefined);
       return {ok:true,identity:'8'};
     },transport:async request => {

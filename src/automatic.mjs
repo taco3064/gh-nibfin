@@ -1,4 +1,6 @@
 import fs from 'node:fs/promises';
+import {currentPin} from './current-core.mjs';
+import {managedWorkflowPlan} from './workflow-inputs.mjs';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
 import {spawn} from 'node:child_process';
@@ -20,15 +22,20 @@ export async function confirmRegistration(message) {
   finally {rl.close();}
 }
 // Owner-approved local installation contract, never downloaded response authority.
-export async function automaticConfiguration(repository, repositoryId) {
-  const path = join(userInfo().homedir,'.config/nibfin/registration.json');
-  await safePath(path,{directory:false});
-  const stat = await fs.stat(path); if (stat.size > 16384 || stat.mode & 0o077) fail();
-  const c = JSON.parse(await fs.readFile(path,'utf8'));
-  if (c.contract !== 'n17-dispatch-v1' || c.repository !== repository || c.repositoryId !== repositoryId ||
-      !id(c.workflowId) || !/^\.github\/workflows\/[a-zA-Z0-9_-]+\.ya?ml$/.test(c.path) ||
-      !/^[a-zA-Z0-9_-]{1,80}$/.test(c.ref) || !/^[a-f0-9]{40}$/.test(c.headSha) || !/^[a-f0-9]{64}$/.test(c.workflowSha256)) fail();
-  return c;
+export async function automaticConfiguration(repository,repositoryId,{provider,core}={}) {
+  const read=async endpoint=>{const r=await provider.request({endpoint,target:repositoryId,operation:'registration-policy',correlation:'policy',signal:AbortSignal.timeout(30000)});if(r.outcome!=='read')fail();return r.data;};
+  const root='/repos/'+repository,path='.github/workflows/nibfin-register.yml';
+  const ref=await read(root+'/git/ref/heads/main'),headSha=ref.object?.sha;
+  if(ref.object?.type!=='commit'||!/^[a-f0-9]{40}$/.test(headSha??''))fail();
+  const installed=await read(root+'/contents/.nibfin/runtime.json?ref='+headSha);
+  if(installed.encoding!=='base64'||typeof installed.content!=='string'||installed.content.length>65536)fail();
+  const policy=JSON.parse(Buffer.from(installed.content,'base64'));
+  if(policy.version!==1||policy.automaticRegistration!==true||policy.package?.coreSha256!==currentPin.coreSha256||policy.package?.packageVersion!==currentPin.packageVersion)fail();
+  const workflow=await read(root+'/actions/workflows/nibfin-register.yml'),source=await read(root+'/contents/'+path+'?ref='+headSha);
+  const expected=managedWorkflowPlan(core).files.get(path);
+  if(workflow.path!==path||workflow.state!=='active'||!id(workflow.id)||source.encoding!=='base64'||typeof source.content!=='string'
+    ||source.content.length>100000||!Buffer.from(source.content,'base64').equals(Buffer.from(expected)))fail();
+  return {contract:'nibfin-registration-v1',repository,repositoryId,path,ref:'main',headSha,workflowId:workflow.id,workflowSha256:sha(expected)};
 }
 // gh owns authenticated API redirects; capture bounded binary bytes, discard stderr.
 // Stored execution-account login only, no checkout configuration or Actions token.
@@ -55,9 +62,9 @@ export async function requestAutomatic(core,{provider,repository,repositoryId,me
   configuration=automaticConfiguration,confirm=confirmRegistration,archive=registrationArchive,wait=delay,now=Date.now,waitMs=120000}) {
   let privateKey;
   try {
-    const c = await configuration(repository,repositoryId);
+    const c = await configuration(repository,repositoryId,{provider,core});
     // Validate injected configurations by the same shape as the installation file.
-    if (c.repository !== repository || c.repositoryId !== repositoryId || c.contract !== 'n17-dispatch-v1' ||
+    if (c.repository !== repository || c.repositoryId !== repositoryId || !['nibfin-registration-v1','n17-dispatch-v1'].includes(c.contract) ||
         !id(c.workflowId) || !/^\.github\/workflows\/[a-zA-Z0-9_-]+\.ya?ml$/.test(c.path) ||
         !/^[a-zA-Z0-9_-]{1,80}$/.test(c.ref) || !/^[a-f0-9]{40}$/.test(c.headSha) || !/^[a-f0-9]{64}$/.test(c.workflowSha256)) fail();
     const root = `/repos/${repository}`, dispatch = `${root}/actions/workflows/${c.workflowId}/dispatches`;
@@ -79,7 +86,7 @@ export async function requestAutomatic(core,{provider,repository,repositoryId,me
     state.request={requestId,workflowId:c.workflowId,headSha:c.headSha,phase:'dispatching'};
     await publish(state); // Durable uncertainty blocks redispatch even after response loss.
     const sent = await provider.request({method:'POST',endpoint:dispatch,target:repositoryId,operation:'auto_dispatch',correlation:requestId,
-      body:{ref:c.ref,inputs:{requestId,level:'repository',publicKey}},signal});
+      body:{ref:c.ref,inputs:c.contract==='nibfin-registration-v1'?{nibfin_registration:requestId,level:'repository',public_key:publicKey}:{requestId,level:'repository',publicKey}},signal});
     if (sent.outcome !== 'submitted') fail();
     state.request.phase='waiting';await publish(state);
     process.stdout.write(`Waiting up to ${Math.ceil(waitMs/1000)} seconds for the protected registration response.\n`);

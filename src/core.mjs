@@ -26,11 +26,12 @@ function octal(bytes) {
 }
 
 // Structural inspection is exported for adversarial tests, never a trust override.
-export function parseArchive(bytes, expectedNames = names) {
+export function parseArchive(bytes, expectedNames = names, profile = 'historical') {
   const expanded = expectedNames !== names;
-  if (bytes.length > (expanded ? 150000 : 16384)) reject('archive too large');
+  const current = profile === 'current';
+  if (bytes.length > (current ? 4000000 : expanded ? 150000 : 16384)) reject('archive too large');
   let tar;
-  try { tar = gunzipSync(bytes, { maxOutputLength: expanded ? 500000 : 32768 }); }
+  try { tar = gunzipSync(bytes, { maxOutputLength: current ? 16000000 : expanded ? 500000 : 32768 }); }
   catch { reject('malformed or oversized gzip'); }
   if (tar.length % 512) reject('truncated tar');
   const files = new Map();
@@ -51,7 +52,7 @@ export function parseArchive(bytes, expectedNames = names) {
     if (![0, 48].includes(header[156]) || !zero(header.subarray(157, 257))) reject('unsupported tar type or link');
     if (files.has(name.slice(8))) reject('duplicate package file');
     const size = octal(header.subarray(124, 136));
-    if (size > (expanded ? 50000 : 8192)) reject('oversized package file');
+    if (size > (current ? 1000000 : expanded ? 50000 : 8192)) reject('oversized package file');
     offset += 512;
     const padded = Math.ceil(size / 512) * 512;
     if (offset + padded > tar.length || !zero(tar.subarray(offset + size, offset + padded))) reject('truncated or invalid tar payload');

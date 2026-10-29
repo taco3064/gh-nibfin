@@ -38,3 +38,44 @@ export async function verifyRunnerDistribution(directory,{signal}={}) {
   } catch {throw Error('Automatic registration requires the pinned official Linux x64 Runner v2.331.0 archive, matching extracted application bytes, and local tar. No registration was requested; prepare the reviewed distribution or use the authorized manual route.');}
   finally {if(scratch)await fs.rm(scratch,{recursive:true,force:true});}
 }
+
+// First-party pinned acquisition, called only by registration, never by --check.
+// The archive is authenticated before any executable is extracted or invoked.
+export async function prepareRunnerDistribution(directory,{signal}={}){
+  try{await fs.lstat(join(directory,'config.sh'));return await verifyRunnerDistribution(directory,{signal});}
+  catch(e){if(e.code!=='ENOENT')throw e;}
+  const entries=await fs.readdir(directory);
+  if(entries.some(n=>n!=='unregister.json'))throw Error('Unrecognized Runner installation residue; preserve and reconcile before registration.');
+  const scratch=await fs.mkdtemp(join(tmpdir(),'nibfin-runner-download-'));
+  try{
+    const {get}=await import('node:https');
+    const snapshot=join(scratch,runnerDistribution.archive);
+    const handle=await fs.open(snapshot,'wx',0o600);let size=0;
+    const fetch=async(url,hops=0)=>{
+      if(hops>4)throw Error('Runner redirect limit.');
+      const u=new URL(url);
+      if(u.protocol!=='https:'||u.username||u.password||!['github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'].includes(u.hostname))throw Error('Unsupported official Runner download origin.');
+      await new Promise((resolve,reject)=>{
+        const req=get(u,{signal,timeout:30000,headers:{'User-Agent':'gh-nibfin','Accept':'application/octet-stream'}},res=>{
+          if([301,302,303,307,308].includes(res.statusCode)){res.resume();fetch(new URL(res.headers.location,u),hops+1).then(resolve,reject);return;}
+          if(res.statusCode!==200){res.resume();reject(Error('Official Runner download denied/unavailable.'));return;}
+          (async()=>{try{for await(const chunk of res){size+=chunk.length;if(size>500000000)throw Error('Runner archive oversized.');await handle.write(chunk);}resolve();}catch(e){req.destroy();reject(e);}})();
+        });req.once('timeout',()=>req.destroy(Error('Runner download timeout.')));req.once('error',reject);
+      });
+    };
+    try{await fetch(`https://github.com/actions/runner/releases/download/v${runnerDistribution.version}/${runnerDistribution.archive}`);await handle.sync();}finally{await handle.close();}
+    if(await hash(snapshot)!==runnerDistribution.sha256)throw Error('Official Runner archive integrity mismatch.');
+    const extracted=join(scratch,'extracted');await fs.mkdir(extracted,{mode:0o700});
+    await promisify(execFile)('tar',['--extract','--gzip','--file',snapshot,'--directory',extracted,'--no-same-owner'],{signal,timeout:30000,maxBuffer:4096,env:{PATH:process.env.PATH,LANG:'C'}});
+    const copy=async(relative='')=>{
+      for(const e of await fs.readdir(join(extracted,relative),{withFileTypes:true})){
+        const name=join(relative,e.name),source=join(extracted,name),target=join(directory,name);
+        if(e.isDirectory()){await fs.mkdir(target,{mode:0o700});await copy(name);}
+        else if(e.isFile()){await fs.copyFile(source,target,fs.constants.COPYFILE_EXCL);const mode=(await fs.stat(source)).mode;await fs.chmod(target,mode&0o111?0o700:0o600);}
+        else throw Error('Unsupported official Runner file type.');
+      }
+    };
+    await copy();await fs.copyFile(snapshot,join(directory,runnerDistribution.archive),fs.constants.COPYFILE_EXCL);
+    await fs.chmod(join(directory,runnerDistribution.archive),0o600);return verifyRunnerDistribution(directory,{signal});
+  }finally{await fs.rm(scratch,{recursive:true,force:true});}
+}

@@ -50,16 +50,17 @@ test('executable diagnostics, exact seven paths and strict grammar', async () =>
     for (const args of [[], ['--help'], ['--version']]) {
       const result = cli(args, cwd);
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer 0a2e276/ : /default 2; positive integer total/);
+      assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer 9504d15/ : /default 2; positive integer total/);
     }
   }
-  const paths = ['init', 'upgrade'];
+  const paths = ['upgrade'];
   for (const path of paths) {
     const result = cli(path.split(' '));
     assert.equal(result.status, 2);
     assert.match(result.stderr, /not implemented/);
     assert.match(cli(['--help']).stdout, new RegExp(path));
   }
+  const init=cli(['init']);assert.equal(init.status,2);assert.match(init.stderr,/Select --repo|Use init/);
   const removal = cli(['runner','remove']);
   assert.equal(removal.status, 2);
   assert.match(removal.stderr, /Use --runner NAME \[--yes\]/);
@@ -67,8 +68,8 @@ test('executable diagnostics, exact seven paths and strict grammar', async () =>
   for (const args of [['runner'], ['help'], ['version'], ['status'], ['runner', 'unknown'], ['--unknown'], ['init', 'extra'], ['init', '--help'], ['--version', 'extra'], ['runner create'], ['init', 'a b', '$(false)']]) {
     const result = cli(args);
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /Use gh nibfin --help/);
-    assert.ok(result.stderr.includes(JSON.stringify(args)), 'argument boundaries preserved');
+    if(args[0]==='init')assert.match(result.stderr,/Use init/);
+    else {assert.match(result.stderr,/Use gh nibfin --help/);assert.ok(result.stderr.includes(JSON.stringify(args)),'argument boundaries preserved');}
   }
 });
 

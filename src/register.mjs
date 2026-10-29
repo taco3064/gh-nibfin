@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import {join, resolve, parse} from 'node:path';
 import {userInfo} from 'node:os';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {withRegistrationCore,withAutomaticCore} from './core.mjs';
-import {verifyRunnerDistribution} from './runner-distribution.mjs';
+import {withCurrentCore} from './current-core.mjs';
+import {prepareAdmission,checkAdmission} from './admission.mjs';
+import {verifyRunnerDistribution,prepareRunnerDistribution} from './runner-distribution.mjs';
 import {requestAutomatic,automaticBinding} from './automatic.mjs';
 import {processEnvironment, githubObservation, observeProcess} from './create.mjs';
 class Diagnostic extends Error {}
@@ -145,7 +146,7 @@ export async function orgReadback(provider, prefix, target, runnerId, label, gro
 }
 async function registerUnlocked(args, dependencies = {}) {
   const options = registrationOptions(args);
-  const execute = async core => {
+  const execute = async (core,packageContext=dependencies.packageContext) => {
     const account = dependencies.account ?? userInfo(), root = dependencies.root ?? join(userInfo().homedir,'.local/share/nibfin/environments');
     let coordinates;
     try {
@@ -211,13 +212,15 @@ async function registerUnlocked(args, dependencies = {}) {
         if (!await absent(join(instance.registration,name))) fail('Existing configuration/credentials or pending publication requires reconciliation.');
       }
       if (process.platform !== 'linux' || account.uid === 0 || account.uid !== userInfo().uid) fail('Supported prerequisite: Linux with non-root execution/service account and a user systemd manager.');
+      try{await (dependencies.prepareDistribution??prepareRunnerDistribution)(instance.registration,{signal:dependencies.signal});}
+      catch{fail('Official Runner application preparation unavailable or incomplete; preserve its files and reconcile before retrying. No registration requested.');}
       for (const name of ['config.sh','bin/runsvc.sh']) {
         try { const path = join(instance.registration,name); await safePath(path,{directory:false}); await fs.access(path,fs.constants.X_OK); }
         catch { fail('Missing or unsafe official runner application config.sh/bin/runsvc.sh; prepare a pinned official distribution in this instance registration directory.'); }
       }
-      if (options.method === 'auto') {
+      {
         try {await (dependencies.distributionVerifier ?? verifyRunnerDistribution)(instance.registration,{signal:dependencies.signal});}
-        catch {fail('Automatic registration requires the pinned official Linux x64 v2.331.0 archive, matching extracted bytes, private directories and local tar; no request submitted.');}
+        catch {fail('Registration requires the pinned official Linux x64 v2.331.0 archive, matching extracted bytes, private directories and local tar; no request submitted.');}
       }
       const proc = dependencies.process ?? registrationProcess;
       const invoke = async (command, argv, cwd = instance.registration) => {
@@ -309,6 +312,9 @@ async function registerUnlocked(args, dependencies = {}) {
           fail(`Fresh N15 Runner readback ${['mismatch','unavailable','unsupported'].includes(result.outcome) ? result.outcome : 'incomplete'}; preserve pending identity for reconciliation.`);
         observation = result.instances.find(i => i.instanceId === instance.id).observation;
       } else observation = await orgReadback(provider,prefix,targetId,runnerId,state.label,options.group,signal);
+      const admission=await (dependencies.admission??prepareAdmission)(core,packageContext,{state,instance,provider,signal,configuration:dependencies.admissionConfiguration});
+      Object.assign(environment,admission.environment);
+      state.admission=admission.record;
       await publish(state);
       state.service.status='unknown';
       await publish(state);
@@ -325,6 +331,10 @@ async function registerUnlocked(args, dependencies = {}) {
       await publish(state);
       state.service.status='unknown';
       await publish(state);
+      await invoke('systemctl',['--user','daemon-reload']);
+      await (dependencies.activationVerifier??checkAdmission)(instance,environment);
+      const serviceEnv=dependencies.serviceEnvironment?await dependencies.serviceEnvironment(unitName,environment):await readServiceEnvironment(unitName,environment);
+      if(!['ACTIONS_RUNNER_HOOK_JOB_STARTED','NIBFIN_RUNNER_JOB_POLICY'].every(k=>serviceEnv[k]===environment[k]))fail('Actual service environment lacks the installed admission Hook/policy; service not enabled.');
       await invoke('systemctl',['--user','enable',unitName]);
       await invoke('systemctl',['--user','start',unitName]);
       await invoke('systemctl',['--user','is-active','--quiet',unitName]);
@@ -342,7 +352,7 @@ async function registerUnlocked(args, dependencies = {}) {
       fail('Registration prerequisite or state publication failed; inspect private per-instance binding/configuration and reconcile before retrying. No automatic re-registration.');
     } finally { if (locked) {await fs.rm(join(lock,'lifecycle-owner.json'),{force:true});await fs.rmdir(lock);} }
   };
-  try { return await (dependencies.core ? execute(dependencies.core) : (options.method === 'auto' ? withAutomaticCore(execute) : withRegistrationCore(execute))); }
+  try { return await (dependencies.core ? execute(dependencies.core) : withCurrentCore(execute)); }
   catch (error) {
     if (error instanceof Diagnostic) throw error;
     fail('Registration unavailable; verify intact reviewed package, private environment records, application and account prerequisites. Reconcile any existing instance state before retrying.');
@@ -390,4 +400,11 @@ export async function registerInstance(args, dependencies = {}) {
     catch(e) {if(e.code!=='ENOENT') throw e;}
     return registerUnlocked(args,dependencies);
   });
+}
+
+async function readServiceEnvironment(unit,env){
+  const r=spawnSync('systemctl',['--user','show',unit,'--property=Environment','--value'],{env,encoding:'utf8',timeout:15000,maxBuffer:65536});
+  if(r.error||r.status!==0)return {};
+  const result={};for(const token of r.stdout.trim().split(/\s+/)){const at=token.indexOf('=');if(at>0)result[token.slice(0,at)]=token.slice(at+1);}
+  return result;
 }
