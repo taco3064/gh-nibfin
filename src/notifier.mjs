@@ -5,7 +5,9 @@ import {createHash} from 'node:crypto';
 import {userInfo} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import * as core from '@nibfin/core';
+import {managedHostRecords} from './host-store.mjs';
 const controllers=[];
+let storage;
 try{
   const path=process.argv[2],s=await fs.lstat(path);
   if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid()||s.mode&0o077)throw Error();
@@ -17,7 +19,8 @@ try{
   const binding=await import(pathToFileURL(config.binding.path).href);
   if(!Array.isArray(binding.hosts)||binding.hosts.length<1||binding.hosts.length>32)throw Error();
   const repositories=new Set();
-  for(const entry of binding.hosts){
+  storage=await managedHostRecords(core,{directory:config.directory,hosts:binding.hosts,installation:config.installation});
+  for(const entry of storage.hosts){
     const policy=core.validateRescuePolicy(entry.configuration.policy);
     if(repositories.has(policy.repository))throw Error();repositories.add(policy.repository);
     const secret=await core.loadRescueCompletionSecret(entry.secretFile,{uid:userInfo().uid,excludedRoots:entry.excludedRoots});
@@ -26,4 +29,4 @@ try{
   }
   await new Promise(resolve=>{for(const signal of ['SIGINT','SIGTERM'])process.once(signal,resolve);});
 }catch{process.stderr.write('Nibfin notifier unavailable; inspect private host source, policy, records and account configuration.\n');process.exitCode=2;}
-finally{for(const controller of controllers)controller.close();}
+finally{for(const controller of controllers)controller.close();await storage?.close();}
