@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "source": {
     "kind": "candidate",
-    "base": "3f46061bc7adf12e7594cdcdf539a220402f318c",
+    "base": "0bcfdfdb34bdc1609660d1bb06b8006214bf86a1",
     "commit": null,
     "inputs": [
       {
@@ -161,7 +161,7 @@
       },
       {
         "path": "docs/role-host.md",
-        "sha256": "64d4c7998788b4cf787320b19b434b26daf8bd653e7f62abfb3e8daad00501f6"
+        "sha256": "47fe784a76cef20fd0780f5e45522da5b0374a72c617b846bb105057e7c6827d"
       },
       {
         "path": "docs/rootless-hardening.md",
@@ -189,7 +189,7 @@
       },
       {
         "path": "docs/workspace.md",
-        "sha256": "26c7a99836fe5f03663949ee54e0571b5135f690a819eec3d1ef36cdc8198fe1"
+        "sha256": "429122dd09bb502d75021a71d2d1dcab81a48f19e81101b0a0055ebdff7e35f0"
       },
       {
         "path": "docs/wsl.md",
@@ -401,7 +401,7 @@
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "c44ee95f383d7a5ccf733c60d2648fd9fcf60726dfbcc509f085c35debc3181b"
+        "sha256": "8a44f39e9fd6e42316ebc16038bfe8aa1420c7e68b74513caee1f036685cbdd5"
       },
       {
         "path": "src/distribution.mjs",
@@ -477,7 +477,7 @@
       },
       {
         "path": "src/index.mjs",
-        "sha256": "45749d86781370687eb3e6023fc119e68c52dea0bbac61e6ae71ef532d7f3d8d"
+        "sha256": "36344f470c5c8a3e7d70c1951321a5e78922504e2b50130e65a154c126101a8b"
       },
       {
         "path": "src/installation.mjs",
@@ -629,7 +629,7 @@
       },
       {
         "path": "src/role-host.mjs",
-        "sha256": "5f67a9434b6c5fd97595f8500119864e9dbc9f84e1270dde73da4c3e78af194a"
+        "sha256": "41b3167e39b01411e474e1a580f0f476bc4d755d155af2e5b19847fc75333567"
       },
       {
         "path": "src/role-session.mjs",
@@ -701,7 +701,7 @@
       },
       {
         "path": "src/workspace.mjs",
-        "sha256": "a6c347ac7db3ac4937df70018fa0361bfb59db8a9d2ac8a5c41c7410d7c43db1"
+        "sha256": "b3eaed802f260a8eb096ee9ce1f811f5d76ff5a47299e8f559e20f59ab736001"
       },
       {
         "path": "src/wsl-guest.mjs",
@@ -977,7 +977,7 @@
       },
       {
         "path": "test/role-host.test.mjs",
-        "sha256": "41cb1068504809322238934779f397a89823ae36f92c3008367921891f831a50"
+        "sha256": "516cf6448ea2b0203e062ea89df59402837d001f833caf036fcd853cd0de71c2"
       },
       {
         "path": "test/runner-job-gate.test.mjs",
@@ -1021,7 +1021,7 @@
       },
       {
         "path": "test/workspace.test.mjs",
-        "sha256": "0aad580328bf2cbc15dfabbb513f8bed65500d19cc5a6c1c6619e308bc625143"
+        "sha256": "94237c710b296ecaa44a9c3c7b09cbfb08aba60f300428ebca8a93daae234df8"
       },
       {
         "path": "test/wsl.test.mjs",
@@ -1176,7 +1176,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "dfcf08f51647360deccb077442b17b520519d1e9ce4ab98484b4805cba059427"
+    "contentSha256": "36df6ec711929248924d2f3a45804eb86585c0c74116d66d5b14a604aefddb1f"
   },
   "components": {
     "core": {
@@ -1332,7 +1332,7 @@
         },
         {
           "path": "docs/role-host.md",
-          "sha256": "64d4c7998788b4cf787320b19b434b26daf8bd653e7f62abfb3e8daad00501f6"
+          "sha256": "47fe784a76cef20fd0780f5e45522da5b0374a72c617b846bb105057e7c6827d"
         },
         {
           "path": "docs/rootless-hardening.md",
@@ -1360,7 +1360,7 @@
         },
         {
           "path": "docs/workspace.md",
-          "sha256": "26c7a99836fe5f03663949ee54e0571b5135f690a819eec3d1ef36cdc8198fe1"
+          "sha256": "429122dd09bb502d75021a71d2d1dcab81a48f19e81101b0a0055ebdff7e35f0"
         },
         {
           "path": "docs/wsl.md",
@@ -1568,7 +1568,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "c44ee95f383d7a5ccf733c60d2648fd9fcf60726dfbcc509f085c35debc3181b"
+          "sha256": "8a44f39e9fd6e42316ebc16038bfe8aa1420c7e68b74513caee1f036685cbdd5"
         },
         {
           "path": "src/distribution.mjs",
@@ -1644,7 +1644,7 @@
         },
         {
           "path": "src/index.mjs",
-          "sha256": "45749d86781370687eb3e6023fc119e68c52dea0bbac61e6ae71ef532d7f3d8d"
+          "sha256": "36344f470c5c8a3e7d70c1951321a5e78922504e2b50130e65a154c126101a8b"
         },
         {
           "path": "src/installation.mjs",
@@ -1796,7 +1796,7 @@
         },
         {
           "path": "src/role-host.mjs",
-          "sha256": "5f67a9434b6c5fd97595f8500119864e9dbc9f84e1270dde73da4c3e78af194a"
+          "sha256": "41b3167e39b01411e474e1a580f0f476bc4d755d155af2e5b19847fc75333567"
         },
         {
           "path": "src/role-session.mjs",
@@ -1868,7 +1868,7 @@
         },
         {
           "path": "src/workspace.mjs",
-          "sha256": "a6c347ac7db3ac4937df70018fa0361bfb59db8a9d2ac8a5c41c7410d7c43db1"
+          "sha256": "b3eaed802f260a8eb096ee9ce1f811f5d76ff5a47299e8f559e20f59ab736001"
         },
         {
           "path": "src/wsl-guest.mjs",
@@ -1899,7 +1899,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "628e82ccde0705b084e7e1a681bf2fd6486bc542a0884ef27cd6e993bbe24db8"
+      "sha256": "c83897f766222667dc543d27002e5b32707b9923473b78288938f03e646915af"
     },
     "skills": {
       "version": "0.1.0",
@@ -2022,10 +2022,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "8c63357e009faab12092903a91bf829ace566c0d7b782e801e81c6d3f79621c1"
+    "sha256": "bc11348fc19eefdf9f9c56fca1ad47213630c85d1d6deff18145e1e43913afff"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "d19b2acaa83e9529213262d0f73eded3c12467f75716b35654891951c0ee56cf"
+    "sha256": "90bffbed030e3836742bc622f60467dfa0acab2cdd430c1ca51186a911d77f7a"
   }
 }
