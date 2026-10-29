@@ -1,9 +1,10 @@
+import {removeAdmission} from './admission.mjs';
 import {automaticBinding} from './automatic.mjs';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
 import {spawnSync} from 'node:child_process';
-import {withRegistrationCore} from './core.mjs';
+import {withCurrentCore as withRegistrationCore} from './current-core.mjs';
 import {safePath, loadEnvironment, inventory, registrationProcess} from './register.mjs';
 import {processEnvironment, githubObservation, observeProcess} from './create.mjs';
 const fail = () => {throw Error('Unregister unavailable or conflicting state; inspect private instance records and reconcile before retrying.');};
@@ -210,6 +211,7 @@ export async function unregisterInstance(args, dependencies={}) {
       // systemctl disable removed user-manager symlinks; unlink only the owned source.
       await fs.rm(unitPath,{force:true});
       if(!await invoke(['daemon-reload'])) return result;
+      await removeAdmission(instance);
       result.local='detached';
       if(result.remote==='absent') {
         result.complete=true;await save(statePath,result);

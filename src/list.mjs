@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {userInfo} from 'node:os';
 import {spawnSync} from 'node:child_process';
-import {withRegistrationCore} from './core.mjs';
+import {withCurrentCore as withRegistrationCore} from './current-core.mjs';
 import {processEnvironment, githubObservation, observeProcess} from './create.mjs';
 import {safePath, orgReadback, inventory} from './register.mjs';
 const namePattern = /^[a-z][a-z0-9-]{0,47}$/;

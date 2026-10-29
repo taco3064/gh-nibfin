@@ -1,9 +1,10 @@
+import {removeAdmission} from './admission.mjs';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
 import {createHash} from 'node:crypto';
 import {createInterface} from 'node:readline/promises';
-import {withRegistrationCore} from './core.mjs';
+import {withCurrentCore as withRegistrationCore} from './current-core.mjs';
 import {safePath,loadEnvironment,withEnvironmentLock,inventory,registrationProcess} from './register.mjs';
 import {read as readRecord,publish,binding,managedUnit,terminationObservation,workObservation} from './unregister.mjs';
 import {processEnvironment,githubObservation,observeProcess} from './create.mjs';
@@ -311,6 +312,7 @@ export async function removeEnvironment(args,dependencies={}) {
           await save();
         }
         if(state.instances.some(i=>i.service!=='terminated' || i.retainedSources?.length)) {await save();return result();}
+        for(const instance of record.instances)await removeAdmission(instance);
         // Preserve credential-free unknown-effect facts before erasing evidence.
         await save();await tree(base,account.uid);
         // Atomic name withdrawal preserves the entire stopped environment for

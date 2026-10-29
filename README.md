@@ -1,11 +1,18 @@
 # gh-nibfin
 
-Local GitHub CLI extension with help, version diagnostics and seven bounded
-command paths. Runner creation implements local allocation and diagnostics through
-the Core boundary described below. Manual Runner registration is implemented for
-the Linux user-systemd process boundary. Read-only runner listing, environment-retaining unregister and environment removal
-are implemented at that local boundary; init/upgrade return exit status 2.
-This is not a complete Nibfin runtime or a supported-platform claim.
+Local GitHub CLI extension with seven command paths. The current integration
+selects the immutable reviewed Nibfin PR246 package; see the
+[current package inputs](docs/handoffs/current/README.md) and
+[current integration guide](docs/onboarding-integration.md) for exact identities.
+Initialization, creation and registration adapters are being integrated with its
+installation, readiness and admission contracts. Upgrade/rollback, complete host
+onboarding and fresh retained lifecycle regression evidence remain incomplete;
+this snapshot is not ready for independent Acceptance or platform use.
+
+The older boundary descriptions below retain historical N01/N15/N17 implementation
+and verification context. They do not describe the newly selected production
+runtime or certify the changed candidate. In particular, previous test counts do
+not apply to the current source. No release or supported-platform claim is made.
 
 Public repositories owned by personal accounts or Organizations are in product
 scope. Repo ownership, Repository/Organization Runner registration level and

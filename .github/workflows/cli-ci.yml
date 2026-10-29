@@ -22,3 +22,5 @@ jobs:
         run: node docs/handoffs/n15/verify.mjs
       - name: Verify the immutable installed registration response contract offline
         run: node docs/handoffs/n17/verify.mjs
+      - name: Verify current public package and registration-scope admission contracts offline
+        run: node --test test/current/*.mjs
