@@ -78,6 +78,6 @@ export async function upgradeManagedInstallation(args,dependencies={}){
   try{
     const options={core,directory:root,store,current:plan.current,next:plan.next,...layout,
       ...(dependencies.manager?{manager:dependencies.manager}:{})};
-    return operation==='rollback'?rollbackUpgrade(options):coordinateUpgrade({...options,check:operation==='check'});
+    return await (operation==='rollback'?rollbackUpgrade(options):coordinateUpgrade({...options,check:operation==='check'}));
   }finally{await store.close();}
 }
