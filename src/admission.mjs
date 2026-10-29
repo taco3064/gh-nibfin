@@ -76,6 +76,8 @@ export async function prepareAdmission(core,context,{state,instance,provider,sig
 }
 export async function checkAdmission(instance,environment){
   const directory=policyDirectory(instance.id),record=await readPrivate(join(directory,'installation.json'));
+  const local=JSON.parse(await file(join(instance.registration,'.runner')));
+  if(local.disableUpdate!==true)throw Error('Runner automatic updates must remain disabled at admission activation.');
   if(record.version!==1||record.core!==currentPin.coreSha256||environment.ACTIONS_RUNNER_HOOK_JOB_STARTED!==record.hook
     ||environment.NIBFIN_RUNNER_JOB_POLICY!==join(directory,'policy.json')||sha(await file(record.hook))!==record.hookSha256
     ||sha(await file(join(instance.registration,'bin/Runner.Worker')))!==record.workerSha256)throw Error('Admission activation or source/binary identity unavailable.');

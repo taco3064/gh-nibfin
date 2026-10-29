@@ -34,7 +34,7 @@ async function fixture(consume, patch = {}) {
 const fs=require('node:fs');
 const args=process.argv.slice(2), get=k=>args[args.indexOf(k)+1];
 fs.writeFileSync('fixture-invocation.json',JSON.stringify(args.map((s,i)=>args[i-1]==='--token'?'REDACTED':s)),{mode:0o600});
-fs.writeFileSync('.runner',JSON.stringify({agentId:'9007199254740993',agentName:get('--name'),gitHubUrl:get('--url'),workFolder:get('--work')}),{mode:0o600});
+fs.writeFileSync('.runner',JSON.stringify({agentId:'9007199254740993',agentName:get('--name'),gitHubUrl:get('--url'),workFolder:get('--work'),disableUpdate:args.includes('--disableupdate')}),{mode:0o600});
 fs.writeFileSync('.credentials','${secret}',{mode:0o600});
 console.log('${secret}'); console.error('${secret}');
 `,{mode:0o700});
@@ -104,11 +104,13 @@ test('AC1/3/5 two original instances bind to separate public repos with exact pr
     assert.equal(a.instanceId,'local-1');assert.equal(b.instanceId,'local-2');
     assert.equal(a.runnerId,'9007199254740993');assert.equal(a.label,'nibfin-user-8');
     assert.equal(a.status,'offline');assert.equal(a.busy,false);assert.equal(a.service.status,'active');
+    assert.equal(a.configuration.disableUpdate,true);assert.deepEqual(a.configuration.distribution,runnerDistribution);
     assert.equal((await fs.readdir(f.base)).filter(s=>s.startsWith('instance-')).length,2);
     const configs = f.processes.filter(p=>p.cmd.endsWith('config.sh'));
     assert.equal(configs.length,2);assert.notEqual(configs[0].cwd,configs[1].cwd);
     for (const [i,p] of configs.entries()) {
       assert.ok(p.args.includes(secret));assert.ok(!p.args.includes('--replace'));
+      assert.equal(p.args.filter(v=>v==='--disableupdate').length,1);
       assert.equal(p.args[p.args.indexOf('--work')+1],f.record.instances[i].workspace);
       assert.equal(p.args[p.args.indexOf('--labels')+1],'nibfin-user-8');
       assert.ok(!p.args.includes('--runnergroup'));
@@ -192,7 +194,7 @@ test('AC4 real N15 readback rejects replaced IDs, labels/platform, incomplete an
   });
 });
 test('AC4 malformed local ID and configuration scope cannot publish success',async () => {
-  for(const change of [s=>({...s,agentId:'01'}),s=>({...s,agentId:undefined}),s=>({...s,gitHubUrl:'https://github.com/elsewhere/x'}),s=>({...s,workFolder:'/tmp'})]) await fixture(async f=>{
+  for(const change of [s=>({...s,agentId:'01'}),s=>({...s,agentId:undefined}),s=>({...s,gitHubUrl:'https://github.com/elsewhere/x'}),s=>({...s,workFolder:'/tmp'}),s=>({...s,disableUpdate:false}),s=>({...s,disableUpdate:undefined})]) await fixture(async f=>{
     const original=f.dependencies.process;f.dependencies.process=async(...args)=>{
       const result=await original(...args);
       if(args[0].endsWith('config.sh')) {const path=join(f.record.instances[0].registration,'.runner');await fs.writeFile(path,JSON.stringify(change(JSON.parse(await fs.readFile(path,'utf8')))));}
@@ -397,6 +399,8 @@ test('auto: false-success settings/credentials and uncertain service effects pre
     {config:s=>s+'\nsetInterval(()=>{},1000);',timeoutMs:150}, {config:s=>s+'\nsetInterval(()=>{},1000);',cancelConfig:true}, {config:s=>s.replace("fs.writeFileSync('.runner'","false && fs.writeFileSync('.runner'")},
     {config:s=>s.replace("agentId:'9007199254740993'","agentId:'0'")},{config:s=>s.replace("gitHubUrl:get('--url')","gitHubUrl:'https://github.com/wrong/target'")},
     {config:s=>s.replace("agentName:get('--name')","agentName:'stale'")},{config:s=>s.replace("workFolder:get('--work')","workFolder:'/tmp/wrong'")},
+    {config:s=>s.replace("disableUpdate:args.includes('--disableupdate')","disableUpdate:false")},
+    {config:s=>s.replace("disableUpdate:args.includes('--disableupdate')","disableUpdate:undefined")},
     {config:s=>s.replace("scheme:'OAuth'","scheme:'malformed'")},
     {config:s=>s.replace("fs.writeFileSync('.credentials_rsaparams'","false && fs.writeFileSync('.credentials_rsaparams'")},...['link','enable','start','is-active'].map(service=>({service}))]) {
     await autoFixture(async f=>{await rejected(f.register);assert.equal((await f.binding()).disposition,'unknown');

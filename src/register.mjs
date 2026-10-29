@@ -5,7 +5,7 @@ import {spawn,spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {withCurrentCore} from './current-core.mjs';
 import {prepareAdmission,checkAdmission} from './admission.mjs';
-import {verifyRunnerDistribution,prepareRunnerDistribution} from './runner-distribution.mjs';
+import {verifyRunnerDistribution,prepareRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
 import {requestAutomatic,automaticBinding} from './automatic.mjs';
 import {processEnvironment, githubObservation, observeProcess} from './create.mjs';
 class Diagnostic extends Error {}
@@ -220,7 +220,7 @@ async function registerUnlocked(args, dependencies = {}) {
       }
       {
         try {await (dependencies.distributionVerifier ?? verifyRunnerDistribution)(instance.registration,{signal:dependencies.signal});}
-        catch {fail('Registration requires the pinned official Linux x64 v2.331.0 archive, matching extracted bytes, private directories and local tar; no request submitted.');}
+        catch {fail(`Registration requires the pinned official Linux x64 v${runnerDistribution.version} archive, matching extracted bytes, private directories and local tar; no request submitted.`);}
       }
       const proc = dependencies.process ?? registrationProcess;
       const invoke = async (command, argv, cwd = instance.registration) => {
@@ -266,7 +266,9 @@ async function registerUnlocked(args, dependencies = {}) {
       const expiry = Date.parse(issued?.expires_at);
       if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,2048}$/.test(token) || !Number.isFinite(expiry) || expiry <= Date.now() || expiry > Date.now()+3660000) fail('Malformed or expired registration data; reconcile the pending instance.');
       const url = `https://github.com/${coordinates.owner}${options.repo ? '/'+coordinates.repository : ''}`;
-      const configArgs = ['--unattended','--url',url,'--token',token,'--name',state.runnerName,'--labels',state.label,'--work',instance.workspace];
+      // Admission pins the actual Worker bytes. Listener self-update would
+      // replace those bytes outside the reconciled installation transition.
+      const configArgs = ['--unattended','--disableupdate','--url',url,'--token',token,'--name',state.runnerName,'--labels',state.label,'--work',instance.workspace];
       if (options.group) configArgs.push('--runnergroup',options.group);
       try { await invoke(join(instance.registration,'config.sh'),configArgs); }
       finally { token = undefined; configArgs.fill(''); issued = undefined; }
@@ -276,6 +278,7 @@ async function registerUnlocked(args, dependencies = {}) {
       // .runner uses agentId rather than REST id; preserve its numeric source spelling.
       const local = JSON.parse(await fs.readFile(join(instance.registration,'.runner'),'utf8'),(key,value,context) =>
         key === 'agentId' && typeof value === 'number' ? context.source : value);
+      if(local.disableUpdate!==true)fail('Runner automatic updates were not disabled; preserve pending registration and reconcile before enabling its service.');
       if (options.method === 'auto') {
         for(const name of ['.credentials','.credentials_rsaparams']) {
           const path=join(instance.registration,name);await safePath(path,{directory:false});
@@ -291,7 +294,7 @@ async function registerUnlocked(args, dependencies = {}) {
       const runnerId = local.agentId;
       if (!id(runnerId) || local.agentName !== state.runnerName || local.gitHubUrl?.replace(/\/$/,'').toLowerCase() !== url || local.workFolder !== instance.workspace) fail('Official local Runner identity/path mismatch or incomplete configuration.');
       state.runnerId = runnerId;
-      state.configuration = {state:'completed',runnerId};state.platform='linux';
+      state.configuration = {state:'completed',runnerId,distribution:runnerDistribution,disableUpdate:true};state.platform='linux';
       let observation;
       if (options.method === 'auto') {
         state.method = 'auto';state.status=null;state.busy=null;state.remote = {state:'unknown',reason:'no_authorized_observation'};

@@ -7,7 +7,7 @@ results do not cover this snapshot. The planned localhost Dashboard is unchanged
 
 ## Runtime and responsibility owners
 
-The single production runtime is the reviewed Nibfin PR246 public package at
+The single production runtime is the reviewed Nibfin PR248 public package at
 `bd59c2e01b14a66cd870f0af0268928e231f7e85`; exact archive, manifest, component and
 dependency pins are in [the current handoff](handoffs/current/README.md).
 Historical N01/N15/N17 loaders remain for retained compatibility fixtures.
@@ -20,13 +20,20 @@ Historical N01/N15/N17 loaders remain for retained compatibility fixtures.
 | Rootless hardening | Packaged Core `docs/rootless-hardening.md`, `runnerConfiguration` and `preflightRunner`; CLI supplies actual execution account and private resource locations. |
 | Installation, recovery and admission | Core installation/transition, workflow, Rescue and job-admission modules; CLI projects immutable managed files and supplies bounded filesystem, provider and service adapters. |
 
-Official Runner acquisition remains pinned to version **2.331.0**, source commit
-`39f6c643d3032f8795fa71f1482731ca90c8e038`, archive
-`actions-runner-linux-x64-2.331.0.tar.gz`, SHA-256
-`5fcc01bd546ba5c3f1291c2803658ebd3cedb3836489eda3be357d41bfcf28a7`.
+Official Runner acquisition is pinned to version **2.338.2**, source commit
+`d1eb12d4b115c301201de27d667284e1a80f2ab5`, archive
+`actions-runner-linux-x64-2.338.2.tar.gz`, SHA-256
+`baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40`.
 Registration compares the archive and all extracted official application bytes
-before requesting a token. A synthetic Worker fixture or the producer's 2.338.0
-probe does not certify this CLI Runner version or a real service installation.
+before requesting a token. Both registration routes use `--disableupdate`, verify
+`disableUpdate: true` in the official local settings before enabling a service,
+and retain the complete distribution identity in their private binding. Admission
+activation checks that setting again. This preserves the Worker identity pinned
+by the Hook; upgrades must reconcile work and update the application and policy
+together. Existing older installations are preserved and rejected rather than
+overwritten. Disabling self-update also requires timely maintained upgrades:
+[GitHub stops assigning work to outdated Runners](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/customize-runners#runner-software-updates-on-self-hosted-runners).
+Argument fixtures do not certify a real service installation.
 
 ## Owner and member contexts
 
