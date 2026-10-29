@@ -7,6 +7,7 @@ import {createHash} from 'node:crypto';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {initializeRepository} from '../../src/installation.mjs';
 import {existingControlHost} from '../../src/host-install.mjs';
+import {managedWorkflowPlan} from '../../src/workflow-inputs.mjs';
 const blob=b=>createHash('sha1').update(`blob ${Buffer.byteLength(b)}\0`).update(b).digest('hex');
 const response=(data,status=200)=>({status,headers:{},body:JSON.stringify(data)});
 
@@ -45,6 +46,16 @@ test('actual installed installation API: first/repeat init, modified bytes, expl
       assert.equal(runtime.automaticRegistration,true);assert.deepEqual(runtime.allowedActorIds,['8']);
       assert.equal(runtime.executionPool.source.repositoryId,'42');assert.equal(runtime.executionPool.targets.length,3);
       assert.deepEqual(runtime.executionPool,hostPool);
+      for(const id of ['42','43','44']){
+        const stage=files.get(`.github/workflows/nibfin-stage-${id}.yml`).toString();
+        assert.ok(stage.includes('deployment_key: TARGET_'+id));
+        assert.ok(stage.includes(`group: nibfin-v1-${id}-repository-write`));
+      }
+      assert.equal(files.has('.github/workflows/nibfin-stage.yml'),false);
+      const logical=managedWorkflowPlan(core,{executionPool:runtime.executionPool,repository:'example/cli'});
+      assert.equal(logical.files.size,4);assert.equal(logical.files.has('.github/workflows/nibfin-stage.yml'),false);
+      assert.ok(logical.files.has('.github/workflows/nibfin-wakeup.yml'));
+      assert.throws(()=>managedWorkflowPlan(core,{executionPool:runtime.executionPool,repository:'example/other'}));
       const writes=calls.filter(r=>r.method!=='GET').length;
       assert.equal((await initializeRepository(args,deps)).status,'ready');
       assert.equal(calls.filter(r=>r.method!=='GET').length,writes);

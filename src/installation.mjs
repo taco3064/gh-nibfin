@@ -62,11 +62,12 @@ async function managedObservation(provider,repo,path,admin){
   }
   return admin&&r.diagnostic?.status===404?{state:'absent'}:{state:'unknown',diagnostic:r.diagnostic?.kind??'unavailable'};
 }
-export async function expectedInstallation(core,context,{automatic=false,allowedActorIds=[],executionPool}={}){
+export async function expectedInstallation(core,context,{automatic=false,allowedActorIds=[],executionPool,repo}={}){
   const source=core.createInstallation({version:1,expected:currentPin,profile:'source',observeCapability:async({version,sha256})=>({version,status:'verified',sha256})});
-  const plan=await source.plan({commit:currentProducer,hostRepository:'taco3064/nibfin',hostCommit:currentProducer});
+  const plan=await source.plan({commit:currentProducer,hostRepository:'taco3064/nibfin',hostCommit:currentProducer,
+    ...(executionPool?{executionPool}:{})});
   if(plan.status!=='planned')throw Error('Packaged installation plan rejected the reviewed source.');
-  const files=new Map(managedWorkflowPlan(core).files);
+  const files=new Map(managedWorkflowPlan(core,{executionPool,repository:repo}).files);
   // Core owns the rendered workflow/Skill/security sources; CLI only projects
   // those exact immutable installation inputs into its managed locations.
   for(const path of ['skills/shape/SKILL.md','skills/deliver/SKILL.md','skills/accept/SKILL.md','skills/rescue/SKILL.md'])files.set('.nibfin/'+path,context.files.get(path).toString());
@@ -94,7 +95,7 @@ export async function inspectInstallation(core,context,{repo,automatic,provider,
   try{remoteSettings=JSON.parse(remotePolicy.bytes);actors=remoteSettings.allowedActorIds;}catch{}
   automatic=automatic??previous?.automaticRegistration??(typeof remoteSettings?.automaticRegistration==='boolean'?remoteSettings.automaticRegistration:false);
   if(!Array.isArray(actors)||!actors.length||actors.length>32||actors.some(v=>!/^([1-9][0-9]*)$/.test(v))||new Set(actors).size!==actors.length)actors=[memberId].filter(v=>/^[1-9][0-9]*$/.test(v));
-  const desired=await expectedInstallation(core,context,{automatic,allowedActorIds:actors,executionPool});
+  const desired=await expectedInstallation(core,context,{automatic,allowedActorIds:actors,executionPool,repo});
   const labels=await request(provider,repo,prefix(repo)+'/labels?per_page=100');
   const missingLabels=labels.outcome==='read'&&Array.isArray(labels.data)?requiredLabels.filter(l=>!labels.data.some(v=>v.name===l.name)):null;
   if(missingLabels===null)diagnostics.push({capability:'labels',code:'inventory-unavailable'});

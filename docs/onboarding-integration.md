@@ -7,8 +7,8 @@ results do not cover this snapshot. The planned localhost Dashboard is unchanged
 
 ## Runtime and responsibility owners
 
-The single production runtime is the reviewed Nibfin PR248 public package at
-`bd59c2e01b14a66cd870f0af0268928e231f7e85`; exact archive, manifest, component and
+The single production runtime is the Nibfin PR249 public source package at
+`9a3dc1148df17725c2e6484367a347ec03afd201`; exact archive, manifest, component and
 dependency pins are in [the current handoff](handoffs/current/README.md).
 Historical N01/N15/N17 loaders remain for retained compatibility fixtures.
 
