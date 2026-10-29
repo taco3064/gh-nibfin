@@ -20,7 +20,8 @@ function systemctl(args){
 }
 export function existingControlHost({path,process:run=systemctl}={}){
   async function source(){const c=await hostConfiguration(path);return {c,binding:await import(pathToFileURL(c.binding.path).href+'?identity='+c.binding.sha256)};}
-  async function check({core,context,repo}){
+  async function check({core,context,repo,executionPool}){
+    if(executionPool)return {status:'blocked',diagnostics:[{capability:'executionPool',code:'protected-shared-host-onboarding-incomplete'}]};
     try{
       const {c,binding}=await source();
       if(!Array.isArray(binding.hosts)||binding.hosts.length<1||binding.hosts.length>32)throw Error();
@@ -43,7 +44,8 @@ export function existingControlHost({path,process:run=systemctl}={}){
       return {status:'ready'};
     }catch{return {status:'blocked',diagnostics:[{capability:'recovery',code:'missing-incompatible-or-inactive-host-notifier',action:'Configure the existing authorized public Core host binding in the execution account host.json; init installs its one notifier. Member create never installs a host.'}]};}
   }
-  async function install({core,context,repo}){
+  async function install({core,context,repo,executionPool}){
+    if(executionPool)throw Error('The existing notifier-only host cannot install shared execution. Complete the official protected host onboarding first.');
     const {c,binding}=await source();const entry=binding.hosts?.find(h=>h.configuration?.policy?.repository===repo);
     if(!entry)throw Error('The authorized control host has no matching public repository binding.');
     core.validateRescuePolicy(entry.configuration.policy);

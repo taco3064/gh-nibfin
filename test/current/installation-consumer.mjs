@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {initializeRepository} from '../../src/installation.mjs';
+import {existingControlHost} from '../../src/host-install.mjs';
 const blob=b=>createHash('sha1').update(`blob ${Buffer.byteLength(b)}\0`).update(b).digest('hex');
 const response=(data,status=200)=>({status,headers:{},body:JSON.stringify(data)});
 
@@ -13,12 +14,13 @@ test('actual installed installation API: first/repeat init, modified bytes, expl
   await withCurrentCore(async(core,context)=>{
     const root=await fs.mkdtemp(join(tmpdir(),'nibfin-init-'));
     try{
-      const files=new Map(),labels=[],calls=[];let admin=true,deny=false,ambiguous=false,hostInstalls=0;
-      const host={check:async()=>hostInstalls?{status:'ready'}:{status:'blocked',diagnostics:[{capability:'recovery',code:'missing-notifier'}]},install:async()=>{hostInstalls++;}};
+      const files=new Map(),labels=[],calls=[];let admin=true,deny=false,ambiguous=false,hostInstalls=0,hostPool;
+      const host={check:async({executionPool})=>{if(hostInstalls)assert.deepEqual(executionPool,hostPool);return hostInstalls?{status:'ready'}:{status:'blocked',diagnostics:[{capability:'recovery',code:'missing-notifier'}]};},install:async({executionPool})=>{hostPool=executionPool;hostInstalls++;}};
       const transport=async r=>{
         calls.push({method:r.method,path:r.endpoint});
         const body=r.body===undefined?undefined:JSON.parse(r.body);
-        if(r.endpoint==='/repos/example/project')return response({id:'42',full_name:'example/project',private:false,visibility:'public',owner:{id:'7',type:'User'},permissions:{admin}});
+        const repositories=['example/project','example/cli','example/action'];
+        if(repositories.some(name=>r.endpoint==='/repos/'+name)){const name=r.endpoint.slice(7);return response({id:String(42+repositories.indexOf(name)),full_name:name,private:false,visibility:'public',owner:{id:'7',type:'User'},permissions:{admin}});}
         if(r.endpoint==='/repos/example/project/labels?per_page=100')return response(labels);
         if(r.endpoint==='/repos/example/project/labels'&&r.method==='POST'){labels.push(body);return response(body,201);}
         const marker='/repos/example/project/contents/';
@@ -33,10 +35,16 @@ test('actual installed installation API: first/repeat init, modified bytes, expl
       const deps={core,context,transport,memberId:'8',root,host},args=['--repo','example/project'];
       assert.equal((await initializeRepository([...args,'--check'],deps)).status,'blocked');
       assert.equal(calls.some(r=>r.method!=='GET'),false);assert.equal(hostInstalls,0);assert.deepEqual(await fs.readdir(root),[]);
-      assert.equal((await initializeRepository([...args,'--auto-register'],deps)).status,'ready');
+      const poolArgs=[...args,'--execution-repo','example/project','--pool-repos','example/project,example/cli,example/action'];
+      const unsupported=await initializeRepository(poolArgs,{...deps,host:existingControlHost()});
+      assert.equal(unsupported.status,'blocked');assert.ok(unsupported.diagnostics.some(d=>d.code==='protected-shared-host-onboarding-incomplete'));
+      assert.equal(calls.some(r=>r.method!=='GET'),false);assert.equal(hostInstalls,0);
+      assert.equal((await initializeRepository([...args,'--auto-register','--execution-repo','example/project','--pool-repos','example/project,example/cli,example/action'],deps)).status,'ready');
       assert.ok(files.size>8);assert.equal(labels.length,3);assert.equal(hostInstalls,1);
       const runtime=JSON.parse(files.get('.nibfin/runtime.json'));
       assert.equal(runtime.automaticRegistration,true);assert.deepEqual(runtime.allowedActorIds,['8']);
+      assert.equal(runtime.executionPool.source.repositoryId,'42');assert.equal(runtime.executionPool.targets.length,3);
+      assert.deepEqual(runtime.executionPool,hostPool);
       const writes=calls.filter(r=>r.method!=='GET').length;
       assert.equal((await initializeRepository(args,deps)).status,'ready');
       assert.equal(calls.filter(r=>r.method!=='GET').length,writes);

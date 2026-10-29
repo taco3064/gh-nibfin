@@ -5,6 +5,7 @@ import {withCurrentCore,currentPin,currentProducer} from './current-core.mjs';
 import {githubObservation,observeProcess,processEnvironment} from './create.mjs';
 import {managedWorkflowPlan} from './workflow-inputs.mjs';
 import {existingControlHost} from './host-install.mjs';
+import {observeExecutionPool} from './execution-pool.mjs';
 import {sha,readPrivate,writePrivate,ensurePrivateDirectory,localLock,privatePath} from './local-state.mjs';
 const targets=new WeakMap();
 const requiredLabels=[{name:'scope',color:'1d76db',description:'Original authorized scope'},{name:'shaped',color:'5319e7',description:'Published independently validated Shape'},{name:'delivered',color:'0e8a16',description:'Core verified completed delivery'}];
@@ -13,13 +14,22 @@ export function installationOptions(args,{upgrade=false}={}){
   const v={};for(let i=0;i<args.length;i++){
     const key=args[i];if(Object.hasOwn(v,key))throw Error('Duplicate installation option.');
     if(['--check','--auto-register'].includes(key))v[key]=true;
-    else if(['--repo',...(upgrade?['--runner','--version']:[])].includes(key)&&args[i+1]&&!args[i+1].startsWith('--'))v[key]=args[++i];
-    else throw Error('Use init --repo OWNER/REPO [--check] [--auto-register], or upgrade --repo OWNER/REPO [--check] [--version VERSION].');
+    else if(['--repo','--execution-repo','--pool-repos',...(upgrade?['--runner','--version']:[])].includes(key)&&args[i+1]&&!args[i+1].startsWith('--'))v[key]=args[++i];
+    else throw Error('Use init --repo OWNER/REPO [--check] [--auto-register] [--execution-repo OWNER/SOURCE --pool-repos OWNER/SOURCE,OWNER/TARGET], or upgrade --repo OWNER/REPO [--check] [--version VERSION].');
   }
   if(!v['--repo']||v['--runner'])throw Error('Select --repo OWNER/REPO; local Runner upgrade requires its separately reconciled registration.');
   if(upgrade&&v['--auto-register'])throw Error('Automatic registration policy changes use Owner init.');
+  if(upgrade&&(v['--execution-repo']||v['--pool-repos']))throw Error('Pool membership transitions require reconciled installation; upgrade cannot replace them implicitly.');
+  if(Boolean(v['--execution-repo'])!==Boolean(v['--pool-repos']))throw Error('Supply --execution-repo and --pool-repos together.');
+  let pool;
+  if(v['--execution-repo']){
+    const names=v['--pool-repos'].split(',');
+    if(names.length>32||new Set(names).size!==names.length||!names.includes(v['--execution-repo'])||!names.includes(v['--repo'])
+      ||names.some(n=>!/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(n)))throw Error('Select a finite unique canonical pool including the execution and initialized repositories.');
+    pool={source:v['--execution-repo'],targets:names};
+  }
   if(v['--version']&&![currentPin.packageVersion,currentProducer].includes(v['--version']))throw Error('Version is not in the reviewed immutable compatibility catalog.');
-  return {repo:v['--repo'],check:!!v['--check'],automatic:v['--auto-register']===true?true:undefined,version:v['--version']};
+  return {repo:v['--repo'],check:!!v['--check'],automatic:v['--auto-register']===true?true:undefined,version:v['--version'],...(pool?{pool}:{})};
 }
 export function installationProvider(core,{transport,repo,write}){
   const prefix='/repos/'+repo;
@@ -52,7 +62,7 @@ async function managedObservation(provider,repo,path,admin){
   }
   return admin&&r.diagnostic?.status===404?{state:'absent'}:{state:'unknown',diagnostic:r.diagnostic?.kind??'unavailable'};
 }
-export async function expectedInstallation(core,context,{automatic=false,allowedActorIds=[]}={}){
+export async function expectedInstallation(core,context,{automatic=false,allowedActorIds=[],executionPool}={}){
   const source=core.createInstallation({version:1,expected:currentPin,profile:'source',observeCapability:async({version,sha256})=>({version,status:'verified',sha256})});
   const plan=await source.plan({commit:currentProducer,hostRepository:'taco3064/nibfin',hostCommit:currentProducer});
   if(plan.status!=='planned')throw Error('Packaged installation plan rejected the reviewed source.');
@@ -60,10 +70,11 @@ export async function expectedInstallation(core,context,{automatic=false,allowed
   // Core owns the rendered workflow/Skill/security sources; CLI only projects
   // those exact immutable installation inputs into its managed locations.
   for(const path of ['skills/shape/SKILL.md','skills/deliver/SKILL.md','skills/accept/SKILL.md','skills/rescue/SKILL.md'])files.set('.nibfin/'+path,context.files.get(path).toString());
-  files.set('.nibfin/runtime.json',JSON.stringify({version:1,producer:currentProducer,package:currentPin,pins:context.identity.pins,automaticRegistration:automatic,allowedActorIds},null,2)+'\n');
+  files.set('.nibfin/runtime.json',JSON.stringify({version:1,producer:currentProducer,package:currentPin,pins:context.identity.pins,automaticRegistration:automatic,allowedActorIds,
+    ...(executionPool?{executionPool:core.validateExecutionPool(executionPool)}:{})},null,2)+'\n');
   return {plan,files};
 }
-export async function inspectInstallation(core,context,{repo,automatic,provider,root,host,memberId}={}){
+export async function inspectInstallation(core,context,{repo,automatic,provider,root,host,memberId,pool}={}){
   const coordinates=core.repositoryCoordinates(...repo.split('/'));if(coordinates.key!==repo||repo.split('/').length!==2)throw Error('Use a canonical public OWNER/REPO.');
   const target=await request(provider,repo,prefix(repo));
   const diagnostics=[];
@@ -74,12 +85,16 @@ export async function inspectInstallation(core,context,{repo,automatic,provider,
   const administration=target.data.permissions?.admin===true;
   if(!administration)diagnostics.push({capability:'permission',code:'repository-administration-required-for-installation'});
   const previous=root?await readPrivate(join(root,'installation.json'),{missing:true}):null;
+  if(previous&&!previous.executionPool&&pool)return {status:'blocked',diagnostics:[{capability:'executionPool',code:'protected-pool-transition-required'}]};
+  let executionPool;
+  try{executionPool=await observeExecutionPool(core,{selection:pool,previous:previous?.executionPool,repo,provider,memberId,signal:AbortSignal.timeout(30000)});}
+  catch(error){return {status:'blocked',diagnostics:[{capability:'executionPool',code:error.code??'pool-observation-unavailable'}]};}
   const remotePolicy=await managedObservation(provider,repo,'.nibfin/runtime.json',administration);
   let actors,remoteSettings;
   try{remoteSettings=JSON.parse(remotePolicy.bytes);actors=remoteSettings.allowedActorIds;}catch{}
   automatic=automatic??previous?.automaticRegistration??(typeof remoteSettings?.automaticRegistration==='boolean'?remoteSettings.automaticRegistration:false);
   if(!Array.isArray(actors)||!actors.length||actors.length>32||actors.some(v=>!/^([1-9][0-9]*)$/.test(v))||new Set(actors).size!==actors.length)actors=[memberId].filter(v=>/^[1-9][0-9]*$/.test(v));
-  const desired=await expectedInstallation(core,context,{automatic,allowedActorIds:actors});
+  const desired=await expectedInstallation(core,context,{automatic,allowedActorIds:actors,executionPool});
   const labels=await request(provider,repo,prefix(repo)+'/labels?per_page=100');
   const missingLabels=labels.outcome==='read'&&Array.isArray(labels.data)?requiredLabels.filter(l=>!labels.data.some(v=>v.name===l.name)):null;
   if(missingLabels===null)diagnostics.push({capability:'labels',code:'inventory-unavailable'});
@@ -91,7 +106,7 @@ export async function inspectInstallation(core,context,{repo,automatic,provider,
       code:o.state==='unknown'?'observation-unavailable':o.state==='absent'?'missing':'modified',path});
   }
   // Host and service readiness are measured separately from source presence.
-  const hostReport=host?await host.check({core,context,repo,readOnly:true}):{status:'blocked',diagnostics:[{capability:'recovery',code:'authorized-control-host-notifier-unconfigured'}]};
+  const hostReport=host?await host.check({core,context,repo,executionPool,readOnly:true}):{status:'blocked',diagnostics:[{capability:'recovery',code:'authorized-control-host-notifier-unconfigured'}]};
   if(hostReport?.status!=='ready')diagnostics.push(...(hostReport?.diagnostics??[{capability:'recovery',code:'notifier-capability-unknown'}]));
   const check=core.createInstallation({version:1,expected:currentPin,profile:'source',observeCapability:async({capability,version,sha256})=>{
     const present=capability==='source'||capability==='runtime'?true:capability==='recovery'?hostReport?.status==='ready'&&!diagnostics.some(d=>d.capability==='recovery'):
@@ -101,7 +116,7 @@ export async function inspectInstallation(core,context,{repo,automatic,provider,
   }});
   const source=await check.check();
   return {status:diagnostics.length||source.status!=='ready'?'blocked':'ready',scope:'repository-installation',repositoryId:target.data.id,
-    administration,diagnostics,desired,observations,previous,hostReport,missingLabels};
+    administration,diagnostics,desired,observations,previous,hostReport,missingLabels,executionPool};
 }
 export async function initializeRepository(args,dependencies={}){
   const selected=installationOptions(args);
@@ -117,6 +132,7 @@ export async function initializeRepository(args,dependencies={}){
   return localLock(root,'installation',async()=>{
     const report=await inspect();if(!report.administration)return {status:'blocked',diagnostics:report.diagnostics};
     if(!report.desired)return report;
+    if(report.diagnostics.some(d=>d.capability==='executionPool'))return {status:'blocked',diagnostics:report.diagnostics};
     const nextInstallation={packageVersion:currentPin.packageVersion,pins:context.identity.pins};
     if(report.previous&&JSON.stringify(report.previous.installation)!==JSON.stringify(nextInstallation))return {status:'blocked',diagnostics:[{capability:'installation',code:'runtime-transition-required',action:'Use the existing upgrade boundary after reconciling active work, holds and unknown writes.'}]};
     if(report.missingLabels===null)return {status:'blocked',diagnostics:report.diagnostics};
@@ -160,8 +176,9 @@ export async function initializeRepository(args,dependencies={}){
     }
     // Local source records are not a model login, Owner Grant or recovery proof.
     await writePrivate(join(root,'installation.json'),{version:1,repository:selected.repo,repositoryId:report.repositoryId,
-      installation:{packageVersion:currentPin.packageVersion,pins:context.identity.pins},files:Object.fromEntries([...report.desired.files].map(([p,b])=>[p,sha(b)])),automaticRegistration:JSON.parse(report.desired.files.get('.nibfin/runtime.json')).automaticRegistration});
-    await host.install({core,context,repo:selected.repo});
+      installation:{packageVersion:currentPin.packageVersion,pins:context.identity.pins},files:Object.fromEntries([...report.desired.files].map(([p,b])=>[p,sha(b)])),automaticRegistration:JSON.parse(report.desired.files.get('.nibfin/runtime.json')).automaticRegistration,
+      ...(report.executionPool?{executionPool:report.executionPool}:{})});
+    await host.install({core,context,repo:selected.repo,executionPool:report.executionPool});
     const final=await inspect();return {status:final.status,scope:final.scope,diagnostics:final.diagnostics};
   });
 }

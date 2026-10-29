@@ -10,7 +10,7 @@ import {initializeRepository} from './installation.mjs';
 
 export const version = '0.1.0-baseline';
 const commands = new Map([
-  ['init', 'Initialize repository workflows/labels; optionally enable automatic registration.'],
+  ['init', 'Initialize repository workflows/labels; optional --auto-register or pool input (--execution-repo and --pool-repos).'],
   ['runner create', 'Create a fixed-Agent environment with N unregistered instances (default 2; positive integer total).'],
   ['runner register', 'Register existing instances with GitHub; never implicitly create instances.'],
   ['runner unregister', 'Unregister one instance while retaining its environment and other registrations.'],
