@@ -235,7 +235,7 @@ test('AC5 production register reuses the cleaned existing instance without incre
     return response({id:'51',full_name:'example/a',private:false,visibility:'public',owner:{id:'7',type:'User'}});
   },process:async(command,args)=>{
     if(command.endsWith('/config.sh')) {
-      await fs.writeFile(join(i.registration,'.runner'),JSON.stringify({agentId:'100',agentName:args[args.indexOf('--name')+1],gitHubUrl:'https://github.com/example/a',workFolder:i.workspace}),{mode:0o600});
+      await fs.writeFile(join(i.registration,'.runner'),JSON.stringify({agentId:'100',agentName:args[args.indexOf('--name')+1],gitHubUrl:'https://github.com/example/a',workFolder:i.workspace,disableUpdate:args.includes('--disableupdate')}),{mode:0o600});
       await fs.writeFile(join(i.registration,'.credentials'),'fixture-new',{mode:0o600});
     }
     return {ok:true};
