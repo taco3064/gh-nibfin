@@ -48,8 +48,10 @@ export function existingControlHost({path,process:run=systemctl}={}){
       }
       const unit=join(c.directory,'nibfin-rescue-wakeups.service');await privatePath(unit);
       if(sha(await fs.readFile(unit))!==installed.unit)throw Error();
-      const observed=run(['show','nibfin-rescue-wakeups.service','--property=ActiveState','--property=FragmentPath','--property=User']);
-      if(!observed.ok||!observed.output.includes('ActiveState=active')||!observed.output.includes('FragmentPath='+unit))throw Error();
+      const observed=run(['show','nibfin-rescue-wakeups.service','--property=ActiveState','--property=FragmentPath','--property=User','--property=Type']);
+      const properties=Object.fromEntries(observed.output.trim().split('\n').map(line=>{const at=line.indexOf('=');return [line.slice(0,at),line.slice(at+1)];}));
+      if(!observed.ok||properties.ActiveState!=='active'||properties.Type!=='notify'
+        ||properties.User&&properties.User!==userInfo().username||await fs.realpath(properties.FragmentPath)!==unit)throw Error();
       for(const [file,digest] of Object.entries(installed.files)){
         await privatePath(join(c.directory,'node_modules/@nibfin/core',file),{missing:false});
         if(sha(await fs.readFile(join(c.directory,'node_modules/@nibfin/core',file)))!==digest)throw Error();
