@@ -93,11 +93,32 @@ An unresolved transition survives restart and cannot automatically repeat its
 write. Selection can switch only after a trusted coordinator verifies the complete
 staged runtime and terminated service boundary; rollback preserves original work.
 
-These are host storage/selection capabilities, not a complete `upgrade` command or
-automatic executable deployment. Package staging, actual service coordination and
-the remaining first-party host composition still require integration. Filesystem,
-restart and child-process tests exercise real storage; the transition verifier in
-those tests is explicitly a fixture and does not certify a runtime/service upgrade.
+`upgrade [--check|--apply|--rollback]` now invokes the maintained coordinator.
+The native installer must first retain `upgrade-plan.json` under the account's
+private `~/.local/share/nibfin/control` root. Its version-1 content identity binds
+the current/next installations and inventories for exactly `runtime`, `runner-1`
+and `runner-2`. Each resource has current/next file or contained-link inventories;
+file entries bind relative path, mode and SHA-256, and links also bind their exact
+relative target. Paths and service names are derived by the client. The plan
+cannot select executable JavaScript, commands, another account or arbitrary paths.
+The native installer authenticates distribution sources before producing this
+record. A content hash alone confers no source authenticity or work authorization.
+
+Checks do not stage packages, start services or change state. Apply requires a
+reconciled, terminated, inactive and explicitly paused work boundary; Owner holds
+and unknown writes still block. It stops and observes all three services, switches
+verified generations, atomically selects complete pins, and reads back the actual
+services and unchanged work. An uncertain outcome leaves services stopped with
+the original journal. Rollback restores that journal's original generations and
+pins without clearing pause, pending candidates, sessions or receipts. Kernel
+leases release on coordinator death; the persistent lock file is never deleted
+to force a retry. The journal and its ancestors cannot be generation resources.
+
+Installed tests cover real file/CAS transitions with explicit service doubles.
+A separate local probe exercised real user-systemd process switches and rollback;
+its disposable workers were not official Runner binaries. Native host composition,
+automatic staging and actual coordinated Runner upgrade/registration proof remain
+incomplete. The notifier-only installation is never treated as that native host.
 
 A separate assigned member uses their own OS account, stored `gh auth login`, and
 model login. They do not receive the Owner's model credentials or Runner

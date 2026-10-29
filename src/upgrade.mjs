@@ -18,8 +18,9 @@ export async function maintenanceLock(directory,work){
   const keeper="process.stdin.resume();process.stdin.once('end',()=>process.exit(0));process.stdout.write('locked\\n');";
   const child=spawn('/usr/bin/flock',['--exclusive','--nonblock',path,process.execPath,'-e',keeper],
     {env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:userInfo().homedir,LANG:'C'},stdio:['pipe','pipe','ignore']});
-  let ended=false,code=null;
-  const closed=new Promise(resolve=>{child.once('error',()=>{ended=true;resolve();});child.once('close',value=>{ended=true;code=value;resolve();});});
+  child.stdin.on('error',()=>{});
+  let ended=false;
+  const closed=new Promise(resolve=>{child.once('error',()=>{ended=true;resolve();});child.once('close',()=>{ended=true;resolve();});});
   let acquired=false;
   try{
     await new Promise((resolve,reject)=>{
@@ -34,7 +35,7 @@ export async function maintenanceLock(directory,work){
     child.stdin.end();if(!acquired&&!ended)child.kill('SIGTERM');await closed;
   }
 }
-async function resourcePaths(resources,services){
+async function resourcePaths(resources,services,directory){
   need(Array.isArray(resources)&&resources.length>0&&resources.length<=16&&Array.isArray(services)
     &&services.length>0&&services.length<=3&&new Set(services).size===services.length
     &&services.every(unit=>/^nibfin-[a-z0-9-]+\.service$/.test(unit)),'resource-set');
@@ -45,6 +46,7 @@ async function resourcePaths(resources,services){
     need(!names.has(r.name),'resource-name');names.add(r.name);
     for(const k of ['current','next','previous']){
       need(typeof r[k]==='string'&&resolve(r[k])===r[k]&&!seen.has(r[k]),'resource-path');seen.add(r[k]);
+      need(r[k]!==directory&&!directory.startsWith(r[k]+'/'),'journal-resource-overlap');
       need(dirname(r[k])===dirname(r.current),'resource-parent');await privatePath(dirname(r[k]),{directory:true});
     }
   }
@@ -83,7 +85,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
     &&typeof verify==='function'&&Array.isArray(resources)&&resources.length>0&&resources.length<=16
     &&Array.isArray(services)&&services.length>0&&services.length<=3&&new Set(services).size===services.length,'configuration');
   await privatePath(directory,{directory:true});
-  await resourcePaths(resources,services);
+  await resourcePaths(resources,services,directory);
   const inspect=async()=>{
     const state=await store.read();need(same(core,state.installation,current),'installation-drift');
     const plan=core.planInstallationTransition({version:1,current,next,work:state.work},{maintenance:true});
@@ -148,7 +150,7 @@ export async function rollbackUpgrade({core,directory,store,verify,manager=upgra
     const path=join(directory,'upgrade.json'),journal=await readPrivate(path);
     need(journal?.version===1&&['complete','unknown','rollback','rolled-back'].includes(journal.phase)
       &&Array.isArray(journal.resources)&&journal.resources.length>0&&Array.isArray(journal.services),'rollback-journal');
-    await resourcePaths(journal.resources,journal.services);
+    await resourcePaths(journal.resources,journal.services,directory);
     const state=await store.read();need(core.contentIdentity(state.work)===journal.protectedState,'work-drift');
     need(same(core,state.installation,journal.current)||same(core,state.installation,journal.next),'installation-drift');
     if(journal.phase==='rolled-back'){

@@ -41,10 +41,11 @@ Run installed consumers through the guarded verification lane:
 node /verification-runner.mjs -- node --test test/current/*.mjs
 ```
 
-Issue #55 remains incomplete: upgrade/rollback, complete recovery-host onboarding,
-retained lifecycle fixture adaptation and fresh matching non-root regression proof
-are still required. No release, production cutover, live model/provider use or
-Linux/WSL certification is claimed.
+Issue #55 remains incomplete: complete native-host onboarding, automatic staging,
+actual coordinated Runner upgrade/rollback and retained lifecycle integration
+still require proof. The installed maintenance command and preserved-work tests
+do not certify those missing integrations. No release, production cutover, live
+model/provider use or Linux/WSL certification is claimed.
 
 Requirement sources use the common `observeRequirementAuthority` API. The installed
 `github-issue` adapter owns GitHub identity and API handling; Jira and Linear are
