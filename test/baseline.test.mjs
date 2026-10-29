@@ -50,14 +50,14 @@ test('executable diagnostics, exact seven paths and strict grammar', async () =>
     for (const args of [[], ['--help'], ['--version']]) {
       const result = cli(args, cwd);
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer 3f46061bc7adf12e7594cdcdf539a220402f318c/ : /default 2; positive integer total/);
+      assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer 90823cabc203bb44fd5eeb8f07d7d3ebec2d609a/ : /default 2; positive integer total/);
     }
   }
   const paths = ['upgrade'];
   for (const path of paths) {
     const result = cli(path.split(' '));
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /not implemented/);
+    assert.match(result.stderr, /upgrade: .*preserve the original native installation/s);
     assert.match(cli(['--help']).stdout, new RegExp(path));
   }
   const init=cli(['init']);assert.equal(init.status,2);assert.match(init.stderr,/Select --repo|Use init/);
