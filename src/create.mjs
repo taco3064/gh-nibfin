@@ -27,7 +27,9 @@ export function options(args) {
   if (!/^[1-9][0-9]*$/.test(text) || !Number.isSafeInteger(count) || count > 128) fail('Count must be a positive integer from 1 to 128 (total instances in this environment).');
   if(values['--image']&&!/^sha256:[a-f0-9]{64}$/.test(values['--image']))fail('Use an immutable --image sha256 digest.');
   if(values['--runtime-profile']&&(values['--agent']!=='codex'||!/^linux-amd64-codex[a-z0-9-]*$/.test(values['--runtime-profile'])))fail('Select an explicitly reviewed Codex runtime profile.');
-  return { name: values['--name'], agent: values['--agent'], count, ...(values['--image']?{image:values['--image']}:{}), ...(values['--socket']?{socket:values['--socket']}:{}) ,...(values['--runtime-profile']?{runtimeProfile:values['--runtime-profile']}:{})};
+  return {name:values['--name'],agent:values['--agent'],count,
+    ...(values['--image']?{image:values['--image']}:{}),...(values['--socket']?{socket:values['--socket']}:{}),
+    ...(values['--runtime-profile']?{runtimeProfile:values['--runtime-profile']}:{})};
 }
 
 // No inherited Actions tokens, provider keys, alternate login homes or Node injection.

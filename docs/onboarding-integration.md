@@ -100,3 +100,17 @@ the required non-root user-systemd lifecycle. Fresh matching retained regression
 complete upgrade/recovery assertions, independent Acceptance, hooks and applicable
 CI remain required. No live-provider, release, model, production cutover or
 Linux/WSL certification (#48/#49) is claimed.
+# Explicit runtime selection
+
+`runner create` accepts `--runtime-profile PROFILE` for Codex. The identifier must
+exist in the verified producer's `linuxCodexProfiles` catalog. It is retained in
+the original creation intent and environment record and supplied to the actual
+backend; resume cannot change it. Omitting the flag preserves the original
+profile and does not infer support from a newer installed Docker version.
+
+The reviewed `linux-amd64-codex-node22-docker29-v1` tuple requires both Docker
+client/server 29.9.1 and the exact supported Node 22 image metadata. Unknown
+profiles, client/server mismatch and a missing explicit selection remain blocked.
+These installed-producer transport fixtures do not establish a native host,
+model login or actual Runner/service installation verdict.
+
