@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {initializeFileHostStore} from '../../src/host-store.mjs';
 import {coordinateUpgrade,rollbackUpgrade,upgradeOptions,maintenanceLock} from '../../src/upgrade.mjs';
+import {managedUpgradeLayout,upgradeManagedInstallation} from '../../src/managed-upgrade.mjs';
+import {writePrivate} from '../../src/local-state.mjs';
 
 // Actual private filesystem and installed Core/store. Service observations are
 // explicit doubles; these tests do not certify a real Runner or systemd upgrade.
@@ -105,4 +108,23 @@ test('a killed coordinator releases its kernel lease without deleting the privat
     assert.equal(acquired,true);const after=await fs.stat(path);assert.equal(after.ino,before.ino);
     assert.deepEqual((await f.store.read()).work,f.work);
   }finally{child.kill('SIGKILL');await ended;}
+}));
+
+test('the maintained upgrade entry uses a finite data-only layout and checks real staged bytes before switching',()=>fixture(async f=>{
+  const inventory=text=>[{kind:'file',path:'version',mode:0o600,sha256:createHash('sha256').update(text).digest('hex')}];
+  const body={version:1,current:f.current,next:f.next,resources:f.resources.map(r=>({name:r.name,current:inventory('original'),next:inventory('updated')}))};
+  const plan={...body,identity:f.core.contentIdentity(body)};
+  await writePrivate(join(f.directory,'upgrade-plan.json'),plan);
+  const options={core:f.core,context:{identity:f.next},root:f.directory,manager:f.options.manager};
+  assert.equal((await upgradeManagedInstallation(['--check'],options)).status,'checked');assert.equal(f.calls.length,0);
+  const layout=managedUpgradeLayout(f.core,f.directory,plan);
+  assert.deepEqual(layout.resources,f.resources);assert.deepEqual(layout.services,f.services);
+  const hostile=structuredClone(body);hostile.resources[0].path='/etc';
+  assert.throws(()=>managedUpgradeLayout(f.core,f.directory,{...hostile,identity:f.core.contentIdentity(hostile)}),/resource-set/);
+  await fs.writeFile(join(f.resources[0].next,'extra.mjs'),'unreviewed',{mode:0o600});
+  await assert.rejects(upgradeManagedInstallation(['--apply'],options),/unknown-file/);assert.equal(f.calls.length,0);
+  await fs.rm(join(f.resources[0].next,'extra.mjs'));
+  assert.equal((await upgradeManagedInstallation(['--apply'],options)).status,'switched');
+  assert.equal((await upgradeManagedInstallation(['--rollback'],options)).status,'rolled-back');
+  assert.deepEqual((await f.store.read()).work,f.work);
 }));

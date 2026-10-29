@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import {withCore} from './core.mjs';
 import {withCurrentCore,currentProducer,currentPin} from './current-core.mjs';
 import {initializeRepository} from './installation.mjs';
+import {upgradeManagedInstallation} from './managed-upgrade.mjs';
 
 export const version = '0.1.0-baseline';
 const commands = new Map([
@@ -20,7 +21,7 @@ const commands = new Map([
 ]);
 const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
   [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
-}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method auto|manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Unregister: runner unregister --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Omit instance only for one matching registration. --org removes the shared Org registration, not a single Repo binding. Requires Linux non-root user systemd; incomplete outcomes require reconciliation before reuse. Remove: runner remove --runner NAME [--yes]. Removes the ENTIRE environment, Agent credentials and all instances; prompts unless --yes. Org removal affects its entire shared registration. Local and remote outcomes are independent; exit 2 requires private .removals reconciliation. Linux non-root user-systemd only. Init: init --repo OWNER/REPO [--check] [--auto-register]. --check observes managed sources and the existing authorized host without installing/starting services or invoking admission. Upgrade integration is incomplete and returns exit 2.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method auto|manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Unregister: runner unregister --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Omit instance only for one matching registration. --org removes the shared Org registration, not a single Repo binding. Requires Linux non-root user systemd; incomplete outcomes require reconciliation before reuse. Remove: runner remove --runner NAME [--yes]. Removes the ENTIRE environment, Agent credentials and all instances; prompts unless --yes. Org removal affects its entire shared registration. Local and remote outcomes are independent; exit 2 requires private .removals reconciliation. Linux non-root user-systemd only. Init: init --repo OWNER/REPO [--check] [--auto-register]. --check observes managed sources and the existing authorized host without installing/starting services or invoking admission. Upgrade: upgrade [--check|--apply|--rollback] consumes the native installer's sealed two-Runner generation plan; checks are read-only and all transitions preserve pause and original work. Missing native onboarding or staged evidence returns exit 2.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
 
 // Maintained consumer API: real producer exports, without an eighth CLI command.
 export { withCore };
@@ -44,6 +45,13 @@ export async function main(args, dependencies) {
       process.stdout.write(JSON.stringify(result)+'\n');
       return result.status==='ready'?0:2;
     } catch(error){process.stderr.write('init: '+error.message+'\n');return 2;}
+  }
+  if(args[0]==='upgrade'){
+    try{
+      const result=await upgradeManagedInstallation(args.slice(1),dependencies);
+      process.stdout.write(JSON.stringify(result)+'\n');
+      return ['checked','unchanged','switched','rolled-back'].includes(result.status)?0:2;
+    }catch(error){process.stderr.write('upgrade: '+error.message+'; preserve the original native installation, staged generations and maintenance journal for reconciliation.\n');return 2;}
   }
   if (args[0] === 'runner' && args[1] === 'create') {
     try {
