@@ -6,9 +6,9 @@ import {tmpdir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {safePath} from './register.mjs';
-export const runnerDistribution = Object.freeze({version:'2.331.0',commit:'39f6c643d3032f8795fa71f1482731ca90c8e038',
-  sha256:'5fcc01bd546ba5c3f1291c2803658ebd3cedb3836489eda3be357d41bfcf28a7',
-  archive:'actions-runner-linux-x64-2.331.0.tar.gz'});
+export const runnerDistribution = Object.freeze({version:'2.338.2',commit:'d1eb12d4b115c301201de27d667284e1a80f2ab5',
+  sha256:'baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40',
+  archive:'actions-runner-linux-x64-2.338.2.tar.gz'});
 const hash = async path => {
   const h=createHash('sha256');for await(const b of createReadStream(path))h.update(b);return h.digest('hex');
 };
@@ -35,7 +35,7 @@ export async function verifyRunnerDistribution(directory,{signal}={}) {
       }
     };
     await compare('');return runnerDistribution;
-  } catch {throw Error('Automatic registration requires the pinned official Linux x64 Runner v2.331.0 archive, matching extracted application bytes, and local tar. No registration was requested; prepare the reviewed distribution or use the authorized manual route.');}
+  } catch {throw Error(`Registration requires the pinned official Linux x64 Runner v${runnerDistribution.version} archive, matching extracted application bytes, and local tar. Preserve incompatible installations for reconciled upgrade; no registration was requested.`);}
   finally {if(scratch)await fs.rm(scratch,{recursive:true,force:true});}
 }
 
