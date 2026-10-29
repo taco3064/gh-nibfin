@@ -12,7 +12,7 @@ export function readinessTransport(core,context,{agent='codex',flags={}}={}){
     if(flags.throw===op)throw Error('PRIVATE-SENTINEL');
     if(op==='version')return respond(JSON.stringify(flags.docker??core.linuxCodexProfile.docker));
     if(op==='info')return respond({ServerVersion:core.linuxCodexProfile.docker,OSType:'linux',Architecture:'x86_64',CgroupVersion:'2',CgroupDriver:'systemd',MemoryLimit:true,PidsLimit:true,CpuCfsQuota:true,CpuCfsPeriod:true,SecurityOptions:flags.security??['name=rootless','name=seccomp,profile=builtin']});
-    if(op==='image')return respond([{Id:image,Os:'linux',Architecture:'amd64',Config:{Env:['PATH=/usr/local/bin:/usr/bin:/bin']}}]);
+    if(op==='image')return respond([{Id:image,Os:'linux',Architecture:'amd64',Config:{Env:flags.imageEnvironment??['PATH=/usr/local/bin:/usr/bin:/bin']}}]);
     if(op==='network'){
       if(a[1]==='create'){const name=a.at(-1);networks.set(name,{Name:name,Internal:true,EnableIPv6:false,Options:{'com.docker.network.bridge.gateway_mode_ipv4':'isolated'},Driver:'bridge',Labels:{'nibfin.egress':name}});return respond(name);}
       if(a[1]==='inspect')return respond([networks.get(a[2])]);

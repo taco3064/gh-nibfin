@@ -22,6 +22,18 @@ function deps(root,{flags={},agent='codex'}={}){
     login:async(selected,environment)=>{assert.equal(selected,agent);await fs.writeFile(join(environment.CODEX_HOME,agent==='codex'?'auth.json':agent==='claude'?'anthropic-api-key.json':'gemini-api-key.json'),JSON.stringify(agent==='codex'?{auth_mode:'chatgpt',tokens:{access_token:sentinel}}:{auth_mode:agent==='claude'?'anthropic-api-key':'gemini-api-key',api_key:sentinel}),{flag:'wx',mode:0o600});}};
 }
 async function absent(path){await assert.rejects(fs.stat(path),{code:'ENOENT'});}
+test('explicit installed-producer Docker29/Node-image profile is persisted; unknown profiles and silent fallback are rejected',()=>scratch(async root=>{
+  const profile='linux-amd64-codex-node22-docker29-v1';
+  const flags={docker:'29.9.1',imageEnvironment:['PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','NODE_VERSION=22.23.3','YARN_VERSION=1.22.22']};
+  const d=deps(root,{flags}),record=await createEnvironment([...args('profile',1),'--runtime-profile',profile],d);
+  assert.equal(record.runtime.runtimeProfile,profile);assert.equal(record.instances.length,1);
+  const before=await fs.readdir(d.root);
+  await assert.rejects(()=>createEnvironment([...args('unknown',1),'--runtime-profile','linux-amd64-codex-unreviewed'],d),/verified producer catalog/);
+  assert.deepEqual(await fs.readdir(d.root),before);
+  await assert.rejects(()=>createEnvironment(args('implicit',1),deps(root,{flags})),/not ready/);
+  const wrong=deps(root,{flags:{...flags,docker:'28.5.1'}});
+  await assert.rejects(()=>createEnvironment([...args('wrong',1),'--runtime-profile',profile],wrong),/not ready/);
+}));
 
 test('executable-level installed-Core proof: unrelated cwd, spaces in checkout, default/1/4; exact persisted allocation',()=>scratch(async root=>{
   const copy=join(root,'extension with spaces');await fs.cp(checkout,copy,{recursive:true});
