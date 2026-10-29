@@ -7,6 +7,8 @@ import {withRegistrationCore} from '../src/core.mjs';
 import {unregisterInstance,unregisterOptions,workObservation,terminationObservation} from '../src/unregister.mjs';
 import {registerInstance,registrationProcess} from '../src/register.mjs';
 import {main} from '../src/cli.mjs';
+import {admissionPlatform} from './fixtures/admission-platform.mjs';
+import {runnerDistribution} from '../src/runner-distribution.mjs';
 const core=await withRegistrationCore(c=>c), secret='UNREGISTER_SECRET_SENTINEL';
 const response=data=>({status:200,headers:{},body:JSON.stringify(data)});
 async function fixture(run) {
@@ -222,7 +224,12 @@ test('AC5 production register reuses the cleaned existing instance without incre
   await fs.writeFile(join(i.registration,'bin/runsvc.sh'),'#!/bin/sh\nexit 0\n',{mode:0o700});
   const runner=b=>({id:b.runnerId,name:b.runnerName,os:'linux',status:'offline',busy:false,
     labels:['self-hosted','linux','nibfin-user-8'].map(name=>({name,type:name.startsWith('nibfin')?'custom':'read-only'}))});
-  const d={...f.dependencies,run:async()=>({ok:true,identity:'8'}),transport:async request=>{
+  // Retained lifecycle proof uses verifier-owned application/service fixtures;
+  // it does not download, certify or install the actual official Runner.
+  const d={...f.dependencies,...admissionPlatform(f.root),
+    prepareDistribution:async directory=>{await fs.access(join(directory,'config.sh'));return runnerDistribution;},
+    distributionVerifier:async()=>runnerDistribution,
+    run:async()=>({ok:true,identity:'8'}),transport:async request=>{
     if(request.endpoint.endsWith('/registration-token')) return response({token:'fixture_token',expires_at:new Date(Date.now()+60000).toISOString()});
     if(request.endpoint.includes('/actions/runners?')) return response({total_count:2,runners:[runner({...f.bindings[0],runnerId:'100'}),runner(f.bindings[1])]});
     return response({id:'51',full_name:'example/a',private:false,visibility:'public',owner:{id:'7',type:'User'}});

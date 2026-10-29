@@ -83,7 +83,7 @@ test('missing login/isolation/domain, backend exceptions and partial reports fai
 }));
 
 test('allocation failures clean only owned resources; publication failure preserves member credentials and original intent',()=>scratch(async root=>{
-  const d=deps(root);await fs.mkdir(d.root);await fs.writeFile(join(d.root,'sentinel'),sentinel);
+  const d=deps(root);await fs.mkdir(d.root,{mode:0o700});await fs.writeFile(join(d.root,'sentinel'),sentinel);
   const io=Object.create(fs);io.mkdir=async(...values)=>{if(String(values[0]).endsWith('registration'))throw Error(sentinel);return fs.mkdir(...values);};
   await assert.rejects(createEnvironment(args(),{...d,io}),e=>!e.message.includes(sentinel));await absent(join(d.root,'sample'));
   const publish=Object.create(fs);publish.rename=async(...values)=>{if(String(values[1]).endsWith('environment.json'))throw Error(sentinel);return fs.rename(...values);};

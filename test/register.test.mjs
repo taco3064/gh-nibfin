@@ -255,7 +255,7 @@ test('AC4 known bindings from another fixed-Agent environment participate in com
   // Move the remaining unregistered instance into a new complete G03 descriptor.
   await fs.mkdir(f.base,{mode:0o700});await fs.mkdir(f.record.loginSpace,{mode:0o700});await fs.writeFile(join(f.record.loginSpace,'agent-login'),'preserved');
   for(const item of f.record.instances) await fs.cp(join(moved,'instance-2'),join(f.base,item.id==='local-1'?'instance-1':'instance-2'),{recursive:true});
-  await fs.writeFile(join(f.base,'environment.json'),f.original);
+  await fs.writeFile(join(f.base,'environment.json'),f.original,{mode:0o600});
   const path=join(f.record.instances[0].registration,'config.sh');await fs.writeFile(path,(await fs.readFile(path,'utf8')).replace("agentId:'9007199254740993'","agentId:'9007199254740994'"));
   f.routes['/repos/example/a/actions/runners?per_page=100']=page('runners',[runner(),runner('9007199254740994')]);
   assert.equal((await f.register()).runnerId,'9007199254740994');
