@@ -1,13 +1,39 @@
 import fs from 'node:fs/promises';
 import {join,dirname,resolve} from 'node:path';
 import {userInfo} from 'node:os';
-import {spawnSync} from 'node:child_process';
+import {spawnSync,spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {privatePath,readPrivate,writePrivate,localLock} from './local-state.mjs';
+import {privatePath,readPrivate,writePrivate} from './local-state.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('upgrade:'+code);};
 const same=(core,a,b)=>core.canonicalJSON(a)===core.canonicalJSON(b);
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
+/** Kernel-owned maintenance lease. If the coordinator dies, pipe EOF terminates
+ * the lock holder and flock releases the lease. A lock file's mere existence is
+ * never interpreted as an active process or deleted to force recovery. */
+export async function maintenanceLock(directory,work){
+  await privatePath(directory,{directory:true});const path=join(directory,'maintenance.lock');
+  try{const h=await fs.open(path,'wx',0o600);await h.close();}catch(e){if(e.code!=='EEXIST')throw e;}
+  await privatePath(path);
+  const keeper="process.stdin.resume();process.stdin.once('end',()=>process.exit(0));process.stdout.write('locked\\n');";
+  const child=spawn('/usr/bin/flock',['--exclusive','--nonblock',path,process.execPath,'-e',keeper],
+    {env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:userInfo().homedir,LANG:'C'},stdio:['pipe','pipe','ignore']});
+  let ended=false,code=null;
+  const closed=new Promise(resolve=>{child.once('error',()=>{ended=true;resolve();});child.once('close',value=>{ended=true;code=value;resolve();});});
+  let acquired=false;
+  try{
+    await new Promise((resolve,reject)=>{
+      let text='';const timer=setTimeout(()=>reject(Error('upgrade:maintenance-lock-timeout')),5000);
+      child.stdout.on('data',bytes=>{text+=bytes;if(text==='locked\n'){acquired=true;clearTimeout(timer);resolve();}
+        else if(text.length>32){clearTimeout(timer);reject(Error('upgrade:maintenance-lock-protocol'));}});
+      closed.then(()=>{clearTimeout(timer);if(!acquired)reject(Error('upgrade:maintenance-lock-unavailable'));});
+    });
+    need(!ended,'maintenance-lock-lost');const result=await work(()=>need(!ended,'maintenance-lock-lost'));
+    need(!ended,'maintenance-lock-lost');return result;
+  }finally{
+    child.stdin.end();if(!acquired&&!ended)child.kill('SIGTERM');await closed;
+  }
+}
 async function resourcePaths(resources,services){
   need(Array.isArray(resources)&&resources.length>0&&resources.length<=16&&Array.isArray(services)
     &&services.length>0&&services.length<=3&&new Set(services).size===services.length
@@ -66,7 +92,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
     return {state,plan};
   };
   if(check){const result=await inspect();return {status:'checked',operation:result.plan.operation,current,next,services:[...services]};}
-  return localLock(directory,'upgrade',async()=>{
+  return maintenanceLock(directory,async assertLease=>{
     const path=join(directory,'upgrade.json'),existing=await readPrivate(path,{missing:true});
     // Resume/rollback must reconcile this exact journal rather than stage a new
     // transaction over paths whose rename outcome may not have been observed.
@@ -84,6 +110,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
       need(same(core,(await store.read()).work,state.work),'work-drift');
       journal.phase='switching';await writePrivate(path,journal);
       for(const r of resources){
+        assertLease();
         need(await verify(r,'current')===true&&await verify(r,'next')===true,'resource-drift');
         journal.moves.push({name:r.name,step:'retire-intent'});await writePrivate(path,journal);
         await fs.rename(r.current,r.previous);journal.moves.at(-1).step='activate-intent';await writePrivate(path,journal);
@@ -95,6 +122,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
         return {status:'verified',installation};
       }});
       journal.phase='pins';await writePrivate(path,journal);
+      assertLease();
       const switched=await core.applyInstallationTransition({...capabilities,current,next,maintenance:true,transaction:journal.transaction});
       need(switched.status==='switched','pin-switch-unconfirmed');
       journal.phase='starting';await writePrivate(path,journal);await manager.reload();
@@ -116,7 +144,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
 
 export async function rollbackUpgrade({core,directory,store,verify,manager=upgradeServiceManager()}={}){
   await privatePath(directory,{directory:true});
-  return localLock(directory,'upgrade',async()=>{
+  return maintenanceLock(directory,async assertLease=>{
     const path=join(directory,'upgrade.json'),journal=await readPrivate(path);
     need(journal?.version===1&&['complete','unknown','rollback','rolled-back'].includes(journal.phase)
       &&Array.isArray(journal.resources)&&journal.resources.length>0&&Array.isArray(journal.services),'rollback-journal');
@@ -133,6 +161,7 @@ export async function rollbackUpgrade({core,directory,store,verify,manager=upgra
       for(const unit of journal.services)await manager.stop(unit);
       for(const unit of journal.services)need((await manager.observe(unit)).stopped===true,'service-not-terminated');
       for(const r of [...journal.resources].reverse()){
+        assertLease();
         if(await absent(r.previous)){need(await verify(r,'current')===true,'original-resource-unavailable');continue;}
         await privatePath(r.previous,{directory:true});need(await verify(r,'previous')===true,'previous-resource-unverified');
         if(!await absent(r.current)){
