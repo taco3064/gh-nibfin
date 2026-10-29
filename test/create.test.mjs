@@ -33,6 +33,7 @@ test('explicit installed-producer Docker29/Node-image profile is persisted; unkn
   await assert.rejects(()=>createEnvironment(args('implicit',1),deps(root,{flags})),/not ready/);
   const wrong=deps(root,{flags:{...flags,docker:'28.5.1'}});
   await assert.rejects(()=>createEnvironment([...args('wrong',1),'--runtime-profile',profile],wrong),/not ready/);
+  await assert.rejects(()=>createEnvironment([...args('mixed',1),'--runtime-profile',profile],deps(root,{flags:{...flags,serverDocker:'28.5.1'}})),/not ready/);
 }));
 
 test('executable-level installed-Core proof: unrelated cwd, spaces in checkout, default/1/4; exact persisted allocation',()=>scratch(async root=>{
