@@ -51,6 +51,13 @@ test('actual installer accepts a systemd-created unit link only after notify rea
     const target=join(directory,name),original=await fs.readFile(target);await fs.appendFile(target,'\n// altered\n');
     assert.equal((await host.check(request)).status,'blocked');await fs.writeFile(target,original);
   }
+  const manifestPath=join(directory,'installation.json'),manifestBytes=await fs.readFile(manifestPath),unitBytes=await fs.readFile(unitPath);
+  const olderUnit=unitBytes.toString().replace('TimeoutStartSec=45','TimeoutStartSec=44'),previous=JSON.parse(manifestBytes);
+  await fs.writeFile(unitPath,olderUnit);previous.unit=createHash('sha256').update(olderUnit).digest('hex');await fs.writeFile(manifestPath,JSON.stringify(previous));
+  const olderManifest=await fs.readFile(manifestPath),configuration=await fs.readFile(join(directory,'notifier.json'));
+  await assert.rejects(host.install(request),/use reconciled upgrade/);
+  assert.deepEqual(await fs.readFile(manifestPath),olderManifest);assert.deepEqual(await fs.readFile(join(directory,'notifier.json')),configuration);
+  await fs.writeFile(unitPath,unitBytes);await fs.writeFile(manifestPath,manifestBytes);
   const launcher=join(directory,'notifier.mjs');await fs.appendFile(launcher,'\n// owner-modified\n');
   const before=await fs.readFile(launcher),starts=calls.filter(a=>a[0]==='start').length;
   await assert.rejects(host.install(request),/Modified notifier launcher preserved/);
