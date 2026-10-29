@@ -1,5 +1,5 @@
 import {currentProducer} from './current-core.mjs';
-export function managedWorkflowPlan(core,{executionPool,repository}={}){
+export function managedWorkflowPlan(core,{executionPool,repository=executionPool?.source?.repository}={}){
   const pool=executionPool===undefined?null:core.validateExecutionPool(executionPool);
   if(pool&&!pool.targets.some(t=>t.repository===repository))throw Error('Managed workflow target is outside the protected pool.');
   const plan=core.workflowInstallation({commit:currentProducer,hostRepository:'taco3064/nibfin',hostCommit:currentProducer,
