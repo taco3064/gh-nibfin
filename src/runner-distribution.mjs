@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {join} from 'node:path';
-import {tmpdir} from 'node:os';
+import {join,resolve,dirname,isAbsolute,sep} from 'node:path';
+import {tmpdir,userInfo} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {safePath} from './register.mjs';
@@ -12,6 +12,15 @@ export const runnerDistribution = Object.freeze({version:'2.338.2',commit:'d1eb1
 const hash = async path => {
   const h=createHash('sha256');for await(const b of createReadStream(path))h.update(b);return h.digest('hex');
 };
+// The authenticated official archive includes Node package launchers as links.
+// Only relative links resolving to files inside that same distribution qualify;
+// ordinary private-path checks continue to reject links everywhere else.
+async function distributionLink(root,relative){
+  const path=join(root,relative),target=await fs.readlink(path),inside=p=>p.startsWith(resolve(root)+sep);
+  if(isAbsolute(target)||!inside(resolve(dirname(path),target))||!inside(await fs.realpath(path))
+    ||!(await fs.stat(path)).isFile())throw Error('Official Runner link escapes its distribution.');
+  return target;
+}
 // Verify the immutable official archive BEFORE extraction; compare every shipped
 // file to the application actually invoked. No download, installer or lifecycle.
 export async function verifyRunnerDistribution(directory,{signal}={}) {
@@ -31,7 +40,12 @@ export async function verifyRunnerDistribution(directory,{signal}={}) {
         const name=join(relative,entry.name),expected=join(extracted,name),actual=join(directory,name);
         if(entry.isDirectory()){await safePath(actual);await compare(name);}
         else if(entry.isFile()){await safePath(actual,{directory:false});if(await hash(expected)!==await hash(actual))throw Error();}
-        else throw Error();
+        else if(entry.isSymbolicLink()){
+          const target=await distributionLink(extracted,name),stat=await fs.lstat(actual);
+          await safePath(dirname(actual));
+          if(!stat.isSymbolicLink()||stat.uid!==userInfo().uid||stat.nlink!==1
+            ||await distributionLink(directory,name)!==target||await hash(expected)!==await hash(actual))throw Error();
+        }else throw Error();
       }
     };
     await compare('');return runnerDistribution;
@@ -72,6 +86,7 @@ export async function prepareRunnerDistribution(directory,{signal}={}){
         const name=join(relative,e.name),source=join(extracted,name),target=join(directory,name);
         if(e.isDirectory()){await fs.mkdir(target,{mode:0o700});await copy(name);}
         else if(e.isFile()){await fs.copyFile(source,target,fs.constants.COPYFILE_EXCL);const mode=(await fs.stat(source)).mode;await fs.chmod(target,mode&0o111?0o700:0o600);}
+        else if(e.isSymbolicLink())await fs.symlink(await distributionLink(extracted,name),target);
         else throw Error('Unsupported official Runner file type: '+name);
       }
     };

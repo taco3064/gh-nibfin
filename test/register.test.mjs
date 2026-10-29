@@ -200,7 +200,8 @@ test('AC4 malformed local ID and configuration scope cannot publish success',asy
       if(args[0].endsWith('config.sh')) {const path=join(f.record.instances[0].registration,'.runner');await fs.writeFile(path,JSON.stringify(change(JSON.parse(await fs.readFile(path,'utf8')))));}
       return result;
     };
-    await rejected(()=>f.register(),/identity/);assert.equal((await f.binding()).disposition,'unknown');
+    await rejected(()=>f.register(),/identity|automatic updates/);assert.equal((await f.binding()).disposition,'unknown');
+    assert.equal(f.processes.some(p=>p.args.includes('enable')||p.args.includes('start')),false);
   });
 });
 test('AC5 service and publication failure preserve completed other instance; retry never reconfigures',async () => {
