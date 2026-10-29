@@ -1,17 +1,17 @@
 # Current reviewed public runtime
 
-The production loader selects the Nibfin PR251 source snapshot at
-`f411c96bb2336ae271c8ebaa1c5bd17b1bb8f252`, package `@nibfin/core@0.1.0`.
+The production loader selects the Nibfin PR252 source snapshot at
+`58636bf124cc0363d61ba0155888232e2f1cb602`, package `@nibfin/core@0.1.0`.
 The exact reviewed inputs are retained here:
 
 | Input | SHA-256 |
 | --- | --- |
-| nibfin-core.tgz | fe060f98d4095c851901d20acaef7401bf9dc8915763396808391682c32e1da7 |
-| release-manifest.json | 30c242c1812889716b344e819ddf90bf491783488cf23192954aa919d15417e4 |
-| compatibility.json | 32d7d6b4290d7b2b25f8df6e8bb199c7d8a90c0783bcf184a69288cbd5fdf166 |
+| nibfin-core.tgz | 825c5988d6bc56da04934d9086d4ccb483c13167dd6c8bae60647dc4c88db3f9 |
+| release-manifest.json | 14f74e749963d70f1e64c79408fab6a0629ed1adb310bfb9b52210beeb5376e3 |
+| compatibility.json | c7e9e57d6025c64b216688d095f47e7d3d2988d1a118ba27d5e5cb0ba0cf3d55 |
 
 The Core component identity is
-`0699738e8ecf66ff5b816e0be7d7a8ff82a811b343acf03a5d3ea58d5ca8c889`.
+`6fdba0f33e3c1abac0be6999593d951b149d3a7b3f50c1fdd0f4f7f51cc13004`.
 The release manifest honestly retains the producer's candidate source identity;
 these files do not establish publication of a release. The older #233 input and
 its historical incompatibility report remain under [n233](../n233/README.md).
@@ -45,3 +45,10 @@ Issue #55 remains incomplete: upgrade/rollback, complete recovery-host onboardin
 retained lifecycle fixture adaptation and fresh matching non-root regression proof
 are still required. No release, production cutover, live model/provider use or
 Linux/WSL certification is claimed.
+
+Requirement sources use the common `observeRequirementAuthority` API. The installed
+`github-issue` adapter owns GitHub identity and API handling; Jira and Linear are
+separate future adapters and currently fail before I/O. The installation chooses
+the source kind, target and connection. Requirement text cannot switch providers
+or grant execution privileges. Source changes do not transfer existing pending
+work or Grants to another authority.
