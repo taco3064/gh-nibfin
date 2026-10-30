@@ -56,7 +56,7 @@ test('one native cycle retains every actual owner output through independent rev
   if(commit){const[,head,suffix]=commit;
    if(suffix.startsWith('/check-runs'))return reply({total_count:1,check_runs:[{id:'800',name:'ci',head_sha:head,app:{id:'15368'},status:'completed',conclusion:'success'}]});
    if(suffix.startsWith('/statuses'))return reply([]);
-   if(!suffix)return reply({sha:head,commit:{tree:{sha:git(remote,['rev-parse',head+'^{tree}'])}});
+   if(!suffix)return reply({sha:head,commit:{tree:{sha:git(remote,['rev-parse',head+'^{tree}'])}}});
   }
   if(path.startsWith(root+'/compare/'))return reply({status:'identical',ahead_by:0,behind_by:0,base_commit:{sha:mergeCommit},merge_base_commit:{sha:mergeCommit}});
  });
