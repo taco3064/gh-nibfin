@@ -124,7 +124,16 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
    need(r.ok||r.status===4&&p.LoadState==='not-found','stage-unit-observation');
    return p;
   };
-  const before=observe();
+  let before=observe();
+  if(before.ActiveState==='active'){
+   need(before.LoadState==='loaded','stage-unit-active');
+   // Only the exact authenticated, idle staging daemon may be stopped here.
+   let verified=false;
+   try{await inspect();const live=await status(root);verified=live.delivery==='blocked'
+    &&live.reason==='native-stage-composition-pending'&&live.pool?.occupied===0&&live.pool?.pending===0&&live.pool?.host==='running';}catch{}
+   need(verified,'stage-unit-active');need(run(['stop',nativeServiceName]).ok,'stage-unit-stop');before=observe();
+  }
+  need(before.ActiveState==='inactive'&&before.MainPID==='0'&&before.ControlPID==='0','stage-unit-active');
   need(before.LoadState==='not-found'&&before.FragmentPath===''||before.LoadState==='loaded'&&await fs.realpath(before.FragmentPath)===unit,'stage-unit-fragment');
   for(const args of [['link',unit],['daemon-reload'],['enable',nativeServiceName]])need(run(args).ok,'stage-unit-interrupted');
   const after=observe();need(after.ActiveState==='inactive'&&after.MainPID==='0'&&after.ControlPID==='0'&&after.LoadState==='loaded'&&await fs.realpath(after.FragmentPath)===unit,'stage-unit-readback');
