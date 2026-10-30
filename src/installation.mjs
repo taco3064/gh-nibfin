@@ -5,6 +5,7 @@ import {withCurrentCore,currentPin,currentProducer} from './current-core.mjs';
 import {githubObservation,observeProcess,processEnvironment} from './create.mjs';
 import {managedWorkflowPlan} from './workflow-inputs.mjs';
 import {nativeControlHost} from './native-host.mjs';
+import {installNativeSource} from './native-source-install.mjs';
 import {observeExecutionPool} from './execution-pool.mjs';
 import {sha,readPrivate,writePrivate,ensurePrivateDirectory,localLock,privatePath} from './local-state.mjs';
 const targets=new WeakMap();
@@ -42,7 +43,8 @@ export function installationProvider(core,{transport,repo,write}){
   return core.createGithubProvider({transport:transport??core.localGhTransport(),attempts:1,
     authorize:r=>write===true&&r.endpoint.startsWith(prefix+'/')&&['PUT','POST','PATCH'].includes(r.method)
       &&(/\/contents\/(?:\.github\/workflows\/nibfin-[\w-]+\.yml|\.nibfin\/[\w./-]+)$/.test(r.endpoint)
-      ||r.endpoint===prefix+'/labels'||r.endpoint===prefix+'/actions/variables'||r.endpoint.startsWith(prefix+'/actions/variables/'))});
+      ||r.endpoint===prefix+'/labels'||r.endpoint===prefix+'/actions/variables'||r.endpoint.startsWith(prefix+'/actions/variables/')
+      ||r.method==='POST'&&r.endpoint===prefix+'/pulls'||r.method==='PUT'&&new RegExp('^'+prefix+'/pulls/[1-9][0-9]*/merge$').test(r.endpoint))});
 }
 async function request(provider,repo,endpoint,{method='GET',body}={}){
   const r=await provider.request({method,endpoint,target:targets.get(provider),operation:'installation',correlation:'installation',...(body?{body}:{}),signal:AbortSignal.timeout(30000)});
@@ -140,9 +142,11 @@ export async function initializeRepository(args,dependencies={}){
     const report=await inspect();if(!report.administration)return {status:'blocked',diagnostics:report.diagnostics};
     if(!report.desired)return report;
     if(report.diagnostics.some(d=>d.capability==='executionPool'))return {status:'blocked',diagnostics:report.diagnostics};
+    let nativePrepared=false;
     if(host.prepare){
       const prepared=await host.prepare({core,context,repo:selected.repo,executionPool:report.executionPool,memberId,...(selected.memberRuntime?{memberRuntime:selected.memberRuntime}:{})});
-      if(prepared?.status!=='ready')return {status:'blocked',phase:prepared?.status??'unknown',diagnostics:prepared?.diagnostics??[{capability:'host',code:'native-preparation-unconfirmed'}]};
+      nativePrepared=prepared?.status==='prepared'&&report.executionPool?.version===2;
+      if(prepared?.status!=='ready'&&!nativePrepared)return {status:'blocked',phase:prepared?.status??'unknown',diagnostics:prepared?.diagnostics??[{capability:'host',code:'native-preparation-unconfirmed'}]};
     }
     const nextInstallation={packageVersion:currentPin.packageVersion,pins:context.identity.pins};
     if(report.previous&&JSON.stringify(report.previous.installation)!==JSON.stringify(nextInstallation))return {status:'blocked',diagnostics:[{capability:'installation',code:'runtime-transition-required',action:'Use the existing upgrade boundary after reconciling active work, holds and unknown writes.'}]};
@@ -173,7 +177,12 @@ export async function initializeRepository(args,dependencies={}){
       if(after.outcome!=='read'||!Array.isArray(after.data)||!after.data.some(v=>labelMatches(v,label)))return {status:'unknown',diagnostics:[{capability:'labels',code:'write-readback-unconfirmed',name:label.name}]};
       await writePrivate(journalPath,{...intent,status:'completed'});
     }
-    for(const [path,body] of report.desired.files){
+    if(nativePrepared){
+      const source=await installNativeSource(core,{root,repository:selected.repo,repositoryId:report.repositoryId,desired:report.desired,
+        observations:report.observations,previous:report.previous,provider,signal:AbortSignal.timeout(300000)});
+      if(source.status!=='installed')return {status:source.status,phase:'protected-source-installation',pr:source.pr,
+        diagnostics:[{capability:'installation',code:source.reason}]};
+    }else for(const [path,body] of report.desired.files){
       const o=report.observations.get(path);if(o.state==='unknown')return {status:'blocked',diagnostics:[{capability:'workflow',code:'observation-unavailable',path}]};
       if(o.state==='present'&&o.bytes.equals(Buffer.from(body)))continue;
       if(o.state==='present'&&report.previous?.files?.[path]!==sha(o.bytes))return {status:'blocked',diagnostics:[{capability:'workflow',code:'user-modification-preserved',path,action:'Reconcile the managed file with the reviewed package; no force overwrite is performed.'}]};
