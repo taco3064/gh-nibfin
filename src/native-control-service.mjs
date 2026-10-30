@@ -4,6 +4,7 @@ import {userInfo} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {connect} from 'node:net';
 import {randomUUID} from 'node:crypto';
+import{pathToFileURL}from'node:url';import{openFileHostStore}from'./host-store.mjs';import{nativePoolStore}from'./native-pool-store.mjs';
 import {privatePath,readPrivate,writePrivate,sha} from './local-state.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-service:'+code);};
@@ -53,7 +54,7 @@ export async function verifyNativeRuntime(root,record,{directory=join(root,'runt
 /** Installs the maintained process only. Its live response reports the remaining
  * delivery/registration/handover holds; a running service is not host readiness.
  * These injectable transports are test seams, never public JSON or module paths. */
-export function nativeControlService({root,run=nativeSystemctl,status=nativeServiceStatus}={}){
+export function nativeControlService({root,run=nativeSystemctl,status=nativeServiceStatus,observeUnused=async(root,count)=>(await import('./native-staged-transition.mjs')).observeUnusedStagedResources(root,count)}={}){
  const unit=join(root,nativeServiceName),receipt=join(root,'control-service.json');
  async function inspect(){
   const record=await readPrivate(receipt);need(record.version===1&&record.account===userInfo().uid
@@ -127,6 +128,19 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
    need(r.ok||r.status===4&&p.LoadState==='not-found','stage-unit-observation');
    return p;
   };
+  const recoverEmptyFailure=async before=>{
+   need(before.ActiveState==='failed'&&before.MainPID==='0'&&before.ControlPID==='0','stage-unit-active');
+   const installation=await readPrivate(join(root,'native-installation.json'));
+   need(installation.phase==='staged'&&installation.executionPool?.version===2,'failed-stage-installation');
+   const core=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
+   const status=await nativePoolStore(core,{root,configuration:installation.executionPool}).status(),ledger=await readPrivate(join(root,'pool-state/ledger.json'));
+   need(status.occupied===0&&status.pending===0&&Object.keys(ledger.jobs).length===0&&Object.keys(ledger.capacity.completed).length===0,'failed-stage-work');
+   const store=await openFileHostStore(core,{directory:join(root,'state')});try{const{work}=await store.read();
+    need(work.restrictionsChecked&&work.paused&&work.hold===null&&!work.unknownWrite&&!work.active&&work.terminated&&work.reconciled
+     &&['pending','conversations','receipts'].every(k=>work[k].length===0),'failed-stage-work');}finally{await store.close();}
+   need((await observeUnused(root,installation.runnerCount)).status==='unused','failed-stage-resources');
+   need(run(['reset-failed',nativeServiceName]).ok,'failed-stage-reset');return observe();
+  };
   let before=observe();
   if(before.ActiveState==='active'){
    need(before.LoadState==='loaded','stage-unit-active');
@@ -137,6 +151,7 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
     &&live.pool?.occupied===0&&live.pool?.pending===0&&live.pool?.host==='running';}catch{}
    need(verified,'stage-unit-active');need(run(['stop',nativeServiceName]).ok,'stage-unit-stop');before=observe();
   }
+  if(before.ActiveState==='failed')before=await recoverEmptyFailure(before);
   need(before.ActiveState==='inactive'&&before.MainPID==='0'&&before.ControlPID==='0','stage-unit-active');
   need(before.LoadState==='not-found'&&before.FragmentPath===''||before.LoadState==='loaded'&&await fs.realpath(before.FragmentPath)===unit,'stage-unit-fragment');
   for(const args of [['link',unit],['daemon-reload'],['enable',nativeServiceName]])need(run(args).ok,'stage-unit-interrupted');

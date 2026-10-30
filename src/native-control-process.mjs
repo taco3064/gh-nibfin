@@ -36,7 +36,7 @@ async function removeStaleSocket(path){
 export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
  need(process.platform==='linux'&&process.versions.node.split('.')[0]==='22'&&userInfo().uid!==0,'platform');
  await privatePath(root,{directory:true});
- const leaseRoot=join(root,'control-lease');await ensurePrivateDirectory(leaseRoot);
+ const leaseRoot=join(root,'control-lease');await ensurePrivateDirectory(leaseRoot);let shutdownComplete=false;
  return maintenanceLock(leaseRoot,async assertLease=>{
   const receipt=await readPrivate(join(root,'control-service.json')),record=await readPrivate(join(root,'native-installation.json'));
   need(receipt.version===1&&receipt.account===userInfo().uid&&/^[a-f0-9-]{36}$/.test(receipt.generation),'receipt');
@@ -113,6 +113,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    // replacement created by a different process during shutdown.
    if(bound){let current;try{current=await fs.lstat(path);}catch(e){if(e.code!=='ENOENT')throw e;}
     if(current){need(current.ino===bound.ino&&current.dev===bound.dev,'shutdown-socket-changed');await fs.unlink(path);}}
+   shutdownComplete=true;
   }
- });
+ },{acceptReleasedAfterWork:()=>signal?.aborted===true&&shutdownComplete});
 }
