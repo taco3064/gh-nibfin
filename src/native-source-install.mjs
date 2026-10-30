@@ -1,11 +1,11 @@
-import fs from'node:fs/promises';import{join,dirname}from'node:path';
-import{readPrivate,writePrivate,sha}from'./local-state.mjs';import{publicCheckout}from'./native-role-host.mjs';
+import fs from'node:fs/promises';import{join,dirname,resolve}from'node:path';import{execFileSync}from'node:child_process';
+import{readPrivate,writePrivate,sha,privatePath}from'./local-state.mjs';import{publicCheckout}from'./native-role-host.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-source-install:'+code);};
 
 // Owner init is an administrative source installation, not an Issue delivery.
 // Reuse Core's workspace/Git byte owners without fabricating an Agent result,
 // Accept receipt, Issue completion or permission to bypass protected PR checks.
-export async function installNativeSource(core,{root,repository,repositoryId,desired,observations,previous,provider,signal}={}){
+export async function installNativeSource(core,{root,repository,repositoryId,desired,observations,previous,provider,signal,checkout=publicCheckout,publicationGitFactory=options=>core.createPublicationGit(options)}={}){
  const request=async(endpoint,{method='GET',body}={})=>provider.request({endpoint,method,...(body?{body}:{}),target:repositoryId,
   operation:'installation',correlation:'native-source-install',signal});
  const get=async path=>{const r=await request('/repos/'+repository+path);need(r.outcome==='read','observation');return r.data;};
@@ -24,26 +24,38 @@ export async function installNativeSource(core,{root,repository,repositoryId,des
   proposal={version:1,kind:'administrative-installation',identity,repository,repositoryId,files,base,
    branch:'nibfin/install-'+identity.slice(0,24),createdAt:Date.now(),phase:'planning'};
   await writePrivate(path,proposal,{exclusive:true});
-  const directory=await fs.mkdtemp(join(root,'.native-source-'));proposal={...proposal,directory};await writePrivate(path,proposal);
+ }
+ if(proposal.phase==='planning'){
+  const base=proposal.base;let directory=proposal.directory,fresh=false;
+  if(!directory){directory=await fs.mkdtemp(join(root,'.native-source-'));fresh=true;proposal={...proposal,directory};await writePrivate(path,proposal);}
+  need(resolve(directory)===directory&&dirname(directory)===root&&directory.split('/').at(-1).startsWith('.native-source-'),'original-source-directory');
+  await privatePath(directory,{directory:true});
+  const git=args=>execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null',...args],{cwd:directory,encoding:'utf8',timeout:30000,maxBuffer:1048576,
+   env:{PATH:'/usr/bin:/bin',HOME:directory,LANG:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0'}}).trim();
   let publication,settled=false;
   try{
-   await publicCheckout(repository,base,directory,signal);
+   if(fresh)await checkout(repository,base,directory,signal);
+   need(git(['rev-parse','HEAD'])===base,'original-source-base');
    for(const[name,body]of desired.files){
     need(/^(?:\.github\/workflows\/nibfin-[a-z-]+\.yml|\.nibfin\/[A-Za-z0-9_./-]+)$/.test(name)&&!name.split('/').includes('..'),'managed-path');
     let parent=directory;for(const part of name.split('/').slice(0,-1)){parent=join(parent,part);
      try{const s=await fs.lstat(parent);need(s.isDirectory()&&!s.isSymbolicLink(),'source-parent');}catch(e){if(e.code!=='ENOENT')throw e;await fs.mkdir(parent,{mode:0o700});}}
     const destination=join(directory,name),observed=observations.get(name);let before=null;
     try{const s=await fs.lstat(destination);need(s.isFile()&&!s.isSymbolicLink()&&s.nlink===1,'source-file');before=await fs.readFile(destination);}catch(e){if(e.code!=='ENOENT')throw e;}
-    need(observed.state==='absent'?before===null:before?.equals(observed.bytes),'source-drift');
+    need(before?.equals(Buffer.from(body))||(observed.state==='absent'?before===null:before?.equals(observed.bytes)),'source-drift');
     const h=await fs.open(destination,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW,0o600);
     try{await h.writeFile(body);await h.sync();}finally{await h.close();}
    }
    const scopeBody='Owner init: install the reviewed Nibfin managed source. This is administrative source data, not an Issue delivery.',
     shapeBody=['Candidate artifacts applicability: Only managed tracked source is installed; no generated artifacts are required.',
      'Candidate hooks applicability: Owner installation does not execute repository hooks.','```nibfin-candidate','{"artifacts":[],"hooks":[]}','```'].join('\n');
-   const workspace=core.captureWorkspace({root:directory,base,scopeBody,shapeBody,permittedPaths:[...desired.files.keys()],
+   const roots=git(['ls-tree','--name-only',base]).split('\n').filter(Boolean);
+   const permittedPaths=[...new Set([...roots,...[...desired.files.keys()].map(p=>p.split('/')[0])])];
+   need(permittedPaths.every(p=>/^[A-Za-z0-9_.-]+$/.test(p)&&!['.','..','.git'].includes(p)),'source-boundary');
+   const workspace=core.captureWorkspace({root:directory,base,scopeBody,shapeBody,permittedPaths,
     binding:{repository,cycle:'install-'+identity.slice(0,32),policy:identity,scopeHash:core.bodyDigest(scopeBody),shapeHash:core.bodyDigest(shapeBody)}});
-   publication=core.createPublicationGit({repository,repositoryId}).open(workspace,Buffer.from('Install reviewed Nibfin native project source\n'),
+   need(workspace.candidate.paths.every(path=>desired.files.has(path)),'unmanaged-source-change');
+   publication=publicationGitFactory({repository,repositoryId}).open(workspace,Buffer.from('Install reviewed Nibfin native project source\n'),
     {name:member.data.login,email:member.data.id+'+'+member.data.login+'@users.noreply.github.com',timestamp:Math.floor(proposal.createdAt/1000)},{signal});
    proposal={...proposal,phase:'push-intent',commit:publication.commit};await writePrivate(path,proposal);
    const refs={head:proposal.branch,base:'main'},observed=publication.observe(refs);need(observed.base===base&&observed.head===null,'branch-conflict');
