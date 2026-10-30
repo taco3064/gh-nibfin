@@ -98,8 +98,8 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
   let observed=observe();
   need(observed.ActiveState==='inactive'&&observed.MainPID==='0'&&observed.ControlPID==='0','retirement-active-work');
   if(observed.LoadState==='not-found'){
-   need(previous&&['intent','retired'].includes(previous.phase),'retirement-unknown-service');
-   if(previous.phase==='intent')await writePrivate(path,{...previous,phase:'retired'});
+   need(observed.FragmentPath===''&&(!previous||['intent','retired'].includes(previous.phase)),'retirement-unknown-service');
+   if(!previous||previous.phase==='intent')await writePrivate(path,{version:1,generation:retained.generation,unit:retained.unit,phase:'retired'});
   }
   else{
    need(observed.LoadState==='loaded'&&await fs.realpath(observed.FragmentPath)===unit,'retirement-fragment');
