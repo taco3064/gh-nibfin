@@ -150,6 +150,11 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
     member=await prepareNativeMember(core,{root,context,memberId,capacity:pool.capacity,...memberRuntime});
     if(member?.memberId)await prepareNativeOwnerPolicy(core,{root,configuration:pool,provider:core.createGithubProvider({attempts:1})});
    }
+   // A staging daemon may have started before the Member/Owner configuration
+   // existed. Reload only that authenticated idle staging service so it binds
+   // the new stage capabilities; a ready or occupied host is never restarted.
+   if(member?.memberId){const before=await control.check();
+    if(before.status==='running'&&before.stageEntry!=='configured')await control.stageUnit();}
    const observed=await control.install();
    if(member?.memberId)return {status:'prepared',runnerCount:pool.capacity,diagnostics:[{capability:'activation',code:'native-project-installation-and-activation-pending'}]};
    return {status:'staged',runnerCount:pool.capacity,diagnostics:[...observed.diagnostics,...remaining()]};
