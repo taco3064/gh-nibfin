@@ -5,7 +5,7 @@ const copy=structuredClone;
 // All mutation and review owners come from the installed Core. This module
 // adapts private native records and real official observations to their inputs.
 export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,store,provider,authorization,dependencies,dependencyInput,
- operations,evidenceCurrent,source,observations,checkpoint,signal,progress}={}){
+ operations,evidenceCurrent,source,observations,checkpoint,signal,progress,publicationGitFactory}={}){
  const c=core.contentIdentity,t=state.target,b=pin.binding;
  const sourceEvent={request:pin.invocation.request,event:'workflow_dispatch',repositoryId:t.repositoryId,
   runId:source.runId,attempt:source.attempt,actorId:state.member.id};
@@ -39,7 +39,8 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
  const reviewEvidence=()=>Object.fromEntries(Object.entries({author:'shape',validator:'shape-validator',publication:'publication',deliver:'deliver',
   accept:'accept',secondStage:'pre-commit-hooks',pr:'pr',ci:'ci'}).map(([key,value])=>[key,item(value)]));
  const target={...t,cycle:state.cycle,headRef:'nibfin/issue-'+t.number+'-'+state.cycle.slice(-12),baseRef:state.policy.merge.baseBranch,
-  branchPrefix:'nibfin',paths:state.paths,...(state.publication?{prId:state.publication.pr.observation.id,prNumber:state.publication.pr.observation.number}:{})};
+  branchPrefix:'nibfin',paths:state.paths,...(state.publication?{prId:state.publication.pr.observation.id,
+   prNumber:state.publication.pr.observation.endpoint.split('/').at(-1)}:{})};
  const owners={deliver:{current:()=>copy({...common,capture:{root:roles.workspace('deliver'),base:state.base,permittedPaths:state.paths,
     binding:{repository:t.repository,cycle:state.cycle,policy:b.policy,scopeHash:b.scopeHash,shapeHash:b.shapeHash}},
    publication:state.receipts.publication,publicationCurrent:current('publication')}),
@@ -55,7 +56,7 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
     evidence:Object.fromEntries(Object.entries({author:'shape',validator:'shape-validator',publication:'publication',deliver:'deliver',accept:'accept',secondStage:'pre-commit-hooks'}).map(([key,value])=>[key,item(value)])),
     hooks:hookState(),author,pr:{title:state.title,body:'Implements the authorized Scope in #'+t.number+'.\n\nRefs #'+t.number},
     correlation:pin.invocation.request,source:sourceEvent}),workspace:()=>workspace,authorization,dependencies,dependencyInput,
-   history:store.publicationHistory,git:core.createPublicationGit({repository:t.repository,repositoryId:t.repositoryId}),operations},
+   history:store.publicationHistory,git:(publicationGitFactory??core.createPublicationGit)({repository:t.repository,repositoryId:t.repositoryId}),operations},
   ci:{provider,mode:'signed'}};
  let reviewPin,completionPin,mergeIntent,postMergeProof,completionState;
  const observe=()=>core.observeFinalReview({provider,target,head:state.head,base:state.base,ciMode:'signed'});
