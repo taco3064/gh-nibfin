@@ -182,7 +182,7 @@
         },
         {
           "path": "docs/workspace.md",
-          "sha256": "b8ce452da01252ba570e8fa2a1f244e4be91c493bc7f1b4257716eb088887583"
+          "sha256": "0eed8ea5c8c6e83e82a295b1bafcdd68f36247832315816690537b5893f62250"
         },
         {
           "path": "docs/wsl.md",
@@ -390,7 +390,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "fb6bc677714869e9068b75f2e6611555ac97ff4f87e4c5081243e71c1e14ba6b"
+          "sha256": "6cd45b6eb6878629876f9733605a297f51285d869abe694289d6b637b1ab7bb8"
         },
         {
           "path": "src/distribution.mjs",
@@ -694,7 +694,7 @@
         },
         {
           "path": "src/workspace.mjs",
-          "sha256": "0ab3ca9496adda0058810237d1b35d59a357cb21ef7b74427387ab0fe35bd4fc"
+          "sha256": "9fe344ef53c9330ea77944f573e3f8a4e3d4356d7546b66efdd488769b19dcca"
         },
         {
           "path": "src/wsl-guest.mjs",
@@ -725,7 +725,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "f416631b565771ecbd5761da80f618a1dee167703685b761e571eac4cdc94da7"
+      "sha256": "b0c7a7750f5c718cc4a4c714e548cf397bfe5b2dacb26c0c0a4d36fd70bc04ec"
     },
     "skills": {
       "version": "0.1.0",
@@ -902,7 +902,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "fb6bc677714869e9068b75f2e6611555ac97ff4f87e4c5081243e71c1e14ba6b"
+    "sourceMapSha256": "6cd45b6eb6878629876f9733605a297f51285d869abe694289d6b637b1ab7bb8"
   },
   "entries": [
     {
