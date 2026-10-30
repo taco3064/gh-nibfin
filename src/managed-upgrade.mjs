@@ -23,8 +23,7 @@ export function managedUpgradeLayout(core,root,plan){
   need(Array.isArray(plan.resources)&&plan.resources.length>=2&&plan.resources.length<=129,'resource-set');
   const names=['runtime',...Array.from({length:plan.resources.length-1},(_,i)=>'runner-'+(i+1))];
   const services=['nibfin-control.service',...names.slice(1).map(n=>'nibfin-'+n+'.service')];
-  need(
-    &&plan.resources.every((r,i)=>r.name===names[i]&&Object.keys(r).sort().join(' ')==='current name next'),'resource-set');
+  need(plan.resources.every((r,i)=>r.name===names[i]&&Object.keys(r).sort().join(' ')==='current name next'),'resource-set');
   const inventories=new Map();
   for(const resource of plan.resources){
     for(const version of ['current','next']){
