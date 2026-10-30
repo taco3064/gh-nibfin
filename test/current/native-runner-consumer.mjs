@@ -42,12 +42,17 @@ async function fixture(core,context,{hang=false,badExecutable=false}={}){
  for(const [name,bytes]of Object.entries(nativeJitConfiguration(configuration.encoded,record).files))
   await fs.writeFile(join(application,name),bytes,{mode:0o600});
  await fs.writeFile(join(application,'bin/Runner.Worker'),worker,{mode:0o700});
- const listener=badExecutable?'#!/does-not-exist\n':`#!/usr/local/bin/node
-const fs=require('node:fs');
-fs.writeFileSync(${JSON.stringify(join(directory,'child.json'))},JSON.stringify({pid:process.pid,argv:process.argv.slice(2),
- credentialPresent:fs.readFileSync('.credentials','utf8')==='PRIVATE-JIT-CREDENTIAL',
- secretEnvironment:Object.keys(process.env).filter(k=>/TOKEN|SECRET|KEY|JITCONFIG|CODEX_HOME|NODE_OPTIONS/.test(k))}),{mode:0o600});
-process.stdout.write('PRIVATE-LISTENER-LOG');${hang?'setInterval(()=>{},1000);':''}
+ const listener=badExecutable?'#!/does-not-exist\n':`#!/usr/bin/python3
+import json, os, re, sys, time
+with open('.credentials', encoding='utf8') as credential:
+ present = credential.read() == 'PRIVATE-JIT-CREDENTIAL'
+payload = {'pid': os.getpid(), 'argv': sys.argv[1:], 'credentialPresent': present,
+ 'secretEnvironment': [key for key in os.environ if re.search('TOKEN|SECRET|KEY|JITCONFIG|CODEX_HOME|NODE_OPTIONS', key)]}
+fd = os.open(${JSON.stringify(join(directory,'child.json'))}, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w') as output:
+ json.dump(payload, output)
+sys.stdout.write('PRIVATE-LISTENER-LOG'); sys.stdout.flush()
+${hang?'time.sleep(600)':''}
 `;
  await fs.writeFile(join(application,'bin/Runner.Listener'),listener,{mode:0o700});
  record=sealed(core,{...record,prepared:prepared.identity,configuration:config.identity,admission:admission.identity});
