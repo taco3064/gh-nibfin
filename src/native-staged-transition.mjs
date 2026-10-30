@@ -12,8 +12,7 @@ const inside=(a,b)=>a===b||a.startsWith(b+'/');
 const absent=async p=>{try{await fs.lstat(p);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
 
 /** Actual local observations, separate from source/fixture readiness. */
-export async function observeUnusedStagedResources(root,count){
- const roots=[join(root,'runtime'),...Array.from({length:count},(_,i)=>join(root,'runner-'+(i+1)))];
+export async function observeUnusedNativePaths(roots){
  await assertNativeResourcesUnused(roots,'/nibfin-retired-staging');
  const socket='/run/user/'+userInfo().uid+'/docker.sock',s=await fs.lstat(socket);
  need(s.isSocket()&&s.uid===userInfo().uid,'docker-owner');
@@ -31,6 +30,10 @@ export async function observeUnusedStagedResources(root,count){
   }
  }
  return {status:'unused'};
+}
+
+export async function observeUnusedStagedResources(root,count){
+ return observeUnusedNativePaths([join(root,'runtime'),...Array.from({length:count},(_,i)=>join(root,'runner-'+(i+1)))]);
 }
 
 /** Only a never-activated v1 staging layout. This is not an active-work upgrade,

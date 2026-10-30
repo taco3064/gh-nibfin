@@ -7,6 +7,7 @@ import {initializeFileHostStore,openFileHostStore} from './host-store.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
 import {verifyNativeRuntime} from './native-control-service.mjs';
 import {observeUnusedStagedResources} from './native-staged-transition.mjs';
+import {archiveCompletedNativeUpgrade} from './native-upgrade-history.mjs';
 import {nativeInstallationSelection} from './managed-upgrade.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-upgrade-stage:'+code);};
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
@@ -31,10 +32,11 @@ export async function stageUnactivatedNativeUpgrade(core,{root,previous,next,con
   const destination=nativeInstallationSelection(core,context.identity,next);
   const known=new Set(['runtime','native-installation.json','control-lease','control-service.json','nibfin-control.service','maintenance.lock',
    'previous-installation','staging-transition.json','control-retirement.json','pool-state','pool-intake','pool-blockages','jobs','state',
-   'upgrade-plan.json','upgrade.json','runtime-next','native-installation-next.json']);
+   'upgrade-plan.json','upgrade.json','runtime-next','native-installation-next.json',
+   'runtime-previous','native-installation-previous.json','upgrade-history','original-work','control.sock']);
   for(let i=1;i<=previous.runnerCount;i++)known.add('runner-'+i);
   need((await fs.readdir(root)).every(name=>known.has(name)),'unrecognized-state');
-  for(const name of ['jobs','pool-intake','pool-blockages'])if(!await absent(join(root,name))){
+  for(const name of ['jobs','pool-intake','pool-blockages','original-work'])if(!await absent(join(root,name))){
    await privatePath(join(root,name),{directory:true});
    need((await fs.readdir(join(root,name))).every(name=>name==='maintenance.lock'),'existing-work');
   }
@@ -65,6 +67,7 @@ export async function stageUnactivatedNativeUpgrade(core,{root,previous,next,con
   }finally{await store?.close();}
   const journal=await readPrivate(join(root,'upgrade.json'),{missing:true});
   need(!journal||['complete','rolled-back'].includes(journal.phase),'original-upgrade-reconciliation-required');
+  if(journal)await archiveCompletedNativeUpgrade(core,{root,current,installation:previous});
   await stage();assertLease();
   const nextPath=join(root,'native-installation-next.json'),bytes=JSON.stringify(next,null,2)+'\n';
   if(await absent(nextPath))await writePrivate(nextPath,next,{exclusive:true});
