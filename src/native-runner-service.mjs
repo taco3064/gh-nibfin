@@ -24,8 +24,16 @@ export function nativeRunnerService({root,selector,slot,lease,run=nativeSystemct
    &&receipt.unit===sha(bytes),'receipt');await privatePath(unit);need(sha(await fs.readFile(unit))===receipt.unit,'unit');
   const observed=run(['show',name,'--property=ActiveState','--property=MainPID','--property=InvocationID','--property=ControlGroup','--property=FragmentPath']);
   need(observed.ok,'observe');const properties=Object.fromEntries(observed.output.trim().split('\n').map(line=>{const at=line.indexOf('=');return[line.slice(0,at),line.slice(at+1)];}));
-  need(await fs.realpath(properties.FragmentPath)===unit&&/^[0-9]+$/.test(properties.MainPID)
-   &&/^[a-f0-9]{32}$/.test(properties.InvocationID),'service-identity');
+   need(await fs.realpath(properties.FragmentPath)===unit&&/^[0-9]+$/.test(properties.MainPID),'service-identity');
+   if(properties.InvocationID===''&&['inactive','failed'].includes(properties.ActiveState)&&properties.MainPID==='0'){
+    // systemd clears InvocationID after a successful one-shot service exit.
+    // Retain attribution to the original terminated process, never infer that
+    // missing process evidence or an active replacement is the same execution.
+    const process=await readPrivate(join(directory,'process.json'));
+    need(process.phase==='terminated'&&process.lease===lease&&/^[a-f0-9]{32}$/.test(process.invocation),'service-identity');
+    properties.InvocationID=process.invocation;
+   }
+   need(/^[a-f0-9]{32}$/.test(properties.InvocationID),'service-identity');
   need(properties.ControlGroup===''||properties.ControlGroup.startsWith('/user.slice/user-'+userInfo().uid+'.slice/')
    &&properties.ControlGroup.split('/').slice(1).every(p=>/^[A-Za-z0-9_.@:-]+$/.test(p)),'control-group');
   return {status:properties.ActiveState,pid:Number(properties.MainPID),invocation:properties.InvocationID,controlGroup:properties.ControlGroup};

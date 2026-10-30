@@ -43,9 +43,12 @@ export async function nativeStageService(core,{root,source,execute,signal}={}){
    const conclusion=result?.disposition==='completed'?'success':'failure';
    await progress({status:result?.disposition??'unresolved',reason:result?.reason??'native-stage-unavailable',verified:conclusion==='success'?'true':'false'});
    value={...value,phase:conclusion==='success'?'completed':'unresolved',conclusion,result};
-  }catch{
-   value={...value,phase:'unresolved',conclusion:'failure',progressCount:value.progressCount+1,progress:[...value.progress,
-    core.actionLogLine({issue:value.issue,stage:value.stage,status:'unresolved',reason:'native-stage-reconciliation-required',verified:'false'},'native-stage')].slice(-50)};
+  }catch(error){
+   const reason=/^native-[a-z-]+:[a-z-]+$/.test(error?.message??'')?error.message:
+    error?.code==='EADDRINUSE'?'native-stage:host-socket-in-use':'native-stage-reconciliation-required';
+   value={...value,phase:'unresolved',conclusion:'failure',failure:{name:String(error?.name??'Error'),code:typeof error?.code==='string'?error.code:null,
+    message:String(error?.message??'Unavailable').slice(0,4096),stack:String(error?.stack??'').slice(0,16384)},progressCount:value.progressCount+1,progress:[...value.progress,
+    core.actionLogLine({issue:value.issue,stage:value.stage,status:'unresolved',reason,verified:'false'},'native-stage')].slice(-50)};
   }
   await save(value);
  }

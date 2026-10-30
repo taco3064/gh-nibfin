@@ -1,6 +1,13 @@
 import test from'node:test';import assert from'node:assert/strict';import fs from'node:fs/promises';import{join}from'node:path';import{execFileSync}from'node:child_process';
 import{withCurrentCore}from'../../src/current-core.mjs';import{observeNativeObligations}from'../../src/native-obligations.mjs';
 import{retainUnacceptedWorkspace}from'../../src/native-unaccepted-work.mjs';
+import{nativeReadBrokerDirectory}from'../../src/native-role-host.mjs';
+
+test('native broker uses a short private runtime address with the complete lease identity',()=>{
+ const first=nativeReadBrokerDirectory('a'.repeat(64)),second=nativeReadBrokerDirectory('b'.repeat(64));
+ assert.ok(Buffer.byteLength(first+'/read.sock')<108);assert.notEqual(first,second);assert.ok(first.endsWith('a'.repeat(64)));
+ assert.throws(()=>nativeReadBrokerDirectory('../foreign'),/broker-lease/);
+});
 test('real source inspection requires explicit Scope artifact applicability and detects package Hook installers',async()=>withCurrentCore(async(core,context)=>{
  const directory=join(context.root,'source-observation');await fs.mkdir(directory,{mode:0o700});
  const git=args=>execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null',...args],{cwd:directory,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'}});

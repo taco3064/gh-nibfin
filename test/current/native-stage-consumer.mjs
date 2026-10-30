@@ -4,6 +4,14 @@ const request={version:1,repository:'example/project',request:'retained-request'
 const source=async r=>{assert.deepEqual(r,request);return{issue:'55',stage:'shape'};};
 async function settled(service){for(let n=0;n<100;n++){const value=await service.status(request);if(value.status!=='running')return value;await new Promise(r=>setTimeout(r,10));}throw Error('stage did not settle');}
 
+test('construction errors retain private diagnostics while exposing only the classified stage reason',async()=>withCurrentCore(async(core,context)=>{
+ const root=join(context.root,'failed-stage');await fs.mkdir(root,{mode:0o700});
+ const service=await nativeStageService(core,{root,source,execute:async()=>{throw Object.assign(Error('GH_TOKEN=private ::error:: private path'),{code:'EADDRINUSE'});}});
+ try{await service.submit(request);const result=await settled(service);assert.equal(result.conclusion,'failure');assert.ok(result.progress[0].includes('host-socket-in-use'));assert.equal(JSON.stringify(result).includes('private'),false);
+  const retained=JSON.parse(await fs.readFile(join(root,'stage-records',request.request+'.json')));assert.equal(retained.failure.code,'EADDRINUSE');assert.ok(retained.failure.message.includes('private'));
+ }finally{await service.close();}
+}));
+
 test('the private stage entry retains intent once, publishes sanitized progress and reports success only for a completed Core stage',async()=>withCurrentCore(async(core,context)=>{
  const root=join(context.root,'stage-service');await fs.mkdir(root,{mode:0o700});let launches=0;
  const service=await nativeStageService(core,{root,source,execute:async(binding,{progress})=>{launches++;assert.equal(binding.issue,'55');
