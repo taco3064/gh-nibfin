@@ -31,7 +31,9 @@ async function unused(roots,retiredGroup){
     // Cgroup membership is independently readable even when its private
     // environment is not. Owned or unclassified processes still block cleanup;
     // model containers separately require the fresh work-custody observation.
-    let groups;try{groups=(await fs.readFile(join(directory,'cgroup'),'utf8')).trim().split('\n').map(line=>line.slice(line.lastIndexOf(':')+1));}
+    let groups;try{groups=(await fs.readFile(join(directory,'cgroup'),'utf8')).trim().split('\n').map(line=>{
+     const separator=line.indexOf(':',line.indexOf(':')+1);return separator<0?'':line.slice(separator+1);
+    });}
     catch(e){if(e.code==='ENOENT')continue;need(false,'process-scope-unconfirmed');}
     need(groups.length>0&&groups.every(group=>group.startsWith('/')&&!inside(group,retiredGroup)),'process-scope-unconfirmed');
    }
