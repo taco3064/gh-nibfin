@@ -2,6 +2,7 @@ import{nativeRoleHost}from'./native-role-host.mjs';import{nativeExecutionInputs}
 import{prepareNativeCycle}from'./native-cycle-policy.mjs';import{observeNativeObligations}from'./native-obligations.mjs';
 import{openFileHostStore}from'./host-store.mjs';import{join}from'node:path';
 import{nativeDeliveryOwners}from'./native-delivery-owners.mjs';
+import{nativeStageWork}from'./native-stage-work.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-delivery:'+code);};
 const copy=structuredClone;
 
@@ -9,7 +10,7 @@ const copy=structuredClone;
  * attribution; private source authority and original receipts supply the plan.
  * Neither the model nor an IPC caller can choose callbacks, owners or commands.
  */
-export async function executeNativeDelivery(core,{root,binding,context,provider,signal,progress,transport,roleFactory=nativeRoleHost}={}){
+export async function executeNativeDelivery(core,{root,binding,context,provider,signal,progress,transport,roleFactory=nativeRoleHost,publicationGitFactory}={}){
  need(core.distributionAPI?.nativeHost===1,'compatible-native-core-required');
  let roles,firstCheckpoint=true,lastRemote=0,completed=false;
  const hostStore=await openFileHostStore(core,{directory:join(root,'state')});
@@ -26,7 +27,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    lastRemote=Date.now();
   }
  };
- let store;
+ let store,work,resultReference=null,unknownWrite=false;
+ try{
+ await checkpoint();
  store=await prepareNativeCycle(core,{root,configuration,repository,number:binding.issue,provider,context,signal});
  const state=await store.read(),stage=core.nextDeliveryStage(state.receipts,null);
  need(stage===binding.stage,'fresh-stage-required');
@@ -34,9 +37,10 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
   runId:binding.request.runId,attempt:binding.request.attempt};
  // Claim the original execution before any role preparation. Interruption is
  // retained as uncertainty and cannot become permission to launch it again.
+ need(!state.attempts[stage],'original-stage-reconciliation-required');
+ work=nativeStageWork(hostStore,{request:binding.request.id,cycle:state.cycle,stage});await work.enter();
  await store.update(s=>{need(!s.attempts[stage],'original-stage-reconciliation-required');
   s.attempts[stage]={request:binding.request.id,source,phase:'running'};return s;});
- try{
   await checkpoint();
   const input=await nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport});
   const role=['shape','shape-validator','deliver','accept','shaper-review'].includes(stage)?stage:stage==='publication'?'shape':'deliver';
@@ -51,7 +55,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    receipts:state.receipts,evidenceCurrent:state.expectations,candidate:state.candidate,base:state.base,head:state.head,ciIdentity:null,
    completion:state.completion,completionCurrent:state.completionCurrent??null,transition:null,operationIdentity:null,stageInput:state.stageInput,
    dependencyInput:input.dependencyInput,selectionInput:input.selectionInput(stage),invocation:{request:binding.request.id,run:{id:source.runId,attempt:source.attempt}},prior:{state:'new'}};
-  roles=await roleFactory(core,{root,binding,base:state.base,repository,memberId:state.member.id,source,retain:store.retain,checkpoint,signal,progress});
+  const retain=async value=>{const reference=await store.retain(value);
+   if(value.kind==='native-role-session')await work.session({reference,metadata:value.metadata});return reference;};
+  roles=await roleFactory(core,{root,binding,base:state.base,repository,memberId:state.member.id,source,retain,checkpoint,signal,progress});
   if(state.workspace){const candidate=core.importWorkspace(Buffer.from(core.canonicalJSON(state.workspace)),{expected:state.workspaceExpected});
    core.materializeWorkspace(candidate,{expected:state.workspaceExpected,root:roles.candidateDirectory});}
   const observations=await observeNativeObligations(core,{directory:state.workspace?roles.candidateDirectory:roles.sourceDirectory,scopeBody:state.scopeBody,base:state.base,repository});
@@ -64,9 +70,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    }
   };
   const composed=await nativeDeliveryOwners(core,{root,state,stage,pin,roles,store,provider,authorization:input.authorization,dependencies:input.dependencies,
-   dependencyInput:input.dependencyInput,operations,evidenceCurrent,source,observations,checkpoint,signal,progress});
+   dependencyInput:input.dependencyInput,operations,evidenceCurrent,source,observations,checkpoint,signal,progress,publicationGitFactory});
   if(stage==='pr'){
-   const session=core.createPublicationGit({repository,repositoryId:state.target.repositoryId}).open(composed.workspace,composed.message,composed.author,{signal});
+   const session=(publicationGitFactory??core.createPublicationGit)({repository,repositoryId:state.target.repositoryId}).open(composed.workspace,composed.message,composed.author,{signal});
    try{state.head=session.commit;pin.head=session.commit;}finally{session.close();}
   }
   const owners={...composed.owners,shape:{provider,authorization:input.authorization,dependencies:input.dependencies,dependencyInput:input.dependencyInput,
@@ -93,7 +99,8 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
   // Retain the exact Core decision and its independently owned cycle references.
   await store.retain({kind:'native-execution-intent',request,inputs:inspection.inputs,binding:authority,cycle:state.cycle,cycleRevision:state.revision});
   await progress({status:'running',reason:'core-'+stage+'-owner-started'});
-  const result=await runtime.run(request,{signal});await store.retain({kind:'native-core-result',result});
+  const result=await runtime.run(request,{signal});resultReference=await store.retain({kind:'native-core-result',result});
+  unknownWrite=result.disposition==='unresolved'&&['publication','pr','merge','closure','delivered','recovery'].includes(stage);
   if(result.disposition==='completed'){
    const output=result.owner.output;let receipt;
    if(stage==='fanout'){
@@ -147,5 +154,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
     return s;});
   }else await store.update(s=>{s.attempts[stage].phase='unresolved';s.attempts[stage].reason=result.reason;return s;});
   completed=result.disposition==='completed';return result;
- }finally{try{if(roles)await roles.close({preserveWriter:!completed});}finally{await hostStore.close();}}
+ }finally{
+  let terminated=false;
+  try{if(roles)await roles.close({preserveWriter:!completed});terminated=true;}
+  finally{try{await work?.finish({completed,terminated,unknownWrite,reference:resultReference});}finally{await hostStore.close();}}
+ }
 }

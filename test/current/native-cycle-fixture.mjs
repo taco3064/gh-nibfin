@@ -24,9 +24,9 @@ export async function nativeCycleFixture(core,context){
   assignees:[member],labels:[{id:'900',name:'scope'}]};
  const repo={id:'100',full_name:repository,private:false,visibility:'public',default_branch:'main',owner:{id:'7',type:'User',login:'example'},
   permissions:{admin:true},allow_rebase_merge:true};
- const baseCommit='b'.repeat(40),workflow='name: CI\non: push\n';let denied=false;
+ let baseCommit='b'.repeat(40),treePaths=['docs'],intercept;const workflow='name: CI\non: push\n';let denied=false;
  const transport=async r=>{
-  if(denied)return{status:403,body:'{}'};
+  if(denied)return{status:403,body:'{}'};if(intercept){const value=await intercept(r);if(value)return value;}
   if(r.method==='PATCH'&&r.endpoint==='/repos/'+repository+'/issues/55'){issue.body=JSON.parse(r.body).body;return{status:200,body:JSON.stringify(issue)};}
   if(r.method==='POST'&&r.endpoint==='/repos/'+repository+'/issues/55/labels'){issue.labels.push({id:'901',name:'shaped'});return{status:200,body:JSON.stringify(issue.labels)};}
   assert.equal(r.method,'GET','unexpected fixture mutation');
@@ -38,7 +38,7 @@ export async function nativeCycleFixture(core,context){
   else if(r.endpoint==='/repos/'+repository+'/issues/55/events?per_page=100')data=[];
   else if(r.endpoint.includes('/collaborators/member/permission'))data={permission:'admin',user:member};
   else if(r.endpoint.endsWith('/git/ref/heads/main'))data={object:{type:'commit',sha:baseCommit}};
-  else if(r.endpoint.includes('/git/trees/'))data={truncated:false,tree:[{path:'docs',type:'tree',sha:'c'.repeat(40)}]};
+  else if(r.endpoint.includes('/git/trees/'))data={truncated:false,tree:treePaths.map(path=>({path,type:'tree',sha:'c'.repeat(40)}))};
   else if(r.endpoint.endsWith('/protection/required_status_checks'))data={contexts:['ci'],checks:[{context:'ci',app_id:'15368'}]};
   else if(r.endpoint.includes('/check-runs'))data={total_count:1,check_runs:[{id:'2000',name:'ci',app:{id:'15368'}}]};
   else if(r.endpoint.includes('/contents/.github/workflows/ci.yml'))data={encoding:'base64',content:Buffer.from(workflow).toString('base64')};
@@ -48,5 +48,6 @@ export async function nativeCycleFixture(core,context){
   return{status:200,body:JSON.stringify(data)};
  };
  const provider=core.createGithubProvider({transport,attempts:1});await prepareNativeOwnerPolicy(core,{root,configuration,provider});
- return{root,issue,transport,provider,context,configuration,member,deny:()=>{denied=true;},options:{root,configuration,repository,number:'55',provider,context}};
+ return{root,issue,repo,workflow,transport,provider,context,configuration,member,deny:()=>{denied=true;},setBase:value=>{baseCommit=value;},
+  setTree:value=>{treePaths=value;},intercept:value=>{intercept=value;},options:{root,configuration,repository,number:'55',provider,context}};
 }
