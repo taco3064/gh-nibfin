@@ -97,7 +97,8 @@ test('failed runtime verification cannot change pins; existing, oversized, corru
   await fs.rename(path,join(directory,'retained-original.json'));
   await assert.rejects(openFileHostStore(core,{directory}),{code:'ENOENT'});
   await assert.rejects(initializeFileHostStore(core,{directory,installation:current,repositories}),{code:'EEXIST'});
-  assert.deepEqual(await fs.readdir(directory),['retained-original.json']);
+  assert.deepEqual((await fs.readdir(directory)).sort(),['.host-store.lock','retained-original.json']);
+  assert.equal(await fs.readFile(join(directory,'.host-store.lock'),'utf8'),'');
 }));
 
 const policy=(repository,repositoryId)=>({version:1,repository,repositoryId,visibility:'public',ref:'main',stageWorkflow:'.github/workflows/nibfin-stage.yml',
