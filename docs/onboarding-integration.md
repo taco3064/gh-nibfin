@@ -1,14 +1,15 @@
 # Current CLI integration status
 
-This source snapshot is incomplete and must not be used as a ready installation.
-The original seven commands remain the product boundary. Upgrade and complete
-recovery-host onboarding still require implementation; the prior retained test
-results do not cover this snapshot. The planned localhost Dashboard is unchanged.
+The original seven commands remain the product boundary. The maintained native
+shared-pool path now composes preparation, protected project-source installation,
+activation and source-only delivery. This is implementation status, not a ready
+installation or completed rollout certification. Retained tests cannot establish
+live model availability or actual installed-host operation. The planned localhost
+Dashboard is unchanged.
 
 ## Runtime and responsibility owners
 
-The selected runtime is the Nibfin PR255 integration candidate at
-`bda12320ab60a54d6145763e5950dcf88fa26f8c`; exact archive, manifest, component and
+The selected immutable runtime and its exact archive, manifest, component and
 dependency pins are in [the current handoff](handoffs/current/README.md).
 Historical N01/N15/N17 loaders remain for retained compatibility fixtures.
 
@@ -37,26 +38,82 @@ Argument fixtures do not certify a real service installation.
 
 ## Owner and member contexts
 
-Owner initialization uses `gh nibfin init --repo OWNER/REPO`, optionally
-`--auto-register`; `--check` observes managed files and the existing control-host
-notifier without installing/starting services, logging in, registering a Runner or
-executing the aborting Hook. Modified managed files are preserved. An unconfirmed
-write retains the original private intent; repeat setup reconciles those exact
-bytes before doing another write.
+Owner initialization uses `gh nibfin init --repo OWNER/REPO`. Use canonical
+lowercase public repository names in actual invocations. The supported init options
+come from `installationOptions` in `src/installation.mjs`:
 
-Initialization now selects the maintained native host rather than importing a
-user-authored JavaScript composition. For an explicit shared pool, it stages the
-verified Core, client inputs and exactly two pinned Runner applications under the
-account's private control root. The second application is extracted from the
-same authenticated archive; registration state and model credentials are never
-copied between Runners. `--check` performs no acquisition or filesystem writes.
-Existing staged bytes are verified before reuse, and modified files are preserved.
+| Option | Meaning and constraints |
+| --- | --- |
+| `--repo OWNER/REPO` | Required initialized public repository; authenticated administration is checked. |
+| `--check` | Observe existing managed source and host state only: no acquisition, service installation/start, login or registration. |
+| `--auto-register` | Explicit Owner opt-in to automatic registration policy, not authority supplied by pool selection. |
+| `--pool-repos OWNER/ONE,OWNER/TWO` | Finite unique canonical membership, at most 128 repositories, including `--repo`. |
+| `--runner-count N` | Requires `--pool-repos`; physical capacity 1–128, default 2, independent of project count. |
+| `--image sha256:DIGEST` | Pooled init only; reviewed immutable image with 64 lowercase hexadecimal digest digits. |
+| `--runtime-profile PROFILE` | Pooled init only, requires `--image`; explicit supported producer profile. |
 
-This initial native preparation does not yet install the control service, register
-Runners or reconcile original work. It reports `staged`, not readiness. Until
-preparation establishes all host capabilities, init returns blocked before any
-repository mutation. A package acquisition or source fixture never establishes
-delivery, recovery or actual shared Runner operation.
+`--execution-repo` is rejected, even where legacy help wording still lists it.
+Duplicate/unknown options and incompatible combinations fail. Parser acceptance
+is not runtime readiness. Omitting a profile with an image selects the original
+`linux-amd64-codex-v1` default, not automatic compatibility with newer Docker.
+Compatible repeated init can omit image/profile and reuse the protected runtime;
+changing the retained image, profile or capacity is not an implicit migration.
+
+The following is an **illustration, not a runnable setup**. Replace both example
+repository names (including each occurrence) with your authorized repositories,
+and replace the entire all-zero 64-hex-digit digest with your reviewed image's
+actual digest. Explicitly select the reviewed profile compatible with that image:
+
+```sh
+gh nibfin init --repo example-owner/project-one \
+  --pool-repos example-owner/project-one,example-owner/project-two \
+  --runner-count 2 \
+  --image sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+  --runtime-profile linux-amd64-codex-node22-docker29-v1
+```
+
+### Prepare, install source, resume, activate
+
+Ordinary pooled init verifies/stages the private Core/client runtime and the
+configured number of official Runner distributions, prepares the maintained
+member environment/login, and installs/starts the non-root control service.
+Applications may be extracted from the same authenticated archive; registration
+state and credentials are never copied between Runners. Existing staged bytes
+are verified before reuse and modified files are preserved. Without the required
+member runtime, staging alone remains blocked before project-source installation.
+
+After private preparation, project-local workflows, Skills and runtime policy are
+installed through the retained **original administrative source PR**. This is
+administrative installation, not an accepted Issue delivery. Repeat ordinary init
+to resume the same protected proposal identity. It waits for required exact-head
+CI; a protected base refresh updates and verifies that original PR rather than
+creating a replacement or bypassing main protection. Pending CI/base refresh is
+not failure permission to overwrite source or write directly to protected main.
+Merge submission and authenticated merged-PR readback precede, and are distinct
+from, activation.
+
+Initialize **each selected project with the same membership and capacity**, using
+the same protected runtime selection. Repeat ordinary init as source and CI
+prerequisites become satisfied. Initial activation requires matching protected
+local installation records for every selected repository, exact managed source
+verified at an authenticated main commit, current public identity/administration
+and policy, and reconciled idle original work. One project's merged PR does not
+activate an otherwise incomplete pool. Preserve user modifications, uncertain
+writes and original intents: do not force overwrite, delete journals or create
+replacement PRs to escape reconciliation.
+
+These are layered states, not interchangeable literal CLI status strings:
+
+| Layer | Meaning / operator boundary |
+| --- | --- |
+| Staged / prepared resources | Verified private runtime/apps; internal `staged` or `prepared` is not a top-level ready result. Member preparation and service readiness are separate. |
+| Pending source / CI / all-project activation | Source installation may return `pending` with phase `protected-source-installation`; missing project activation may still surface as top-level `blocked` diagnostics. Repeat ordinary init against the retained proposal. |
+| Active host | Activation status can be `ready`, and host checks require configured stages and observed service state; not proof of a live delivery. |
+| Owner-paused work | Activation observation can be `paused`; later init never clears an existing Owner pause or hold. |
+| Unresolved operation | Unknown writes, interrupted activation or original execution require reconciliation from retained private identity, not a replacement operation. |
+
+Process liveness, recorded activation and passing tests do not prove provider,
+Runner isolation or product E2E support. See [execution and observation](native-runner-runtime.md).
 
 New Codex logins use an owned disposable login home. The client process group
 must terminate before only its exact auth file is exclusively published into the
@@ -64,30 +121,20 @@ member login space; temporary helper links are not carried into that space.
 Existing credentials and session data are preserved. Unresolved login operations
 retain one private intent and cannot silently launch a replacement login.
 
-### Shared personal-repository pool input
+### Shared public-repository pool authority
 
-Owner `init` selects repository membership with `--pool-repos OWNER/ONE,OWNER/TWO`
-and independent physical capacity with `--runner-count N` (default 2, range 1–128).
-Ten projects can share six slots. Each project keeps its own stage, delivery and
-Rescue workflows and native Actions logs. `--execution-repo` is rejected: the
-previous central-source design does not satisfy this product contract. Existing
-version 1 protected records require reconciliation and are never silently rewritten.
-The CLI checks each public repository's identity, ownership and administration
-permission. This selection itself does not register or authorize a Runner.
+Ten projects can share six physical slots; membership does not determine capacity.
+Each project keeps its own workflows and native Actions logs. Public personal and
+Organization ownership are supported contexts, with multiple collaborators;
+repository ownership, registration level (`--repo` or `--org`) and optional
+Owner automatic registration remain separate. Selection alone registers nothing
+and grants no administration. Private repositories remain outside scope.
 
-The private installation record retains the descriptor. Repeat `init` and
-`--check` reread all identities and reject transfers, replacements or changed
-membership. The repository runtime file only describes the pool: it cannot
-select or replace this protected local configuration. Switching an existing
-installation into a pool also requires the reconciled transition boundary.
-
-The legacy notifier-only adapter is retained as an explicit compatibility API;
-it is no longer the default installation path. Native preparation currently stops
-before repository writes or service activation. Complete control-service assembly,
-repository-local ephemeral registration, shared capacity and original-work handover
-remain incomplete. Source capacity fixtures do not establish that live adapter.
-Acquisition doubles in the installed-consumer tests establish staging and ordering
-only; they do not certify real Runner services or a live delivery.
+The private installation record retains membership and identities. Repeated init
+and `--check` reread them and reject transfers, replacements or changed membership.
+Repository runtime JSON cannot select or replace protected local configuration.
+Legacy version-1 installations and switching an existing installation into a pool
+require preserved-work reconciliation, not silent rewriting or adoption.
 
 ### Managed host state and transition retention
 
@@ -102,7 +149,11 @@ never clears a pause or fabricates an accepted conversation or receipt.
 The maintained Core owns Rescue record structure, content identities and pin
 transition decisions. The CLI adapter supplies durable atomic file replacement,
 private permissions, compare-and-swap under cross-process exclusion, and native
-filesystem subscriptions. Notifications use no polling, cron or idle Actions.
+filesystem subscriptions. Local file notifications use subscriptions; remote
+dispatch observation uses
+the maintained default 30-second interval, not cron or idle scheduled Actions.
+Local completion/file wakeups can trigger observation sooner; this is not a
+promise of immediate remote observation or instant revocation.
 The user service uses systemd readiness notification and a bounded startup
 deadline: it becomes active only after every notifier has started successfully.
 Runtime selection, original work and transition intents are retained together.
@@ -133,9 +184,10 @@ to force a retry. The journal and its ancestors cannot be generation resources.
 
 Installed tests cover real file/CAS transitions with explicit service doubles.
 A separate local probe exercised real user-systemd process switches and rollback;
-its disposable workers were not official Runner binaries. Native host composition,
-automatic staging and actual coordinated Runner upgrade/registration proof remain
-incomplete. The notifier-only installation is never treated as that native host.
+its disposable workers were not official Runner binaries. The maintained native
+host composition and staging are distinct from actual
+coordinated Runner upgrade/registration proof. Service doubles are not that proof,
+and the notifier-only installation is never treated as the native host.
 
 A separate assigned member uses their own OS account, stored `gh auth login`, and
 model login. They do not receive the Owner's model credentials or Runner
@@ -231,8 +283,17 @@ command, or private controller dependency. Each startup rechecks the full runtim
 inventory before announcing process readiness. Existing service definitions and
 original work are preserved on mismatches or interrupted installation.
 
-This bootstrap currently exposes status only. Its response explicitly reports
-`native-delivery-composition-pending`; it cannot execute events or declare the
-host ready. Runner registration and retained-work reconciliation remain separate
-holds. Neither starting this service nor passing source tests certifies a live
-development execution or enables repository workflows.
+The maintained process now binds queued-Job intake, ephemeral Runner coordination,
+stage execution, the dispatch monitor and Core delivery/custody owners when member
+and Owner configuration are present. Without that configuration it can still
+report `native-delivery-composition-pending`; process readiness is not activation.
+The private control root is `~/.local/share/nibfin/control`; separate native member
+authentication is under `~/.local/share/nibfin/member-auth`. Private records and
+the mode-0600 Unix socket are not public artifacts. Management GitHub credentials
+remain outside model workspaces. Protected member-auth reuse preserves the same
+member's credentials and sessions; it is not copying another member's login and
+is not evidence that a live model login succeeded.
+
+See [runtime readiness and delivery limits](native-runner-runtime.md#current-integration-boundary).
+This source-only documentation change neither alters #55's work/acceptance status
+nor depends on accepting or replacing #55.

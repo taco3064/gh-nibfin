@@ -44,9 +44,69 @@ keeps a compact tombstone; it cannot remove replacement work at the old path.
 
 ## Current integration boundary
 
-The native control daemon still reports delivery as blocked. This runtime and its
-process/service adapters are implemented; the default control composition must
-still bind the real Core work-custody owner, actual queued-Job intake/dispatch,
-the managed installation transition and preserved original work before activation.
-Process and service fixtures are not a live GitHub Runner or autonomous-delivery
-certification. The existing member login and unaccepted candidates remain intact.
+The maintained control process now composes authenticated queued-Job intake,
+finite ephemeral Runner coordination, stage execution and Core delivery owners.
+The source-only pilot retains original work/custody and distinct Shape validation,
+Deliver, both isolated hook gates, independent pre-commit Acceptance, protected
+publication, exact-head CI, fresh final review, protected merge, post-merge checks
+and causal completion/readback boundaries. No stage's liveness substitutes for
+another stage's evidence. Missing configuration or unresolved work remains held.
+
+The default `nativeDispatchMonitor` remotely observes every **30 seconds**; local
+stage completion, slot release and activation-file events can wake it immediately.
+The private wakeup inbox also uses file subscriptions for retained completion
+notifications. This is a local monitor, not cron or idle scheduled Actions. It
+neither guarantees immediate remote observation nor instant revocation. Each
+project uses its own workflows and Actions logs; Core's `actionRunName` includes
+Issue number, stage and correlation. Physical Runner capacity is finite and shared
+across the selected projects, not one Runner per project. This does not promise
+custom GitHub queue semantics, atomic routing or a distributed lease.
+
+`test/current/native-complete-delivery-consumer.mjs` doubles external model and
+GitHub observations: it and other retained consumers are source/integration
+contract evidence only, not live delivery certification. Native AI Rescue now
+has maintained diagnostic/original-role-continuation adapters, but those remain
+separate from source-only delivery and do not supply Acceptance or product-stage
+execution authority; their presence is not a completed recovery rollout proof.
+Legacy-work adoption, additional-artifact support and deployment obligations are
+not established by this pilot. Unsupported or unresolved work stays held for
+reconciliation, never silently adopted or discarded. Source-only completion
+requires explicit Scope applicability for no additional artifacts and no deployment;
+it cannot waive obligations for other Issues. #55 and its acceptance status remain
+unchanged; this documentation does not depend on accepting or replacing it.
+
+No release publication, actual package installation, live model/provider
+availability, browser/platform certification or completed rollout is claimed.
+
+## Runtime and network readiness
+
+Public init and resume details are in [the onboarding guide](onboarding-integration.md#owner-and-member-contexts).
+Preparation requires Linux x64, host Node 22, a non-root execution account with
+user-systemd, rootless Docker, verified official Runner distribution, reviewed
+immutable image/profile, required tools and the complete runtime/isolation/network
+readiness probes. These are host prerequisites, not capabilities established by
+the UID or tools of an isolated verification container. The execution account
+uses its stored GitHub authentication and
+the maintained native member login; management credentials remain outside model
+workspaces. Missing or unresolved authentication/readiness is not a successful login.
+
+The packaged producer's explicit `linux-amd64-codex-node22-docker29-v1` profile
+requires Docker client **and** server **29.9.1**, Codex **codex-cli 0.163.0**, Node
+**v22.23.3**, Debian 12 guest, Linux x64 and the `node22-bookworm-v1` image layout.
+It is an exact supported tuple, not a minimum-version rule. A newer Docker install
+or a syntactically accepted digest does not establish compatibility. Compatible
+resume preserves the protected image/profile; it does not infer a different one.
+
+| Network boundary | Source-backed destinations |
+| --- | --- |
+| Management GitHub observations/operations | `api.github.com`, `github.com` |
+| Official Runner acquisition (including allowed redirects) | `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com` |
+| Isolated Codex model egress | `chatgpt.com`, `auth.openai.com` |
+| Isolated dependency probes | `registry.npmjs.org`, `cdn.playwright.dev`, `playwright.download.prss.microsoft.com` |
+
+Management/acquisition networking is separate from isolated model/dependency
+egress. These destinations come from maintained provider/acquisition code and the
+packaged `codex.mjs`, `egress.mjs` and `agent-session.mjs`; they do not cover every
+provider. Listing a domain proves no availability: actual required probes must
+pass in the selected runtime. No environment bypass, new credential, executable
+binding or additional setup command is implied.
