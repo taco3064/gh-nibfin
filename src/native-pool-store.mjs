@@ -60,6 +60,7 @@ export function nativePoolStore(core,{root,configuration}={}){
    });
   }}),
   jobs:Object.freeze({
+   async pending(){return Object.values((await read()).jobs).filter(job=>job.phase!=='released').map(job=>structuredClone(job));},
    async read(id){selector(id);return structuredClone((await read()).jobs[id]??null);},
    async write({id,expected,value}){
     selector(id);need(expected===null||hash(expected),'expected');
