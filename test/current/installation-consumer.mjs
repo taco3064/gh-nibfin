@@ -36,24 +36,21 @@ test('actual installed installation API: first/repeat init, modified bytes, expl
       const deps={core,context,transport,memberId:'8',root,host},args=['--repo','example/project'];
       assert.equal((await initializeRepository([...args,'--check'],deps)).status,'blocked');
       assert.equal(calls.some(r=>r.method!=='GET'),false);assert.equal(hostInstalls,0);assert.deepEqual(await fs.readdir(root),[]);
-      const poolArgs=[...args,'--execution-repo','example/project','--pool-repos','example/project,example/cli,example/action'];
+      const poolArgs=[...args,'--runner-count','6','--pool-repos','example/project,example/cli,example/action'];
       const unsupported=await initializeRepository(poolArgs,{...deps,host:existingControlHost()});
       assert.equal(unsupported.status,'blocked');assert.ok(unsupported.diagnostics.some(d=>d.code==='protected-shared-host-onboarding-incomplete'));
       assert.equal(calls.some(r=>r.method!=='GET'),false);assert.equal(hostInstalls,0);
-      assert.equal((await initializeRepository([...args,'--auto-register','--execution-repo','example/project','--pool-repos','example/project,example/cli,example/action'],deps)).status,'ready');
+      assert.equal((await initializeRepository([...poolArgs,'--auto-register'],deps)).status,'ready');
       assert.ok(files.size>8);assert.equal(labels.length,3);assert.equal(hostInstalls,1);
       const runtime=JSON.parse(files.get('.nibfin/runtime.json'));
       assert.equal(runtime.automaticRegistration,true);assert.deepEqual(runtime.allowedActorIds,['8']);
-      assert.equal(runtime.executionPool.source.repositoryId,'42');assert.equal(runtime.executionPool.targets.length,3);
+      assert.equal(runtime.executionPool.source,undefined);assert.equal(runtime.executionPool.capacity,6);assert.equal(runtime.executionPool.targets.length,3);
       assert.deepEqual(runtime.executionPool,hostPool);
-      for(const id of ['42','43','44']){
-        const stage=files.get(`.github/workflows/nibfin-stage-${id}.yml`).toString();
-        assert.ok(stage.includes('deployment_key: TARGET_'+id));
-        assert.ok(stage.includes(`group: nibfin-v1-${id}-repository-write`));
-      }
-      assert.equal(files.has('.github/workflows/nibfin-stage.yml'),false);
+      assert.ok(files.has('.github/workflows/nibfin-stage.yml'));assert.ok(files.has('.github/workflows/nibfin-delivery.yml'));
+      assert.ok(![...files.keys()].some(p=>/nibfin-stage-[0-9]+/.test(p)));
       const logical=managedWorkflowPlan(core,{executionPool:runtime.executionPool,repository:'example/cli'});
-      assert.equal(logical.files.size,4);assert.equal(logical.files.has('.github/workflows/nibfin-stage.yml'),false);
+      assert.equal(logical.files.size,6);assert.equal(logical.files.has('.github/workflows/nibfin-stage.yml'),true);
+      assert.equal(logical.files.has('.github/workflows/nibfin-delivery.yml'),true);
       assert.ok(logical.files.has('.github/workflows/nibfin-wakeup.yml'));
       assert.throws(()=>managedWorkflowPlan(core,{executionPool:runtime.executionPool,repository:'example/other'}));
       const writes=calls.filter(r=>r.method!=='GET').length;

@@ -66,12 +66,14 @@ retain one private intent and cannot silently launch a replacement login.
 
 ### Shared personal-repository pool input
 
-Owner `init` can select a finite pool with `--execution-repo OWNER/SOURCE` and
-`--pool-repos OWNER/SOURCE,OWNER/SECOND,OWNER/THIRD`. Both options are required
-together and the initialized repository must be a member. The CLI reads each
-actual public repository, its stable ID, personal Owner ID and administration
-permission, then delegates descriptor validation to the installed Core. No
-Runner is created or registered by this selection.
+Owner `init` selects repository membership with `--pool-repos OWNER/ONE,OWNER/TWO`
+and independent physical capacity with `--runner-count N` (default 2, range 1–128).
+Ten projects can share six slots. Each project keeps its own stage, delivery and
+Rescue workflows and native Actions logs. `--execution-repo` is rejected: the
+previous central-source design does not satisfy this product contract. Existing
+version 1 protected records require reconciliation and are never silently rewritten.
+The CLI checks each public repository's identity, ownership and administration
+permission. This selection itself does not register or authorize a Runner.
 
 The private installation record retains the descriptor. Repeat `init` and
 `--check` reread all identities and reject transfers, replacements or changed
@@ -82,7 +84,8 @@ installation into a pool also requires the reconciled transition boundary.
 The legacy notifier-only adapter is retained as an explicit compatibility API;
 it is no longer the default installation path. Native preparation currently stops
 before repository writes or service activation. Complete control-service assembly,
-actual cross-repository routing and two-instance registration remain incomplete.
+repository-local ephemeral registration, shared capacity and original-work handover
+remain incomplete. Source capacity fixtures do not establish that live adapter.
 Acquisition doubles in the installed-consumer tests establish staging and ordering
 only; they do not certify real Runner services or a live delivery.
 
@@ -206,6 +209,8 @@ These installed-producer transport fixtures do not establish a native host,
 model login or actual Runner/service installation verdict.
 
 
+The following source-admission layout describes the historical centralized v1
+prototype. It must not be activated by the v2 official onboarding path.
 Shared source admission reads all caller/callee files at one authenticated main
 commit. Pool membership and the runtime/actor-policy digest must match the
 protected local Owner installation; public runtime JSON cannot select membership.
@@ -219,7 +224,7 @@ are source and installed-process evidence; production activation remains pending
 
 The shared-pool `init` path now installs and starts the maintained non-root
 `nibfin-control.service` after verifying its private Core/client runtime and the
-two official Runner distributions. `init --check` only observes it. The service
+configured number of official Runner distributions. `init --check` only observes it. The service
 uses a kernel lease, systemd notification readiness, and a mode-0600 Unix socket;
 there is no public listener, user-authored JavaScript binding, additional setup
 command, or private controller dependency. Each startup rechecks the full runtime
