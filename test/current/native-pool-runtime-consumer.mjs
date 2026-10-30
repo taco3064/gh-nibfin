@@ -15,7 +15,7 @@ async function fixture(core,context){
  await fs.writeFile(original,'UNACCEPTED ORIGINAL',{mode:0o600});
  await nativeControlHost({root,prepare:async directory=>fs.writeFile(join(directory,'fixture'),'application',{mode:0o600}),verify:async()=>{},
   service:{install:async()=>({diagnostics:[]})}}).prepare({core,context,executionPool:configuration});
- const store=nativePoolStore(core,{root,configuration}),flags={running:true,resources:true,closed:false,retired:false,lostCustodyReply:false},
+ const store=nativePoolStore(core,{root,configuration}),flags={running:true,terminated:true,resources:true,closed:false,retired:false,lostCustodyReply:false},
   order=[],blocks=[],counts={registrations:0,starts:0,retains:0};let remote,custodyRecord;
  const provider=core.createGithubProvider({attempts:1,authorize:r=>r.operation==='runner-pool'&&['POST','DELETE'].includes(r.method),transport:async r=>{
   if(r.method==='POST'){
@@ -34,7 +34,7 @@ async function fixture(core,context){
   custodyRecord={status:'retained',lease,identity:core.contentIdentity({bytes:await fs.readFile(retained,'utf8'),lease})};
   if(flags.lostCustodyReply)throw Error('lost after actual retention');return custodyRecord;
  },observe:async({lease})=>({lease,retention:custodyRecord?.identity,workRetained:!!custodyRecord
-   &&await fs.readFile(original,'utf8')===await fs.readFile(retained,'utf8'),processesTerminated:flags.resources,resourcesRemoved:flags.resources})};
+   &&await fs.readFile(original,'utf8')===await fs.readFile(retained,'utf8'),processesTerminated:flags.terminated,resourcesRemoved:flags.resources})};
  // Only official archive acquisition, GitHub, admission transport and systemd
  // observations are doubled. Core allocation, durable files, JIT validation,
  // real terminated PID proof, original-work retention and cleanup are real.
@@ -61,7 +61,9 @@ test('installed runtime retains failed Job evidence and original work before ser
  const f=await fixture(core,context);assert.equal((await f.make().advance(request.id)).status,'running');assert.deepEqual(f.order,['prepare','admission','start']);
  const active=await f.store.jobs.read(request.id),directory=join(f.root,'jobs',active.lease.identity);
  assert.ok(!JSON.stringify(active).includes('PRIVATE-CREDENTIAL'));assert.equal((await fs.stat(join(directory,'application/.credentials'))).mode&0o777,0o600);
- await f.finish();f.flags.resources=false;
+ await f.finish();f.flags.resources=false;f.flags.terminated=false;
+ assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal(f.counts.retains,0);
+ f.flags.terminated=true;
  assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);
  assert.equal(f.counts.retains,1);assert.equal(await fs.readFile(f.retained,'utf8'),'UNACCEPTED ORIGINAL');
  f.flags.resources=true;const held=await fs.open(join(directory,'application/.credentials'),'r');

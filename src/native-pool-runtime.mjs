@@ -126,6 +126,8 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
    let retained=await custody.read({lease:body.lease,request:structuredClone(record.request),signal});
    if(retained?.status==='absent'){
     need(previous.phase==='intake','custody-reconciliation-required');
+    const lifecycle=await custody.observe({lease:body.lease,request:structuredClone(record.request),signal});
+    need(lifecycle?.lease===body.lease&&lifecycle.processesTerminated===true,'work-still-running');
     await writePrivate(retainedPath(record),seal({...body,phase:'invoke-intent'}));
     retained=await custody.retain({lease:body.lease,request:structuredClone(record.request),job:structuredClone(job),
      process:observation.processReceipt,listenerLog:join(directory(record),'listener.log'),signal});
