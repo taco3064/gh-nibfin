@@ -338,7 +338,7 @@
         },
         {
           "path": "src/codex.mjs",
-          "sha256": "a97d5e32ca186845485c21c7bc0b1052c205c625432cab8568414faf8f6e4234"
+          "sha256": "d983914ecb90a2120d0873c17a711c14b955a82add2ff680588294769665ca41"
         },
         {
           "path": "src/collaboration.mjs",
@@ -394,7 +394,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "83eaccf1771409e387f9318c8fc2f2a5bfe9cdb12eef34b36389be2bcee85f22"
+          "sha256": "cfb76f5ce0f26d842bba1d608a6db95db3a24cf10bb2b2e3cb4e4163a97aa34e"
         },
         {
           "path": "src/distribution.mjs",
@@ -729,7 +729,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "f1b0946507e4c17d9823565073b4749cb87ca16a81d3c03c1ec4465ba081837c"
+      "sha256": "84df52437213dec4f81fcc8065ce97b5942dc0edd0a8349ac87ddd8845ffba50"
     },
     "skills": {
       "version": "0.1.0",
@@ -906,7 +906,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "83eaccf1771409e387f9318c8fc2f2a5bfe9cdb12eef34b36389be2bcee85f22"
+    "sourceMapSha256": "cfb76f5ce0f26d842bba1d608a6db95db3a24cf10bb2b2e3cb4e4163a97aa34e"
   },
   "entries": [
     {
