@@ -133,7 +133,8 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
    // Only the exact authenticated, idle staging daemon may be stopped here.
    let verified=false;
    try{await inspect();const live=await status(root);verified=live.delivery==='blocked'
-    &&live.reason==='native-stage-composition-pending'&&live.pool?.occupied===0&&live.pool?.pending===0&&live.pool?.host==='running';}catch{}
+    &&['native-stage-composition-pending','native-project-installation-and-activation-pending'].includes(live.reason)
+    &&live.pool?.occupied===0&&live.pool?.pending===0&&live.pool?.host==='running';}catch{}
    need(verified,'stage-unit-active');need(run(['stop',nativeServiceName]).ok,'stage-unit-stop');before=observe();
   }
   need(before.ActiveState==='inactive'&&before.MainPID==='0'&&before.ControlPID==='0','stage-unit-active');
