@@ -113,5 +113,22 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
   }
   return {status:'retired',generation:retained.generation,unit:retained.unit};
  }
- return Object.freeze({check,install,retire});
+ async function stageUnit(){
+  await privatePath(root,{directory:true});await privatePath(unit);
+  const saved=await readPrivate(receipt);
+  need(saved.version===1&&saved.account===userInfo().uid&&saved.unit===sha(nativeServiceUnit(root))
+   &&saved.unit===sha(await fs.readFile(unit)),'stage-unit-identity');
+  const observe=()=>{
+   const r=run(['show',nativeServiceName,'--property=LoadState','--property=ActiveState','--property=FragmentPath','--property=MainPID','--property=ControlPID']);
+   const p=Object.fromEntries(r.output.trim().split('\n').map(line=>{const i=line.indexOf('=');return[line.slice(0,i),line.slice(i+1)];}));
+   need(r.ok||r.status===4&&p.LoadState==='not-found','stage-unit-observation');
+   need(p.ActiveState==='inactive'&&p.MainPID==='0'&&p.ControlPID==='0','stage-unit-active');return p;
+  };
+  const before=observe();
+  need(before.LoadState==='not-found'&&before.FragmentPath===''||before.LoadState==='loaded'&&await fs.realpath(before.FragmentPath)===unit,'stage-unit-fragment');
+  for(const args of [['link',unit],['daemon-reload'],['enable',nativeServiceName]])need(run(args).ok,'stage-unit-interrupted');
+  const after=observe();need(after.LoadState==='loaded'&&await fs.realpath(after.FragmentPath)===unit,'stage-unit-readback');
+  return {status:'linked'};
+ }
+ return Object.freeze({check,install,retire,stageUnit});
 }
