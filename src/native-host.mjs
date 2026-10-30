@@ -4,7 +4,7 @@ import {userInfo} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {currentPin,currentProducer} from './current-core.mjs';
-import {nativeHostRoot,upgradeManagedInstallation} from './managed-upgrade.mjs';
+import {nativeHostRoot,upgradeManagedInstallation,nativeInstallationSelection} from './managed-upgrade.mjs';
 import {stageUnactivatedNativeUpgrade} from './native-upgrade-stage.mjs';
 import {maintenanceLock} from './upgrade.mjs';
 import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
@@ -12,6 +12,8 @@ import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} f
 import {nativeControlService} from './native-control-service.mjs';
 import {prepareNativeMember} from './native-member.mjs';
 import {prepareNativeOwnerPolicy} from './native-owner-policy.mjs';
+import {initializeFileHostStore} from './host-store.mjs';
+import {nativeActivationStatus,activateNativeHost} from './native-activation.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
 import {transitionStagedNativeHost} from './native-staged-transition.mjs';
 
@@ -99,6 +101,8 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    for(let i=1;i<=pool.capacity;i++)await verify(join(root,'runner-'+i));
    await nativePoolStore(core,{root,configuration:pool}).status();
    const observed=await control.check();
+   const activation=await nativeActivationStatus(core,{root});
+   if(observed.stageEntry==='configured'&&activation.status==='ready')return {status:'ready',phase:'active',diagnostics:[]};
    return {status:'blocked',phase:'staged',diagnostics:[...observed.diagnostics,...remaining()]};
   }catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-installation-reconciliation-required'}]};}
  }
@@ -137,6 +141,10 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    }
    await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
    await writePrivate(join(root,'native-installation.json'),record);
+   if(!selected&&await absent(join(root,'state'))){
+    const store=await initializeFileHostStore(core,{directory:join(root,'state'),installation:nativeInstallationSelection(core,context.identity,record),
+     repositories:pool.targets.map(({repository,repositoryId})=>({repository,repositoryId}))});await store.close();
+   }
    let member;
    if(memberRuntime||await readPrivate(join(root,'member-runtime.json'),{missing:true})){
     member=await prepareNativeMember(core,{root,context,memberId,capacity:pool.capacity,...memberRuntime});
@@ -147,5 +155,9 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    return {status:'staged',runnerCount:pool.capacity,diagnostics:[...observed.diagnostics,...remaining()]};
   });
  }
- return Object.freeze({check,prepare:prepareHost,async install(options){return check(options);}});
+ return Object.freeze({check,prepare:prepareHost,async install(options){
+  const activation=await activateNativeHost(options.core,{root,configuration:options.executionPool,
+   provider:options.core.createGithubProvider({attempts:1}),signal:AbortSignal.timeout(120000)});
+  return activation.status==='ready'?check(options):activation;
+ }});
 }
