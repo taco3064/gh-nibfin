@@ -401,7 +401,7 @@
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "6cd45b6eb6878629876f9733605a297f51285d869abe694289d6b637b1ab7bb8"
+        "sha256": "0bb89e000a45d393349498153739dcf5f7242667cf980e9a46543bdecc95ec69"
       },
       {
         "path": "src/distribution.mjs",
@@ -649,7 +649,7 @@
       },
       {
         "path": "src/runner.mjs",
-        "sha256": "34372a0f2fa7f14c71e37cadda881c3569cad67dd667cfedf72c15fa40a88ed9"
+        "sha256": "d5da221a5c97f56d80a646545972e540f9974f824322637c4991b7d4ef139a5e"
       },
       {
         "path": "src/runners.mjs",
@@ -681,7 +681,7 @@
       },
       {
         "path": "src/verification-supervisor.py",
-        "sha256": "2328e01eacde76973bc83c791a5942ed18ab6a67bfbc464047f88cd41bb48a38"
+        "sha256": "06a9fb0b4c1e47a58aee10bd054cd95b45a549d80bf4c5cd82711a27aec01d7c"
       },
       {
         "path": "src/verification.mjs",
@@ -1184,7 +1184,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "3202212c40bbe5b3cc060ec0e1ecdd82cb26c45c9996f2a21c388c2d54dc4325"
+    "contentSha256": "c563149928fc8c224482f011f6c4b53ba8e9f1b46eba6278b304a3140bacc4f3"
   },
   "components": {
     "core": {
@@ -1576,7 +1576,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "6cd45b6eb6878629876f9733605a297f51285d869abe694289d6b637b1ab7bb8"
+          "sha256": "0bb89e000a45d393349498153739dcf5f7242667cf980e9a46543bdecc95ec69"
         },
         {
           "path": "src/distribution.mjs",
@@ -1824,7 +1824,7 @@
         },
         {
           "path": "src/runner.mjs",
-          "sha256": "34372a0f2fa7f14c71e37cadda881c3569cad67dd667cfedf72c15fa40a88ed9"
+          "sha256": "d5da221a5c97f56d80a646545972e540f9974f824322637c4991b7d4ef139a5e"
         },
         {
           "path": "src/runners.mjs",
@@ -1856,7 +1856,7 @@
         },
         {
           "path": "src/verification-supervisor.py",
-          "sha256": "2328e01eacde76973bc83c791a5942ed18ab6a67bfbc464047f88cd41bb48a38"
+          "sha256": "06a9fb0b4c1e47a58aee10bd054cd95b45a549d80bf4c5cd82711a27aec01d7c"
         },
         {
           "path": "src/verification.mjs",
@@ -1911,7 +1911,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "b0c7a7750f5c718cc4a4c714e548cf397bfe5b2dacb26c0c0a4d36fd70bc04ec"
+      "sha256": "429a6a420261868639f801b1a541bb7c5b34512b6c9d187ae2fa1f6d2101883f"
     },
     "skills": {
       "version": "0.1.0",
@@ -2034,10 +2034,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "ef8d3fc8c6b541d12313dbf0f86a217504e1bd9b0bb6a63703b5b8bfa552eb23"
+    "sha256": "fd1fe234aa8c38425cd903b617f931070b34bea77c2ee030bcf3f3d58b3f2cc7"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "b87dfffdd300465e79cf03e9db88aa59a21a1a261f074f641dfa59aeb0e4214d"
+    "sha256": "c272e517a6c6d8c960c88b465ef21081b9d0c7ecf0c11c60742e1e5db86706c3"
   }
 }
