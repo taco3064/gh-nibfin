@@ -53,3 +53,25 @@ test('canonical numeric pagination remains limited to the exact named repository
   const before=calls.length;assert.equal((await provider.request({method:'POST',endpoint:'/repos/example/project/pulls',target:'100',operation:'installation',correlation:'test',body:{}})).outcome,'failed');assert.equal(calls.length,before);
  }
 }));
+
+test('real Issue cursor padding follows the same repository without changing query values or permitting writes',async()=>withCurrentCore(async core=>{
+ const calls=[],cursor='Y3Vyc29yOnYyOpLPAAABoXGRJODPAAAAAWbldXE=';
+ const endpoint='/repos/example/project/issues?state=all&per_page=100';
+ const transport=async request=>{calls.push(request);return calls.length===1?{status:200,headers:{Link:'<https://api.github.com/repositories/100/issues?state=all&per_page=100&after='+encodeURIComponent(cursor)+'&page=2>; rel="next"'},body:'[{"id":"1"}]'}:{status:200,body:'[{"id":"2"}]'};};
+ const provider=nativeGithubProvider(core,{transport,attempts:1});
+ const result=await provider.collection({endpoint,target:'100',operation:'catalog',correlation:'test',allowPage:path=>path.split('?')[0]==='/repos/example/project/issues'});
+ assert.equal(result.outcome,'complete');assert.deepEqual(result.data.map(v=>v.id),['1','2']);assert.equal(calls.length,2);
+ assert.equal(new URL(calls[1].endpoint,'https://api.github.com').searchParams.get('after'),cursor);
+ const write=await provider.request({endpoint:'/repos/example/project/issues',method:'POST',target:'100',operation:'catalog',correlation:'test',body:{}});
+ assert.equal(write.outcome,'failed');assert.equal(calls.length,2);
+}));
+
+test('padding normalization preserves prepared mutation capability and leaves foreign links unchanged',async()=>{
+ let options,prepared=0,sent=0;const foreign='<https://outside.invalid/items?after=abc%3D>; rel="next"';
+ const transport=async()=>({status:200,headers:{link:foreign}});
+ transport.prepareMutation=async value=>{prepared++;assert.deepEqual(value,{id:'original'});return async request=>{sent++;assert.equal(request.method,'POST');return {status:204};};};
+ nativeGithubProvider({createGithubProvider:value=>{options=value;return {}; }},{transport});
+ assert.equal((await options.transport({method:'GET'})).headers.link,foreign);
+ const send=await options.transport.prepareMutation({id:'original'});assert.equal(prepared,1);assert.equal(sent,0);
+ assert.deepEqual(await send({method:'POST'}),{status:204});assert.equal(sent,1);
+});
