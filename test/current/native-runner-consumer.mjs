@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
+import {userInfo} from 'node:os';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {nativeControlHost} from '../../src/native-host.mjs';
 import {nativePoolStore} from '../../src/native-pool-store.mjs';
@@ -60,7 +61,7 @@ ${hang?'time.sleep(600)':''}
  let admitted=0;
  const options={invocation:'a'.repeat(32),verify,admissionCheck:async(instance,env)=>{
   admitted++;assert.equal(instance.registration,application);assert.deepEqual(env,environment);
- },serviceState:async()=>({pid:process.pid,status:'active',invocation:'a'.repeat(32),controlGroup:'/user.slice/user-1000.slice/fixture.service'})};
+ },serviceState:async()=>({pid:process.pid,status:'active',invocation:'a'.repeat(32),controlGroup:'/user.slice/user-'+userInfo().uid+'.slice/fixture.service'})};
  return {root,directory,application,record,store,options,configuration,admitted:()=>admitted};
 }
 
@@ -120,7 +121,7 @@ test('service launch is on demand without enable or restart; a lost start reply 
  const f=await fixture(core,context),calls=[];let active=false;
  const service=nativeRunnerService({root:f.root,selector:request.id,slot:1,lease:f.record.lease.identity,run:args=>{
   calls.push(args);if(args[0]==='start'){active=true;return {ok:false};}
-  return {ok:true,output:args[0]==='show'?`ActiveState=${active?'active':'inactive'}\nMainPID=12345\nInvocationID=${'a'.repeat(32)}\nControlGroup=/user.slice/user-1000.slice/fixture.service\nFragmentPath=${join(f.root,'nibfin-runner-1.service')}\n`:''};
+  return {ok:true,output:args[0]==='show'?`ActiveState=${active?'active':'inactive'}\nMainPID=12345\nInvocationID=${'a'.repeat(32)}\nControlGroup=/user.slice/user-${userInfo().uid}.slice/fixture.service\nFragmentPath=${join(f.root,'nibfin-runner-1.service')}\n`:''};
  }});
  await assert.rejects(service.start(),/start-unconfirmed/);assert.equal((await service.state()).status,'active');
  await assert.rejects(service.start(),{code:'EEXIST'});assert.equal(calls.filter(args=>args[0]==='start').length,1);
