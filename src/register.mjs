@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import {join, resolve, parse} from 'node:path';
+import {join, resolve, parse, dirname} from 'node:path';
 import {userInfo} from 'node:os';
 import {spawn,spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -68,13 +68,17 @@ export async function safePath(path, {directory = true, uid = userInfo().uid} = 
 async function absent(path) {
   try { await fs.lstat(path); return false; } catch (error) { if (error.code === 'ENOENT') return true; throw error; }
 }
+export function memberLoginLocation(record,base){
+  return record.memberLogin===undefined?record.loginSpace===join(base,'login'):
+    record.memberLogin==='shared-native-v1'&&record.loginSpace===join(dirname(dirname(base)),'member-auth');
+}
 export async function loadEnvironment(root, name, account) {
   const base = join(resolve(root),name);
   await safePath(base); await safePath(join(base,'environment.json'),{directory:false});
   const r = JSON.parse(await fs.readFile(join(base,'environment.json'),'utf8'));
   if (r.schemaVersion !== 1 || r.name !== name || !['codex','claude','gemini'].includes(r.agent) || !id(r.githubId) ||
       r.account?.uid !== account.uid || r.account?.username !== account.username ||
-      r.loginSpace !== join(base,'login') || !Array.isArray(r.instances) || !r.instances.length || r.instances.length > 128) fail('Incomplete environment or execution/service account mismatch.');
+      !memberLoginLocation(r,base) || !Array.isArray(r.instances) || !r.instances.length || r.instances.length > 128) fail('Incomplete environment or execution/service account mismatch.');
   await safePath(r.loginSpace);
   const ids = new Set([name]);
   for (const [i, instance] of r.instances.entries()) {

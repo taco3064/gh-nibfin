@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { join, resolve, parse } from 'node:path';
+import { join, resolve, parse, dirname } from 'node:path';
 import { userInfo } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -101,7 +101,10 @@ export async function createEnvironment(input,dependencies={}){
   if(!dependencies.lockHeld)return withEnvironmentLock(root,name,()=>createEnvironment(input,{...dependencies,lockHeld:true}));
   const loginSpace=configuration.loginSpace??join(destination,'login'),environment=processEnvironment(loginSpace);
   const runtimeRoot=configuration.runtimeRoot??destination;
-  if(configuration.loginSpace){await privateDirectory(runtimeRoot,io);await privateDirectory(loginSpace,io);}
+  if(configuration.loginSpace){
+    if(runtimeRoot!==dirname(root)||loginSpace!==join(runtimeRoot,'member-auth'))fail('Native shared login must use the maintained private member location.');
+    await privateDirectory(runtimeRoot,io);await privateDirectory(loginSpace,io);
+  }
   const githubId=await githubObservation({run,environment,account});
   let pending,owned=false,journal=false;
   try{
@@ -171,7 +174,7 @@ export async function createEnvironment(input,dependencies={}){
       observe:dependencies.observeLocal??core.observeRunnerLocal,
       probe:async({capability})=>({status:reports.length===count&&reports.every(backendReady)?'verified':'blocked',...(capability==='github-identity'?{userId:githubId}:{})})});
     if(preflight.status!=='ready')fail('Packaged preflight blocked this account/tools/network configuration.');
-    const record={schemaVersion:1,name,agent,loginSpace,githubId,account:{uid:account.uid,username:account.username},
+    const record={schemaVersion:1,name,agent,loginSpace,...(configuration.loginSpace?{memberLogin:'shared-native-v1'}:{}),githubId,account:{uid:account.uid,username:account.username},
       runtime:{image,socket,core:currentPin.coreSha256,...(runtimeProfile?{runtimeProfile}:{})},instances:descriptor.instances.map(i=>({...i,loginSpace,status:'unregistered',serviceStatus:'not-installed'}))};
     await io.writeFile(join(destination,'environment.pending'),JSON.stringify(record,null,2)+'\n',{flag:'wx',mode:0o600});
     await io.rename(join(destination,'environment.pending'),join(destination,'environment.json'));await io.rm(join(destination,'creation.json'));

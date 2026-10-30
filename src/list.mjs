@@ -4,7 +4,7 @@ import {userInfo} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {withCurrentCore as withRegistrationCore} from './current-core.mjs';
 import {processEnvironment, githubObservation, observeProcess} from './create.mjs';
-import {safePath, orgReadback, inventory} from './register.mjs';
+import {safePath, orgReadback, inventory,memberLoginLocation} from './register.mjs';
 const namePattern = /^[a-z][a-z0-9-]{0,47}$/;
 const id = v => typeof v === 'string' && /^[1-9][0-9]{0,127}$/.test(v);
 const identity = v => typeof v === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(v);
@@ -98,7 +98,7 @@ export async function listEnvironments(args, dependencies = {}) {
         const record = await read(join(base,'environment.json'));
         if (record.schemaVersion !== 1 || record.name !== name || !['codex','claude','gemini'].includes(record.agent) ||
             !id(record.githubId) || !Number.isSafeInteger(record.account?.uid) || typeof record.account.username !== 'string' ||
-            !/^[a-zA-Z0-9_.-]{1,64}$/.test(record.account.username) || record.loginSpace !== join(base,'login') ||
+            !/^[a-zA-Z0-9_.-]{1,64}$/.test(record.account.username) || !memberLoginLocation(record,base) ||
             !Array.isArray(record.instances) || !record.instances.length || record.instances.length > 128) invalid();
         const out = {name,agent:record.agent,githubId:record.githubId,account:{uid:record.account.uid,username:record.account.username},instances:[]};
         result.environments.push(out);
