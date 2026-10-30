@@ -1,6 +1,7 @@
 import test from'node:test';import assert from'node:assert/strict';import{join,dirname}from'node:path';
 import{withCurrentCore,currentPin}from'../../src/current-core.mjs';import{nativeCycleFixture}from'./native-cycle-fixture.mjs';
 import{initializeFileHostStore,openFileHostStore}from'../../src/host-store.mjs';import{nativeStageWork}from'../../src/native-stage-work.mjs';
+import{nativeControlHost}from'../../src/native-host.mjs';
 import{nativeActivationStatus,activateNativeHost}from'../../src/native-activation.mjs';import{nativePoolStore}from'../../src/native-pool-store.mjs';
 import fs from'node:fs/promises';import{nativeRoleHost}from'../../src/native-role-host.mjs';
 import{writePrivate,ensurePrivateDirectory,sha}from'../../src/local-state.mjs';import{managedWorkflowPlan}from'../../src/workflow-inputs.mjs';
@@ -39,4 +40,12 @@ test('aborted public source acquisition retires only its own unlaunched role all
  const controller=new AbortController();controller.abort();
  await assert.rejects(nativeRoleHost(core,{root:f.root,binding:{configuration:f.configuration,request:{id:'aborted-source'},jobRecord:{lease:{identity}}},base:'b'.repeat(40),repository:'example/project',memberId:'7',source:{},retain:async()=>{},checkpoint:async()=>{},signal:controller.signal}),/source-acquisition/);
  await assert.rejects(fs.lstat(join(parent,'roles')),{code:'ENOENT'});assert.ok((await fs.stat(join(f.root,'owner-signing-key.pem'))).isFile());
+}));
+
+test('Member preparation reloads an authenticated idle daemon that started without stage bindings',async()=>withCurrentCore(async(core,context)=>{
+ const f=await nativeCycleFixture(core,context);let staged=0,installed=0;
+ const service={check:async()=>({status:'running',delivery:'blocked',diagnostics:[]}),stageUnit:async()=>{staged++;return{status:'linked'};},install:async()=>{installed++;return{status:'running',stageEntry:'configured',diagnostics:[]};}};
+ const host=nativeControlHost({root:f.root,service,verify:async()=>{},prepare:async path=>fs.writeFile(join(path,'fixture'),'application',{mode:0o600})});
+ const result=await host.prepare({core,context,executionPool:f.configuration,memberId:'7'});
+ assert.equal(result.status,'prepared');assert.equal(staged,1);assert.equal(installed,1);
 }));
