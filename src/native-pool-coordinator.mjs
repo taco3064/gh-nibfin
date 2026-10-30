@@ -85,6 +85,21 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
  signal?.addEventListener('abort',stop,{once:true});wake();
  return Object.freeze({memberId,
   async enqueue(hint){need(!closed&&!fatal,'unavailable');const retained=await intake.accept(hint,{signal});wake();return retained;},
+  async stageSource(request,{signal:caller}={}){
+   need(!closed&&!fatal,'unavailable');const retained=await intake.read(request.request);
+   need(retained&&retained.request.repository===request.repository&&retained.request.runId===request.runId
+    &&retained.request.attempt===request.attempt,'stage-request-binding');
+   const observed=await intake.source.inspect(request.request,{signal:caller});
+   need(observed.authorized===true&&observed.launchAuthorized===true,'stage-authority');
+   const selected=await store.jobs.read(request.request);
+   need(selected&&['launch-intent','active'].includes(selected.phase)&&selected.request.jobId===retained.request.jobId,'stage-lease');
+   const actual=await provider.request({endpoint:'/repos/'+request.repository+'/actions/jobs/'+retained.request.jobId,
+    target:retained.request.repositoryId,operation:'native-stage-source',correlation:request.request,signal:caller});
+   need(actual.outcome==='read'&&actual.data.id===retained.request.jobId&&actual.data.run_id===request.runId
+    &&String(actual.data.run_attempt)===request.attempt&&actual.data.status==='in_progress'
+    &&actual.data.runner_id===selected.runnerId,'actual-stage-job');
+   return {...structuredClone(retained),jobRecord:structuredClone(selected)};
+  },
   async status(){return {...await store.status(),host:closed?'stopped':fatal?'unavailable':'running',...(fatal?{reason:fatal}:{})};},
   async settled(){await running;},
   async close(){stop();signal?.removeEventListener('abort',stop);await running;}
