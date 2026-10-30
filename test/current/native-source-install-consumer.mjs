@@ -15,7 +15,7 @@ test('administrative installation resumes one PR, waits for CI and never bypasse
   if(r.endpoint===path+'/branches/main/protection')return{status:200,body:JSON.stringify({enforce_admins:{enabled:true},required_status_checks:{strict}})};
   if(r.method!=='GET'){writes.push(r);assert.equal(r.endpoint,path+'/pulls/40/merge');assert.deepEqual(JSON.parse(r.body),{sha:commit,merge_method:'rebase'});Object.assign(pr,{merged:true,merge_commit_sha:'d'.repeat(40)});return{status:200,body:'{"merged":true}'};}
  });
- const selected={...core,observeGithubCI:async()=>({qualifies:qualified,status:qualified?'satisfied':'pending',policy:{requirements:[{context:'ci'}]}})},options={root:f.root,repository,repositoryId,desired,observations,provider:f.provider};
+ const selected={...core,observeGithubCI:async()=>({qualifies:qualified,status:qualified?'satisfied':'pending',policy:{requirements:[{context:'ci'}]}})},options={root:f.root,repository,repositoryId,desired,observations,provider:core.createGithubProvider({transport:f.transport,attempts:1,authorize:async()=>true})};
  await assert.rejects(installNativeSource(selected,options),/original-pr-reconciliation-required/);assert.equal(writes.length,0);
  present=true;assert.equal((await installNativeSource(selected,options)).status,'pending');assert.equal(writes.length,0);
  qualified=true;strict=false;await assert.rejects(installNativeSource(selected,options),/protected-pr-required/);assert.equal(writes.length,0);
