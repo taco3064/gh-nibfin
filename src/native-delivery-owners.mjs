@@ -1,9 +1,10 @@
+import{nativeWakeupInbox}from'./native-wakeups.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-owners:'+code);};
 const copy=structuredClone;
 
 // All mutation and review owners come from the installed Core. This module
 // adapts private native records and real official observations to their inputs.
-export async function nativeDeliveryOwners(core,{state,stage,pin,roles,store,provider,authorization,dependencies,dependencyInput,
+export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,store,provider,authorization,dependencies,dependencyInput,
  operations,evidenceCurrent,source,observations,checkpoint,signal,progress}={}){
  const c=core.contentIdentity,t=state.target,b=pin.binding;
  const sourceEvent={request:pin.invocation.request,event:'workflow_dispatch',repositoryId:t.repositoryId,
@@ -137,6 +138,19 @@ export async function nativeDeliveryOwners(core,{state,stage,pin,roles,store,pro
      return {expected:evidence(name,inputs),consumed:[]};
     },postMerge:async()=>{const proof=await postMerge();need(proof,'post-merge-ci-pending');return proof;}};
   }
+ }
+ if(stage==='fanout'){
+  need(state.completion&&state.completionSource,'completion-required');core.verifyCompletion(state.completion,state.completionCurrent);
+  const inbox=await nativeWakeupInbox(core,{root});pin.stageInput={source:t,issues:dependencyInput.issues.filter(i=>i.issueId!==t.issueId)};
+  owners.fanout={provider,currentSource:async()=>({cycle:state.cycle,identity:state.completion.identity,expected:state.completionCurrent,provenance:state.completionSource}),
+   retrieveReceipt:async()=>({cycle:state.cycle,identity:state.completion.identity,bytes:Buffer.from(core.canonicalJSON(state.completion))}),
+   currentTarget:async target=>{
+    need(dependencyInput.issues.some(i=>core.canonicalJSON(i)===core.canonicalJSON(target)),'known-dependent');
+    const r=await provider.request({endpoint:'/repos/'+target.repository,target:target.repositoryId,operation:'native-dependent-observation',correlation:pin.invocation.request,signal});
+    need(r.outcome==='read'&&r.data.id===target.repositoryId&&r.data.private===false&&r.data.permissions?.admin===true,'dependent-permission');
+    const binding={repository:target.repository,repositoryId:target.repositoryId,issueId:target.issueId,number:target.number};
+    return {ok:true,binding,wakeup:{kind:'native-core-wakeup',identity:c({target,member:state.member.id})}};
+   },operations:async()=>{throw Error('native-owners:hosted-resolve-not-supported');},notifyTarget:inbox.retain};
  }
  return {owners,workspace,evidence,reviewPin,completionPin,completionState,mergeIntent,postMergeProof,hookInput,author,message,sourceEvent,target};
 }

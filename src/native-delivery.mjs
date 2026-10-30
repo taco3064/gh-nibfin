@@ -63,7 +63,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
     const expected=Object.values(state.expectations).find(e=>e.expected.execution.id===id);need(expected,'retained-role-expectation');return copy(expected);
    }
   };
-  const composed=await nativeDeliveryOwners(core,{state,stage,pin,roles,store,provider,authorization:input.authorization,dependencies:input.dependencies,
+  const composed=await nativeDeliveryOwners(core,{root,state,stage,pin,roles,store,provider,authorization:input.authorization,dependencies:input.dependencies,
    dependencyInput:input.dependencyInput,operations,evidenceCurrent,source,observations,checkpoint,signal,progress});
   if(stage==='pr'){
    const session=core.createPublicationGit({repository,repositoryId:state.target.repositoryId}).open(composed.workspace,composed.message,composed.author,{signal});
@@ -78,7 +78,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    prepareRole:task=>roles.prepareRole(task),readBody:async id=>roles.get(id).readBody(),operations,evidenceCurrent,
    obligations:async()=>copy(observations)}};
   const runtime=core.createCore({current:()=>copy(pin),provider,authorization:input.authorization,dependencies:input.dependencies,
-   selector:input.selector,owners,checkpoint});
+   selector:input.selector,owners,checkpoint,onDiagnostic:async diagnostic=>{
+    await store.retain({kind:'native-core-diagnostic',diagnostic});await progress({status:'blocked',reason:diagnostic.code});
+   }});
   if(stage==='closure')await store.update(s=>{need(!s.completionPlan,'original-completion-plan-required');s.completionPlan=composed.completionState;return s;});
   const request={version:1,target:state.target,cycle:state.cycle,request:binding.request.id,run:pin.invocation.run,
    expected:{stage,decision:core.contentIdentity({stage,request:binding.request.id})}};
@@ -94,6 +96,10 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
   const result=await runtime.run(request,{signal});await store.retain({kind:'native-core-result',result});
   if(result.disposition==='completed'){
    const output=result.owner.output;let receipt;
+   if(stage==='fanout'){
+    await roles.close();roles=null;
+    await store.update(s=>{s.fanout=output;s.attempts[stage].phase='completed';return s;});completed=true;return result;
+   }
    if(stage==='shape')receipt=output.author.receipt;
    else if(stage==='shape-validator')receipt=output.validator.receipt;
    else if(stage==='publication'){
@@ -137,7 +143,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
     if(stage==='merge'){s.mergeOperation=output.operation;s.mergeIntent=composed.mergeIntent;}
     if(stage==='closure')s.closed=true;
     if(stage==='delivered'){s.completion=output.receipt;s.completionCurrent=Object.fromEntries(core.coreStages.slice(2,14)
-     .map(name=>[name,name==='delivered'?expected:s.expectations[name]]));}
+     .map(name=>[name,name==='delivered'?expected:s.expectations[name]]));s.completionSource=composed.sourceEvent;}
     return s;});
   }else await store.update(s=>{s.attempts[stage].phase='unresolved';s.attempts[stage].reason=result.reason;return s;});
   completed=result.disposition==='completed';return result;

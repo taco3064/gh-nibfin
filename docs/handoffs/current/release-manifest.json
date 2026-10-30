@@ -373,7 +373,7 @@
       },
       {
         "path": "src/core.mjs",
-        "sha256": "11d99709f40c675a2fe514f853ec293a303d401a073da2e06844bd2df9e8e060"
+        "sha256": "c14213c45f7667941773e150b67c8535b93733956c6d2ece925ce73586bf3909"
       },
       {
         "path": "src/credential-output.mjs",
@@ -445,7 +445,7 @@
       },
       {
         "path": "src/fanout.mjs",
-        "sha256": "ca61b66285c992fa51b3c0131f656e7b61028bff1e8258c86ad461fce2ca17c0"
+        "sha256": "21555eef7c1a2bb0964bdb4ab15b24de34dd4958149d6e01482fcb6906b2c52a"
       },
       {
         "path": "src/final-review.mjs",
@@ -869,7 +869,7 @@
       },
       {
         "path": "test/fanout.test.mjs",
-        "sha256": "bdbce12b1e8a2c51d1fa4a66fbaad02c22995366e7128a902a8e346f5b5aba44"
+        "sha256": "9ab3fcc37d34999bc47f99dd7639386a5d01e6c96c2907d9fbf951e99e3a441c"
       },
       {
         "path": "test/final-review.test.mjs",
@@ -1097,7 +1097,7 @@
       },
       {
         "path": "tooling/accept-fixture.mjs",
-        "sha256": "f8287716e2c02e3694f711adf5d91435d315f215ac073f51e81152862b94f9f3"
+        "sha256": "cb6968064c6b678f566a3dea7c178a0ce8544b311fe9c611a11701d120328f49"
       },
       {
         "path": "tooling/actions-fixture.mjs",
@@ -1244,7 +1244,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "a54fc48ca92bf2b15694aafe243a99c986b5d994595877594e4cdd0ec6ac6193"
+    "contentSha256": "b23ece91d927f12f07a0188f121b98564030a88257987adca6932020f9220eff"
   },
   "components": {
     "core": {
@@ -1608,7 +1608,7 @@
         },
         {
           "path": "src/core.mjs",
-          "sha256": "11d99709f40c675a2fe514f853ec293a303d401a073da2e06844bd2df9e8e060"
+          "sha256": "c14213c45f7667941773e150b67c8535b93733956c6d2ece925ce73586bf3909"
         },
         {
           "path": "src/credential-output.mjs",
@@ -1680,7 +1680,7 @@
         },
         {
           "path": "src/fanout.mjs",
-          "sha256": "ca61b66285c992fa51b3c0131f656e7b61028bff1e8258c86ad461fce2ca17c0"
+          "sha256": "21555eef7c1a2bb0964bdb4ab15b24de34dd4958149d6e01482fcb6906b2c52a"
         },
         {
           "path": "src/final-review.mjs",
@@ -1995,7 +1995,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "d3f159006cf09273dba4fee0dfdf270f19c446b801f7b2a8670d059d19fbacdc"
+      "sha256": "3332f9147fce80ed62435867e5b5fda2e9966af1eff5422048742ff170c9db24"
     },
     "skills": {
       "version": "0.1.0",
@@ -2118,10 +2118,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "74aada6e8b9d5d0a2a2e47a053e88701d3f7879eb23752ea4a1e578bc85f046c"
+    "sha256": "1710e6161b496b017102f25e3e47c5fb6321d0aa2a61d668331a6fd927288db0"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "be004f5810b31580563ca387f4262107b97b3683a8c5b495fbfe87e186eab837"
+    "sha256": "515a9c292bf4961d5083fb4bbf136679c22415c807c9bd6078ad0ff8fc652aa2"
   }
 }
