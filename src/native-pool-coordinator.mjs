@@ -24,7 +24,13 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
  need(record.core===currentPin.coreSha256&&typeof onProgress==='function','installation');
  const store=nativePoolStore(core,{root,configuration});await store.status();
  const targets=new Map(configuration.targets.map(t=>[t.repositoryId,t]));
- provider??=nativeGithubProvider(core,{attempts:1,authorize:r=>{
+ provider??=nativeGithubProvider(core,{attempts:1,retainResponse:async(request,response)=>{
+  if(request.method!=='POST'||!request.endpoint.endsWith('/actions/runners/generate-jitconfig')||response?.status!==201)return;
+  const labels=JSON.parse(request.body).labels.filter(label=>label.startsWith('nibfin-request-'));
+  need(labels.length===1&&/^[A-Za-z0-9_-]{1,80}$/.test(labels[0].slice(15)),'response-selector');
+  const selector=labels[0].slice(15);
+  await writePrivate(join(root,'pool-state','jit-response-'+selector+'.json'),{version:1,endpoint:request.endpoint,body:response.body},{exclusive:true});
+ },authorize:r=>{
   const target=targets.get(r.target);return !!target&&r.operation==='runner-pool'
    &&(r.method==='POST'&&r.endpoint==='/repos/'+target.repository+'/actions/runners/generate-jitconfig'
     ||r.method==='DELETE'&&new RegExp('^/repos/'+target.repository.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'/actions/runners/[1-9][0-9]*$').test(r.endpoint));

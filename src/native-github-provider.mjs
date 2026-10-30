@@ -2,9 +2,32 @@
 // Preserve the caller's original finite read guard: only an alias for its exact
 // repository ID is projected back to that same named root for guard evaluation.
 // Core still owns HTTP validation, pagination bounds, identities and permission.
+import{nativeJitConfiguration}from'./native-jit.mjs';
 export function nativeGithubProvider(core,configuration={}){
  const send=configuration.transport??core.localGhTransport();
- const response=(request,value)=>{
+ const response=async(request,value)=>{
+  if(configuration.retainResponse)await configuration.retainResponse(request,value);
+  const runners=/^\/repos\/([^/]+\/[^/]+)\/actions\/runners(?:\/[1-9][0-9]*|\/generate-jitconfig)?(?:\?|$)/.exec(request.endpoint);
+  if(runners&&[200,201].includes(value?.status)&&typeof value.body==='string'){
+   try{
+    let changed=false;const parsed=JSON.parse(value.body,function(key,item,context){
+     // JIT Runner labels are name-bearing placeholders with id 0, not
+     // independently addressable resources. Do not invent a positive label ID.
+     if(key==='id'&&item===0&&context.source==='0'&&this.type==='read-only'&&typeof this.name==='string'&&/^[A-Za-z0-9_.:-]{1,128}$/.test(this.name)){
+      changed=true;return null;
+     }
+     return typeof item==='number'?JSON.rawJSON(context.source):item;
+    });let body=changed?JSON.stringify(parsed):value.body;
+    if(request.method==='POST'&&request.endpoint.endsWith('/generate-jitconfig')&&value.status===201){
+     const data=core.parseGithubJson(body),requested=JSON.parse(request.body);
+     if(data.runner?.ephemeral===undefined&&data.runner.name===requested.name){
+      const jit=nativeJitConfiguration(data.encoded_jit_config,{runnerId:data.runner.id,runnerName:requested.name,request:{repository:runners[1]}});
+      if(jit.settings.ephemeral===true){parsed.runner.ephemeral=true;body=JSON.stringify(parsed);changed=true;}
+     }
+    }
+    if(changed)value={...value,body};
+   }catch{}
+  }
   if(request.method!=='GET'||!value)return value;
   // GitHub uses runner_id:0 while a queued Job has no assigned Runner. Kairo
   // accepts that response; Core's resource IDs remain strictly positive. Map
