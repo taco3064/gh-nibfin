@@ -149,3 +149,13 @@ test('inactive systemd service retains its original terminated invocation when s
  await writePrivate(join(f.directory,'process.json'),{phase:'running',lease:f.record.lease.identity,invocation:'a'.repeat(32)});
  await assert.rejects(service.state(),/service-identity/);
 }));
+
+test('retiring an inactive linked service does not reset a failed state that systemd already released',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(core,context),unit=join(f.root,'nibfin-runner-1.service'),bytes=nativeRunnerUnit(f.root,request.id,1);let loaded=true;const calls=[];
+ await fs.writeFile(unit,bytes,{mode:0o600});await writePrivate(join(f.directory,'service.json'),{version:1,lease:f.record.lease.identity,selector:request.id,unit:sha(bytes)});
+ const service=nativeRunnerService({root:f.root,selector:request.id,slot:1,lease:f.record.lease.identity,run:args=>{
+  calls.push(args[0]);assert.notEqual(args[0],'reset-failed');if(args[0]==='disable')loaded=false;
+  return{ok:loaded||args[0]!=='show',status:loaded?0:4,output:'LoadState='+(loaded?'loaded':'not-found')+'\nActiveState=inactive\nMainPID=0\nInvocationID='+('a'.repeat(32))+'\nControlGroup=\nFragmentPath='+(loaded?unit:'')+'\n'};
+ }});
+ assert.equal((await service.retire()).status,'retired');assert.ok(calls.includes('disable'));await assert.rejects(fs.stat(unit),{code:'ENOENT'});
+}));
