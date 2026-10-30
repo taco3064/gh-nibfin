@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';import{join}from'node:path';
 import{nativeOwnerSigner}from'./native-owner-policy.mjs';import{readNativeMember}from'./native-member.mjs';
 import{createNativeCycle,openNativeCycle,nativeCycleDirectory}from'./native-delivery-store.mjs';import{currentPin,currentProducer}from'./current-core.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-cycle:'+code);};
-const operations=core=>[...new Set([...core.coreStages,'readiness','publish-shape','commit-pr','observe-ci','verify-deployment','close','mark-delivered'])];
+const operations=core=>[...new Set([...core.coreStages,'readiness','publish-shape','commit-pr','observe-ci','verify-deployment','close','mark-delivered','issue-body','label','comment','reopen','dispatch'])];
 const snapshot=(core,source,revision,body)=>({source,revision,body,hash:core.bodyDigest(body)});
 export async function prepareNativeCycle(core,{root,configuration,repository,number,provider,context,signal}={}){
  need(core.distributionAPI?.nativeHost===1,'compatible-native-core-required');
