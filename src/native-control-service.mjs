@@ -4,6 +4,7 @@ import {userInfo} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {connect} from 'node:net';
 import {randomUUID} from 'node:crypto';
+import{pathToFileURL}from'node:url';import{openFileHostStore}from'./host-store.mjs';import{nativePoolStore}from'./native-pool-store.mjs';
 import {privatePath,readPrivate,writePrivate,sha} from './local-state.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-service:'+code);};
@@ -13,7 +14,7 @@ const quote=value=>{
  return '"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/%/g,'%%').replace(/\$/g,()=> '$$')+'"';
 };
 export function nativeServiceUnit(root,node=process.execPath){
- return `[Unit]\nDescription=Nibfin native control host\nStartLimitIntervalSec=60\nStartLimitBurst=3\n[Service]\nType=notify\nNotifyAccess=all\nTimeoutStartSec=45\nTimeoutStopSec=30\nExecStart=${quote(node)} ${quote(join(root,'runtime/client/native-control-main.mjs'))} ${quote(root)}\nEnvironment=HOME=${quote(userInfo().homedir)}\nEnvironment=PATH=/usr/local/bin:/usr/bin:/bin\nUnsetEnvironment=GH_TOKEN GITHUB_TOKEN NODE_OPTIONS NODE_PATH CODEX_HOME\nUMask=0077\nRestart=on-failure\nNoNewPrivileges=true\nKillMode=control-group\n[Install]\nWantedBy=default.target\n`;
+ return `[Unit]\nDescription=Nibfin native control host\nStartLimitIntervalSec=60\nStartLimitBurst=3\n[Service]\nType=notify\nNotifyAccess=all\nTimeoutStartSec=45\nTimeoutStopSec=30\nExecStart=${quote(node)} ${quote(join(root,'runtime/client/native-control-main.mjs'))} ${quote(root)}\nEnvironment=HOME=${quote(userInfo().homedir)}\nEnvironment=PATH=/usr/local/bin:/usr/bin:/bin\nUnsetEnvironment=GH_TOKEN GITHUB_TOKEN NODE_OPTIONS NODE_PATH CODEX_HOME\nUMask=0077\nRestart=on-failure\nNoNewPrivileges=true\nKillMode=mixed\n[Install]\nWantedBy=default.target\n`;
 }
 export function nativeSystemctl(args){
  const r=spawnSync('/usr/bin/systemctl',['--user',...args],{encoding:'utf8',timeout:60000,maxBuffer:8192,
@@ -55,10 +56,11 @@ export async function verifyNativeRuntime(root,record,{directory=join(root,'runt
  * These injectable transports are test seams, never public JSON or module paths. */
 export function nativeControlService({root,run=nativeSystemctl,status=nativeServiceStatus}={}){
  const unit=join(root,nativeServiceName),receipt=join(root,'control-service.json');
- async function inspect(){
+ async function inspect({allowLegacy=false}={}){
   const record=await readPrivate(receipt);need(record.version===1&&record.account===userInfo().uid
    &&/^[a-f0-9-]{36}$/.test(record.generation),'receipt');
-  await privatePath(unit);need(sha(await fs.readFile(unit))===record.unit&&record.unit===sha(nativeServiceUnit(root)),'unit');
+  await privatePath(unit);const approved=nativeServiceUnit(root);need(!record.unitTransition&&sha(await fs.readFile(unit))===record.unit
+   &&(record.unit===sha(approved)||allowLegacy&&record.unit===sha(approved.replace('KillMode=mixed','KillMode=control-group'))),'unit');
   const r=run(['show',nativeServiceName,'--property=ActiveState','--property=FragmentPath','--property=MainPID','--property=Type']);
   need(r.ok,'observe');const p=Object.fromEntries(r.output.trim().split('\n').map(l=>{const i=l.indexOf('=');return[l.slice(0,i),l.slice(i+1)];}));
   need(p.ActiveState==='active'&&p.Type==='notify'&&/^[1-9][0-9]*$/.test(p.MainPID)
@@ -75,7 +77,8 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
  }
  async function check(){try{return await inspect();}catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-control-service-unavailable'}]};}}
  async function install(){
-  await privatePath(root,{directory:true});const previous=await readPrivate(receipt,{missing:true}),bytes=nativeServiceUnit(root);
+  await privatePath(root,{directory:true});let previous=await readPrivate(receipt,{missing:true});const bytes=nativeServiceUnit(root);
+  if(previous&&(previous.unit!==sha(bytes)||previous.unitTransition)){await stageUnit();previous=await readPrivate(receipt);}
   if(previous){need(previous.unit===sha(bytes),'preserve-service');await privatePath(unit);need(sha(await fs.readFile(unit))===previous.unit,'preserve-unit');}
   else{
    // A conflicting unit is never overwritten or adopted as a fresh install.
@@ -117,31 +120,49 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
   return {status:'retired',generation:retained.generation,unit:retained.unit};
  }
  async function stageUnit(){
-  await privatePath(root,{directory:true});await privatePath(unit);
-  const saved=await readPrivate(receipt);
-  need(saved.version===1&&saved.account===userInfo().uid&&saved.unit===sha(nativeServiceUnit(root))
-   &&saved.unit===sha(await fs.readFile(unit)),'stage-unit-identity');
-  const observe=()=>{
-   const r=run(['show',nativeServiceName,'--property=LoadState','--property=ActiveState','--property=FragmentPath','--property=MainPID','--property=ControlPID']);
+  await privatePath(root,{directory:true});let saved=await readPrivate(receipt);await privatePath(unit);
+  const bytes=nativeServiceUnit(root),current=sha(bytes),legacy=sha(bytes.replace('KillMode=mixed','KillMode=control-group')),stored=sha(await fs.readFile(unit));
+  need(saved.version===1&&saved.account===userInfo().uid&&[current,legacy].includes(saved.unit),'stage-unit-identity');
+  if(saved.unitTransition)need(saved.unit===legacy&&saved.unitTransition.previous===legacy&&saved.unitTransition.next===current&&[legacy,current].includes(stored),'stage-unit-transition');
+  else need(stored===saved.unit,'stage-unit-identity');
+  const observe=()=>{const r=run(['show',nativeServiceName,'--property=LoadState','--property=ActiveState','--property=FragmentPath','--property=MainPID','--property=ControlPID']);
    const p=Object.fromEntries(r.output.trim().split('\n').map(line=>{const i=line.indexOf('=');return[line.slice(0,i),line.slice(i+1)];}));
-   need(r.ok||r.status===4&&p.LoadState==='not-found','stage-unit-observation');
-   return p;
+   need(r.ok||r.status===4&&p.LoadState==='not-found','stage-unit-observation');return p;};
+  const recoverEmptyFailure=async before=>{
+   need(before.ActiveState==='failed'&&before.MainPID==='0'&&before.ControlPID==='0','stage-unit-active');
+   const installation=await readPrivate(join(root,'native-installation.json'));
+   need(installation.phase==='staged'&&installation.executionPool?.version===2,'failed-stage-installation');
+   const core=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
+   const pool=nativePoolStore(core,{root,configuration:installation.executionPool}),status=await pool.status();
+   const ledger=await readPrivate(join(root,'pool-state/ledger.json'));
+   need(status.occupied===0&&status.pending===0&&Object.keys(ledger.jobs).length===0&&Object.keys(ledger.capacity.completed).length===0,'failed-stage-work');
+   const store=await openFileHostStore(core,{directory:join(root,'state')});try{const{work}=await store.read();
+    need(work.restrictionsChecked&&work.paused&&work.hold===null&&!work.unknownWrite&&!work.active&&work.terminated&&work.reconciled
+     &&['pending','conversations','receipts'].every(k=>work[k].length===0),'failed-stage-work');}finally{await store.close();}
+   const{observeUnusedStagedResources}=await import('./native-staged-transition.mjs');
+   need((await observeUnusedStagedResources(root,installation.runnerCount)).status==='unused','failed-stage-resources');
+   need(run(['reset-failed',nativeServiceName]).ok,'failed-stage-reset');return observe();
   };
   let before=observe();
   if(before.ActiveState==='active'){
-   need(before.LoadState==='loaded','stage-unit-active');
-   // Only the exact authenticated, idle staging daemon may be stopped here.
-   let verified=false;
-   try{await inspect();const live=await status(root);verified=live.delivery==='blocked'
+   need(before.LoadState==='loaded'&&!saved.unitTransition,'stage-unit-active');let verified=false;
+   try{await inspect({allowLegacy:true});const live=await status(root);verified=live.delivery==='blocked'
     &&['native-stage-composition-pending','native-project-installation-and-activation-pending'].includes(live.reason)
     &&live.pool?.occupied===0&&live.pool?.pending===0&&live.pool?.host==='running';}catch{}
    need(verified,'stage-unit-active');need(run(['stop',nativeServiceName]).ok,'stage-unit-stop');before=observe();
   }
+  if(before.ActiveState==='failed')before=await recoverEmptyFailure(before);
   need(before.ActiveState==='inactive'&&before.MainPID==='0'&&before.ControlPID==='0','stage-unit-active');
   need(before.LoadState==='not-found'&&before.FragmentPath===''||before.LoadState==='loaded'&&await fs.realpath(before.FragmentPath)===unit,'stage-unit-fragment');
+  if(saved.unit!==current||saved.unitTransition){
+   const transition={...saved,unitTransition:{previous:legacy,next:current}};await writePrivate(receipt,transition);
+   const h=await fs.open(unit,fs.constants.O_WRONLY|fs.constants.O_TRUNC|fs.constants.O_NOFOLLOW);try{await h.writeFile(bytes);await h.sync();}finally{await h.close();}
+   saved={...saved,unit:current};delete saved.unitTransition;await writePrivate(receipt,saved);
+  }
   for(const args of [['link',unit],['daemon-reload'],['enable',nativeServiceName]])need(run(args).ok,'stage-unit-interrupted');
   const after=observe();need(after.ActiveState==='inactive'&&after.MainPID==='0'&&after.ControlPID==='0'&&after.LoadState==='loaded'&&await fs.realpath(after.FragmentPath)===unit,'stage-unit-readback');
   return {status:'linked'};
  }
+
  return Object.freeze({check,install,retire,stageUnit});
 }
