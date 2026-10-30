@@ -2,6 +2,7 @@ import test from'node:test';import assert from'node:assert/strict';import{join,d
 import{withCurrentCore,currentPin}from'../../src/current-core.mjs';import{nativeCycleFixture}from'./native-cycle-fixture.mjs';
 import{initializeFileHostStore,openFileHostStore}from'../../src/host-store.mjs';import{nativeStageWork}from'../../src/native-stage-work.mjs';
 import{nativeActivationStatus,activateNativeHost}from'../../src/native-activation.mjs';import{nativePoolStore}from'../../src/native-pool-store.mjs';
+import fs from'node:fs/promises';import{nativeRoleHost}from'../../src/native-role-host.mjs';
 import{writePrivate,ensurePrivateDirectory,sha}from'../../src/local-state.mjs';import{managedWorkflowPlan}from'../../src/workflow-inputs.mjs';
 
 async function host(core,f,context){return initializeFileHostStore(core,{directory:join(f.root,'state'),installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},repositories:f.configuration.targets.map(({repository,repositoryId})=>({repository,repositoryId}))});}
@@ -31,4 +32,11 @@ test('activation requires installed exact project source and preserves later Own
  assert.equal((await activateNativeHost(core,{root:f.root,configuration:f.configuration,provider:f.provider})).status,'ready');
  const current=await openFileHostStore(core,{directory:join(f.root,'state')});try{const s=await current.read();await current.updateWork({expected:s.identity,work:{...s.work,paused:true}});}finally{await current.close();}
  assert.equal((await activateNativeHost(core,{root:f.root,configuration:f.configuration,provider:f.provider})).status,'paused');
+}));
+
+test('aborted public source acquisition retires only its own unlaunched role allocation',async()=>withCurrentCore(async(core,context)=>{
+ const f=await nativeCycleFixture(core,context),identity='a'.repeat(64),parent=join(f.root,'jobs',identity);await ensurePrivateDirectory(parent);
+ const controller=new AbortController();controller.abort();
+ await assert.rejects(nativeRoleHost(core,{root:f.root,binding:{configuration:f.configuration,request:{id:'aborted-source'},jobRecord:{lease:{identity}}},base:'b'.repeat(40),repository:'example/project',memberId:'7',source:{},retain:async()=>{},checkpoint:async()=>{},signal:controller.signal}),/source-acquisition/);
+ await assert.rejects(fs.lstat(join(parent,'roles')),{code:'ENOENT'});assert.ok((await fs.stat(join(f.root,'owner-signing-key.pem'))).isFile());
 }));
