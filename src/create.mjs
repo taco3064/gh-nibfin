@@ -4,7 +4,6 @@ import { userInfo } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {withCurrentCore,currentPin} from './current-core.mjs';
-import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline/promises';
 import {Writable} from 'node:stream';
 import {withEnvironmentLock} from './register.mjs';

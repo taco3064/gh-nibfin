@@ -58,6 +58,12 @@ preparation establishes all host capabilities, init returns blocked before any
 repository mutation. A package acquisition or source fixture never establishes
 delivery, recovery or actual shared Runner operation.
 
+New Codex logins use an owned disposable login home. The client process group
+must terminate before only its exact auth file is exclusively published into the
+member login space; temporary helper links are not carried into that space.
+Existing credentials and session data are preserved. Unresolved login operations
+retain one private intent and cannot silently launch a replacement login.
+
 ### Shared personal-repository pool input
 
 Owner `init` can select a finite pool with `--execution-repo OWNER/SOURCE` and

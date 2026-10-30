@@ -37,8 +37,8 @@ export async function loginCodexMember(environment,{run=interactiveCodexLogin}={
    throw Error('member-login:login-not-completed');
   }
   await privatePath(source);const stat=await fs.stat(source);need(stat.size>0&&stat.size<=65536,'invalid-login-file');
-  const value=JSON.parse(await fs.readFile(source,'utf8'));
-  need(value.auth_mode==='chatgpt'&&typeof value.tokens?.access_token==='string'&&value.tokens.access_token&&!value.OPENAI_API_KEY,'invalid-login-file');
+  let value;try{value=JSON.parse(await fs.readFile(source,'utf8'));}catch{throw Error('member-login:invalid-login-file');}
+  need(value?.auth_mode==='chatgpt'&&typeof value.tokens?.access_token==='string'&&value.tokens.access_token&&!value.OPENAI_API_KEY,'invalid-login-file');
   need(JSON.stringify(await readPrivate(pending))===JSON.stringify(intent),'login-intent-changed');
   // An exclusive link cannot overwrite a current login. Remove the original
   // immediately so the published credential has one owner and one hard link.

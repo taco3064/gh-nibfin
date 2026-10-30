@@ -24,3 +24,19 @@ test('unresolved login retains its original private intent and prevents duplicat
   await assert.rejects(fs.stat(join(login,'auth.json')),{code:'ENOENT'});
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('known terminated failure cleans its disposable home; malformed auth remains private and is never echoed',async()=>{
+ for(const malformed of [false,true]){
+  const root=await fs.mkdtemp(join(tmpdir(),'nibfin-login-test-')),login=join(root,'login');await fs.mkdir(login,{mode:0o700});let temporary;
+  try{
+   await assert.rejects(loginCodexMember({CODEX_HOME:login},{run:async env=>{temporary=env.CODEX_HOME;
+    if(malformed)await fs.writeFile(join(temporary,'auth.json'),'SENSITIVE_MALFORMED_LOGIN',{mode:0o600});
+    return{completed:malformed,terminated:true};}}),error=>{
+     assert(!error.message.includes('SENSITIVE'));return error.message.includes(malformed?'invalid-login-file':'login-not-completed');
+    });
+   await assert.rejects(fs.stat(join(login,'auth.json')),{code:'ENOENT'});
+   if(malformed){assert((await fs.stat(temporary)).isDirectory());assert.equal(JSON.parse(await fs.readFile(join(login,'login-pending.json'))).directory,temporary);}
+   else{await assert.rejects(fs.stat(temporary),{code:'ENOENT'});await assert.rejects(fs.stat(join(login,'login-pending.json')),{code:'ENOENT'});}
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+ }
+});
