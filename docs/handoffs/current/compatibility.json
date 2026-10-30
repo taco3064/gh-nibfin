@@ -334,7 +334,7 @@
         },
         {
           "path": "src/codex-entry.mjs",
-          "sha256": "1824136e601671076e57c71cafb13df2e42f201d2f8285f64ebb276993955c2b"
+          "sha256": "51d38550fdedb77e5c8270b76c4dc87467bb67a6cbb809aff1039ee9c5e34221"
         },
         {
           "path": "src/codex.mjs",
@@ -394,7 +394,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "bba904041171c398b0e8ab57b60153171e2c7464fb8d6d674b2fe2b57ccd6d79"
+          "sha256": "83eaccf1771409e387f9318c8fc2f2a5bfe9cdb12eef34b36389be2bcee85f22"
         },
         {
           "path": "src/distribution.mjs",
@@ -729,7 +729,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "2c51ebe966417cb088e8590293498ee631c10b9db9cd6cdb088bf3aafcf20090"
+      "sha256": "f1b0946507e4c17d9823565073b4749cb87ca16a81d3c03c1ec4465ba081837c"
     },
     "skills": {
       "version": "0.1.0",
@@ -906,7 +906,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "bba904041171c398b0e8ab57b60153171e2c7464fb8d6d674b2fe2b57ccd6d79"
+    "sourceMapSha256": "83eaccf1771409e387f9318c8fc2f2a5bfe9cdb12eef34b36389be2bcee85f22"
   },
   "entries": [
     {
