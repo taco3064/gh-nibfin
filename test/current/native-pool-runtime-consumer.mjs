@@ -69,6 +69,9 @@ test('installed runtime retains failed Job evidence and original work before ser
  f.flags.resources=true;const held=await fs.open(join(directory,'application/.credentials'),'r');
  try{assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);}
  finally{await held.close();}
+ const unexpected=join(f.root,'nibfin-runner-1.service');await fs.writeFile(unexpected,'PRESERVE REPLACEMENT',{mode:0o600});
+ assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);
+ assert.equal(await fs.readFile(unexpected,'utf8'),'PRESERVE REPLACEMENT');await fs.unlink(unexpected);
  f.flags.closed=true;assert.equal((await f.make().advance(request.id)).status,'released');assert.equal((await f.store.status()).occupied,0);
  assert.equal(f.counts.registrations,1);assert.equal(f.counts.starts,1);assert.equal(f.counts.retains,1);
  await assert.rejects(fs.stat(directory),{code:'ENOENT'});assert.equal(await fs.readFile(f.original,'utf8'),'UNACCEPTED ORIGINAL');
