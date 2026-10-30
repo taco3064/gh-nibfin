@@ -89,7 +89,10 @@ test('one native cycle retains every actual owner output through independent rev
    request:{id:'full-native-'+i,repository:'example/project',repositoryId:'100',runId:String(4000+i),attempt:'1'},jobRecord:{runnerId:'999'},sourceCommit:base};
   const result=await executeNativeDelivery(core,{root:f.root,binding,context,provider:f.provider,transport:f.transport,roleFactory,
    publicationGitFactory:options=>core.createPublicationGit({...options,localFixture:remote}),progress:async value=>progress.push(value)});
-  assert.equal(result.disposition,'completed',JSON.stringify({stage,result,progress:progress.slice(-5)}));
+  let history;
+  if(result.disposition!=='completed'){const target={repository:'example/project',repositoryId:'100',databaseId:'123',issueId:'I_123',number:'55'};
+   const stored=await openNativeCycle(core,{root:f.root,target}),snapshot=await stored.read();history=Object.values(snapshot.publications).map(records=>records.map(r=>r.event.kind));}
+  assert.equal(result.disposition,'completed',JSON.stringify({stage,result,progress:progress.slice(-5),history,writes}));
  }
  const target={repository:'example/project',repositoryId:'100',databaseId:'123',issueId:'I_123',number:'55'},store=await openNativeCycle(core,{root:f.root,target});state=await store.read();
  assert.equal(core.verifyCompletion(state.completion,state.completionCurrent).identity,state.completion.identity);

@@ -24,6 +24,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  need(/^[a-f0-9]{64}$/.test(binding.jobRecord?.lease?.identity??'')&&typeof retain==='function'&&typeof checkpoint==='function','composition');
  const member=await readNativeMember(core,{root,memberId}),directory=join(root,'jobs',binding.jobRecord.lease.identity,'roles');
  await fs.mkdir(directory,{mode:0o700});
+ const allocatedDirectory=await fs.lstat(directory);
  const instances=[];
  for(const role of roles){const parent=join(directory,role);await fs.mkdir(parent,{mode:0o700});
   const instance={id:binding.request.id+'-'+role,workspace:join(parent,'work'),registration:join(parent,'registration'),service:join(parent,'service')};
@@ -42,7 +43,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   environment,instanceId:instance.id,egress:{image:member.image,node:true},githubRead:{directory:brokerPath,repositories:binding.configuration.targets.map(t=>t.repository)}});
  const native=core.createNativeRoleBindings({ownership:binding.ownerType==='Organization'?'organization':'personal',source,retain});
  const profiles=roles.map((role,i)=>({id:role,agent:'codex',os:'linux',backend:backend(instances[i])}));
- let observed;
+ let observed,probeCleanup=true;
  async function probe(){
   if(!observed)observed=(async()=>{
    const parent=join(directory,'readiness');await fs.mkdir(parent,{mode:0o700});const instance={id:'readiness-'+binding.request.id,
@@ -50,9 +51,9 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    for(const path of [instance.workspace,instance.registration,instance.service])await fs.mkdir(path,{mode:0o700});
    const descriptor=core.createAgentEnvironments().describe({id:instance.id+'-environment',agent:'codex',loginSpace:member.loginSpace,instances:[instance]});
    const selected=core.createLinuxCodexBackend({...backend(instance),environment:descriptor,task:()=>{throw Error('Readiness is not a role task');}});
-   let report,cleanup;try{report=await selected.readiness();}
+   let report,cleanup;probeCleanup=false;try{report=await selected.readiness();}
    finally{cleanup=await selected.cleanup({environment:descriptor.id,instance:instance.id,resources:[instance.workspace,instance.registration,instance.service]});}
-   need(cleanup?.status==='completed','readiness-cleanup');await retain({version:1,kind:'native-readiness',report,cleanup});
+   need(cleanup?.status==='completed','readiness-cleanup');probeCleanup=true;await retain({version:1,kind:'native-readiness',report,cleanup});
    need(backendReady(report),'preflight');return report;
   })();return observed;
  }
@@ -90,7 +91,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   },
   get:id=>{need(prepared.has(id),'execution');return host.get(id);},
   async close({preserveWriter=false}={}){
-   let settled=true;
+   let settled=probeCleanup;
    for(const [id,value]of prepared){try{
     let observed=await value.lifecycle.termination(id);
     if(observed.termination.status!=='terminated'){await value.lifecycle.stop(id);const until=Date.now()+30000;
@@ -103,7 +104,13 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    await new Promise(resolve=>broker.close(resolve));
    // Node owns/removes its listening socket; retain any unexpected replacement.
    try{if((await fs.readdir(brokerPath)).length===0)await fs.rmdir(brokerPath);else settled=false;}catch{settled=false;}
-   need(settled,'resources-unresolved');return {status:'completed'};
+   need(settled,'resources-unresolved');
+   // Original conversations, rejected Writer bytes and verification records
+   // were retained before the maintained cleanup owners acknowledged release.
+   // The remaining source/probe/unused-role trees are disposable job resources.
+   await privatePath(directory,{directory:true});const current=await fs.lstat(directory);
+   need(current.ino===allocatedDirectory.ino&&current.dev===allocatedDirectory.dev,'workspace-directory-changed');
+   await fs.rm(directory,{recursive:true});return {status:'completed'};
   }
  });
 }

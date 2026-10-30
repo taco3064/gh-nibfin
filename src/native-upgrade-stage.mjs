@@ -33,7 +33,7 @@ export async function stageUnactivatedNativeUpgrade(core,{root,previous,next,con
   const known=new Set(['runtime','native-installation.json','control-lease','control-service.json','nibfin-control.service','maintenance.lock',
    'previous-installation','staging-transition.json','control-retirement.json','pool-state','pool-intake','pool-blockages','jobs','state',
    'upgrade-plan.json','upgrade.json','runtime-next','native-installation-next.json',
-   'member-runtime.json','stage-records','runtime-previous','native-installation-previous.json','upgrade-history','original-work','control.sock']);
+   'member-runtime.json','owner-policy.json','owner-signing-key.pem','stage-records','runtime-previous','native-installation-previous.json','upgrade-history','original-work','control.sock']);
   for(let i=1;i<=previous.runnerCount;i++)known.add('runner-'+i);
   need((await fs.readdir(root)).every(name=>known.has(name)),'unrecognized-state');
   for(const name of ['jobs','pool-intake','pool-blockages','original-work','stage-records'])if(!await absent(join(root,name))){

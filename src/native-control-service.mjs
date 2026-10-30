@@ -66,9 +66,12 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
   const live=await status(root),installation=await readPrivate(join(root,'native-installation.json'));
   need(live.version===1&&live.generation===record.generation&&live.pid===Number(p.MainPID)
    &&live.installation===sha(JSON.stringify(installation))&&live.service==='running'
-   &&live.delivery==='blocked'&&live.reason===(installation.executionPool?.version===2?'native-stage-composition-pending':'native-delivery-composition-pending')
+   &&(live.delivery==='ready'&&live.reason==='native-core-ready'&&live.stageEntry==='configured'
+    ||live.delivery==='blocked'&&[installation.executionPool?.version===2?'native-stage-composition-pending':'native-delivery-composition-pending',
+      'native-project-installation-and-activation-pending','native-owner-restriction'].includes(live.reason))
    &&(installation.executionPool?.version!==2||live.runnerPool==='running'&&live.pool?.host==='running'),'live-identity');
-  return {status:'running',delivery:'blocked',diagnostics:[{capability:'host',code:live.reason}]};
+  return {status:'running',delivery:live.delivery,...(live.stageEntry?{stageEntry:live.stageEntry}:{}),
+   diagnostics:live.delivery==='ready'?[]:[{capability:'host',code:live.reason}]};
  }
  async function check(){try{return await inspect();}catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-control-service-unavailable'}]};}}
  async function install(){

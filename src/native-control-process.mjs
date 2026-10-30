@@ -13,6 +13,7 @@ import {executeNativeDelivery} from './native-delivery.mjs';
 import {readNativeMember} from './native-member.mjs';
 import {readNativeOwnerPolicy} from './native-owner-policy.mjs';
 import {verifyCurrentCore} from './current-core.mjs';
+import {nativeActivationStatus} from './native-activation.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -70,6 +71,8 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
     }
     need(Object.keys(request).sort().join(' ')==='operation version'&&request.operation==='status','request');
     const pool=coordinator?await coordinator.status():poolStore?await poolStore.status():undefined;assertLease();
+    if(stages){const activation=await nativeActivationStatus(installedCore,{root});
+     live.delivery=activation.status==='ready'?'ready':'blocked';live.reason=activation.status==='ready'?'native-core-ready':activation.reason;}
     socket.end(JSON.stringify({...live,...(pool?{pool}:{})})+'\n');
    }catch{socket.destroy();}});
   });
@@ -89,7 +92,8 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
      const verified=await verifyCurrentCore(pathToFileURL(join(root,'runtime/docs/handoffs/current/')));
      const context={...verified,root:join(root,'runtime'),identity:installedCore.distributionIdentity()};
      const provider=installedCore.createGithubProvider({attempts:1});
-     stages=await nativeStageService(installedCore,{root,signal,source:(request,options)=>coordinator.stageSource(request,options),
+     stages=await nativeStageService(installedCore,{root,signal,source:async(request,options)=>{
+      need((await nativeActivationStatus(installedCore,{root})).status==='ready','native-activation-required');return coordinator.stageSource(request,options);},
       execute:(binding,options)=>executeNativeDelivery(installedCore,{root,binding,context,provider,...options})});
      live.stageEntry='configured';
     }
