@@ -214,3 +214,20 @@ registration, with its fixed reusable delivery callee pinned as a dependency.
 The real Hook rechecks that callee at the actual Run commit before Job steps.
 No new physical Runner registrations are created by policy planning. These checks
 are source and installed-process evidence; production activation remains pending.
+
+## Native control process
+
+The shared-pool `init` path now installs and starts the maintained non-root
+`nibfin-control.service` after verifying its private Core/client runtime and the
+two official Runner distributions. `init --check` only observes it. The service
+uses a kernel lease, systemd notification readiness, and a mode-0600 Unix socket;
+there is no public listener, user-authored JavaScript binding, additional setup
+command, or private controller dependency. Each startup rechecks the full runtime
+inventory before announcing process readiness. Existing service definitions and
+original work are preserved on mismatches or interrupted installation.
+
+This bootstrap currently exposes status only. Its response explicitly reports
+`native-delivery-composition-pending`; it cannot execute events or declare the
+host ready. Runner registration and retained-work reconciliation remain separate
+holds. Neither starting this service nor passing source tests certifies a live
+development execution or enables repository workflows.

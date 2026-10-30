@@ -13,7 +13,9 @@ test('first-party staging retains actual installed runtime and exactly two unreg
   // are real; this test does not establish official Runner or service readiness.
   const prepare=async(directory,{archive}={})=>{if(!archive)downloads++;await fs.writeFile(join(directory,'config.sh'),'PINNED RUNNER FIXTURE',{flag:'wx',mode:0o600});};
   const verify=async directory=>{verifications++;assert.equal(await fs.readFile(join(directory,'config.sh'),'utf8'),'PINNED RUNNER FIXTURE');};
-  const host=nativeControlHost({root,prepare,verify}),request={core,context,executionPool:pool()};
+  const service={check:async()=>({status:'blocked',diagnostics:[{capability:'host',code:'fixture-control-pending'}]}),
+   install:async()=>({status:'running',diagnostics:[{capability:'host',code:'native-delivery-composition-pending'}]})};
+  const host=nativeControlHost({root,prepare,verify,service}),request={core,context,executionPool:pool()};
   assert.equal((await host.check(request)).diagnostics[0].code,'native-host-not-staged');
   await assert.rejects(fs.stat(root),{code:'ENOENT'});assert.equal(downloads,0);
   assert.equal((await host.prepare(request)).status,'staged');assert.equal(downloads,1);
