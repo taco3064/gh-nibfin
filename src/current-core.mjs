@@ -6,12 +6,12 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {parseArchive,verifyRegistrationCore} from './core.mjs';
 
-export const currentProducer='bda12320ab60a54d6145763e5950dcf88fa26f8c';
-export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'429a6a420261868639f801b1a541bb7c5b34512b6c9d187ae2fa1f6d2101883f'});
+export const currentProducer='96b2917a67a07940a03cf18b49f86ae7573ab53f';
+export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'2c51ebe966417cb088e8590293498ee631c10b9db9cd6cdb088bf3aafcf20090'});
 const handoff=new URL('../docs/handoffs/current/',import.meta.url);
-const hashes=Object.freeze({'nibfin-core.tgz':'fd1fe234aa8c38425cd903b617f931070b34bea77c2ee030bcf3f3d58b3f2cc7',
-  'release-manifest.json':'62d011d19b756058d19fa517eeb0bad83089c6d37a5d6eab3095e4c5fb12aa22',
-  'compatibility.json':'c272e517a6c6d8c960c88b465ef21081b9d0c7ecf0c11c60742e1e5db86706c3'});
+const hashes=Object.freeze({'nibfin-core.tgz':'ba747062eefc921893d8290acf22d4b53186d26c510092857e1b0f0e11b847fe',
+  'release-manifest.json':'f2a15a115df1aef2954e43d4dc6ad4b77920ab3320ebc0b8a89c45cdc7b24c2b',
+  'compatibility.json':'9c0ebf3d23f491d738741121b532e7c59ed96a82742fab5541d543fdb95050a7'});
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const need=(ok,message)=>{if(!ok)throw Error('Current Core verification: '+message);};
 const exportsRequired=['observeRequirementAuthority','observeIssueAuthority','runnerJobPolicy','protectedWorkRestriction','createRescueRecords','initialRescueRecords','contentIdentity','canonicalJSON','releaseHash','validateExecutionPool','projectExecutionContext','createHostRouting','createHostIdentityAdapters','loadProtectedHost','loadProtectedDeployment','createInstallation','distributionIdentity','runnerConfiguration','preflightRunner','createAgentEnvironments',
