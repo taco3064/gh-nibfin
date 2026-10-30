@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import {join,dirname} from 'node:path';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {nativeControlHost,nativeRuntimeInputs} from '../../src/native-host.mjs';
+import {archiveCompletedNativeUpgrade} from '../../src/native-upgrade-history.mjs';
 import {stageUnactivatedNativeUpgrade} from '../../src/native-upgrade-stage.mjs';
 import {upgradeManagedInstallation,nativeInstallationSelection,managedUpgradeLayout} from '../../src/managed-upgrade.mjs';
 import {openFileHostStore} from '../../src/host-store.mjs';
@@ -67,4 +68,25 @@ test('existing work and unknown upgrade outcomes cannot be discarded to stage an
  await assert.rejects(stageUnactivatedNativeUpgrade(core,f.args),/original-upgrade-reconciliation-required/);
  await assert.rejects(fs.stat(join(f.root,'runtime-next')),{code:'ENOENT'});
  assert.deepEqual(await readPrivate(join(f.root,'native-installation.json')),f.previous);
+}));
+
+
+test('a completed unused generation is parked with exact rollback evidence before the next upgrade; unknown journals are preserved',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(core,context);await stageUnactivatedNativeUpgrade(core,f.args);
+ const options={core,context,root:f.root,manager:f.manager};assert.equal((await upgradeManagedInstallation(['--apply'],options)).status,'switched');
+ const journal=await readPrivate(join(f.root,'upgrade.json'));
+ const args={root:f.root,current:journal.next,installation:f.next,observeUnused:async()=>({status:'unused'})};
+ await writePrivate(join(f.root,'upgrade.json'),{...journal,phase:'unknown'});
+ await assert.rejects(archiveCompletedNativeUpgrade(core,args),/unfinished-or-different-transaction/);
+ assert.equal((await readPrivate(join(f.root,'upgrade.json'))).phase,'unknown');
+ await writePrivate(join(f.root,'upgrade.json'),journal);
+ const old=await fs.readFile(join(f.root,'native-installation-previous.json'));
+ assert.equal((await archiveCompletedNativeUpgrade(core,args)).status,'retained');
+ const path=join(f.root,'upgrade-history',journal.transaction);
+ assert.deepEqual(await fs.readFile(join(path,'native-installation.json')),old);
+ assert.deepEqual(await readPrivate(join(path,'upgrade.json')),journal);
+ assert.equal((await readPrivate(join(path,'archive.json'))).phase,'retained');
+ assert.deepEqual(await readPrivate(join(f.root,'native-installation.json')),f.next);
+ await assert.rejects(fs.stat(join(f.root,'runtime-previous')),{code:'ENOENT'});
+ assert.equal((await archiveCompletedNativeUpgrade(core,args)).status,'absent');
 }));
