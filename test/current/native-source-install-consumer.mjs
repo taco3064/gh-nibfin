@@ -85,3 +85,14 @@ test('queued unassigned Job zero is absence, while actual Runner IDs and other e
  for(const invalid of[body.replace('"status":"queued"','"status":"in_progress"'),body.replace('"runner_name":""','"runner_name":"assigned"'),body.replace('"run_id":41081577989','"run_id":0')])assert.equal((await provider(invalid).request(options)).outcome,'failed');
  assert.equal((await provider(body).request({...options,endpoint:'/repos/example/project/issues/1'})).outcome,'failed');
 }));
+
+test('real JIT shape preserves the response before parsing and verifies ephemeral mode from its actual configuration',async()=>withCurrentCore(async core=>{
+ const endpoint='/repos/example/project/actions/runners/generate-jitconfig',request={method:'POST',endpoint,target:'100',operation:'runner-pool',correlation:'test',body:{name:'runner-original',labels:['nibfin-request-original']}};
+ const settings={agentId:21,agentName:'runner-original',ephemeral:true,disableUpdate:true,workFolder:'_work',serverUrl:'https://pipelines.actions.githubusercontent.com/original/',gitHubUrl:'https://github.com/example/project'};
+ const payload=ephemeral=>({runner:{id:21,name:'runner-original',labels:[{id:0,name:'self-hosted',type:'read-only'}]},encoded_jit_config:Buffer.from(JSON.stringify(Object.fromEntries(Object.entries({'.runner':JSON.stringify({...settings,ephemeral}),'.credentials':'PRIVATE','.credentials_rsaparams':'PRIVATE'}).map(([k,v])=>[k,Buffer.from(v).toString('base64')])))).toString('base64')});
+ for(const ephemeral of[true,false]){let retained=false;
+  const body=JSON.stringify(payload(ephemeral));const provider=nativeGithubProvider(core,{attempts:1,authorize:async()=>true,transport:async()=>({status:201,body}),retainResponse:async(r,v)=>{assert.equal(r.endpoint,endpoint);assert.equal(v.body,body);retained=true;}});
+  const result=await provider.request(request);assert.equal(retained,true);assert.equal(result.outcome,'submitted');
+  assert.equal(result.data.runner.id,'21');assert.equal(result.data.runner.labels[0].id,null);assert.equal(result.data.runner.ephemeral,ephemeral?true:undefined);
+ }
+}));
