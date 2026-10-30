@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
+import {userInfo} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {nativeControlHost} from '../../src/native-host.mjs';
@@ -52,7 +53,7 @@ async function fixture(core,context){
  async function finish(){
   flags.running=false;const record=await store.jobs.read(request.id),process=spawnSync('/usr/bin/true');assert.equal(process.status,0);
   await writePrivate(join(root,'jobs',record.lease.identity,'process.json'),{version:1,lease:record.lease.identity,phase:'terminated',
-   invocation:'a'.repeat(32),entryPid:process.pid,entryStart:'0',controlGroup:'/user.slice/user-1000.slice/fixture-gone.service',
+   invocation:'a'.repeat(32),entryPid:process.pid,entryStart:'0',controlGroup:'/user.slice/user-'+userInfo().uid+'.slice/fixture-gone.service',
    configuration:record.configuration,admission:record.admission,exitCode:0});return record;
  }
  return {make,root,original,retained,store,flags,order,blocks,counts,finish};
