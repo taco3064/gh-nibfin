@@ -73,9 +73,11 @@ export function nativePoolSource(core,{configuration,memberId,provider,dispatche
     &&Array.isArray(job.labels)&&job.labels.includes('nibfin-request-'+selector)
     &&job.labels.includes(core.memberRunnerLabel(memberId)),'job');
    const issue=await get(root+'/issues/'+retained.issue);
-   need(!issue.pull_request&&String(issue.number)===retained.issue&&issue.state==='open'&&typeof issue.body==='string'
-    &&sha(issue.body)===retained.issueBodySha256&&issue.assignees?.some(a=>a.id===memberId),'issue-ssot');
-   return {authorized:true,identity,memberId,request:structuredClone(request),issue:retained.issue,stage:retained.stage,status:job.status};
+   need(!issue.pull_request&&String(issue.number)===retained.issue&&['open','closed'].includes(issue.state)
+    &&typeof issue.body==='string','issue-ssot');
+   const launchAuthorized=issue.state==='open'&&sha(issue.body)===retained.issueBodySha256
+    &&issue.assignees?.some(a=>a.id===memberId)===true;
+   return {authorized:true,launchAuthorized,identity,memberId,request:structuredClone(request),issue:retained.issue,stage:retained.stage,status:job.status};
   },
   async blocked(value){return onBlocked(structuredClone(value));}
  });
