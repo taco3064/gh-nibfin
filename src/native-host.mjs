@@ -10,6 +10,7 @@ import {maintenanceLock} from './upgrade.mjs';
 import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
 import {nativeControlService} from './native-control-service.mjs';
+import {prepareNativeMember} from './native-member.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
 import {transitionStagedNativeHost} from './native-staged-transition.mjs';
 
@@ -100,7 +101,7 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    return {status:'blocked',phase:'staged',diagnostics:[...observed.diagnostics,...remaining()]};
   }catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-installation-reconciliation-required'}]};}
  }
- async function prepareHost({core,context,executionPool}){
+ async function prepareHost({core,context,executionPool,memberId,memberRuntime}){
   need(process.platform==='linux'&&process.arch==='x64'&&process.versions.node.split('.')[0]==='22','platform');
   const pool=poolFor(core,executionPool);if(!pool)return selectPool();await ensurePrivateDirectory(root);
   const files=await nativeRuntimeInputs(context);
@@ -135,6 +136,8 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    }
    await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
    await writePrivate(join(root,'native-installation.json'),record);
+   if(memberRuntime||await readPrivate(join(root,'member-runtime.json'),{missing:true}))
+    await prepareNativeMember(core,{root,context,memberId,capacity:pool.capacity,...memberRuntime});
    const observed=await control.install();
    return {status:'staged',runnerCount:pool.capacity,diagnostics:[...observed.diagnostics,...remaining()]};
   });

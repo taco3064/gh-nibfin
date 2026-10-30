@@ -99,7 +99,9 @@ export async function createEnvironment(input,dependencies={}){
   if(runtimeProfile!==undefined&&(agent!=='codex'||typeof runtimeProfile!=='string'||!Object.hasOwn(core.linuxCodexProfiles??{},runtimeProfile)))fail('Runtime profile is not in the verified producer catalog.');
   const root=await privateDirectory(dependencies.root??join(userInfo().homedir,'.local/share/nibfin/environments'),io),destination=join(root,name);
   if(!dependencies.lockHeld)return withEnvironmentLock(root,name,()=>createEnvironment(input,{...dependencies,lockHeld:true}));
-  const loginSpace=join(destination,'login'),environment=processEnvironment(loginSpace);
+  const loginSpace=configuration.loginSpace??join(destination,'login'),environment=processEnvironment(loginSpace);
+  const runtimeRoot=configuration.runtimeRoot??destination;
+  if(configuration.loginSpace){await privateDirectory(runtimeRoot,io);await privateDirectory(loginSpace,io);}
   const githubId=await githubObservation({run,environment,account});
   let pending,owned=false,journal=false;
   try{
@@ -112,10 +114,10 @@ export async function createEnvironment(input,dependencies={}){
       try{await io.lstat(join(destination,'environment.pending'));fail('Original publication is unresolved; reconcile environment.pending before retry.');}catch(e){if(e.code!=='ENOENT')throw e;}
       if(pending.runtimeResources?.some(r=>r.status!=='removed'))fail('Retained runtime resources require original-operation reconciliation before retry.');
       if(pending.version!==1||pending.name!==name||pending.agent!==agent||pending.count!==count||pending.githubId!==githubId||pending.uid!==account.uid
-        ||pending.image!==image||pending.socket!==socket||pending.core!==currentPin.coreSha256
+        ||(pending.loginSpace??join(destination,'login'))!==loginSpace||pending.image!==image||pending.socket!==socket||pending.core!==currentPin.coreSha256
         ||(pending.runtimeProfile??null)!==(runtimeProfile??null))fail('Environment name already exists with a different account/Agent/count/runtime; preserve its pending creation.');
     }catch(e){if(e.code!=='ENOENT')throw e;if(pending)throw e;
-      await io.mkdir(destination,{mode:0o700});owned=true;await io.mkdir(loginSpace,{mode:0o700});
+      await io.mkdir(destination,{mode:0o700});owned=true;if(!configuration.loginSpace)await io.mkdir(loginSpace,{mode:0o700});
       const instances=[];
       for(let n=0;n<count;n++){
         const base=join(destination,`instance-${n+1}`);await io.mkdir(base,{mode:0o700});
@@ -123,7 +125,7 @@ export async function createEnvironment(input,dependencies={}){
         for(const path of [instance.workspace,instance.registration,instance.service])await io.mkdir(path,{mode:0o700});instances.push(instance);
       }
       core.createAgentEnvironments().describe({id:name,agent,loginSpace,instances});
-      pending={version:1,name,agent,count,githubId,uid:account.uid,image,socket,core:currentPin.coreSha256,instances,...(runtimeProfile?{runtimeProfile}:{})};
+      pending={version:1,name,agent,count,githubId,uid:account.uid,image,socket,loginSpace,core:currentPin.coreSha256,instances,...(runtimeProfile?{runtimeProfile}:{})};
       await io.writeFile(join(destination,'creation.json'),JSON.stringify(pending),{flag:'wx',mode:0o600});journal=true;
     }
     const expected=pending.instances.map((i,n)=>({id:i.id,...Object.fromEntries(['workspace','registration','service'].map(k=>[k,join(destination,`instance-${n+1}`,k)]))}));
@@ -138,7 +140,7 @@ export async function createEnvironment(input,dependencies={}){
     const retain=async()=>{await io.writeFile(join(destination,'creation.pending'),JSON.stringify(pending),{flag:'wx',mode:0o600});await io.rename(join(destination,'creation.pending'),join(destination,'creation.json'));};
     for(const instance of descriptor.instances){
       const dispatch=dependencies.backendProcess??core.codexProcess;
-      const backend=factory({root:destination,image,socket,environment:descriptor,instanceId:instance.id,
+      const backend=factory({root:runtimeRoot,image,socket,environment:descriptor,instanceId:instance.id,
         ...(runtimeProfile?{runtimeProfile}:{}),
         task:()=>{throw Error('Creation has no delivery authority.');},process:async request=>{
           const args=request.args.slice(2);let resource;
