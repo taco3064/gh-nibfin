@@ -54,7 +54,8 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
    workspace:()=>workspace,prepareRole:task=>roles.prepareRole(task),evidenceCurrent},
   publication:{current:()=>copy({...common,target,workspace:workspace.expected,obligations:observations,
     evidence:Object.fromEntries(Object.entries({author:'shape',validator:'shape-validator',publication:'publication',deliver:'deliver',accept:'accept',secondStage:'pre-commit-hooks'}).map(([key,value])=>[key,item(value)])),
-    hooks:hookState(),author,pr:{title:state.title,body:'Implements the authorized Scope in #'+t.number+'.\n\nRefs #'+t.number},
+    hooks:hookState(),author,pr:{title:state.title,body:'Implements the authorized Scope in #'+t.number+'.\n\nRefs #'+t.number
+     +'\n<!-- nibfin-operation:'+pin.invocation.request+' -->'},
     correlation:pin.invocation.request,source:sourceEvent}),workspace:()=>workspace,authorization,dependencies,dependencyInput,
    history:store.publicationHistory,git:(publicationGitFactory??core.createPublicationGit)({repository:t.repository,repositoryId:t.repositoryId}),operations},
   ci:{provider,mode:'signed'}};
