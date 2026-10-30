@@ -15,12 +15,12 @@ test('native composition runs actual Shape, independent Validator and controlled
   'Candidate artifacts applicability: The Scope explicitly requires no additional ignored or untracked artifacts.',
   'Candidate hooks applicability: The inspected source has no applicable Hook setup.',
   '```nibfin-candidate','{"artifacts":[],"hooks":[]}','```'].join('\n')});
- const prepared=[],closed=[];
+ const prepared=[],closed=[];let preparationError=null;
  // Model/process doubles only; real native isolation is established separately.
  const roleFactory=async(_core,{source,retain,binding})=>{
   const metadata=core.createNativeRoleBindings({ownership:'personal',source,retain}),values=new Map();
   return{sourceDirectory,candidateDirectory:sourceDirectory,workspace:()=>sourceDirectory,
-   async prepareRole(task){
+   async prepareRole(task){try{
     const bound=await metadata.bind(task),expected=bound.current().expected;
     if(task.role==='shape')expected.inputs={body:core.bodyDigest(body)};
     const current=()=>({expected:structuredClone(expected),consumed:[]});
@@ -32,7 +32,7 @@ test('native composition runs actual Shape, independent Validator and controlled
      {id,workspace:'/fixture/work-'+id,registration:'/fixture/reg-'+id,service:'/fixture/service-'+id}]},instanceId:id,backend,current,
      startCurrent:bound.startCurrent});
     const value={input:bound.input,lifecycle,current,readBody:()=>body,taskIdentity:core.contentIdentity(task.task)};
-    values.set(bound.input.execution.id,value);return value;
+    values.set(bound.input.execution.id,value);return value;}catch(e){preparationError=e.stack;throw e;}
    },get:id=>{assert.ok(values.has(id));return values.get(id);},async close(){closed.push(binding.request.id);}}
  };
  for(const [i,stage]of['shape','shape-validator','publication'].entries()){
@@ -40,7 +40,7 @@ test('native composition runs actual Shape, independent Validator and controlled
    request:{id:'native-step-'+i,repository:'example/project',repositoryId:'100',runId:String(3000+i),attempt:'1'},
    jobRecord:{runnerId:'999'},sourceCommit:'b'.repeat(40)};
   const result=await executeNativeDelivery(core,{root:f.root,binding,context,provider:f.provider,transport:f.transport,roleFactory,progress:async()=>{}});
-  assert.equal(result.disposition,'completed',JSON.stringify(result));assert.equal(result.executed,stage);
+  assert.equal(result.disposition,'completed',JSON.stringify({result,preparationError,prepared}));assert.equal(result.executed,stage);
  }
  const target={repository:'example/project',repositoryId:'100',databaseId:'123',issueId:'I_123',number:'55'};
  const store=await openNativeCycle(core,{root:f.root,target}),state=await store.read();
