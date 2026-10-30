@@ -18,11 +18,16 @@ export function nativeJitConfiguration(encoded,record){
  need(decoded&&Object.getPrototypeOf(decoded)===Object.prototype,'settings');
  // The GitHub JIT service emits the official .NET settings names and string
  // booleans. Locally configured Runner settings use camelCase JSON values.
- // Read both explicit representations; never rewrite the credential files.
+ // Read both explicit representations. Materialize .runner in the same typed
+ // camelCase form produced by config.sh, which the existing admission/Hook
+ // readers consume. Authentication files and the retained JIT blob stay exact.
  const settings={...decoded};
+ let serviceSettings=false;
  for(const [lower,upper]of Object.entries({agentId:'AgentId',agentName:'AgentName',ephemeral:'Ephemeral',disableUpdate:'DisableUpdate',workFolder:'WorkFolder',gitHubUrl:'GitHubUrl',serverUrl:'ServerUrl',serverUrlV2:'ServerUrlV2'})){
   need(!(Object.hasOwn(decoded,lower)&&Object.hasOwn(decoded,upper)),'ambiguous-settings');
-  if(Object.hasOwn(decoded,upper))settings[lower]=['ephemeral','disableUpdate'].includes(lower)?decoded[upper]==='True'?true:decoded[upper]==='False'?false:decoded[upper]:decoded[upper];
+  if(Object.hasOwn(decoded,upper)){
+   serviceSettings=true;settings[lower]=['ephemeral','disableUpdate'].includes(lower)?decoded[upper]==='True'?true:decoded[upper]==='False'?false:decoded[upper]:decoded[upper];delete settings[upper];
+  }
  }
  const runnerId=typeof settings.agentId==='number'&&Number.isSafeInteger(settings.agentId)?String(settings.agentId):settings.agentId;
  need(runnerId===record.runnerId&&settings.agentName===record.runnerName&&settings.ephemeral===true
@@ -35,7 +40,7 @@ export function nativeJitConfiguration(encoded,record){
    &&url.hostname.endsWith('.actions.githubusercontent.com'),'server');
  }
  need(['serverUrl','serverUrlV2'].some(k=>typeof settings[k]==='string'&&settings[k].length>0),'server');
- return {encoded,settings,files:Object.fromEntries(Object.entries(files).map(([path,value])=>[path,base64(value)]))};
+ return {encoded,settings,files:Object.fromEntries(Object.entries(files).map(([path,value])=>[path,path==='.runner'&&serviceSettings?Buffer.from(JSON.stringify(settings)):base64(value)]))};
 }
 
 export function nativeRunnerEnvironment(admission){
