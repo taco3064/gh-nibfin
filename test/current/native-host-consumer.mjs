@@ -24,7 +24,7 @@ test('first-party staging retains actual installed runtime and exactly two unreg
   assert.equal(await fs.readFile(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs'),'utf8'),context.files.get('src/index.mjs').toString());
   assert.ok(record.runtimeInventory.some(f=>f.path==='client/native-host.mjs'));
   const checked=await host.check(request);assert.equal(checked.status,'blocked');assert.equal(checked.phase,'staged');
-  assert.ok(checked.diagnostics.some(d=>d.code==='native-runner-registrations-pending'));
+  assert.ok(checked.diagnostics.some(d=>d.code==='native-member-runtime-unconfigured'));
   const before=await fs.readFile(join(root,'native-installation.json'));assert.equal((await host.prepare(request)).status,'staged');
   assert.equal(downloads,1);assert.deepEqual(await fs.readFile(join(root,'native-installation.json')),before);assert.ok(verifications>=4);
   for(const name of ['runner-1','runner-2'])await assert.rejects(fs.stat(join(root,name,'.credentials')),{code:'ENOENT'});
