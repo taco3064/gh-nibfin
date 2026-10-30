@@ -36,8 +36,8 @@ export async function maintenanceLock(directory,work){
   }
 }
 async function resourcePaths(resources,services,directory){
-  need(Array.isArray(resources)&&resources.length>0&&resources.length<=16&&Array.isArray(services)
-    &&services.length>0&&services.length<=3&&new Set(services).size===services.length
+  need(Array.isArray(resources)&&resources.length>0&&resources.length<=129&&Array.isArray(services)
+    &&services.length>0&&services.length<=129&&new Set(services).size===services.length
     &&services.every(unit=>/^nibfin-[a-z0-9-]+\.service$/.test(unit)),'resource-set');
   const seen=new Set();
   const names=new Set();
@@ -83,7 +83,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
   manager=upgradeServiceManager(),check=false}={}){
   need(core&&typeof store?.read==='function'&&typeof store?.transitionCapabilities==='function'
     &&typeof verify==='function'&&Array.isArray(resources)&&resources.length>0&&resources.length<=16
-    &&Array.isArray(services)&&services.length>0&&services.length<=3&&new Set(services).size===services.length,'configuration');
+    &&Array.isArray(services)&&services.length>0&&services.length<=129&&new Set(services).size===services.length,'configuration');
   await privatePath(directory,{directory:true});
   await resourcePaths(resources,services,directory);
   const inspect=async()=>{
