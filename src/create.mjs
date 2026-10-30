@@ -8,7 +8,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline/promises';
 import {Writable} from 'node:stream';
 import {withEnvironmentLock} from './register.mjs';
-import {pruneCodexLoginTemporaries} from './login-temporaries.mjs';
+import {loginCodexMember} from './login.mjs';
 
 class Diagnostic extends Error {}
 const fail = message => { throw new Diagnostic(message); };
@@ -65,10 +65,7 @@ export function backendReady(r){return r?.login==='available'&&r.tool==='availab
 export async function memberLogin(agent,environment){
   if(!process.stdin.isTTY||!process.stdout.isTTY)fail('Member login needs a terminal. Resume the same create command as the intended member.');
   if(agent==='codex'){
-    await new Promise((resolve,reject)=>{const c=spawn('codex',['login'],{env:environment,stdio:'inherit',shell:false});
-      c.once('error',()=>reject(new Diagnostic('Install the selected Codex CLI for member login.')));
-      c.once('exit',code=>code===0?resolve():reject(new Diagnostic('Member login denied/interrupted; resume the same create command.')));});
-    await pruneCodexLoginTemporaries(environment.CODEX_HOME);
+    await loginCodexMember(environment);
   }else{
     process.stdout.write(`Enter this member's ${agent} API key (hidden; retained only in this environment): `);
     const output=new Writable({write(chunk,encoding,done){done();}}),input=createInterface({input:process.stdin,output,terminal:true});
