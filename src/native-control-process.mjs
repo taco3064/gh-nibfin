@@ -1,0 +1,66 @@
+import fs from 'node:fs/promises';
+import {join} from 'node:path';
+import {userInfo} from 'node:os';
+import {createServer,connect} from 'node:net';
+import {privatePath,readPrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
+import {maintenanceLock} from './upgrade.mjs';
+import {verifyNativeRuntime,nativeServiceUnit,nativeServiceName} from './native-control-service.mjs';
+
+const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
+async function removeStaleSocket(path){
+ let before;try{before=await fs.lstat(path);}catch(e){if(e.code==='ENOENT')return;throw e;}
+ need(before.isSocket()&&before.uid===userInfo().uid&&(before.mode&0o777)===0o600,'socket-conflict');
+ const refused=await new Promise(resolve=>{
+  const s=connect(path);s.setTimeout(1000,()=>{s.destroy();resolve(false);});
+  s.once('connect',()=>{s.destroy();resolve(false);});s.once('error',e=>{s.destroy();resolve(e.code==='ECONNREFUSED');});
+ });
+ need(refused,'socket-active');const current=await fs.lstat(path);
+ need(current.ino===before.ino&&current.dev===before.dev,'socket-changed');await fs.unlink(path);
+}
+/** One kernel lease for the maintained host process. No Issue is synthesized,
+ * no old receipt is accepted, and no model/GitHub write occurs at bootstrap.
+ * Delivery stays explicitly blocked until the maintained Core composition and
+ * original-work reconciliation are installed; process liveness cannot clear it.
+ */
+export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
+ need(process.platform==='linux'&&process.versions.node.split('.')[0]==='22'&&userInfo().uid!==0,'platform');
+ await privatePath(root,{directory:true});
+ const leaseRoot=join(root,'control-lease');await ensurePrivateDirectory(leaseRoot);
+ return maintenanceLock(leaseRoot,async assertLease=>{
+  const receipt=await readPrivate(join(root,'control-service.json')),record=await readPrivate(join(root,'native-installation.json'));
+  need(receipt.version===1&&receipt.account===userInfo().uid&&/^[a-f0-9-]{36}$/.test(receipt.generation),'receipt');
+  await privatePath(join(root,nativeServiceName));
+  need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
+  await verifyNativeRuntime(root,record);assertLease();
+  const live={version:1,generation:receipt.generation,pid:process.pid,installation:sha(JSON.stringify(record)),
+   service:'running',delivery:'blocked',reason:'native-delivery-composition-pending'};
+  const path=join(root,'control.sock');await removeStaleSocket(path);
+  const clients=new Set();let bound,serverError;
+  const server=createServer({allowHalfOpen:true},socket=>{
+   clients.add(socket);socket.once('close',()=>clients.delete(socket));socket.on('error',()=>socket.destroy());
+   socket.setTimeout(3000,()=>socket.destroy());let bytes='';
+   socket.on('data',b=>{bytes+=b;if(Buffer.byteLength(bytes)>256)socket.destroy();});
+   socket.once('end',()=>{try{
+    assertLease();const request=JSON.parse(bytes);
+    need(request&&Object.keys(request).sort().join(' ')==='operation version'&&request.version===1&&request.operation==='status','request');
+    socket.end(JSON.stringify(live)+'\n');
+   }catch{socket.destroy();}});
+  });
+  server.maxConnections=16;
+  try{
+   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(path,resolve);});
+   server.removeAllListeners('error');const failed=new Promise(resolve=>server.once('error',e=>{serverError=e;resolve();}));
+   await fs.chmod(path,0o600);bound=await fs.lstat(path);assertLease();
+   await ready(live);
+   await Promise.race([failed,new Promise(resolve=>{if(signal?.aborted)resolve();else signal?.addEventListener('abort',resolve,{once:true});})]);
+   if(serverError)throw serverError;
+  }finally{
+   for(const socket of clients)socket.destroy();
+   await new Promise(resolve=>server.close(()=>resolve()));
+   // Node removes its own listening socket. If one remains, never remove a
+   // replacement created by a different process during shutdown.
+   if(bound){let current;try{current=await fs.lstat(path);}catch(e){if(e.code!=='ENOENT')throw e;}
+    if(current){need(current.ino===bound.ino&&current.dev===bound.dev,'shutdown-socket-changed');await fs.unlink(path);}}
+  }
+ });
+}

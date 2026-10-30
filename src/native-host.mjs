@@ -8,12 +8,12 @@ import {nativeHostRoot} from './managed-upgrade.mjs';
 import {maintenanceLock} from './upgrade.mjs';
 import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
+import {nativeControlService} from './native-control-service.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-host:'+code);};
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
 const clientRoot=dirname(fileURLToPath(import.meta.url));
 const remaining=()=>[
- {capability:'host',code:'native-control-service-not-installed'},
  {capability:'runner',code:'native-runner-registrations-pending'},
  {capability:'handover',code:'retained-original-work-reconciliation-required'}
 ];
@@ -73,10 +73,12 @@ async function stageRunner(root,name,{prepare,verify,copyFrom}){
  }finally{await fs.rm(staging,{recursive:true,force:true});}
 }
 
-/** Default first-party onboarding. Staging has no GitHub writes, model login,
- * registration or service effects. A staged package is explicitly not readiness.
+/** Default first-party onboarding. Preparation installs the maintained control
+ * process; it has no GitHub writes, model login or Runner registration effects.
+ * A running process and staged package are explicitly not delivery readiness.
  * Existing work and earlier installations are never reset to make init pass. */
-export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDistribution,verify=verifyRunnerDistribution}={}){
+export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDistribution,verify=verifyRunnerDistribution,service}={}){
+ const control=service??nativeControlService({root});
  const poolFor=(core,value)=>value===undefined?null:core.validateExecutionPool(value);
  const selectPool=()=>({status:'blocked',diagnostics:[{capability:'host',code:'native-execution-pool-selection-required'}]});
  async function check({core,context,executionPool}){
@@ -89,7 +91,8 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
     &&record.runnerCount===2&&core.canonicalJSON(record.executionPool)===core.canonicalJSON(pool),'installation-identity');
    const files=await runtimeInputs(context);await verifyRuntime(join(root,'runtime'),files);
    for(const name of ['runner-1','runner-2'])await verify(join(root,name));
-   return {status:'blocked',phase:'staged',diagnostics:remaining()};
+   const observed=await control.check();
+   return {status:'blocked',phase:'staged',diagnostics:[...observed.diagnostics,...remaining()]};
   }catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-installation-reconciliation-required'}]};}
  }
  async function prepareHost({core,context,executionPool}){
@@ -106,7 +109,8 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
     executionPool:pool,runnerCount:2,runnerDistribution,
     runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
    await writePrivate(join(root,'native-installation.json'),record);
-   return {status:'staged',runnerCount:2,diagnostics:remaining()};
+   const observed=await control.install();
+   return {status:'staged',runnerCount:2,diagnostics:[...observed.diagnostics,...remaining()]};
   });
  }
  return Object.freeze({check,prepare:prepareHost,async install(options){return check(options);}});
