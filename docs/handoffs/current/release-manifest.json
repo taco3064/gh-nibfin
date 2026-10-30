@@ -345,7 +345,7 @@
       },
       {
         "path": "src/codex-entry.mjs",
-        "sha256": "1824136e601671076e57c71cafb13df2e42f201d2f8285f64ebb276993955c2b"
+        "sha256": "51d38550fdedb77e5c8270b76c4dc87467bb67a6cbb809aff1039ee9c5e34221"
       },
       {
         "path": "src/codex.mjs",
@@ -405,7 +405,7 @@
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "bba904041171c398b0e8ab57b60153171e2c7464fb8d6d674b2fe2b57ccd6d79"
+        "sha256": "83eaccf1771409e387f9318c8fc2f2a5bfe9cdb12eef34b36389be2bcee85f22"
       },
       {
         "path": "src/distribution.mjs",
@@ -1041,7 +1041,7 @@
       },
       {
         "path": "test/wsl.test.mjs",
-        "sha256": "d64374ba43f42d312afe29cace222a1ac39be10c67200175b824c1ae0ec23ee1"
+        "sha256": "f5704d308ca82c8e333e49ce5d555fa7dd034800604db7fdce6e2edcd037e879"
       },
       {
         "path": "tooling/accept-fixture.mjs",
@@ -1065,7 +1065,7 @@
       },
       {
         "path": "tooling/codex-fixture.mjs",
-        "sha256": "b79e8680477dce50867e368a48a51da60fb78e05465189ef1ed71dbab17685fc"
+        "sha256": "2310e6b2a00b0f1fb2048b6bc88eb9767095901a8c56b8675817799db01976ee"
       },
       {
         "path": "tooling/completion-fixture.mjs",
@@ -1192,7 +1192,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "ad219c108fd841760000c6eeed6e7b776797c4122a4eb65553615b720c20069f"
+    "contentSha256": "8913e29702cb12df91c073e44fb7e89c396fcfa4b8a264b3c6859d162827ef96"
   },
   "components": {
     "core": {
@@ -1528,7 +1528,7 @@
         },
         {
           "path": "src/codex-entry.mjs",
-          "sha256": "1824136e601671076e57c71cafb13df2e42f201d2f8285f64ebb276993955c2b"
+          "sha256": "51d38550fdedb77e5c8270b76c4dc87467bb67a6cbb809aff1039ee9c5e34221"
         },
         {
           "path": "src/codex.mjs",
@@ -1588,7 +1588,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "bba904041171c398b0e8ab57b60153171e2c7464fb8d6d674b2fe2b57ccd6d79"
+          "sha256": "83eaccf1771409e387f9318c8fc2f2a5bfe9cdb12eef34b36389be2bcee85f22"
         },
         {
           "path": "src/distribution.mjs",
@@ -1923,7 +1923,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "2c51ebe966417cb088e8590293498ee631c10b9db9cd6cdb088bf3aafcf20090"
+      "sha256": "f1b0946507e4c17d9823565073b4749cb87ca16a81d3c03c1ec4465ba081837c"
     },
     "skills": {
       "version": "0.1.0",
@@ -2046,10 +2046,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "ba747062eefc921893d8290acf22d4b53186d26c510092857e1b0f0e11b847fe"
+    "sha256": "e8ec7a0e304dfb1f152e2ad9d2ed57b5d989c5c7800eb934c82ff61c17947a1e"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "9c0ebf3d23f491d738741121b532e7c59ed96a82742fab5541d543fdb95050a7"
+    "sha256": "c0c56b4fedba940558055d0f1b3554cfe4a1595f4c17fab199349984a5446f96"
   }
 }
