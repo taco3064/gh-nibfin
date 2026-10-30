@@ -7,6 +7,7 @@ import {privatePath,readPrivate,ensurePrivateDirectory,sha} from './local-state.
 import {maintenanceLock} from './upgrade.mjs';
 import {verifyNativeRuntime,nativeServiceUnit,nativeServiceName} from './native-control-service.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
+import {nativePoolCoordinator} from './native-pool-coordinator.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -19,10 +20,11 @@ async function removeStaleSocket(path){
  need(refused,'socket-active');const current=await fs.lstat(path);
  need(current.ino===before.ino&&current.dev===before.dev,'socket-changed');await fs.unlink(path);
 }
-/** One kernel lease for the maintained host process. No Issue is synthesized,
- * no old receipt is accepted, and no model/GitHub write occurs at bootstrap.
- * Delivery stays explicitly blocked until the maintained Core composition and
- * original-work reconciliation are installed; process liveness cannot clear it.
+/** One kernel lease for the maintained host process. The version-2 pool consumes
+ * authenticated queued Jobs and resumes its retained Runner lifecycle. No Issue
+ * is synthesized and no old receipt becomes a native Acceptance. Full delivery
+ * stays blocked until stage composition and original-work reconciliation are
+ * installed; infrastructure liveness cannot clear that separate checkpoint.
  */
 export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
  need(process.platform==='linux'&&process.versions.node.split('.')[0]==='22'&&userInfo().uid!==0,'platform');
@@ -34,10 +36,10 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   await privatePath(join(root,nativeServiceName));
   need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
   await verifyNativeRuntime(root,record);assertLease();
-  let poolStore;
+  let poolStore,installedCore,coordinator;
   if(record.executionPool?.version===2){
-   const core=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
-   poolStore=nativePoolStore(core,{root,configuration:record.executionPool});await poolStore.status();
+   installedCore=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
+   poolStore=nativePoolStore(installedCore,{root,configuration:record.executionPool});await poolStore.status();
   }
   const live={version:1,generation:receipt.generation,pid:process.pid,installation:sha(JSON.stringify(record)),
    service:'running',delivery:'blocked',reason:'native-delivery-composition-pending'};
@@ -46,11 +48,17 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   const server=createServer({allowHalfOpen:true},socket=>{
    clients.add(socket);socket.once('close',()=>clients.delete(socket));socket.on('error',()=>socket.destroy());
    socket.setTimeout(3000,()=>socket.destroy());let bytes='';
-   socket.on('data',b=>{bytes+=b;if(Buffer.byteLength(bytes)>256)socket.destroy();});
+   socket.on('data',b=>{bytes+=b;if(Buffer.byteLength(bytes)>1024)socket.destroy();});
    socket.once('end',async()=>{try{
     assertLease();const request=JSON.parse(bytes);
-    need(request&&Object.keys(request).sort().join(' ')==='operation version'&&request.version===1&&request.operation==='status','request');
-    const pool=poolStore?await poolStore.status():undefined;assertLease();
+    need(request&&request.version===1,'request');
+    if(request.operation==='enqueue'){
+     need(Object.keys(request).sort().join(' ')==='jobId operation repository runId version'&&coordinator,'enqueue-request');
+     const retained=await coordinator.enqueue({repository:request.repository,runId:request.runId,jobId:request.jobId});
+     assertLease();socket.end(JSON.stringify(retained)+'\n');return;
+    }
+    need(Object.keys(request).sort().join(' ')==='operation version'&&request.operation==='status','request');
+    const pool=coordinator?await coordinator.status():poolStore?await poolStore.status():undefined;assertLease();
     socket.end(JSON.stringify({...live,...(pool?{pool}:{})})+'\n');
    }catch{socket.destroy();}});
   });
@@ -59,10 +67,16 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(path,resolve);});
    server.removeAllListeners('error');const failed=new Promise(resolve=>server.once('error',e=>{serverError=e;resolve();}));
    await fs.chmod(path,0o600);bound=await fs.lstat(path);assertLease();
+   if(installedCore){
+    coordinator=await nativePoolCoordinator(installedCore,{root,record,signal,onProgress:value=>
+     process.stdout.write(installedCore.actionLogLine(value,'runner-pool'))});
+    live.runnerPool='running';live.reason='native-stage-composition-pending';
+   }
    await ready(live);
    await Promise.race([failed,new Promise(resolve=>{if(signal?.aborted)resolve();else signal?.addEventListener('abort',resolve,{once:true});})]);
    if(serverError)throw serverError;
   }finally{
+   await coordinator?.close();
    for(const socket of clients)socket.destroy();
    await new Promise(resolve=>server.close(()=>resolve()));
    // Node removes its own listening socket. If one remains, never remove a
