@@ -159,8 +159,16 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
     await removeAdmission({id:'pool-'+record.lease.identity.slice(0,40)});
     const {identity,...body}=retired;await writePrivate(retiredPath(record),seal({...body,phase:'retired'}));
    }
-   return retireNativeApplication(core,{root,lease:record.lease.identity,outcome:record.outcome,retiredGroup:retired.controlGroup,
+   const cleaned=await retireNativeApplication(core,{root,lease:record.lease.identity,outcome:record.outcome,retiredGroup:retired.controlGroup,
     confirm:()=>settled(record,retained,{signal})});
+   need(cleaned.status==='completed','cleanup-unconfirmed');
+   const responsePath=join(root,'pool-state','jit-response-'+record.request.id+'.json'),response=await readPrivate(responsePath,{missing:true,limit:4194304});
+   if(response?.body){
+    need(response.version===1&&response.endpoint==='/repos/'+record.request.repository+'/actions/runners/generate-jitconfig'
+     &&await settled(record,retained,{signal}),'response-retirement');
+    await writePrivate(responsePath,{version:1,phase:'retired',endpoint:response.endpoint,responseSha256:sha(response.body),lease:record.lease.identity});
+   }
+   return cleaned;
   },
   async observeRelease(lease,{signal}={}){
    const path=join(root,'pool-state','cleanup-'+lease.identity+'.json'),completed=validate(await readPrivate(path,{limit:16777216}));
