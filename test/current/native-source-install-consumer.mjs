@@ -48,7 +48,7 @@ test('real source capture retains unchanged files and resumes the same unpushed 
 test('canonical numeric pagination remains limited to the exact named repository and preserves write denial',async()=>withCurrentCore(async core=>{
  for(const next of['100','999']){
   const calls=[],transport=async request=>{calls.push(request.endpoint);return request.endpoint.startsWith('/repos/')?{status:200,headers:{link:'<https://api.github.com/repositories/'+next+'/pulls?state=all&per_page=100&page=2>; rel="next"'},body:'[{"id":"1"}]'}:{status:200,body:'[{"id":"2"}]'};};
-  const provider=nativeGithubProvider(core,{transport,attempts:1}),result=await provider.collection({endpoint:'/repos/example/project/pulls?state=all&per_page=100',target:'100',allowPage:path=>path.split('?')[0]==='/repos/example/project/pulls'});
+  const provider=nativeGithubProvider(core,{transport,attempts:1}),result=await provider.collection({endpoint:'/repos/example/project/pulls?state=all&per_page=100',target:'100',operation:'installation',correlation:'test',allowPage:path=>path.split('?')[0]==='/repos/example/project/pulls'});
   if(next==='100'){assert.equal(result.outcome,'complete');assert.deepEqual(result.data.map(v=>v.id),['1','2']);assert.equal(calls.length,2);}else{assert.equal(result.outcome,'incomplete');assert.equal(calls.length,1);}
   const before=calls.length;assert.equal((await provider.request({method:'POST',endpoint:'/repos/example/project/pulls',target:'100',operation:'installation',correlation:'test',body:{}})).outcome,'failed');assert.equal(calls.length,before);
  }
