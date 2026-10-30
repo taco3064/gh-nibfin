@@ -14,6 +14,7 @@ import {readNativeMember} from './native-member.mjs';
 import {readNativeOwnerPolicy} from './native-owner-policy.mjs';
 import {verifyCurrentCore} from './current-core.mjs';
 import {nativeActivationStatus} from './native-activation.mjs';
+import {nativeDispatchMonitor} from './native-dispatch-monitor.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -42,7 +43,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   await privatePath(join(root,nativeServiceName));
   need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
   await verifyNativeRuntime(root,record);assertLease();
-  let poolStore,installedCore,coordinator,stages;
+  let poolStore,installedCore,coordinator,stages,monitor;
   if(record.executionPool?.version===2){
    installedCore=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
    poolStore=nativePoolStore(installedCore,{root,configuration:record.executionPool});await poolStore.status();
@@ -82,8 +83,8 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    server.removeAllListeners('error');const failed=new Promise(resolve=>server.once('error',e=>{serverError=e;resolve();}));
    await fs.chmod(path,0o600);bound=await fs.lstat(path);assertLease();
    if(installedCore){
-    coordinator=await nativePoolCoordinator(installedCore,{root,record,signal,onProgress:value=>
-     process.stdout.write(installedCore.actionLogLine(value,'runner-pool'))});
+    coordinator=await nativePoolCoordinator(installedCore,{root,record,signal,onProgress:value=>{
+     process.stdout.write(installedCore.actionLogLine(value,'runner-pool'));if(value.status==='released')monitor?.wake();}});
     live.runnerPool='running';live.reason='native-stage-composition-pending';
     const configured=await readPrivate(join(root,'member-runtime.json'),{missing:true});
     const policy=await readPrivate(join(root,'owner-policy.json'),{missing:true});
@@ -94,7 +95,10 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
      const provider=installedCore.createGithubProvider({attempts:1});
      stages=await nativeStageService(installedCore,{root,signal,source:async(request,options)=>{
       need((await nativeActivationStatus(installedCore,{root})).status==='ready','native-activation-required');return coordinator.stageSource(request,options);},
-      execute:(binding,options)=>executeNativeDelivery(installedCore,{root,binding,context,provider,...options})});
+      execute:async(binding,options)=>{try{return await executeNativeDelivery(installedCore,{root,binding,context,provider,...options});}
+       finally{monitor?.wake();}}});
+     monitor=await nativeDispatchMonitor(installedCore,{root,record,coordinator,context,provider,signal,onProgress:value=>
+      process.stdout.write(installedCore.actionLogLine(value,'native-dispatch'))});
      live.stageEntry='configured';
     }
    }
@@ -102,7 +106,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    await Promise.race([failed,new Promise(resolve=>{if(signal?.aborted)resolve();else signal?.addEventListener('abort',resolve,{once:true});})]);
    if(serverError)throw serverError;
   }finally{
-   await stages?.close();await coordinator?.close();
+   await monitor?.close();await stages?.close();await coordinator?.close();
    for(const socket of clients)socket.destroy();
    await new Promise(resolve=>server.close(()=>resolve()));
    // Node removes its own listening socket. If one remains, never remove a

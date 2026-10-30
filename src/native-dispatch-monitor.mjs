@@ -12,7 +12,7 @@ const code=e=>typeof e?.message==='string'&&/^native-[a-z-]+:[a-z-]+$/.test(e.me
  * selection can dispatch. A native completion/file event wakes it immediately;
  * bounded remote observation also notices Issue and CI changes behind NAT.
  */
-export async function nativeDispatchMonitor(core,{root,record,coordinator,context,provider,signal,onProgress=()=>{},intervalMs=30000}={}){
+export async function nativeDispatchMonitor(core,{root,record,coordinator,context,provider,signal,transport,onProgress=()=>{},intervalMs=30000}={}){
  need(Number.isInteger(intervalMs)&&intervalMs>=1000&&intervalMs<=300000,'interval');
  const configuration=core.validateExecutionPool(record.executionPool),owner=await readNativeOwnerPolicy(core,{root});
  const directory=join(root,'dispatches');await ensurePrivateDirectory(directory);let closed=false,pending=false,running=null,timer,activeWrite=null;
@@ -31,7 +31,7 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
  };
  // Initial dispatch has explicit local Owner provenance, not a fabricated
  // Actions source Run. Actual Run/Job attribution starts with official readback.
- const writes=core.createGithubProvider({attempts:1,authorize:async request=>{
+ const writes=core.createGithubProvider({attempts:1,...(transport?{transport}:{}),authorize:async request=>{
   const active=activeWrite;need(active&&request.method==='POST'&&request.endpoint===active.endpoint
    &&request.target===active.target.repositoryId&&core.canonicalJSON(request.body)===core.canonicalJSON(active.body),'dispatch-write');
   await active.guard();return !signal?.aborted;
@@ -87,7 +87,7 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      const stage=core.nextDeliveryStage(state.receipts,null);need(!state.attempts[stage],'original-stage-reconciliation-required');
      const id='native-'+randomUUID();
      const checkpoint=async()=>{need(!signal?.aborted&&(await nativeActivationStatus(core,{root})).status==='ready','owner-restriction');};
-     const inputs=await nativeExecutionInputs(core,{root,store,configuration,binding:{request:{id}},provider,signal,checkpoint,
+     const inputs=await nativeExecutionInputs(core,{root,store,configuration,binding:{request:{id}},provider,signal,checkpoint,transport,
       poolReadiness:async request=>{await readNativeMember(core,{root,memberId:request.memberId});const current=await coordinator.status();
        need(current.pool===core.contentIdentity(configuration)&&current.host==='running','prepared-pool');
        return {memberId:owner.memberId,pool:current.pool,status:'ready',observedAt:Date.now()};}});

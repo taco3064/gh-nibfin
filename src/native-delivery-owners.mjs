@@ -155,5 +155,14 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
     return {ok:true,binding,wakeup:{kind:'native-core-wakeup',identity:c({target,member:state.member.id})}};
    },operations:async()=>{throw Error('native-owners:hosted-resolve-not-supported');},notifyTarget:inbox.retain};
  }
+ if(owners.completion){
+  const trace=(name,fn)=>async(...args)=>{try{return await fn(...args);}catch(error){
+   const message=error?.message??'',diagnostic=/^(?:native-[a-z-]+|core|completion|operations|evidence):[a-z-]+$/.test(message)?message
+    :/^[a-z-]{1,64}$/.test(message)?'native-owners:'+message:'native-owners:callback-unavailable';
+   await store.retain({kind:'native-completion-diagnostic',callback:name,diagnostic});await progress({status:'blocked',reason:diagnostic});throw error;
+  }};
+  for(const name of['current','observe','operations','locate','stageCurrent','postMerge'])owners.completion[name]=trace(name,owners.completion[name]);
+  owners.completion.completionRecords={retain:trace('retain',store.completionRecords.retain),retrieve:trace('retrieve',store.completionRecords.retrieve)};
+ }
  return {owners,workspace,evidence,reviewPin,completionPin,completionState,mergeIntent,postMergeProof,hookInput,author,message,sourceEvent,target};
 }
