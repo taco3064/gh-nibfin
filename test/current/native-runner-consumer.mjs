@@ -74,7 +74,9 @@ test('JIT decoder rejects traversal, foreign Runner identity, updates, non-ephem
  for(const change of[s=>{s.agentId=700;},s=>{s.Ephemeral='False';},s=>{s.DisableUpdate='true';},s=>{s.AgentId='701';}]){
   const settings={...official};change(settings);assert.throws(()=>nativeJitConfiguration(encoded(settings),record));
  }
- assert.equal(nativeJitConfiguration(encoded(official),record).files['.runner'].toString(),JSON.stringify(official));
+ const normalized=nativeJitConfiguration(encoded(official),record),local=JSON.parse(normalized.files['.runner']);
+ assert.equal(local.agentId,'700');assert.equal(local.agentName,'runner-name');assert.equal(local.disableUpdate,true);assert.equal(local.ephemeral,true);assert.equal(Object.hasOwn(local,'AgentId'),false);
+ assert.equal(normalized.encoded,encoded(official));assert.equal(normalized.files['.credentials'].toString(),Buffer.from(valid.files['.credentials'],'base64').toString());
  for(const change of [s=>{s.agentId=701;},s=>{s.disableUpdate=false;},s=>{s.ephemeral=false;},
   s=>{s.gitHubUrl='https://github.com/example/foreign';},s=>{s.serverUrl='https://attacker.example/';},s=>{s.serverUrl='';}]){
   const settings=structuredClone(valid.settings);change(settings);
