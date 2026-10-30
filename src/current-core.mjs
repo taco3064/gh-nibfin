@@ -6,11 +6,11 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {parseArchive,verifyRegistrationCore} from './core.mjs';
 
-export const currentProducer='b6f2ef60720ebbd88d83df16c13684b0141e14bb';
+export const currentProducer='bf64807a364cfeb5f8f19219d2f8d61739106d01';
 export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'3406ee938c2ca85425ba70e7cb8c8699d23ee802a549f0b91baf3c26f45601a5'});
 const handoff=new URL('../docs/handoffs/current/',import.meta.url);
 const hashes=Object.freeze({'nibfin-core.tgz':'54719b642430259c1cead603749161b9ec282cdf7f8d19ca3ca25cecfd99f859',
-  'release-manifest.json':'5e1b282b13fc3dabb61e5b7e264ce64c21211c260d84d7eaf30c427b4285c9d0',
+  'release-manifest.json':'b2b2c34ea789d967194ec0b5822e9478bc0cb7986e70b1de1d05691081537d57',
   'compatibility.json':'9d559f64307af1a65cfe7badcac13b8224fc608778a6def6ec0d282f4ed2aea0'});
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const need=(ok,message)=>{if(!ok)throw Error('Current Core verification: '+message);};
