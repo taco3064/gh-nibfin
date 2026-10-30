@@ -50,7 +50,7 @@ test('executable diagnostics, exact seven paths and strict grammar', async () =>
     for (const args of [[], ['--help'], ['--version']]) {
       const result = cli(args, cwd);
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer bf64807a364cfeb5f8f19219d2f8d61739106d01/ : /default 2; positive integer total/);
+      assert.match(result.stdout, args[0] === '--version' ? /@nibfin\/core@0.1.0; producer d5372d6334dad8ef8906fb320e8bab11114a02cc/ : /default 2; positive integer total/);
     }
   }
   const paths = ['upgrade'];
