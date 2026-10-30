@@ -9,7 +9,7 @@ const copy=structuredClone;
  * attribution; private source authority and original receipts supply the plan.
  * Neither the model nor an IPC caller can choose callbacks, owners or commands.
  */
-export async function executeNativeDelivery(core,{root,binding,context,provider,signal,progress}={}){
+export async function executeNativeDelivery(core,{root,binding,context,provider,signal,progress,transport,roleFactory=nativeRoleHost}={}){
  need(core.distributionAPI?.nativeHost===1,'compatible-native-core-required');
  let roles,firstCheckpoint=true,lastRemote=0,completed=false;
  const hostStore=await openFileHostStore(core,{directory:join(root,'state')});
@@ -38,7 +38,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
   s.attempts[stage]={request:binding.request.id,source,phase:'running'};return s;});
  try{
   await checkpoint();
-  const input=await nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint});
+  const input=await nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport});
   const role=['shape','shape-validator','deliver','accept','shaper-review'].includes(stage)?stage:stage==='publication'?'shape':'deliver';
   const instructions=core.selectInstructions({skill:core.skillForRole(role),role});
   const authority={authority:state.authority.identity,grant:core.contentIdentity(state.grant),policy:core.contentIdentity(state.policy),core:state.core,
@@ -51,7 +51,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    receipts:state.receipts,evidenceCurrent:state.expectations,candidate:state.candidate,base:state.base,head:state.head,ciIdentity:null,
    completion:state.completion,completionCurrent:state.completionCurrent??null,transition:null,operationIdentity:null,stageInput:state.stageInput,
    dependencyInput:input.dependencyInput,selectionInput:input.selectionInput(stage),invocation:{request:binding.request.id,run:{id:source.runId,attempt:source.attempt}},prior:{state:'new'}};
-  roles=await nativeRoleHost(core,{root,binding,base:state.base,repository,memberId:state.member.id,source,retain:store.retain,checkpoint,signal,progress});
+  roles=await roleFactory(core,{root,binding,base:state.base,repository,memberId:state.member.id,source,retain:store.retain,checkpoint,signal,progress});
   if(state.workspace){const candidate=core.importWorkspace(Buffer.from(core.canonicalJSON(state.workspace)),{expected:state.workspaceExpected});
    core.materializeWorkspace(candidate,{expected:state.workspaceExpected,root:roles.candidateDirectory});}
   const observations=await observeNativeObligations(core,{directory:state.workspace?roles.candidateDirectory:roles.sourceDirectory,scopeBody:state.scopeBody,base:state.base,repository});
