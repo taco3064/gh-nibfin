@@ -3,9 +3,9 @@ import {join} from 'node:path';
 import {userInfo} from 'node:os';
 import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {prepareRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
-import {prepareAdmission,removeAdmission} from './admission.mjs';
+import {prepareAdmission,removeAdmission,policyDirectory} from './admission.mjs';
 import {nativeJitConfiguration} from './native-jit.mjs';
-import {nativeRunnerService} from './native-runner-service.mjs';
+import {nativeRunnerService,nativeRunnerUnitName} from './native-runner-service.mjs';
 import {retireNativeApplication} from './native-resource-cleanup.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-pool-runtime:'+code);};
 const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
@@ -79,6 +79,8 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
   if(observation?.lease!==record.lease.identity||observation.retention!==retained.custody||observation.workRetained!==true
    ||observation.processesTerminated!==true||observation.resourcesRemoved!==true)return false;
   if(!await service(record).absent())return false;
+  if(!await missing(join(root,nativeRunnerUnitName(record.lease.slot)))
+   ||!await missing(policyDirectory('pool-'+record.lease.identity.slice(0,40))))return false;
   const remote=await provider.request({endpoint:'/repos/'+record.request.repository+'/actions/runners/'+record.runnerId,
    target:record.request.repositoryId,operation:'runner-pool-runtime',correlation:record.request.id,signal});
   return remote.outcome==='failed'&&remote.diagnostic?.status===404;
@@ -94,6 +96,7 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
   },
   async storeConfiguration(record,data){
    await prepared(record);need(typeof data?.runner?.id==='string'&&data.runner.name===record.runnerName&&data.runner.ephemeral===true,'configuration-binding');
+   core.githubId(data.runner.id);
    const jit=nativeJitConfiguration(data.encoded_jit_config,{...record,runnerId:data.runner.id}),path=directory(record),application=join(path,'application');
    for(const [name,bytes]of Object.entries(jit.files)){
     const file=await fs.open(join(application,name),'wx',0o600);try{await file.writeFile(bytes);await file.sync();}finally{await file.close();}
