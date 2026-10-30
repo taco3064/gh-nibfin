@@ -38,7 +38,8 @@ test('maintained coordinator consumes a real authenticated intake, retains origi
  const coordinator=await nativePoolCoordinator(core,{root,record:{core:currentPin.coreSha256,executionPool:f.configuration},context,provider,
   installationRoot:f.installationRoot,signal:abort.signal,onProgress:r=>progress.push(r),
   observeResources:async({lease})=>({lease,processesTerminated:!state.running,resourcesRemoved:!state.running}),
-  runtimeOptions:{acquire:async path=>{await ensurePrivateDirectory(join(path,'bin'));await fs.writeFile(join(path,'bin/Runner.Worker'),'FIXTURE',{mode:0o700});},
+  runtimeOptions:{acquire:async path=>{await ensurePrivateDirectory(join(path,'bin'));await fs.writeFile(join(path,'bin/Runner.Worker'),'FIXTURE',{mode:0o700});
+   const current=await protectedStore.read();await protectedStore.updateWork({expected:current.identity,work:{...current.work,paused:true}});},
    admit:async()=>({environment:{ACTIONS_RUNNER_HOOK_JOB_STARTED:'/fixture/hook',NIBFIN_RUNNER_JOB_POLICY:'/fixture/policy'},record:{version:1}}),
    serviceFactory:({lease})=>({start:async()=>{counts.starts++;return {status:'started',lease};},
     state:async()=>({status:state.running?'active':'inactive',pid:state.running?12345:0,invocation:'a'.repeat(32)}),
@@ -47,6 +48,9 @@ test('maintained coordinator consumes a real authenticated intake, retains origi
   assert.equal((await coordinator.status()).occupied,0);assert.equal(counts.registrations,0);
   const hint={repository:'example/project',runId:'300',jobId:'200'};
   assert.equal((await coordinator.enqueue(hint)).status,'retained');
+  await until(async()=> (await store.jobs.read('request-0'))?.phase==='prepared');await coordinator.settled();
+  assert.equal(counts.registrations,0);assert.equal(counts.starts,0);
+  const paused=await protectedStore.read();await protectedStore.updateWork({expected:paused.identity,work:{...paused.work,paused:false}});
   await until(async()=> (await store.jobs.read('request-0'))?.phase==='active');
   await coordinator.enqueue(hint);assert.equal(counts.starts,1);assert.equal(counts.registrations,1);
   const record=await store.jobs.read('request-0'),directory=join(root,'jobs',record.lease.identity);
