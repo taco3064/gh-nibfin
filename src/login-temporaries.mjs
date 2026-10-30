@@ -28,7 +28,7 @@ export async function pruneCodexLoginTemporaries(loginSpace,{processes=activeUse
  const top=await fs.readdir(root);need(top.length===1&&top[0]==='arg0-linux','unknown-layout');
  const directory=join(root,'arg0-linux'),parent=await fs.lstat(directory);
  need(parent.isDirectory()&&!parent.isSymbolicLink()&&parent.uid===userInfo().uid,'helper-parent');
- const names=await fs.readdir(directory);need(names.length>0&&names.length<=128,'helper-count');
+ const names=await fs.readdir(directory);need(names.length<=128,'helper-count');
  for(const name of names){
   need(/^codex-arg0[A-Za-z0-9]{6}$/.test(name),'helper-name');const path=join(directory,name),s=await fs.lstat(path);
   need(s.isDirectory()&&!s.isSymbolicLink()&&s.uid===userInfo().uid,'helper-directory');
