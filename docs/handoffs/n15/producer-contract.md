@@ -364,7 +364,7 @@ structured `{code, path, reason}` entries. Parsing also returns `inventory` and
 These APIs neither authorize execution nor execute hook scripts or produce receipts.
 
 An executable inventory opens on an unindented line of three or more backticks
-or tildes followed by exactly `kairo-candidate` (surrounding whitespace allowed).
+or tildes followed by exactly `legacy candidate` (surrounding whitespace allowed).
 It closes with the same character and at least the opening length, whitespace only
 following. Other fenced regions (including fences indented up to three spaces)
 are opaque: an inventory inside an illustrative outer fence does not count.
