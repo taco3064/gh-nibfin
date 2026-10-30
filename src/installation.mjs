@@ -1,3 +1,4 @@
+import{nativeGithubProvider}from'./native-github-provider.mjs';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
@@ -40,7 +41,7 @@ export function installationOptions(args,{upgrade=false}={}){
 }
 export function installationProvider(core,{transport,repo,write}){
   const prefix='/repos/'+repo;
-  return core.createGithubProvider({transport:transport??core.localGhTransport(),attempts:1,
+  return nativeGithubProvider(core,{transport:transport??core.localGhTransport(),attempts:1,
     authorize:r=>write===true&&r.endpoint.startsWith(prefix+'/')&&['PUT','POST','PATCH'].includes(r.method)
       &&(/\/contents\/(?:\.github\/workflows\/nibfin-[\w-]+\.yml|\.nibfin\/[\w./-]+)$/.test(r.endpoint)
       ||r.endpoint===prefix+'/labels'||r.endpoint===prefix+'/actions/variables'||r.endpoint.startsWith(prefix+'/actions/variables/')
