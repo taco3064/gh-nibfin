@@ -6,7 +6,7 @@ test('administrative installation resumes one PR, waits for CI and never bypasse
  const f=await nativeCycleFixture(core,context),repository='example/project',repositoryId='100',desired={files:new Map([['.nibfin/runtime.json','reviewed\n']])},observations=new Map([['.nibfin/runtime.json',{state:'absent'}]]);
  const files=Object.fromEntries([...desired.files].map(([p,b])=>[p,sha(b)])),identity=core.contentIdentity({version:1,repository,repositoryId,files}),commit='c'.repeat(40),branch='nibfin/install-'+identity.slice(0,24),pr={id:'400',number:40,html_url:'https://github.com/example/project/pull/40',head:{sha:commit,ref:branch,repo:{id:repositoryId}},base:{sha:'b'.repeat(40),ref:'main'},state:'open',draft:false,merged:false};
  let present=false,strict=true,qualified=false,writes=[];
- const proposal={version:1,kind:'administrative-installation',identity,repository,repositoryId,files,base:'b'.repeat(40),branch,phase:'pr-intent'};
+ const proposal={version:1,kind:'administrative-installation',identity,repository,repositoryId,files,base:'b'.repeat(40),branch,commit,phase:'pr-intent'};
  await writePrivate(join(f.root,'managed-source-pr.json'),proposal);
  f.intercept(async r=>{
   const path='/repos/'+repository;
