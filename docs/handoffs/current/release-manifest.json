@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "source": {
     "kind": "candidate",
-    "base": "e988e967b9284a9bcd97d18ad970df7ceaff09b5",
+    "base": "51f66a134eedf6b4390457030ad60c903ea15ba2",
     "commit": null,
     "inputs": [
       {
@@ -49,7 +49,7 @@
       },
       {
         "path": "docs/codex.md",
-        "sha256": "3d4db869a5c49e31e4e58c87d98235688ebc3578d34132d037c20e9b105cec54"
+        "sha256": "7d4d4aad0bb5ca8ca33b0c257509acb77280c97c12f0572fb4660d2875a1383b"
       },
       {
         "path": "docs/collaboration.md",
@@ -261,7 +261,7 @@
       },
       {
         "path": "package.json",
-        "sha256": "fae18313e1edc9d606fa3eb3fd2c8f2d3af77fbdc4fb95f9bfcd575e1ec69530"
+        "sha256": "25bb95ebd72bb74856209c53bc987b13aed6ac34efc72252e0d49ce6d20aa31e"
       },
       {
         "path": "skills/accept/SKILL.md",
@@ -340,12 +340,16 @@
         "sha256": "4de78db46f707e994b5b57a0ef4c1502fb2d1b59b039036a237f0fbe4a534833"
       },
       {
+        "path": "src/codex-credentials.mjs",
+        "sha256": "08fcb5b49ce39b2472c3954053fd5850e555da5d1b7007120cd9c060ca9de630"
+      },
+      {
         "path": "src/codex-entry.mjs",
-        "sha256": "ad15deaa7b809eb563968a72acba315e7e4e15615252eaa444a7ab4c146617b5"
+        "sha256": "1824136e601671076e57c71cafb13df2e42f201d2f8285f64ebb276993955c2b"
       },
       {
         "path": "src/codex.mjs",
-        "sha256": "b2d457c827e382cd216d0acfdd4c4e7cada471f99b40d1589ee1f93c3d755c66"
+        "sha256": "a97d5e32ca186845485c21c7bc0b1052c205c625432cab8568414faf8f6e4234"
       },
       {
         "path": "src/collaboration.mjs",
@@ -401,7 +405,7 @@
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "0bb89e000a45d393349498153739dcf5f7242667cf980e9a46543bdecc95ec69"
+        "sha256": "bba904041171c398b0e8ab57b60153171e2c7464fb8d6d674b2fe2b57ccd6d79"
       },
       {
         "path": "src/distribution.mjs",
@@ -768,8 +772,12 @@
         "sha256": "222b14d6730c4adce3930b32648473bb720a2c8b4723680b36b9fec3c6bb1244"
       },
       {
+        "path": "test/codex-credentials.test.mjs",
+        "sha256": "e7e2c79148a424c51a4ad5c368a6fd84140a49da0340abd7e2c0f849aedacc4d"
+      },
+      {
         "path": "test/codex.test.mjs",
-        "sha256": "eaeac28d5cec1eb7571c170abae12eb31c3103d4028d14c381b41ab863328adf"
+        "sha256": "052a5b17eb11ba0d1bcda0902f62ac858de274a31a50dd3f885a8cba19882afa"
       },
       {
         "path": "test/collaboration.test.mjs",
@@ -1045,7 +1053,7 @@
       },
       {
         "path": "tooling/archive.mjs",
-        "sha256": "799dfc1787fa3a2334ad6b5583551fa498e78322f3c622235822e2d94a94ee8b"
+        "sha256": "b35e1b81aae3a88da4eb5c31502b6ff1ceccc38bfef77efcffe332bc347daf5c"
       },
       {
         "path": "tooling/candidate-publication-fixture.mjs",
@@ -1057,7 +1065,7 @@
       },
       {
         "path": "tooling/codex-fixture.mjs",
-        "sha256": "b71b98a6b25ef8515c4c12ac122ea11d49d5947c79228f08c972bfee7ff85675"
+        "sha256": "b79e8680477dce50867e368a48a51da60fb78e05465189ef1ed71dbab17685fc"
       },
       {
         "path": "tooling/completion-fixture.mjs",
@@ -1184,7 +1192,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "c563149928fc8c224482f011f6c4b53ba8e9f1b46eba6278b304a3140bacc4f3"
+    "contentSha256": "ad219c108fd841760000c6eeed6e7b776797c4122a4eb65553615b720c20069f"
   },
   "components": {
     "core": {
@@ -1228,7 +1236,7 @@
         },
         {
           "path": "docs/codex.md",
-          "sha256": "3d4db869a5c49e31e4e58c87d98235688ebc3578d34132d037c20e9b105cec54"
+          "sha256": "7d4d4aad0bb5ca8ca33b0c257509acb77280c97c12f0572fb4660d2875a1383b"
         },
         {
           "path": "docs/collaboration.md",
@@ -1436,7 +1444,7 @@
         },
         {
           "path": "package.json",
-          "sha256": "fae18313e1edc9d606fa3eb3fd2c8f2d3af77fbdc4fb95f9bfcd575e1ec69530"
+          "sha256": "25bb95ebd72bb74856209c53bc987b13aed6ac34efc72252e0d49ce6d20aa31e"
         },
         {
           "path": "skills/accept/SKILL.md",
@@ -1515,12 +1523,16 @@
           "sha256": "4de78db46f707e994b5b57a0ef4c1502fb2d1b59b039036a237f0fbe4a534833"
         },
         {
+          "path": "src/codex-credentials.mjs",
+          "sha256": "08fcb5b49ce39b2472c3954053fd5850e555da5d1b7007120cd9c060ca9de630"
+        },
+        {
           "path": "src/codex-entry.mjs",
-          "sha256": "ad15deaa7b809eb563968a72acba315e7e4e15615252eaa444a7ab4c146617b5"
+          "sha256": "1824136e601671076e57c71cafb13df2e42f201d2f8285f64ebb276993955c2b"
         },
         {
           "path": "src/codex.mjs",
-          "sha256": "b2d457c827e382cd216d0acfdd4c4e7cada471f99b40d1589ee1f93c3d755c66"
+          "sha256": "a97d5e32ca186845485c21c7bc0b1052c205c625432cab8568414faf8f6e4234"
         },
         {
           "path": "src/collaboration.mjs",
@@ -1576,7 +1588,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "0bb89e000a45d393349498153739dcf5f7242667cf980e9a46543bdecc95ec69"
+          "sha256": "bba904041171c398b0e8ab57b60153171e2c7464fb8d6d674b2fe2b57ccd6d79"
         },
         {
           "path": "src/distribution.mjs",
@@ -1911,7 +1923,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "429a6a420261868639f801b1a541bb7c5b34512b6c9d187ae2fa1f6d2101883f"
+      "sha256": "2c51ebe966417cb088e8590293498ee631c10b9db9cd6cdb088bf3aafcf20090"
     },
     "skills": {
       "version": "0.1.0",
@@ -2034,10 +2046,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "fd1fe234aa8c38425cd903b617f931070b34bea77c2ee030bcf3f3d58b3f2cc7"
+    "sha256": "ba747062eefc921893d8290acf22d4b53186d26c510092857e1b0f0e11b847fe"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "c272e517a6c6d8c960c88b465ef21081b9d0c7ecf0c11c60742e1e5db86706c3"
+    "sha256": "9c0ebf3d23f491d738741121b532e7c59ed96a82742fab5541d543fdb95050a7"
   }
 }

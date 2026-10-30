@@ -107,6 +107,7 @@ export async function updateCodexMemberLogin(environment,{mode='refresh',run,min
  run??=mode==='refresh'?refreshCodexLogin:interactiveCodexLogin;
  const login=environment.CODEX_HOME;await privatePath(login,{directory:true});
  return maintenanceLock(login,async assertLease=>{
+  need(await readPrivate(join(login,'codex-credential-intent.json'),{missing:true})===null,'original-role-credential-reconciliation-required');
   const target=join(login,'auth.json'),pending=join(login,'auth-update-pending.json');await privatePath(target);
   const original=await fs.readFile(target),originalSha256=sha(original);need(original.length>0&&original.length<=65536,'invalid-login-file');
   let current;try{current=managedLogin(JSON.parse(original));}catch{throw Error('member-login:invalid-login-file');}
