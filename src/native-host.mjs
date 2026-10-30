@@ -108,15 +108,20 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    const record={version:1,phase:'staged',producer:currentProducer,core:currentPin.coreSha256,
     executionPool:pool,runnerCount:pool.capacity,runnerDistribution,
     runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
+   let transitioned=false;
    if(previous&&(previous.core!==currentPin.coreSha256||core.canonicalJSON(previous.executionPool)!==core.canonicalJSON(pool))){
     await transitionStagedNativeHost(core,{root,previous,next:record,pool,control,verifyRunner:verify,publish:()=>publishRuntime(root,files)});
-    previous=await readPrivate(join(root,'native-installation.json'));
+    previous=await readPrivate(join(root,'native-installation.json'));transitioned=true;
    }
    if(previous)need(previous.version===1&&previous.phase==='staged'&&previous.core===currentPin.coreSha256
     &&core.canonicalJSON(previous.executionPool)===core.canonicalJSON(pool),'preserve-existing-installation');
    await publishRuntime(root,files);
-   await stageRunner(root,'runner-1',{prepare,verify});assertLease();
-   for(let i=2;i<=pool.capacity;i++){await stageRunner(root,'runner-'+i,{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();}
+   // The transition already authenticated every unchanged base application at
+   // this same protected maintenance boundary. Do not repeat that full read.
+   if(!transitioned){
+    await stageRunner(root,'runner-1',{prepare,verify});assertLease();
+    for(let i=2;i<=pool.capacity;i++){await stageRunner(root,'runner-'+i,{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();}
+   }
    await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
    await writePrivate(join(root,'native-installation.json'),record);
    const observed=await control.install();
