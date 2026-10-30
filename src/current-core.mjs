@@ -6,10 +6,10 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {parseArchive,verifyRegistrationCore} from './core.mjs';
 
-export const currentProducer='173a5aac3ec43b989aa62f6b90ccf9c7c5a77201';
-export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'c83897f766222667dc543d27002e5b32707b9923473b78288938f03e646915af'});
+export const currentProducer='5572f32e875899240751c46fb40de109000f7215';
+export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'f416631b565771ecbd5761da80f618a1dee167703685b761e571eac4cdc94da7'});
 const handoff=new URL('../docs/handoffs/current/',import.meta.url);
-const hashes=Object.freeze({'nibfin-core.tgz':'bc11348fc19eefdf9f9c56fca1ad47213630c85d1d6deff18145e1e43913afff',
+const hashes=Object.freeze({'nibfin-core.tgz':'ec03432dd55488ecf1419f2fc90ac57336a4c0c07423127fd3e8712e8de017a8',
   'release-manifest.json':'481a0dfc812724411a481edaaa5e3d519ba7d6fa5467a40b46eb05323d2f4774',
   'compatibility.json':'90bffbed030e3836742bc622f60467dfa0acab2cdd430c1ca51186a911d77f7a'});
 const sha=b=>createHash('sha256').update(b).digest('hex');
