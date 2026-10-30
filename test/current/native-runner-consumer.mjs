@@ -68,6 +68,13 @@ ${hang?'time.sleep(600)':''}
 test('JIT decoder rejects traversal, foreign Runner identity, updates, non-ephemeral settings and external servers',()=>{
  const record={runnerId:'700',runnerName:'runner-name',request},valid=jit(record);
  assert.equal(nativeJitConfiguration(valid.encoded,record).settings.agentId,700);
+ const official={AgentId:'700',AgentName:'runner-name',DisableUpdate:'True',Ephemeral:'True',WorkFolder:'_work',ServerUrl:valid.settings.serverUrl,GitHubUrl:valid.settings.gitHubUrl};
+ const encoded=settings=>encode({...valid.files,'.runner':Buffer.from(JSON.stringify(settings)).toString('base64')});
+ assert.equal(nativeJitConfiguration(encoded(official),record).settings.ephemeral,true);
+ for(const change of[s=>{s.agentId=700;},s=>{s.Ephemeral='False';},s=>{s.DisableUpdate='true';},s=>{s.AgentId='701';}]){
+  const settings={...official};change(settings);assert.throws(()=>nativeJitConfiguration(encoded(settings),record));
+ }
+ assert.equal(nativeJitConfiguration(encoded(official),record).files['.runner'].toString(),Buffer.from(encoded(official),'base64').toString()?JSON.stringify(official):'');
  for(const change of [s=>{s.agentId=701;},s=>{s.disableUpdate=false;},s=>{s.ephemeral=false;},
   s=>{s.gitHubUrl='https://github.com/example/foreign';},s=>{s.serverUrl='https://attacker.example/';},s=>{s.serverUrl='';}]){
   const settings=structuredClone(valid.settings);change(settings);
