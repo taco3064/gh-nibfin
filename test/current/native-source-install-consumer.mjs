@@ -1,3 +1,4 @@
+import{nativeGithubProvider}from'../../src/native-github-provider.mjs';
 import test from'node:test';import assert from'node:assert/strict';import{join}from'node:path';import fs from'node:fs/promises';import{execFileSync}from'node:child_process';
 import{withCurrentCore}from'../../src/current-core.mjs';import{nativeCycleFixture}from'./native-cycle-fixture.mjs';
 import{installNativeSource}from'../../src/native-source-install.mjs';import{writePrivate,sha}from'../../src/local-state.mjs';
@@ -42,4 +43,13 @@ test('real source capture retains unchanged files and resumes the same unpushed 
  await assert.rejects(installNativeSource(selected,options),/synthetic-before-push-interruption/);const original=JSON.parse(await fs.readFile(join(f.root,'managed-source-pr.json'),'utf8'));assert.equal(original.phase,'planning');
  assert.equal((await installNativeSource(selected,options)).status,'pending');const current=JSON.parse(await fs.readFile(join(f.root,'managed-source-pr.json'),'utf8'));assert.equal(current.identity,original.identity);assert.equal(current.base,original.base);assert.equal(current.branch,original.branch);assert.equal(posts,1);assert.equal(git(remote,['show',current.commit+':README.md']),'original source');
  assert.equal((await installNativeSource(selected,options)).status,'pending');assert.equal(opens,2);assert.equal(posts,1);await assert.rejects(fs.stat(original.directory),{code:'ENOENT'});
+}));
+
+test('canonical numeric pagination remains limited to the exact named repository and preserves write denial',async()=>withCurrentCore(async core=>{
+ for(const next of['100','999']){
+  const calls=[],transport=async request=>{calls.push(request.endpoint);return request.endpoint.startsWith('/repos/')?{status:200,headers:{link:'<https://api.github.com/repositories/'+next+'/pulls?state=all&per_page=100&page=2>; rel="next"'},body:'[{"id":"1"}]'}:{status:200,body:'[{"id":"2"}]'};};
+  const provider=nativeGithubProvider(core,{transport,attempts:1}),result=await provider.collection({endpoint:'/repos/example/project/pulls?state=all&per_page=100',target:'100',allowPage:path=>path.split('?')[0]==='/repos/example/project/pulls'});
+  if(next==='100'){assert.equal(result.outcome,'complete');assert.deepEqual(result.data.map(v=>v.id),['1','2']);assert.equal(calls.length,2);}else{assert.equal(result.outcome,'incomplete');assert.equal(calls.length,1);}
+  const before=calls.length;assert.equal((await provider.request({method:'POST',endpoint:'/repos/example/project/pulls',target:'100',operation:'installation',correlation:'test',body:{}})).outcome,'failed');assert.equal(calls.length,before);
+ }
 }));
