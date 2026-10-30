@@ -18,11 +18,12 @@ const relativePath=value=>typeof value==='string'&&value.length<1024&&!value.inc
  * in the maintained installer after authenticating its package distributions. */
 export function managedUpgradeLayout(core,root,plan){
   need(resolve(root)===root,'root');
-  need(plan&&Object.keys(plan).sort().join(' ')==='current identity next resources version'&&plan.version===1,'plan-schema');
+  need(plan&&Object.keys(plan).sort().join(' ')==='current identity next resources version'&&[1,2].includes(plan.version),'plan-schema');
   const {identity,...body}=plan;need(core.contentIdentity(body)===identity,'plan-integrity');
   need(Array.isArray(plan.resources)&&plan.resources.length>=2&&plan.resources.length<=129,'resource-set');
-  const names=['runtime',...Array.from({length:plan.resources.length-1},(_,i)=>'runner-'+(i+1))];
-  const services=['nibfin-control.service',...names.slice(1).map(n=>'nibfin-'+n+'.service')];
+  const names=plan.version===2?['runtime','installation']:['runtime',...Array.from({length:plan.resources.length-1},(_,i)=>'runner-'+(i+1))];
+  const services=plan.version===2?['nibfin-control.service']:['nibfin-control.service',...names.slice(1).map(n=>'nibfin-'+n+'.service')];
+  need(plan.resources.length===names.length,'resource-set');
   need(plan.resources.every((r,i)=>r.name===names[i]&&Object.keys(r).sort().join(' ')==='current name next'),'resource-set');
   const inventories=new Map();
   for(const resource of plan.resources){
@@ -40,12 +41,16 @@ export function managedUpgradeLayout(core,root,plan){
       inventories.set(resource.name+':'+version,inventory);
     }
   }
-  const resources=names.map(name=>({name,current:join(root,name),next:join(root,name+'-next'),previous:join(root,name+'-previous')}));
+  const resources=names.map(name=>name==='installation'&&plan.version===2?{name,kind:'file',current:join(root,'native-installation.json'),next:join(root,'native-installation-next.json'),previous:join(root,'native-installation-previous.json')}:{name,current:join(root,name),next:join(root,name+'-next'),previous:join(root,name+'-previous')});
   return {resources,services:[...services],verify:async(resource,position)=>{
     need(names.includes(resource.name),'resource-name');
     const key=['current','previous'].includes(position)?'current':'next',path=resource[position==='activated'?'current':position];
-    await privatePath(path,{directory:true});
+    await privatePath(path,{directory:resource.kind!=='file'});
     const inventory=inventories.get(resource.name+':'+key),files=new Map(inventory.map(f=>[f.path,f])),seen=new Set();
+    if(resource.kind==='file'){
+      need(inventory.length===1&&inventory[0].path==='native-installation.json'&&inventory[0].kind==='file','metadata-inventory');
+      const stat=await fs.lstat(path);need(stat.isFile()&&stat.nlink===1&&(stat.mode&0o777)===inventory[0].mode&&sha(await fs.readFile(path))===inventory[0].sha256,'metadata-bytes');return true;
+    }
     const walk=async(relativeName='')=>{
       for(const entry of await fs.readdir(join(path,relativeName),{withFileTypes:true})){
         const name=relativeName?relativeName+'/'+entry.name:entry.name,target=join(path,name),s=await fs.lstat(target),expected=files.get(name);
@@ -66,14 +71,29 @@ export function managedUpgradeLayout(core,root,plan){
   }};
 }
 
+// Core source pins and the complete installed CLI source belong to one private
+// generation. A CLI-only change must also cross Core's safe transition boundary.
+export function nativeInstallationSelection(core,identity,record){
+  need(identity.components?.core?.sha256===record.core&&Array.isArray(record.runtimeInventory),'native-identity');
+  return {packageVersion:identity.packageVersion,pins:{...identity.pins,
+    source:core.contentIdentity({kind:'native-client-source-v1',core:identity.pins.source,runtimeInventory:record.runtimeInventory})}};
+}
+
 export async function upgradeManagedInstallation(args,dependencies={}){
   const {operation}=upgradeOptions(args);
   if(!dependencies.core)return withCurrentCore((core,context)=>upgradeManagedInstallation(args,{...dependencies,core,context}));
   const {core,context}=dependencies,root=dependencies.root??nativeHostRoot();
   await privatePath(root,{directory:true});
   const plan=await readPrivate(join(root,'upgrade-plan.json'),{limit:4000000}),layout=managedUpgradeLayout(core,root,plan);
-  need(core.canonicalJSON(plan.next)==core.canonicalJSON({packageVersion:context.identity.packageVersion,pins:context.identity.pins}),
-    'staged-package-does-not-match-this-client');
+  let expected={packageVersion:context.identity.packageVersion,pins:context.identity.pins};
+  if(plan.version===2){
+    const {nativeRuntimeInputs}=await import('./native-host.mjs'),files=await nativeRuntimeInputs(context);
+    const runtimeInventory=[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}));
+    expected=nativeInstallationSelection(core,context.identity,{core:context.identity.components.core.sha256,runtimeInventory});
+    need(core.canonicalJSON(plan.resources[0].next)===core.canonicalJSON(runtimeInventory.map(f=>({kind:'file',...f,mode:0o600}))),
+      'staged-client-source-does-not-match');
+  }
+  need(core.canonicalJSON(plan.next)===core.canonicalJSON(expected),'staged-package-does-not-match-this-client');
   const store=await openFileHostStore(core,{directory:join(root,'state')});
   try{
     const options={core,directory:root,store,current:plan.current,next:plan.next,...layout,

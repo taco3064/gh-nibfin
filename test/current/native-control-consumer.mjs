@@ -71,3 +71,17 @@ test('unit renders literal paths without systemd specifier or variable expansion
  assert.ok(unit.includes('"/tmp/with spaces/$$home%%unit/runtime/client/native-control-main.mjs"'));
  assert.throws(()=>nativeServiceUnit('/tmp/bad\nExecStart=wrong'),/native-service:path/);
 });
+
+
+test('upgrade staging links only the owned inactive unit, checks readback and never starts it',async()=>withCurrentCore(async(core,context)=>{
+ const root=join(context.root,'link-only');await fs.mkdir(root,{mode:0o700});
+ const unit=nativeServiceUnit(root);await fs.writeFile(join(root,nativeServiceName),unit,{mode:0o600});
+ await writePrivate(join(root,'control-service.json'),{version:1,account:userInfo().uid,generation:'12345678-1234-1234-1234-123456789abc',unit:sha(unit)});
+ let loaded=false,active=true;const calls=[];
+ const run=args=>{calls.push(args[0]);if(args[0]==='link')loaded=true;
+  return {ok:args[0]!=='show'||loaded,status:loaded?0:4,output:args[0]==='show'?
+   'LoadState='+ (loaded?'loaded':'not-found')+'\nActiveState='+ (active?'active':'inactive')+'\nMainPID='+ (active?'123':'0')+'\nControlPID=0\nFragmentPath='+ (loaded?join(root,nativeServiceName):'')+'\n':''};};
+ const service=nativeControlService({root,run});await assert.rejects(service.stageUnit(),/stage-unit-active/);
+ assert.deepEqual(calls,['show']);active=false;assert.equal((await service.stageUnit()).status,'linked');
+ assert.equal(calls.includes('start'),false);assert.equal(calls.filter(c=>c==='show').length,3);
+}));

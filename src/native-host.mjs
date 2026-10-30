@@ -4,7 +4,8 @@ import {userInfo} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {currentPin,currentProducer} from './current-core.mjs';
-import {nativeHostRoot} from './managed-upgrade.mjs';
+import {nativeHostRoot,upgradeManagedInstallation} from './managed-upgrade.mjs';
+import {stageUnactivatedNativeUpgrade} from './native-upgrade-stage.mjs';
 import {maintenanceLock} from './upgrade.mjs';
 import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
@@ -22,7 +23,7 @@ const remaining=()=>[
 
 // Trusted package inputs only. Public configuration cannot select another module,
 // executable or directory. Every retained byte is checked before reuse.
-async function runtimeInputs(context){
+export async function nativeRuntimeInputs(context){
  const files=new Map();
  const collect=async(root,prefix,relative='')=>{
   for(const entry of await fs.readdir(join(root,relative),{withFileTypes:true})){
@@ -39,7 +40,7 @@ async function runtimeInputs(context){
  await collect(clientRoot,'client');
  await collect(join(clientRoot,'../docs/handoffs'),'docs/handoffs');
  need(files.has('node_modules/@nibfin/core/src/index.mjs')&&files.has('client/native-host.mjs'),'package-source-incomplete');
- return files;
+ return new Map([...files].sort(([a],[b])=>a<b?-1:a>b?1:0));
 }
 async function verifyRuntime(root,files){
  await privatePath(root,{directory:true});const seen=new Set();
@@ -53,8 +54,8 @@ async function verifyRuntime(root,files){
   }
  };await walk();need(seen.size===files.size,'runtime-inventory');
 }
-async function publishRuntime(root,files){
- const target=join(root,'runtime');if(!await absent(target)){await verifyRuntime(target,files);return;}
+async function publishRuntime(root,files,name='runtime'){
+ const target=join(root,name);if(!await absent(target)){await verifyRuntime(target,files);return;}
  const staging=join(root,'.runtime-staging-'+randomUUID());await fs.mkdir(staging,{mode:0o700});
  try{
   for(const [path,bytes]of files){await fs.mkdir(dirname(join(staging,path)),{recursive:true,mode:0o700});await fs.writeFile(join(staging,path),bytes,{flag:'wx',mode:0o600});}
@@ -79,7 +80,7 @@ async function stageRunner(root,name,{prepare,verify,copyFrom}){
  * process; it has no GitHub writes, model login or Runner registration effects.
  * A running process and staged package are explicitly not delivery readiness.
  * Existing work and earlier installations are never reset to make init pass. */
-export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDistribution,verify=verifyRunnerDistribution,service}={}){
+export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDistribution,verify=verifyRunnerDistribution,service,upgradeManager}={}){
  const control=service??nativeControlService({root});
  const poolFor=(core,value)=>{if(value===undefined)return null;const p=core.validateExecutionPool(value);
   need(p.version===2,'legacy-central-pool-reconciliation-required');return p;};
@@ -92,7 +93,7 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    if(!record)return {status:'blocked',diagnostics:[{capability:'host',code:'native-host-not-staged'}]};
    need(record.version===1&&record.phase==='staged'&&record.core===currentPin.coreSha256
     &&record.runnerCount===pool.capacity&&core.canonicalJSON(record.executionPool)===core.canonicalJSON(pool),'installation-identity');
-   const files=await runtimeInputs(context);await verifyRuntime(join(root,'runtime'),files);
+   const files=await nativeRuntimeInputs(context);await verifyRuntime(join(root,'runtime'),files);
    for(let i=1;i<=pool.capacity;i++)await verify(join(root,'runner-'+i));
    await nativePoolStore(core,{root,configuration:pool}).status();
    const observed=await control.check();
@@ -102,13 +103,23 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
  async function prepareHost({core,context,executionPool}){
   need(process.platform==='linux'&&process.arch==='x64'&&process.versions.node.split('.')[0]==='22','platform');
   const pool=poolFor(core,executionPool);if(!pool)return selectPool();await ensurePrivateDirectory(root);
+  const files=await nativeRuntimeInputs(context);
+  const record={version:1,phase:'staged',producer:currentProducer,core:currentPin.coreSha256,
+   executionPool:pool,runnerCount:pool.capacity,runnerDistribution,
+   runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
+  const selected=await readPrivate(join(root,'native-installation.json'),{missing:true});
+  let upgraded=false;
+  if(selected?.executionPool?.version===2&&core.canonicalJSON(selected)!==core.canonicalJSON(record)){
+   need(core.canonicalJSON(selected.executionPool)===core.canonicalJSON(pool),'preserve-existing-installation');
+   await stageUnactivatedNativeUpgrade(core,{root,previous:selected,next:record,context,control,
+    verifyRunner:verify,stage:()=>publishRuntime(root,files,'runtime-next')});
+   const result=await upgradeManagedInstallation(['--apply'],{core,context,root,...(upgradeManager?{manager:upgradeManager}:{})});
+   need(result.status==='switched','original-upgrade-reconciliation-required');upgraded=true;
+  }
   return maintenanceLock(root,async assertLease=>{
    let previous=await readPrivate(join(root,'native-installation.json'),{missing:true});
-   const files=await runtimeInputs(context);assertLease();
-   const record={version:1,phase:'staged',producer:currentProducer,core:currentPin.coreSha256,
-    executionPool:pool,runnerCount:pool.capacity,runnerDistribution,
-    runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
-   let transitioned=false;
+   assertLease();
+   let transitioned=upgraded;
    if(previous&&(previous.core!==currentPin.coreSha256||core.canonicalJSON(previous.executionPool)!==core.canonicalJSON(pool))){
     await transitionStagedNativeHost(core,{root,previous,next:record,pool,control,verifyRunner:verify,publish:()=>publishRuntime(root,files)});
     previous=await readPrivate(join(root,'native-installation.json'));transitioned=true;
