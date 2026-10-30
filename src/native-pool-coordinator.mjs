@@ -6,6 +6,7 @@ import {nativePoolStore} from './native-pool-store.mjs';
 import {nativePoolIntake} from './native-pool-intake.mjs';
 import {nativePoolRuntime} from './native-pool-runtime.mjs';
 import {nativeWorkCustody} from './native-work-custody.mjs';
+import {nativeGithubProvider} from './native-github-provider.mjs';
 import {verifyCurrentCore,currentPin} from './current-core.mjs';
 import {readPrivate,writePrivate,ensurePrivateDirectory} from './local-state.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-pool-coordinator:'+code);};
@@ -22,7 +23,7 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
  need(record.core===currentPin.coreSha256&&typeof onProgress==='function','installation');
  const store=nativePoolStore(core,{root,configuration});await store.status();
  const targets=new Map(configuration.targets.map(t=>[t.repositoryId,t]));
- provider??=core.createGithubProvider({attempts:1,authorize:r=>{
+ provider??=nativeGithubProvider(core,{attempts:1,authorize:r=>{
   const target=targets.get(r.target);return !!target&&r.operation==='runner-pool'
    &&(r.method==='POST'&&r.endpoint==='/repos/'+target.repository+'/actions/runners/generate-jitconfig'
     ||r.method==='DELETE'&&new RegExp('^/repos/'+target.repository.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'/actions/runners/[1-9][0-9]*$').test(r.endpoint));

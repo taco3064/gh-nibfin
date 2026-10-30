@@ -5,7 +5,19 @@
 export function nativeGithubProvider(core,configuration={}){
  const send=configuration.transport??core.localGhTransport();
  const response=(request,value)=>{
-  if(request.method!=='GET'||!value?.headers)return value;const headers={...value.headers};
+  if(request.method!=='GET'||!value)return value;
+  // GitHub uses runner_id:0 while a queued Job has no assigned Runner. Kairo
+  // accepts that response; Core's resource IDs remain strictly positive. Map
+  // only this observed absence to null, retaining every other numeric spelling.
+  if(value.status===200&&typeof value.body==='string'&&/^\/repos\/[^/]+\/[^/]+\/actions\/(?:jobs\/[1-9][0-9]*|runs\/[1-9][0-9]*\/(?:attempts\/[1-9][0-9]*\/)?jobs)(?:\?|$)/.test(request.endpoint)){
+   try{let changed=false;const parsed=JSON.parse(value.body,function(key,item,context){
+    if(key==='runner_id'&&item===0&&context.source==='0'&&this.status==='queued'&&this.runner_name===''){
+     changed=true;return null;
+    }
+    return typeof item==='number'?JSON.rawJSON(context.source):item;
+   });if(changed)value={...value,body:JSON.stringify(parsed)};}catch{}
+  }
+  if(!value.headers)return value;const headers={...value.headers};
   for(const key of Object.keys(headers))if(key.toLowerCase()==='link'&&typeof headers[key]==='string')headers[key]=headers[key].replace(/<([^>]+)>/g,(whole,uri)=>{
    if(!/%3d/i.test(uri))return whole;const candidate=uri.replace(/%3d/ig,'=');
    try{const before=new URL(uri),after=new URL(candidate);

@@ -75,3 +75,13 @@ test('padding normalization preserves prepared mutation capability and leaves fo
  const send=await options.transport.prepareMutation({id:'original'});assert.equal(prepared,1);assert.equal(sent,0);
  assert.deepEqual(await send({method:'POST'}),{status:204});assert.equal(sent,1);
 });
+
+test('queued unassigned Job zero is absence, while actual Runner IDs and other exact numeric identities remain validated',async()=>withCurrentCore(async core=>{
+ const endpoint='/repos/example/project/actions/jobs/124151808626',options={endpoint,target:'100',operation:'native-pool-source',correlation:'test'};
+ const body='{"id":9007199254740993,"run_id":41081577989,"runner_id":0,"runner_group_id":0,"runner_name":"","status":"queued"}';
+ const provider=payload=>nativeGithubProvider(core,{transport:async()=>({status:200,body:payload}),attempts:1});
+ const queued=await provider(body).request(options);assert.equal(queued.outcome,'read');assert.equal(queued.data.id,'9007199254740993');assert.equal(queued.data.runner_id,null);assert.equal(queued.data.runner_group_id,'0');
+ const actual=await provider(body.replace('"runner_id":0','"runner_id":456')).request(options);assert.equal(actual.data.runner_id,'456');
+ for(const invalid of[body.replace('"status":"queued"','"status":"in_progress"'),body.replace('"runner_name":""','"runner_name":"assigned"'),body.replace('"run_id":41081577989','"run_id":0')])assert.equal((await provider(invalid).request(options)).outcome,'failed');
+ assert.equal((await provider(body).request({...options,endpoint:'/repos/example/project/issues/1'})).outcome,'failed');
+}));
