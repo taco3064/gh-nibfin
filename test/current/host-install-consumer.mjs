@@ -47,10 +47,13 @@ test('actual installer accepts a systemd-created unit link only after notify rea
   const other=join(links,'other.service');await fs.writeFile(other,await fs.readFile(unitPath),{mode:0o600});
   await fs.unlink(link);await fs.symlink(other,link);assert.equal((await host.check(request)).status,'blocked');
   await fs.unlink(link);await fs.symlink(unitPath,link);
-  for(const name of ['host-store.mjs','local-state.mjs']){
+  for(const name of ['host-store.mjs','kernel-lock.mjs','local-state.mjs']){
     const target=join(directory,name),original=await fs.readFile(target);await fs.appendFile(target,'\n// altered\n');
     assert.equal((await host.check(request)).status,'blocked');await fs.writeFile(target,original);
   }
+  const installed=await import((await import('node:url')).pathToFileURL(join(directory,'local-state.mjs')).href);
+  const adapterRoot=join(context.root,'installed-adapter-lock');await fs.mkdir(adapterRoot,{mode:0o700});
+  assert.equal(await installed.localLock(adapterRoot,'installed',()=> 'actual-installed-lease'),'actual-installed-lease');
   const manifestPath=join(directory,'installation.json'),manifestBytes=await fs.readFile(manifestPath),unitBytes=await fs.readFile(unitPath);
   const olderUnit=unitBytes.toString().replace('TimeoutStartSec=45','TimeoutStartSec=44'),previous=JSON.parse(manifestBytes);
   await fs.writeFile(unitPath,olderUnit);previous.unit=createHash('sha256').update(olderUnit).digest('hex');await fs.writeFile(manifestPath,JSON.stringify(previous));

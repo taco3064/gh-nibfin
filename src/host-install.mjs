@@ -41,7 +41,7 @@ export function existingControlHost({path,process:run=systemctl}={}){
       const installed=await readPrivate(join(c.directory,'installation.json'));
       if(installed.core!==context.identity.components.core.sha256||installed.binding!==c.binding.sha256)throw Error();
       if(installed.launcher!==sha(await fs.readFile(new URL('./notifier.mjs',import.meta.url)))||sha(await fs.readFile(join(c.directory,'notifier.mjs')))!==installed.launcher||sha(await fs.readFile(join(c.directory,'notifier.json')))!==installed.configuration)throw Error();
-      if(!installed.adapters||Object.keys(installed.adapters).sort().join(' ')!=='host-store.mjs local-state.mjs')throw Error();
+      if(!installed.adapters||Object.keys(installed.adapters).sort().join(' ')!=='host-store.mjs kernel-lock.mjs local-state.mjs')throw Error();
       for(const [name,digest] of Object.entries(installed.adapters)){
         await privatePath(join(c.directory,name));
         if(sha(await fs.readFile(join(c.directory,name)))!==digest||sha(await fs.readFile(new URL('./'+name,import.meta.url)))!==digest)throw Error();
@@ -89,7 +89,7 @@ export function existingControlHost({path,process:run=systemctl}={}){
     const daemon=join(c.directory,'notifier.mjs'),launcher=await fs.readFile(new URL('./notifier.mjs',import.meta.url));
     try{const before=await fs.readFile(daemon);if(!before.equals(launcher))throw Error('Modified notifier launcher preserved.');}catch(e){if(e.code!=='ENOENT')throw e;await fs.writeFile(daemon,launcher,{flag:'wx',mode:0o600});}
     const adapters={};
-    for(const name of ['host-store.mjs','local-state.mjs']){
+    for(const name of ['host-store.mjs','kernel-lock.mjs','local-state.mjs']){
       const bytes=await fs.readFile(new URL('./'+name,import.meta.url)),target=join(c.directory,name);adapters[name]=sha(bytes);
       try{await privatePath(target);if(!(await fs.readFile(target)).equals(bytes))throw Error('Modified host adapter preserved.');}
       catch(error){if(error.code!=='ENOENT')throw error;await fs.writeFile(target,bytes,{flag:'wx',mode:0o600});}
