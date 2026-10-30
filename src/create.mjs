@@ -8,6 +8,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline/promises';
 import {Writable} from 'node:stream';
 import {withEnvironmentLock} from './register.mjs';
+import {pruneCodexLoginTemporaries} from './login-temporaries.mjs';
 
 class Diagnostic extends Error {}
 const fail = message => { throw new Diagnostic(message); };
@@ -67,6 +68,7 @@ export async function memberLogin(agent,environment){
     await new Promise((resolve,reject)=>{const c=spawn('codex',['login'],{env:environment,stdio:'inherit',shell:false});
       c.once('error',()=>reject(new Diagnostic('Install the selected Codex CLI for member login.')));
       c.once('exit',code=>code===0?resolve():reject(new Diagnostic('Member login denied/interrupted; resume the same create command.')));});
+    await pruneCodexLoginTemporaries(environment.CODEX_HOME);
   }else{
     process.stdout.write(`Enter this member's ${agent} API key (hidden; retained only in this environment): `);
     const output=new Writable({write(chunk,encoding,done){done();}}),input=createInterface({input:process.stdin,output,terminal:true});
