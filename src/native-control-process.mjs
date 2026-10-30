@@ -2,9 +2,11 @@ import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
 import {createServer,connect} from 'node:net';
+import {pathToFileURL} from 'node:url';
 import {privatePath,readPrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {maintenanceLock} from './upgrade.mjs';
 import {verifyNativeRuntime,nativeServiceUnit,nativeServiceName} from './native-control-service.mjs';
+import {nativePoolStore} from './native-pool-store.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -32,6 +34,11 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   await privatePath(join(root,nativeServiceName));
   need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
   await verifyNativeRuntime(root,record);assertLease();
+  let poolStore;
+  if(record.executionPool?.version===2){
+   const core=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
+   poolStore=nativePoolStore(core,{root,configuration:record.executionPool});await poolStore.status();
+  }
   const live={version:1,generation:receipt.generation,pid:process.pid,installation:sha(JSON.stringify(record)),
    service:'running',delivery:'blocked',reason:'native-delivery-composition-pending'};
   const path=join(root,'control.sock');await removeStaleSocket(path);
@@ -40,10 +47,11 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    clients.add(socket);socket.once('close',()=>clients.delete(socket));socket.on('error',()=>socket.destroy());
    socket.setTimeout(3000,()=>socket.destroy());let bytes='';
    socket.on('data',b=>{bytes+=b;if(Buffer.byteLength(bytes)>256)socket.destroy();});
-   socket.once('end',()=>{try{
+   socket.once('end',async()=>{try{
     assertLease();const request=JSON.parse(bytes);
     need(request&&Object.keys(request).sort().join(' ')==='operation version'&&request.version===1&&request.operation==='status','request');
-    socket.end(JSON.stringify(live)+'\n');
+    const pool=poolStore?await poolStore.status():undefined;assertLease();
+    socket.end(JSON.stringify({...live,...(pool?{pool}:{})})+'\n');
    }catch{socket.destroy();}});
   });
   server.maxConnections=16;
