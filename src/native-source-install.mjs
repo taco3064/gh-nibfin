@@ -1,3 +1,4 @@
+import{refreshNativeSource}from'./native-source-refresh.mjs';
 import fs from'node:fs/promises';import{join,dirname,resolve}from'node:path';import{execFileSync}from'node:child_process';
 import{readPrivate,writePrivate,sha,privatePath}from'./local-state.mjs';import{publicCheckout}from'./native-role-host.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-source-install:'+code);};
@@ -69,7 +70,7 @@ export async function installNativeSource(core,{root,repository,repositoryId,des
    if(settled)await fs.rm(directory,{recursive:true});
   }
  }
- need(['branch','pr-intent','pr','merge-intent','merged','installed'].includes(proposal.phase),'original-proposal-reconciliation-required');
+ need(['branch','pr-intent','pr','refresh-intent','merge-intent','merged','installed'].includes(proposal.phase),'original-proposal-reconciliation-required');
  if(proposal.phase==='installed')return {status:'installed',pr:proposal.pr.url};
  if(!proposal.pr){
   const endpoint='/repos/'+repository+'/pulls?state=all&per_page=100';
@@ -86,7 +87,10 @@ export async function installNativeSource(core,{root,repository,repositoryId,des
    &&list.data[0].head.repo?.id===repositoryId&&list.data[0].base?.ref==='main','original-pr-reconciliation-required');
   const pr=list.data[0];proposal={...proposal,phase:'pr',pr:{id:pr.id,number:String(pr.number),url:pr.html_url}};await writePrivate(path,proposal);
  }
- let pr=await get('/pulls/'+proposal.pr.number);need(pr.id===proposal.pr.id&&pr.head?.sha===proposal.commit,'pr-drift');
+ let pr=await get('/pulls/'+proposal.pr.number);
+ if(!pr.merged){const refreshed=await refreshNativeSource(core,{proposal,pr,path,desired,repository,repositoryId,provider,signal});proposal=refreshed.proposal;pr=refreshed.pr;
+  if(refreshed.pending)return{status:'pending',pr:proposal.pr.url,reason:'protected-source-base-refresh'};}
+ need(pr.id===proposal.pr.id&&pr.head?.sha===proposal.commit,'pr-drift');
  if(!pr.merged){
   need(pr.state==='open'&&pr.draft===false,'pr-not-open');
   const checks=await core.observeGithubCI({provider,expected:{repository,repositoryId,prId:proposal.pr.id,pr:Number(proposal.pr.number),

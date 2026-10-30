@@ -45,7 +45,7 @@ export function installationProvider(core,{transport,repo,write}){
     authorize:r=>write===true&&r.endpoint.startsWith(prefix+'/')&&['PUT','POST','PATCH'].includes(r.method)
       &&(/\/contents\/(?:\.github\/workflows\/nibfin-[\w-]+\.yml|\.nibfin\/[\w./-]+)$/.test(r.endpoint)
       ||r.endpoint===prefix+'/labels'||r.endpoint===prefix+'/actions/variables'||r.endpoint.startsWith(prefix+'/actions/variables/')
-      ||r.method==='POST'&&r.endpoint===prefix+'/pulls'||r.method==='PUT'&&new RegExp('^'+prefix+'/pulls/[1-9][0-9]*/merge$').test(r.endpoint))});
+      ||r.method==='POST'&&r.endpoint===prefix+'/pulls'||r.method==='PUT'&&new RegExp('^'+prefix+'/pulls/[1-9][0-9]*/(?:merge|update-branch)$').test(r.endpoint))});
 }
 async function request(provider,repo,endpoint,{method='GET',body}={}){
   const r=await provider.request({method,endpoint,target:targets.get(provider),operation:'installation',correlation:'installation',...(body?{body}:{}),signal:AbortSignal.timeout(30000)});
