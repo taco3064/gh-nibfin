@@ -189,7 +189,7 @@
       },
       {
         "path": "docs/workflows.md",
-        "sha256": "8a23024f2e9f623ae18c6136a95d7980db74434b84e03f48d64e8ef32f70a477"
+        "sha256": "34790ef71516ffcaa279a3b612604d18b7b8beb9bfbbde4082dd5ce98fc8526b"
       },
       {
         "path": "docs/workspace.md",
@@ -413,7 +413,7 @@
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "28345dc92e733a23e53512995d948291fc76cf8b95b14717aec355c320e09301"
+        "sha256": "866fa09de914f1aeed7db01be75562db7b999a521c8e695ed732d60438b9702d"
       },
       {
         "path": "src/distribution.mjs",
@@ -689,7 +689,7 @@
       },
       {
         "path": "src/shape.mjs",
-        "sha256": "5e67e4fa9a51d58232365185b9dcaade60701410e890a602d9fd117afc867c43"
+        "sha256": "e86e32323a6f0f04e19328e4d0dc533035435793a780c471b96c54b91fbfcdfc"
       },
       {
         "path": "src/verification-child.mjs",
@@ -717,7 +717,7 @@
       },
       {
         "path": "src/workflow-install.mjs",
-        "sha256": "4cbbf2f8707fdc17fc94f6ef518c056f4356ccaa45fc24fc38fa8f6fc69a7baa"
+        "sha256": "81fc1e964553639e1fcb2a1785be2dfe2ae52c0a3e15d409d9b2259637aa4042"
       },
       {
         "path": "src/workflow.mjs",
@@ -1085,7 +1085,7 @@
       },
       {
         "path": "test/workflows.test.mjs",
-        "sha256": "60828a8b63276371bbabf84795a0b4719d38cab83d9886c8d3cdd02b21e155e1"
+        "sha256": "feff04bcefe154bd87ad085d4ad07881c1008c5637502bd86b4744a41794e1e4"
       },
       {
         "path": "test/workspace.test.mjs",
@@ -1244,7 +1244,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "08ab49caa524446489090541393aea9f4d53f50a971cf1b45c74b2158442523d"
+    "contentSha256": "6262b6565f17fa77d55d3ac4ddd8a7f79009d0bb38fdb3e28b5580c3cc845d96"
   },
   "components": {
     "core": {
@@ -1428,7 +1428,7 @@
         },
         {
           "path": "docs/workflows.md",
-          "sha256": "8a23024f2e9f623ae18c6136a95d7980db74434b84e03f48d64e8ef32f70a477"
+          "sha256": "34790ef71516ffcaa279a3b612604d18b7b8beb9bfbbde4082dd5ce98fc8526b"
         },
         {
           "path": "docs/workspace.md",
@@ -1648,7 +1648,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "28345dc92e733a23e53512995d948291fc76cf8b95b14717aec355c320e09301"
+          "sha256": "866fa09de914f1aeed7db01be75562db7b999a521c8e695ed732d60438b9702d"
         },
         {
           "path": "src/distribution.mjs",
@@ -1924,7 +1924,7 @@
         },
         {
           "path": "src/shape.mjs",
-          "sha256": "5e67e4fa9a51d58232365185b9dcaade60701410e890a602d9fd117afc867c43"
+          "sha256": "e86e32323a6f0f04e19328e4d0dc533035435793a780c471b96c54b91fbfcdfc"
         },
         {
           "path": "src/verification-child.mjs",
@@ -1952,7 +1952,7 @@
         },
         {
           "path": "src/workflow-install.mjs",
-          "sha256": "4cbbf2f8707fdc17fc94f6ef518c056f4356ccaa45fc24fc38fa8f6fc69a7baa"
+          "sha256": "81fc1e964553639e1fcb2a1785be2dfe2ae52c0a3e15d409d9b2259637aa4042"
         },
         {
           "path": "src/workflow.mjs",
@@ -1995,7 +1995,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "de6ac88833e7d6fca0a42d258745cd325831886917c0562746832bff1775f21e"
+      "sha256": "2e7a65bddfcf8019e3c839c463033152656cff493dec881878ce3ce17a417609"
     },
     "skills": {
       "version": "0.1.0",
@@ -2040,7 +2040,7 @@
         },
         {
           "path": "docs/workflows.md",
-          "sha256": "8a23024f2e9f623ae18c6136a95d7980db74434b84e03f48d64e8ef32f70a477"
+          "sha256": "34790ef71516ffcaa279a3b612604d18b7b8beb9bfbbde4082dd5ce98fc8526b"
         },
         {
           "path": "host/configuration.example.json",
@@ -2076,7 +2076,7 @@
         },
         {
           "path": "src/workflow-install.mjs",
-          "sha256": "4cbbf2f8707fdc17fc94f6ef518c056f4356ccaa45fc24fc38fa8f6fc69a7baa"
+          "sha256": "81fc1e964553639e1fcb2a1785be2dfe2ae52c0a3e15d409d9b2259637aa4042"
         },
         {
           "path": "src/workflow.mjs",
@@ -2103,7 +2103,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "b8adce2b6f992daf7806ef4a68da7c0339724e6da22b1ae87eef0e0b36e72e29"
+      "sha256": "5fe7586433b5d2817d7c90d4676f1389ec9b7393f8d39ebe4e09ea8ae7ce99da"
     },
     "action": {
       "version": "unknown",
@@ -2118,10 +2118,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "24a4005173d439e509589a0c2b2c531de4162ec85081fa575a843ffe32477ce3"
+    "sha256": "f761964125844ae8dbdda09eda3645d73d6d0ccbb1a4bd3f35a9f14612417eb6"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "6b24e2164c8d8f294892be17099b41f3a24fac31eb2431b8349915516a3c5da7"
+    "sha256": "d7ea5f0326a04564aecd399f01d997c1bafe7912cd34f927e85cb4949c005276"
   }
 }

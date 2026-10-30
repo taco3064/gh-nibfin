@@ -10,7 +10,7 @@ test('JIT source revalidates the project Run, Job, immutable installed workflow 
  assert.equal(result.identity,f.retained.identity);
  for(const path of ['/user','/repos/example/project','/repos/example/project/actions/runs/300',
   '/repos/example/project/actions/jobs/200','/repos/example/project/issues/55'])assert.ok(f.calls.some(r=>r.endpoint===path));
- for(const path of ['.nibfin/runtime.json','.github/workflows/nibfin-stage.yml','.github/workflows/nibfin-delivery.yml'])
+ for(const path of ['.nibfin/runtime.json','.github/workflows/nibfin-stage.yml'])
   assert.ok(f.calls.some(r=>r.endpoint.includes('/contents/'+path+'?ref='+f.retained.sourceCommit)));
  f.routes.get('/repos/example/project/actions/jobs/200').status='in_progress';
  assert.equal((await f.source.inspect('request-0')).identity,result.identity);

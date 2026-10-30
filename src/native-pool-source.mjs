@@ -59,7 +59,7 @@ export function nativePoolSource(core,{configuration,memberId,provider,dispatche
     &&policy.allowedActorIds.includes(memberId)&&core.canonicalJSON(policy.executionPool)===core.canonicalJSON(pool),'owner-policy');
    const plan=managedWorkflowPlan(core,{executionPool:pool,repository:target.repository}),rescue=retained.jobName==='rescue';
    const path=rescue?'.github/workflows/nibfin-rescue.yml':'.github/workflows/nibfin-stage.yml';
-   for(const file of rescue?[path]:[path,'.github/workflows/nibfin-delivery.yml'])
+   for(const file of rescue?[path]:[path,...(plan.files.has('.github/workflows/nibfin-delivery.yml')?['.github/workflows/nibfin-delivery.yml']:[])])
     need((await read(file)).equals(Buffer.from(plan.files.get(file))),'workflow-bytes');
    const run=await get(root+'/actions/runs/'+request.runId);
    need(run.id===request.runId&&String(run.run_attempt)===request.attempt&&run.workflow_id===retained.workflowId
