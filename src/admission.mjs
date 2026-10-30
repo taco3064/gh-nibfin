@@ -77,16 +77,17 @@ export async function observeAdmissionPlan(core,{state,provider,signal,repositor
       throw Error('Shared admission requires the exact project-owned registration and protected membership.');
   }
   const plan=managedWorkflowPlan(core,{executionPool:pool,repository}),expected=plan.files;
-  const stages=[['.github/workflows/nibfin-stage.yml','.github/workflows/nibfin-delivery.yml']];
+  const native=pool?.version===2,stages=[['.github/workflows/nibfin-stage.yml',native?null:'.github/workflows/nibfin-delivery.yml']],
+    entries=native?stages:[...stages,['.github/workflows/nibfin-rescue.yml',null]];
   const files=new Map();
-  for(const path of new Set(stages.flat().concat('.github/workflows/nibfin-rescue.yml'))){
+  for(const path of new Set(entries.flat().filter(Boolean))){
     const bytes=await read(path),approved=expected.get(path);
     if(typeof approved!=='string'||!bytes.equals(Buffer.from(approved)))throw Error('Admission workflow source differs from immutable managed installation.');
     files.set(path,bytes);
   }
   const policies=[];
-  for(const [path,dependency] of [...stages,['.github/workflows/nibfin-rescue.yml',null]]){
-    for(const jobName of dependency?['stage / execute','stage / compute']:['rescue'])policies.push({version:1,repository,repositoryId:target.id,
+  for(const [path,dependency] of entries){
+    for(const jobName of native?['stage / execute']:dependency?['stage / execute','stage / compute']:['rescue'])policies.push({version:1,repository,repositoryId:target.id,
       ownerId:target.owner.id,runnerId:state.runnerId,runnerName:state.runnerName,runnerDirectory,workerSha256,
       workflowPath:path,workflowSha256:sha(files.get(path)),jobName,allowedActorIds:ownerPolicy.allowedActorIds,
       ref:'refs/heads/main',registrationLevel:state.registration.level,

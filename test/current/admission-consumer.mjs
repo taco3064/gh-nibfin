@@ -11,7 +11,7 @@ import {managedWorkflowPlan} from '../../src/workflow-inputs.mjs';
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const blob=b=>createHash('sha1').update(`blob ${Buffer.byteLength(b)}\0`).update(b).digest('hex');
 
-test('shared capacity admission verifies the actual project-owned Job and immutable caller/callee instead of central source workflows',async()=>{
+test('shared capacity admission verifies the actual project-owned Job and immutable direct stage source without dormant centralized workflows',async()=>{
   await withCurrentCore(async(core,context)=>{
     const identity=(repository,repositoryId)=>({version:1,repository,repositoryId,ownerId:'7',ownerType:'User'}),
       source=identity('example/project','42'),targets=[source,identity('example/cli','43'),identity('example/action','44')],
@@ -31,17 +31,17 @@ test('shared capacity admission verifies the actual project-owned Job and immuta
     const all=[];
     for(const id of ['21','22']){
       const result=await observeAdmissionPlan(core,{...input,state:{...input.state,runnerId:id,runnerName:'worker-'+id}});
-      assert.equal(result.sourceCommit,commit);assert.equal(result.policies.length,3);all.push(...result.policies);
-      const stages=result.policies.filter(p=>p.workflowDependencies);
-      assert.equal(stages.length,2);assert.ok(stages.every(p=>p.repositoryId==='42'));
-      for(const p of stages)assert.equal(p.workflowDependencies[0].path,'.github/workflows/nibfin-delivery.yml');
+      assert.equal(result.sourceCommit,commit);assert.equal(result.policies.length,1);all.push(...result.policies);
+      const stages=result.policies;
+      assert.equal(stages.length,1);assert.ok(stages.every(p=>p.repositoryId==='42'));
+      for(const p of stages){assert.equal(p.workflowPath,'.github/workflows/nibfin-stage.yml');assert.equal(p.jobName,'stage / execute');assert.equal(p.workflowDependencies,undefined);}
     }
     assert.equal(new Set(all.map(p=>p.runnerId)).size,2);
     assert.ok(calls.filter(r=>r.endpoint.includes('/contents/')).every(r=>r.endpoint.endsWith('?ref='+commit)));
     await assert.rejects(observeAdmissionPlan(core,{...input,installation:undefined}),/Protected shared installation/);
     await assert.rejects(observeAdmissionPlan(core,{...input,installation:{...installation,executionPool:{...executionPool,targets:[source]}}}));
-    const callee='/repos/example/project/contents/.github/workflows/nibfin-delivery.yml?ref='+commit,original=routes.get(callee);
-    routes.set(callee,content('.github/workflows/nibfin-delivery.yml','modified callee'));
+    const callee='/repos/example/project/contents/.github/workflows/nibfin-stage.yml?ref='+commit,original=routes.get(callee);
+    routes.set(callee,content('.github/workflows/nibfin-stage.yml','modified stage'));
     await assert.rejects(observeAdmissionPlan(core,input),/differs/);routes.set(callee,original);
     const other=routes.get('/repos/example/cli');routes.set('/repos/example/cli',{...other,id:'99'});
     await assert.rejects(observeAdmissionPlan(core,input),/Execution pool/);routes.set('/repos/example/cli',other);
