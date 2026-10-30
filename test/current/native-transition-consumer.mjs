@@ -73,4 +73,7 @@ test('retirement verifies inactive owned unit and reconciles a lost disable repl
  assert.equal((await service.retire()).status,'retired');
  assert.equal(calls.filter(c=>c==='disable').length,before);
  assert.equal((await readPrivate(join(root,'control-retirement.json'))).phase,'retired');
+ await fs.unlink(join(root,'control-retirement.json'));
+ assert.equal((await service.retire()).status,'retired');
+ assert.equal(calls.filter(c=>c==='disable').length,before);
 }));
