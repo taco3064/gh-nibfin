@@ -18,7 +18,7 @@ export async function nativeCycleFixture(core,context){
   runtime:{image,runtimeProfile,socket:'/run/user/'+userInfo().uid+'/docker.sock'},
   instances:[1,2].map(n=>({id:'fixture-'+n,workspace:join(base,'work-'+n),registration:join(base,'reg-'+n),service:join(base,'service-'+n)}))};
  await ensurePrivateDirectory(join(base,'environments/native-member'));await writePrivate(join(base,'environments/native-member/environment.json'),env);
- const issue={id:'123',node_id:'I_123',number:55,title:'Document native onboarding',state:'open',updated_at:'2026-10-30T00:00:00Z',
+ const issue={id:'123',node_id:'I_123',number:55,title:'Document native onboarding',state:'open',state_reason:null,closed_at:null,updated_at:'2026-10-30T00:00:00Z',
   body:'Document the native Owner and Member setup.\nNo additional untracked or ignored Candidate artifacts are required.\nDeployment is not required for this source-only change.',
   url:'https://api.github.com/repos/'+repository+'/issues/55',repository_url:'https://api.github.com/repos/'+repository,
   assignees:[member],labels:[{id:'900',name:'scope'}]};

@@ -70,7 +70,7 @@ export function nativePoolSource(core,{configuration,memberId,provider,dispatche
     &&run.display_title===core.actionRunName({issue:retained.issue,stage:retained.stage,correlation:retained.correlation,
       ...(rescue?{rescue:true,mode:retained.mode}:{})}),'run');
    const job=await get(root+'/actions/jobs/'+request.jobId);
-   need(job.id===request.jobId&&job.run_id===request.runId&&String(job.run_attempt)===request.attempt
+   need(job.id===request.jobId&&job.run_id===request.runId&&(job.run_attempt===undefined||String(job.run_attempt)===request.attempt)
     &&job.head_sha===retained.sourceCommit&&job.name===retained.jobName&&['queued','in_progress','completed'].includes(job.status)
     &&Array.isArray(job.labels)&&job.labels.includes('nibfin-request-'+selector)
     &&job.labels.includes(core.memberRunnerLabel(memberId)),'job');

@@ -42,7 +42,7 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
   const result=await provider.request({endpoint:'/repos/'+record.request.repository+'/actions/jobs/'+record.request.jobId,
    target:record.request.repositoryId,operation:'runner-pool-runtime',correlation:record.request.id,signal});
   need(result.outcome==='read','job-observation-unavailable');const job=result.data;
-  need(job.id===record.request.jobId&&job.run_id===record.request.runId&&String(job.run_attempt)===record.request.attempt
+  need(job.id===record.request.jobId&&job.run_id===record.request.runId&&(job.run_attempt===undefined||String(job.run_attempt)===record.request.attempt)
    &&job.runner_id===record.runnerId&&job.status==='completed','job-unconfirmed');return job;
  }
  async function groupEmpty(group){
