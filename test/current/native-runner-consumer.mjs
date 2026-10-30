@@ -138,3 +138,14 @@ test('service launch is on demand without enable or restart; a lost start reply 
  const unit=nativeRunnerUnit('/tmp/$literal%unit','request-1',2);
  assert.ok(unit.includes('$$literal%%unit'));assert.ok(unit.includes('Restart=no'));assert.ok(!unit.includes('JITCONFIG'));
 }));
+
+test('inactive systemd service retains its original terminated invocation when systemd clears its live identity',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(core,context),unit=join(f.root,'nibfin-runner-1.service'),bytes=nativeRunnerUnit(f.root,request.id,1);
+ await fs.writeFile(unit,bytes,{mode:0o600});await writePrivate(join(f.directory,'service.json'),{version:1,lease:f.record.lease.identity,selector:request.id,unit:sha(bytes)});
+ const service=nativeRunnerService({root:f.root,selector:request.id,slot:1,lease:f.record.lease.identity,run:()=>({ok:true,output:'ActiveState=inactive\nMainPID=0\nInvocationID=\nControlGroup=\nFragmentPath='+unit+'\n'})});
+ await assert.rejects(service.state(),{code:'ENOENT'});
+ await writePrivate(join(f.directory,'process.json'),{phase:'terminated',lease:f.record.lease.identity,invocation:'a'.repeat(32)});
+ assert.equal((await service.state()).invocation,'a'.repeat(32));
+ await writePrivate(join(f.directory,'process.json'),{phase:'running',lease:f.record.lease.identity,invocation:'a'.repeat(32)});
+ await assert.rejects(service.state(),/service-identity/);
+}));

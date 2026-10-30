@@ -3,6 +3,11 @@ import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./loca
 import{retainUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
+export function nativeReadBrokerDirectory(lease){
+ need(/^[a-f0-9]{64}$/.test(lease),'broker-lease');
+ const directory=join('/run/user/'+userInfo().uid,'nibfin-gh-'+lease);
+ need(Buffer.byteLength(directory+'/read.sock')<108,'broker-path');return directory;
+}
 export async function publicCheckout(repository,commit,path,signal){
  need(/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(repository)&&/^[a-f0-9]{40}$/.test(commit),'checkout-binding');
  await privatePath(path,{directory:true});need((await fs.readdir(path)).length===0,'existing-workspace');
@@ -28,7 +33,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  const member=await readNativeMember(core,{root,memberId}),directory=join(root,'jobs',binding.jobRecord.lease.identity,'roles');
  await fs.mkdir(directory,{mode:0o700});
  const allocatedDirectory=await fs.lstat(directory);
- let broker;
+ let broker,brokerPath;
  try{
  const instances=[];
  for(const role of roles){const parent=join(directory,role);await fs.mkdir(parent,{mode:0o700});
@@ -42,7 +47,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  const runner={version:1,platform:'linux',arch:'x64',account:{user:userInfo().username,uid:userInfo().uid,githubUserId:memberId},
   path:core.supportedRunnerDefaults.path,interpreter:core.supportedRunnerDefaults.interpreter,
   work:join(runnerRoot,'work'),scratch:join(runnerRoot,'scratch'),cache:join(runnerRoot,'cache')};
- const brokerPath=join(directory,'github-read');broker=await core.startGithubReadBroker({directory:brokerPath,
+ brokerPath=nativeReadBrokerDirectory(binding.jobRecord.lease.identity);broker=await core.startGithubReadBroker({directory:brokerPath,
   repositories:binding.configuration.targets.map(t=>t.repository),environment:{PATH:runner.path,HOME:userInfo().homedir}});
  const backend=instance=>({root:member.base,image:member.image,socket:'/run/user/'+userInfo().uid+'/docker.sock',runtimeProfile:member.runtimeProfile,
   environment,instanceId:instance.id,egress:{image:member.image,node:true},githubRead:{directory:brokerPath,repositories:binding.configuration.targets.map(t=>t.repository)}});
@@ -121,7 +126,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  }catch(error){
   // Construction has not exposed any lifecycle to Core and cannot launch a
   // model. Close the read broker before retiring this exact disposable tree.
-  if(broker)await new Promise(resolve=>broker.close(resolve));
+  if(broker){await new Promise(resolve=>broker.close(resolve));await fs.rmdir(brokerPath);}
   await privatePath(directory,{directory:true});const current=await fs.lstat(directory);
   need(current.ino===allocatedDirectory.ino&&current.dev===allocatedDirectory.dev,'workspace-directory-changed');
   await fs.rm(directory,{recursive:true});throw error;
