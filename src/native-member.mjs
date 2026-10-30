@@ -11,7 +11,7 @@ export async function readNativeMember(core,{root,memberId}={}){
   &&record.agent==='codex'&&/^sha256:[a-f0-9]{64}$/.test(record.image)
   &&Object.hasOwn(core.linuxCodexProfiles,record.runtimeProfile),'configuration');
  const path=join(base,'environments',name,'environment.json'),environment=await readPrivate(path);
- need(environment.schemaVersion===1&&environment.name===name&&environment.agent===record.agent
+ need(environment.schemaVersion===1&&environment.memberLogin==='shared-native-v1'&&environment.name===name&&environment.agent===record.agent
   &&environment.githubId===memberId&&environment.account.uid===userInfo().uid&&environment.account.username===userInfo().username
   &&environment.loginSpace===join(base,'member-auth')&&environment.runtime.image===record.image
   &&environment.runtime.runtimeProfile===record.runtimeProfile&&environment.runtime.socket==='/run/user/'+userInfo().uid+'/docker.sock'

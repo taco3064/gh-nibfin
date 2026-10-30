@@ -122,6 +122,8 @@ test('native init reuses the member-owned login through the maintained create ow
  const record=await createEnvironment(args('native-member',2),{...d,configuration:{...d.configuration,loginSpace,runtimeRoot:root},
   login:()=>assert.fail('existing member login must be retained')});
  assert.equal(record.loginSpace,loginSpace);assert.equal(await fs.readFile(join(loginSpace,'auth.json'),'utf8'),auth);
+ const {loadEnvironment}=await import('../src/register.mjs');
+ assert.equal((await loadEnvironment(d.root,'native-member',userInfo())).loginSpace,loginSpace);
  assert.equal(record.instances.length,2);assert.ok(record.instances.every(i=>i.loginSpace===loginSpace));
  await absent(join(d.root,'native-member/login'));
 }));
