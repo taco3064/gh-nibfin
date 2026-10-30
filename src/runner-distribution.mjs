@@ -23,7 +23,7 @@ async function distributionLink(root,relative){
 }
 // Verify the immutable official archive BEFORE extraction; compare every shipped
 // file to the application actually invoked. No download, installer or lifecycle.
-export async function verifyRunnerDistribution(directory,{signal}={}) {
+export async function verifyRunnerDistribution(directory,{signal,unregistered=false}={}) {
   let scratch;
   try {
     if(process.platform!=='linux' || process.arch!=='x64')throw Error();
@@ -35,9 +35,10 @@ export async function verifyRunnerDistribution(directory,{signal}={}) {
     const extracted=join(scratch,'extracted');await fs.mkdir(extracted);
     await promisify(execFile)('tar',['--extract','--gzip','--file',snapshot,'--directory',extracted,'--no-same-owner'],
       {signal,timeout:30000,maxBuffer:4096,env:{PATH:process.env.PATH,LANG:'C'}});
+    const expectedPaths=new Set([runnerDistribution.archive]);
     const compare=async relative=>{
       for(const entry of await fs.readdir(join(extracted,relative),{withFileTypes:true})) {
-        const name=join(relative,entry.name),expected=join(extracted,name),actual=join(directory,name);
+        const name=join(relative,entry.name);expectedPaths.add(name);const expected=join(extracted,name),actual=join(directory,name);
         if(entry.isDirectory()){await safePath(actual);await compare(name);}
         else if(entry.isFile()){await safePath(actual,{directory:false});if(await hash(expected)!==await hash(actual))throw Error();}
         else if(entry.isSymbolicLink()){
@@ -48,7 +49,14 @@ export async function verifyRunnerDistribution(directory,{signal}={}) {
         }else throw Error();
       }
     };
-    await compare('');return runnerDistribution;
+    await compare('');
+    if(unregistered){
+      const exact=async(relative='')=>{for(const e of await fs.readdir(join(directory,relative),{withFileTypes:true})){
+        const name=join(relative,e.name);if(!expectedPaths.has(name))throw Error('Unrecognized Runner state preserved.');
+        if(e.isDirectory())await exact(name);
+      }};await exact();
+    }
+    return runnerDistribution;
   } catch {throw Error(`Registration requires the pinned official Linux x64 Runner v${runnerDistribution.version} archive, matching extracted application bytes, and local tar. Preserve incompatible installations for reconciled upgrade; no registration was requested.`);}
   finally {if(scratch)await fs.rm(scratch,{recursive:true,force:true});}
 }
