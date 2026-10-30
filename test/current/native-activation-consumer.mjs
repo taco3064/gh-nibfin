@@ -46,6 +46,6 @@ test('Member preparation reloads an authenticated idle daemon that started witho
  const f=await nativeCycleFixture(core,context);let staged=0,installed=0;
  const service={check:async()=>({status:'running',delivery:'blocked',diagnostics:[]}),stageUnit:async()=>{staged++;return{status:'linked'};},install:async()=>{installed++;return{status:'running',stageEntry:'configured',diagnostics:[]};}};
  const host=nativeControlHost({root:f.root,service,verify:async()=>{},prepare:async path=>fs.writeFile(join(path,'fixture'),'application',{mode:0o600})});
- const result=await host.prepare({core,context,executionPool:f.configuration,memberId:'7'});
+ const result=await host.prepare({core:{...core,createGithubProvider:()=>f.provider},context,executionPool:f.configuration,memberId:'7'});
  assert.equal(result.status,'prepared');assert.equal(staged,1);assert.equal(installed,1);
 }));
