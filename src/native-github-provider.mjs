@@ -29,8 +29,8 @@ export function nativeGithubProvider(core,configuration={}){
    }catch{}
   }
   if(request.method!=='GET'||!value)return value;
-  // GitHub uses runner_id:0 while a queued Job has no assigned Runner. Kairo
-  // accepts that response; Core's resource IDs remain strictly positive. Map
+  // GitHub uses runner_id:0 while a queued Job has no assigned Runner.
+  // Core's resource IDs remain strictly positive. Map
   // only this observed absence to null, retaining every other numeric spelling.
   if(value.status===200&&typeof value.body==='string'&&/^\/repos\/[^/]+\/[^/]+\/actions\/(?:jobs\/[1-9][0-9]*|runs\/[1-9][0-9]*\/(?:attempts\/[1-9][0-9]*\/)?jobs)(?:\?|$)/.test(request.endpoint)){
    try{let changed=false;const parsed=JSON.parse(value.body,function(key,item,context){
