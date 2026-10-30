@@ -57,7 +57,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    dependencyInput:input.dependencyInput,selectionInput:input.selectionInput(stage),invocation:{request:binding.request.id,run:{id:source.runId,attempt:source.attempt}},prior:{state:'new'}};
   const retain=async value=>{const reference=await store.retain(value);
    if(value.kind==='native-role-session')await work.session({reference,metadata:value.metadata});return reference;};
-  roles=await roleFactory(core,{root,binding,base:state.base,repository,memberId:state.member.id,source,retain,checkpoint,signal,progress});
+  roles=await roleFactory(core,{root,binding,base:state.base,repository,memberId:state.member.id,source,retain,checkpoint,signal,progress,store});
   if(state.workspace){const candidate=core.importWorkspace(Buffer.from(core.canonicalJSON(state.workspace)),{expected:state.workspaceExpected});
    core.materializeWorkspace(candidate,{expected:state.workspaceExpected,root:roles.candidateDirectory});}
   const observations=await observeNativeObligations(core,{directory:state.workspace?roles.candidateDirectory:roles.sourceDirectory,scopeBody:state.scopeBody,base:state.base,repository});
