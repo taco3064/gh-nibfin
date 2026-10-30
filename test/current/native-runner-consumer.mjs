@@ -74,7 +74,7 @@ test('JIT decoder rejects traversal, foreign Runner identity, updates, non-ephem
  for(const change of[s=>{s.agentId=700;},s=>{s.Ephemeral='False';},s=>{s.DisableUpdate='true';},s=>{s.AgentId='701';}]){
   const settings={...official};change(settings);assert.throws(()=>nativeJitConfiguration(encoded(settings),record));
  }
- assert.equal(nativeJitConfiguration(encoded(official),record).files['.runner'].toString(),Buffer.from(encoded(official),'base64').toString()?JSON.stringify(official):'');
+ assert.equal(nativeJitConfiguration(encoded(official),record).files['.runner'].toString(),JSON.stringify(official));
  for(const change of [s=>{s.agentId=701;},s=>{s.disableUpdate=false;},s=>{s.ephemeral=false;},
   s=>{s.gitHubUrl='https://github.com/example/foreign';},s=>{s.serverUrl='https://attacker.example/';},s=>{s.serverUrl='';}]){
   const settings=structuredClone(valid.settings);change(settings);
