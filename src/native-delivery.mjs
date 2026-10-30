@@ -86,7 +86,10 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
   if(!inspection.current||inspection.disposition==='blocked'){
    await store.retain({kind:'native-inspection',inspection});await progress({status:'blocked',reason:inspection.reason});return inspection;
   }
-  request.expected=inspection.current;await store.retain({kind:'native-execution-intent',request,pin});
+  request.expected=inspection.current;
+  // Runtime capabilities (for example the trusted-key Map) are not JSON data.
+  // Retain the exact Core decision and its independently owned cycle references.
+  await store.retain({kind:'native-execution-intent',request,inputs:inspection.inputs,binding:authority,cycle:state.cycle,cycleRevision:state.revision});
   await progress({status:'running',reason:'core-'+stage+'-owner-started'});
   const result=await runtime.run(request,{signal});await store.retain({kind:'native-core-result',result});
   if(result.disposition==='completed'){
