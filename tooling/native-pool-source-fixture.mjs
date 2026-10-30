@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {currentPin} from '../src/current-core.mjs';
