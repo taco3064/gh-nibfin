@@ -14,14 +14,15 @@ export async function prepareNativeCycle(core,{root,configuration,repository,num
  need(repo.id===target.repositoryId&&repo.full_name?.toLowerCase()===repository&&repo.owner.id===target.ownerId&&repo.owner.type===target.ownerType
   &&repo.private===false&&repo.visibility==='public'&&repo.default_branch==='main'&&repo.permissions?.admin===true
   &&account.id===owner.memberId&&account.login.toLowerCase()===owner.memberLogin.toLowerCase(),'execution-account');
- need(issue.state==='open'&&!issue.pull_request&&String(issue.number)===number&&typeof issue.body==='string'
+ need(['open','closed'].includes(issue.state)&&!issue.pull_request&&String(issue.number)===number&&typeof issue.body==='string'
   &&issue.assignees.some(a=>a.id===account.id)&&issue.labels.some(l=>l.name==='scope'),'eligible-issue');
  const selected={repository,repositoryId:target.repositoryId,issueId:issue.node_id,databaseId:issue.id,number};
  const document=core.parseRequirementsDocument(issue.body),identity=core.distributionIdentity();
  try{await fs.lstat(nativeCycleDirectory(root,selected));const existing=await openNativeCycle(core,{root,target:selected}),state=await existing.read();
-  need(state.scopeHash===core.bodyDigest(document.scope)&&state.core===currentPin.coreSha256,'original-cycle-reconciliation-required');return existing;
+  need(state.scopeHash===core.bodyDigest(document.scope)&&state.core===currentPin.coreSha256,'original-cycle-reconciliation-required');
+  need(issue.state==='open'||Boolean(state.receipts.closure),'original-closure-required');return existing;
  }catch(e){if(e.code!=='ENOENT')throw e;}
- need(document.format==='raw-scope'&&!issue.labels.some(l=>l.name==='shaped'),'original-work-handover-required');
+ need(issue.state==='open'&&document.format==='raw-scope'&&!issue.labels.some(l=>l.name==='shaped'),'original-work-handover-required');
  const base=(await get('/repos/'+repository+'/git/ref/heads/main')).object;
  need(base.type==='commit'&&/^[a-f0-9]{40}$/.test(base.sha),'base');
  const tree=await get('/repos/'+repository+'/git/trees/'+base.sha);
@@ -57,7 +58,8 @@ export async function prepareNativeCycle(core,{root,configuration,repository,num
  core.prepareGrant(payload);const grant=signer.sign(payload);
  return createNativeCycle(core,{root,target:selected,value:{cycle,core:currentPin.coreSha256,installation:identity.pins,
   createdAt:Date.now(),title:issue.title,scopeBody:document.scope,scopeHash:core.bodyDigest(document.scope),shapeBody:null,authority:observation.authority,grant,policy,
-  member:{id:account.id,login:account.login},ownerKey:{id:owner.keyId,publicKey:owner.publicKey},paths,base:base.sha,
+  member:{id:account.id,login:account.login},memberRuntime:{image:member.image,runtimeProfile:member.runtimeProfile,socket:'/run/user/'+process.getuid()+'/docker.sock'},
+  ownerKey:{id:owner.keyId,publicKey:owner.publicKey},paths,base:base.sha,
   receipts:{},expectations:{},stageInput:null,candidate:null,workspace:null,head:null,ci:null,completion:null,
   attempts:{},dispatch:null,observations:{},closed:false}});
 }
