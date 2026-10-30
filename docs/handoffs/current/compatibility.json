@@ -54,7 +54,7 @@
         },
         {
           "path": "docs/core.md",
-          "sha256": "d30a596f43b3b37f601f48c4d04d0be791fecd2d5f41299a2f85689355ab30e2"
+          "sha256": "b51347abe4a6a15d333433b254b552b648e3b0681a9e4294be87aecee69af2f2"
         },
         {
           "path": "docs/custody-host.md",
@@ -78,7 +78,7 @@
         },
         {
           "path": "docs/fanout.md",
-          "sha256": "225533e9d2a37cacb7494df7858fca4fba093e000dcbe464da2a73d0c312012a"
+          "sha256": "4c5c21a76fa2a7efcdfc5318392601b350854c600f9765e59c8a2a82ba504ce0"
         },
         {
           "path": "docs/final-review.md",
@@ -398,11 +398,11 @@
         },
         {
           "path": "src/distribution-contract.mjs",
-          "sha256": "7bcef09a1bfb0ffd4624441942f827a91b1dd72ad9ac420e2d1fd13a3c6e6e3c"
+          "sha256": "6b2981b4107521a52a7307e0e8f358bb102360e4a95ad0d1099b9ff3c195cdfe"
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "a4eba8dc481f313a288acb0f7b7cc39d0a88505ab136585ec93b373ba334eb81"
+          "sha256": "28345dc92e733a23e53512995d948291fc76cf8b95b14717aec355c320e09301"
         },
         {
           "path": "src/distribution.mjs",
@@ -749,7 +749,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "3332f9147fce80ed62435867e5b5fda2e9966af1eff5422048742ff170c9db24"
+      "sha256": "de6ac88833e7d6fca0a42d258745cd325831886917c0562746832bff1775f21e"
     },
     "skills": {
       "version": "0.1.0",
@@ -883,7 +883,8 @@
       "recovery": 1,
       "jobAdmission": 1,
       "evidence": 1,
-      "nativeHost": 1
+      "nativeHost": 1,
+      "nativeNotifications": 1
     },
     "profiles": [
       {
@@ -927,7 +928,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "a4eba8dc481f313a288acb0f7b7cc39d0a88505ab136585ec93b373ba334eb81"
+    "sourceMapSha256": "28345dc92e733a23e53512995d948291fc76cf8b95b14717aec355c320e09301"
   },
   "entries": [
     {

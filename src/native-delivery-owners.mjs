@@ -140,6 +140,7 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
   }
  }
  if(stage==='fanout'){
+  need(core.distributionAPI?.nativeNotifications===1,'compatible-native-notification-core-required');
   need(state.completion&&state.completionSource,'completion-required');core.verifyCompletion(state.completion,state.completionCurrent);
   const inbox=await nativeWakeupInbox(core,{root});pin.stageInput={source:t,issues:dependencyInput.issues.filter(i=>i.issueId!==t.issueId)};
   owners.fanout={provider,currentSource:async()=>({cycle:state.cycle,identity:state.completion.identity,expected:state.completionCurrent,provenance:state.completionSource}),
