@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {userInfo} from 'node:os';
-import {connect} from 'node:net';
+import {connect} from 'node:net';import{spawn}from'node:child_process';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {sha,writePrivate} from '../../src/local-state.mjs';
 import {nativeControlService,nativeServiceStatus,nativeServiceName,nativeServiceUnit} from '../../src/native-control-service.mjs';
@@ -101,4 +101,15 @@ test('successive upgrade may stop only its authenticated empty staging daemon, n
  await assert.rejects(service.stageUnit(),/stage-unit-active/);assert.equal(calls.includes('stop'),false);
  occupied=0;delivery='running';await assert.rejects(service.stageUnit(),/stage-unit-active/);assert.equal(calls.includes('stop'),false);
  delivery='blocked';assert.equal((await service.stageUnit()).status,'linked');assert.equal(calls.filter(c=>c==='stop').length,1);assert.equal(calls.includes('start'),false);
+}));
+
+test('a service-group SIGTERM acknowledges the released lock only after the actual daemon closes IPC',async()=>withCurrentCore(async(core,context)=>{
+ const root=join(context.root,'group-stop');await fs.mkdir(root,{mode:0o700});await fs.mkdir(join(root,'runtime'),{mode:0o700});await fs.writeFile(join(root,'runtime/fixture.mjs'),'// fixed\n',{mode:0o600});
+ await writePrivate(join(root,'native-installation.json'),{version:1,phase:'staged',runtimeInventory:[{path:'fixture.mjs',sha256:sha('// fixed\n')}]});
+ const unit=nativeServiceUnit(root);await fs.writeFile(join(root,nativeServiceName),unit,{mode:0o600});await writePrivate(join(root,'control-service.json'),{version:1,account:userInfo().uid,generation:'12345678-1234-1234-1234-123456789abc',unit:sha(unit)});
+ const module=new URL('../../src/native-control-process.mjs',import.meta.url).href;
+ const code='import{runNativeControl}from '+JSON.stringify(module)+';const c=new AbortController();process.once("SIGTERM",()=>c.abort());try{await runNativeControl('+JSON.stringify(root)+',{signal:c.signal,ready:async()=>process.stdout.write("ready\\n")});process.stdout.write("closed\\n");}catch(e){process.stderr.write(e.message);process.exitCode=2;}';
+ const child=spawn(process.execPath,['--input-type=module','-e',code],{detached:true,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:context.root}});let output='',errors='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>errors+=b);const ended=new Promise(resolve=>child.once('close',(code,signal)=>resolve({code,signal})));
+ try{const until=Date.now()+10000;while(!output.includes('ready\n')&&Date.now()<until)await new Promise(r=>setTimeout(r,20));assert.ok(output.includes('ready\n'),errors);process.kill(-child.pid,'SIGTERM');const result=await ended;assert.equal(result.code,0,errors);assert.ok(output.includes('closed\n'));await assert.rejects(fs.stat(join(root,'control.sock')),{code:'ENOENT'});await runNativeControl(root,{signal:AbortSignal.abort()});}
+ finally{try{process.kill(-child.pid,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;}await ended;}
 }));

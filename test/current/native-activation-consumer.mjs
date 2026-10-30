@@ -1,6 +1,7 @@
 import test from'node:test';import assert from'node:assert/strict';import{join,dirname}from'node:path';
 import{withCurrentCore,currentPin}from'../../src/current-core.mjs';import{nativeCycleFixture}from'./native-cycle-fixture.mjs';
 import{initializeFileHostStore,openFileHostStore}from'../../src/host-store.mjs';import{nativeStageWork}from'../../src/native-stage-work.mjs';
+import{userInfo}from'node:os';import{nativeControlService,nativeServiceName,nativeServiceUnit}from'../../src/native-control-service.mjs';
 import{nativeControlHost}from'../../src/native-host.mjs';
 import{nativeActivationStatus,activateNativeHost}from'../../src/native-activation.mjs';import{nativePoolStore}from'../../src/native-pool-store.mjs';
 import fs from'node:fs/promises';import{nativeRoleHost}from'../../src/native-role-host.mjs';
@@ -48,4 +49,16 @@ test('Member preparation reloads an authenticated idle daemon that started witho
  const host=nativeControlHost({root:f.root,service,verify:async()=>{},prepare:async path=>fs.writeFile(join(path,'fixture'),'application',{mode:0o600})});
  const result=await host.prepare({core:{...core,createGithubProvider:()=>f.provider},context,executionPool:f.configuration,memberId:'7'});
  assert.equal(result.status,'prepared');assert.equal(staged,1);assert.equal(installed,1);
+}));
+
+test('failed staging recovery requires empty protected work and independent unused-resource proof',async()=>withCurrentCore(async(core,context)=>{
+ const f=await nativeCycleFixture(core,context),service={check:async()=>({status:'blocked'}),install:async()=>({diagnostics:[]})};
+ const host=nativeControlHost({root:f.root,service,verify:async()=>{},prepare:async path=>fs.writeFile(join(path,'fixture'),'application',{mode:0o600})});
+ await host.prepare({core:{...core,createGithubProvider:()=>f.provider},context,executionPool:f.configuration,memberId:'7'});
+ const unit=nativeServiceUnit(f.root);await fs.writeFile(join(f.root,nativeServiceName),unit,{mode:0o600});await writePrivate(join(f.root,'control-service.json'),{version:1,account:userInfo().uid,generation:'12345678-1234-1234-1234-123456789abc',unit:sha(unit)});
+ let state='failed',unused=false;const calls=[];const run=args=>{calls.push(args[0]);if(args[0]==='reset-failed')state='inactive';return{ok:true,output:args[0]==='show'?'LoadState=loaded\nActiveState='+state+'\nMainPID=0\nControlPID=0\nFragmentPath='+join(f.root,nativeServiceName)+'\n':''};};
+ const selected=nativeControlService({root:f.root,run,observeUnused:async()=>({status:unused?'unused':'unknown'})}),store=await openFileHostStore(core,{directory:join(f.root,'state')});
+ try{let before=await store.read();const original=before.work;await store.updateWork({expected:before.identity,work:{...original,unknownWrite:true}});await assert.rejects(selected.stageUnit(),/failed-stage-work/);assert.equal(calls.includes('reset-failed'),false);before=await store.read();await store.updateWork({expected:before.identity,work:original});
+ await assert.rejects(selected.stageUnit(),/failed-stage-resources/);assert.equal(calls.includes('reset-failed'),false);unused=true;assert.equal((await selected.stageUnit()).status,'linked');assert.equal(calls.filter(c=>c==='reset-failed').length,1);assert.deepEqual((await store.read()).work,original);assert.equal(calls.includes('start'),false);
+ }finally{await store.close();}
 }));
