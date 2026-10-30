@@ -18,13 +18,13 @@ export function nativeGithubProvider(core,configuration={}){
      }
      return typeof item==='number'?JSON.rawJSON(context.source):item;
     });let body=changed?JSON.stringify(parsed):value.body;
-    if(request.method==='POST'&&request.endpoint.endsWith('/generate-jitconfig')&&value.status===201){
+    if(request.method==='POST'&&request.endpoint.endsWith('/generate-jitconfig')&&value.status===201)try{
      const data=core.parseGithubJson(body),requested=JSON.parse(request.body);
      if(data.runner?.ephemeral===undefined&&data.runner.name===requested.name){
       const jit=nativeJitConfiguration(data.encoded_jit_config,{runnerId:data.runner.id,runnerName:requested.name,request:{repository:runners[1]}});
       if(jit.settings.ephemeral===true){parsed.runner.ephemeral=true;body=JSON.stringify(parsed);changed=true;}
      }
-    }
+    }catch{}
     if(changed)value={...value,body};
    }catch{}
   }
