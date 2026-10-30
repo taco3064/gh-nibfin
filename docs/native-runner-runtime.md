@@ -32,8 +32,12 @@ terminate. Failed Job conclusions remain failed in the retained outcome.
 
 Cleanup requires fresh original-work retention and model-resource observations,
 remote deregistration, and retirement of the exact service and admission policy.
-Open files, process references, mapped files, visible mounts, hard links, changed
-trees or unknown observations retain the slot. Disposable application files are
+Open files, visible process references, mapped files, visible mounts, hard links,
+changed trees or unknown managed-resource observations retain the slot. If another
+process's private environment is inaccessible, its independently readable cgroup
+must be outside the authenticated retired service scope; an unrelated protected
+host service is not treated as an active Runner. Model-resource observations remain
+mandatory. Disposable application files are
 atomically parked before removal. A retained inventory permits recovery after
 partial removal only when every remaining entry is unchanged. Completed cleanup
 keeps a compact tombstone; it cannot remove replacement work at the old path.

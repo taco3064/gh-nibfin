@@ -146,7 +146,8 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
     &&retired.outcome===record.outcome&&retired.process===retained.process,'retirement-binding');}
    else{
     const current=await observe(record,{signal});need(current.status==='terminated'&&current.processReceipt===retained.process,'termination-changed');
-    retired=seal({version:1,lease:record.lease.identity,outcome:record.outcome,process:current.processReceipt,phase:'intent'});
+    retired=seal({version:1,lease:record.lease.identity,outcome:record.outcome,process:current.processReceipt,
+     controlGroup:current.process.controlGroup,phase:'intent'});
     await writePrivate(retiredPath(record),retired,{exclusive:true});
    }
    if(retired.phase==='intent'){
@@ -158,7 +159,7 @@ export function nativePoolRuntime(core,{root,configuration,context,provider,cust
     await removeAdmission({id:'pool-'+record.lease.identity.slice(0,40)});
     const {identity,...body}=retired;await writePrivate(retiredPath(record),seal({...body,phase:'retired'}));
    }
-   return retireNativeApplication(core,{root,lease:record.lease.identity,outcome:record.outcome,
+   return retireNativeApplication(core,{root,lease:record.lease.identity,outcome:record.outcome,retiredGroup:retired.controlGroup,
     confirm:()=>settled(record,retained,{signal})});
   },
   async observeRelease(lease,{signal}={}){
