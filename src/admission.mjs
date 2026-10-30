@@ -72,12 +72,12 @@ export async function observeAdmissionPlan(core,{state,provider,signal,repositor
       ||installation.files?.['.nibfin/runtime.json']!==sha(ownerBytes)
       ||installation.executionPool===undefined)throw Error('Protected shared installation unavailable; public runtime data cannot select membership.');
     pool=await observeExecutionPool(core,{previous:installation.executionPool,repo:repository,provider,memberId:state.memberId,signal});
-    if(pool.source.repository!==repository||pool.source.repositoryId!==target.id||pool.source.ownerId!==target.owner.id
-      ||state.registration.level!=='repository'||core.canonicalJSON(pool)!==core.canonicalJSON(ownerPolicy.executionPool))
-      throw Error('Shared admission requires the exact protected physical source and membership.');
+    if(!pool.targets.some(t=>t.repository===repository&&t.repositoryId===target.id&&t.ownerId===target.owner.id&&t.ownerType===target.owner.type)
+      ||core.canonicalJSON(pool)!==core.canonicalJSON(ownerPolicy.executionPool))
+      throw Error('Shared admission requires the exact project-owned registration and protected membership.');
   }
   const plan=managedWorkflowPlan(core,{executionPool:pool,repository}),expected=plan.files;
-  const stages=pool?plan.deployments.map(d=>[d.stagePath,d.deliveryPath]):[['.github/workflows/nibfin-stage.yml','.github/workflows/nibfin-delivery.yml']];
+  const stages=[['.github/workflows/nibfin-stage.yml','.github/workflows/nibfin-delivery.yml']];
   const files=new Map();
   for(const path of new Set(stages.flat().concat('.github/workflows/nibfin-rescue.yml'))){
     const bytes=await read(path),approved=expected.get(path);
