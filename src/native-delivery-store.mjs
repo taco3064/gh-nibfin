@@ -39,10 +39,21 @@ export async function openNativeCycle(core,{root,target}={}){
    // The intent/attempt locator is updated before any official write. A lost
    // result reopens this exact source, never guesses newness from an empty file.
    const retained=await retainRecord('operation-record',body);
-   await update(state=>{const key=core.contentIdentity(value.intent),entry=state.operations[key]??{intent:structuredClone(value.intent),refs:{}};
+   await update(async state=>{const key=core.contentIdentity(value.intent),entry=state.operations[key]??{intent:structuredClone(value.intent),refs:{}};
     need(core.canonicalJSON(entry.intent)===core.canonicalJSON(value.intent),'operation-conflict');
     const phase={ref,source:{runId:expected.runId,attempt:expected.attempt}};
-    need(!entry.refs[value.phase]||core.canonicalJSON(entry.refs[value.phase])===core.canonicalJSON(phase),'operation-phase-conflict');
+    if(entry.refs[value.phase]&&core.canonicalJSON(entry.refs[value.phase])!==core.canonicalJSON(phase)){
+     const same=(a,b)=>core.canonicalJSON(a)===core.canonicalJSON(b);
+     if(value.phase==='result')need(same(value.attempt,entry.refs.attempt),'operation-attempt-binding');
+     else if(value.phase==='attempt'){
+      need(same(value.previousResult,entry.refs.result),'operation-previous-result');
+      const old=await record(state.operationBlobs[entry.refs.result.ref.identity],'operation-record');
+      need(old.value.outcome==='confirmed-no-effect'&&old.value.submission?.diagnostic?.kind==='unauthorized','operation-retry-unsafe');
+     }else if(value.phase==='submission'){
+      const old=await record(state.operationBlobs[entry.refs.submission.ref.identity],'operation-record');
+      need(same(value.attempt,entry.refs.attempt)&&!same(value.attempt,old.value.attempt),'operation-submission-conflict');
+     }else need(false,'operation-phase-conflict');
+    }
     entry.refs[value.phase]=phase;state.operations[key]=entry;state.operationBlobs[identity]=retained;return state;});
    return {outcome:'retained',ref};
   },
