@@ -36,7 +36,8 @@ export async function nativeExecutionInputs(core,{root,store,configuration,bindi
    need(r.outcome==='read'&&r.data.user?.id===state.member.id&&['write','maintain','admin'].includes(r.data.permission),'dependency-permission');
    return {ok:true,observation:{repositoryId:issue.repositoryId,issueId:issue.issueId,operation:'readiness',startedAt,observedAt:Date.now()}};
   },current:async issue=>{try{
-    const prior=await openNativeCycle(core,{root,target:issue}),value=await prior.read();return value.completionCurrent??null;
+    const prior=await openNativeCycle(core,{root,target:issue}),value=await prior.read();
+    return value.completion?{identity:value.completion.identity,expected:value.completionCurrent}:null;
    }catch(e){if(e.code==='ENOENT')return null;throw e;}},
   retrieve:async issue=>{const prior=await openNativeCycle(core,{root,target:issue});return (await prior.read()).completion;}});
  const selector=core.createAssigneeSelector({provider,authorizationFor:async member=>{need(member.id===state.member.id,'selected-member');return authorization;},

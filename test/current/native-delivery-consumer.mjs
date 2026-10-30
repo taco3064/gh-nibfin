@@ -15,7 +15,7 @@ test('native composition runs actual Shape, independent Validator and controlled
   'Candidate artifacts applicability: The Scope explicitly requires no additional ignored or untracked artifacts.',
   'Candidate hooks applicability: The inspected source has no applicable Hook setup.',
   '```nibfin-candidate','{"artifacts":[],"hooks":[]}','```'].join('\n')});
- const prepared=[],closed=[];let preparationError=null;
+ const prepared=[],closed=[],progress=[];let preparationError=null;
  // Model/process doubles only; real native isolation is established separately.
  const roleFactory=async(_core,{source,retain,binding})=>{
   const metadata=core.createNativeRoleBindings({ownership:'personal',source,retain}),values=new Map();
@@ -39,8 +39,8 @@ test('native composition runs actual Shape, independent Validator and controlled
   const binding={configuration:f.configuration,ownerType:'User',memberId:'7',issue:'55',stage,correlation:'native-step-'+i,
    request:{id:'native-step-'+i,repository:'example/project',repositoryId:'100',runId:String(3000+i),attempt:'1'},
    jobRecord:{runnerId:'999'},sourceCommit:'b'.repeat(40)};
-  const result=await executeNativeDelivery(core,{root:f.root,binding,context,provider:f.provider,transport:f.transport,roleFactory,progress:async()=>{}});
-  assert.equal(result.disposition,'completed',JSON.stringify({result,preparationError,prepared}));assert.equal(result.executed,stage);
+  const result=await executeNativeDelivery(core,{root:f.root,binding,context,provider:f.provider,transport:f.transport,roleFactory,progress:async value=>{progress.push(value);}});
+  assert.equal(result.disposition,'completed',JSON.stringify({result,preparationError,prepared,progress}));assert.equal(result.executed,stage);
  }
  const target={repository:'example/project',repositoryId:'100',databaseId:'123',issueId:'I_123',number:'55'};
  const store=await openNativeCycle(core,{root:f.root,target}),state=await store.read();

@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {maintenanceLock} from './upgrade.mjs';
 import {nativePoolSource} from './native-pool-source.mjs';
+import {openNativeCycle} from './native-delivery-store.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-pool-intake:'+code);};
 const id=v=>typeof v==='string'&&/^[1-9][0-9]*$/.test(v);
 const selector=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v);
@@ -21,6 +22,17 @@ export async function nativePoolIntake(core,{root,configuration,memberId,provide
  const readUnlocked=async key=>{need(selector(key),'selector');const value=await readPrivate(join(directory,key+'.json'),{missing:true});return value===null?null:validate(value);};
  const read=async key=>{await tail;return readUnlocked(key);};
  const sourceFor=dispatches=>nativePoolSource(core,{configuration:pool,memberId,provider,dispatches,onBlocked,
+  closedContinuation:async({issue,target,retained})=>{
+   try{
+    const selected={repository:target.repository,repositoryId:target.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:String(issue.number)};
+    const original=await openNativeCycle(core,{root,target:selected}),state=await original.read();
+    need(core.parseRequirementsDocument(issue.body).scope===state.scopeBody&&state.closed===true,'original-closure');
+    const stages=core.coreStages.slice(2,13),receipts=Object.fromEntries(stages.map(s=>[s,state.receipts[s]]));
+    const expectations=Object.fromEntries(stages.map(s=>[s,state.expectations[s]]));
+    core.verifyEvidenceChain({version:1,receipts},expectations,'closure');
+    return retained.stage==='delivered'||state.completion!==null&&Boolean(core.verifyCompletion(state.completion,state.completionCurrent));
+   }catch{return false;}
+  },
   ...(installationRoot?{installationRoot}:{})});
  const source=sourceFor({read});
  async function get(target,endpoint,signal){const r=await provider.request({endpoint,target:target.repositoryId,

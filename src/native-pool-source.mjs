@@ -21,10 +21,12 @@ function contents(value,path){
  * an event, a model answer or a configurable user module.
  */
 export function nativePoolSource(core,{configuration,memberId,provider,dispatches,onBlocked,
+ closedContinuation,
  installationRoot=join(userInfo().homedir,'.local/share/nibfin/installations')}={}){
  const pool=core.validateExecutionPool(configuration);
  need(pool.version===2&&id(memberId)&&typeof provider?.request==='function'
   &&typeof dispatches?.read==='function'&&typeof onBlocked==='function','composition');
+ need(closedContinuation===undefined||typeof closedContinuation==='function','closed-continuation');
  return Object.freeze({
   async inspect(selector,{signal}={}){
    need(typeof selector==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(selector),'selector');
@@ -75,7 +77,9 @@ export function nativePoolSource(core,{configuration,memberId,provider,dispatche
    const issue=await get(root+'/issues/'+retained.issue);
    need(!issue.pull_request&&String(issue.number)===retained.issue&&['open','closed'].includes(issue.state)
     &&typeof issue.body==='string','issue-ssot');
-   const launchAuthorized=issue.state==='open'&&sha(issue.body)===retained.issueBodySha256
+   const closed=issue.state==='closed'&&['delivered','fanout'].includes(retained.stage)&&closedContinuation
+    ?await closedContinuation({issue,target,retained}):false;
+   const launchAuthorized=(issue.state==='open'||closed===true)&&sha(issue.body)===retained.issueBodySha256
     &&issue.assignees?.some(a=>a.id===memberId)===true;
    return {authorized:true,launchAuthorized,identity,memberId,request:structuredClone(request),issue:retained.issue,stage:retained.stage,status:job.status};
   },
