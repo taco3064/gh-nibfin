@@ -7,8 +7,8 @@ The exact reviewed inputs are retained here:
 | Input | SHA-256 |
 | --- | --- |
 | nibfin-core.tgz | ec03432dd55488ecf1419f2fc90ac57336a4c0c07423127fd3e8712e8de017a8 |
-| release-manifest.json | 481a0dfc812724411a481edaaa5e3d519ba7d6fa5467a40b46eb05323d2f4774 |
-| compatibility.json | 90bffbed030e3836742bc622f60467dfa0acab2cdd430c1ca51186a911d77f7a |
+| release-manifest.json | 197dfeca851c57a49f463c990d21c05966ea099794f1a4a73c40ba9c940e9cf9 |
+| compatibility.json | f7c1a78801619f68271ebfcaa931a2e4a36baac37b291e9dd69816fcf13f6f1a |
 
 The Core component identity is
 `f416631b565771ecbd5761da80f618a1dee167703685b761e571eac4cdc94da7`.
