@@ -60,7 +60,8 @@ export function nativeRunnerService({root,selector,slot,lease,run=nativeSystemct
    if(!await absent()){
     const observed=await state();need(['inactive','failed'].includes(observed.status)&&observed.pid===0,'still-running');
     await writePrivate(path,{...receipt,retirement:'intent'});
-    for(const args of [['stop',name],['reset-failed',name],['disable',name],['daemon-reload']])need(run(args).ok,'retirement-unconfirmed');
+    const commands=[['stop',name],...(observed.status==='failed'?[['reset-failed',name]]:[]),['disable',name],['daemon-reload']];
+    for(const args of commands)need(run(args).ok,'retirement-unconfirmed');
    }else need(['intent','completed'].includes(receipt.retirement),'retirement-intent-missing');
    need(await absent(),'retirement-readback');
    try{await privatePath(unit);need(sha(await fs.readFile(unit))===receipt.unit,'unit');await fs.unlink(unit);}
