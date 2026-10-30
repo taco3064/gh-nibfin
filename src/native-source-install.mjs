@@ -60,13 +60,15 @@ export async function installNativeSource(core,{root,repository,repositoryId,des
  need(['branch','pr-intent','pr','merge-intent','merged','installed'].includes(proposal.phase),'original-proposal-reconciliation-required');
  if(proposal.phase==='installed')return {status:'installed',pr:proposal.pr.url};
  if(!proposal.pr){
-  const endpoint='/repos/'+repository+'/pulls?state=all&head='+encodeURIComponent(repository.split('/')[0]+':'+proposal.branch)+'&base=main&per_page=100';
-  let list=await request(endpoint);need(list.outcome==='read'&&Array.isArray(list.data),'pr-observation');
+  const endpoint='/repos/'+repository+'/pulls?state=all&per_page=100';
+  const observePRs=async()=>{const result=await provider.collection({endpoint,target:repositoryId,operation:'installation',correlation:'native-source-install',signal,allowPage:p=>p.split('?')[0]===endpoint.split('?')[0]});
+   need(result.outcome==='complete'&&Array.isArray(result.data),'pr-observation');return {data:result.data.filter(pr=>pr.head?.ref===proposal.branch&&pr.head?.repo?.id===repositoryId&&pr.base?.ref==='main')};};
+  let list=await observePRs();
   if(list.data.length===0){
    need(proposal.phase==='branch','original-pr-reconciliation-required');proposal={...proposal,phase:'pr-intent'};await writePrivate(path,proposal);
    await request('/repos/'+repository+'/pulls',{method:'POST',body:{title:'Install native Nibfin project execution',head:proposal.branch,base:'main',
     body:'Install the reviewed project-local Nibfin workflow, Skills and runtime policy. Shared physical Runner capacity remains independent of this repository.\n\nManaged installation: '+identity}});
-   list=await request(endpoint);need(list.outcome==='read'&&Array.isArray(list.data),'pr-observation');
+   list=await observePRs();
   }
   need(list.data.length===1&&list.data[0].head?.sha===proposal.commit&&list.data[0].head?.ref===proposal.branch
    &&list.data[0].head.repo?.id===repositoryId&&list.data[0].base?.ref==='main','original-pr-reconciliation-required');
