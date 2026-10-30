@@ -1,13 +1,13 @@
 # Current reviewed public runtime
 
 This integration branch selects the Nibfin PR255 candidate source snapshot at
-`b6f2ef60720ebbd88d83df16c13684b0141e14bb`, package `@nibfin/core@0.1.0`.
+`bf64807a364cfeb5f8f19219d2f8d61739106d01`, package `@nibfin/core@0.1.0`.
 The exact reviewed inputs are retained here:
 
 | Input | SHA-256 |
 | --- | --- |
 | nibfin-core.tgz | 54719b642430259c1cead603749161b9ec282cdf7f8d19ca3ca25cecfd99f859 |
-| release-manifest.json | 5e1b282b13fc3dabb61e5b7e264ce64c21211c260d84d7eaf30c427b4285c9d0 |
+| release-manifest.json | b2b2c34ea789d967194ec0b5822e9478bc0cb7986e70b1de1d05691081537d57 |
 | compatibility.json | 9d559f64307af1a65cfe7badcac13b8224fc608778a6def6ec0d282f4ed2aea0 |
 
 The Core component identity is
