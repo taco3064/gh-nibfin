@@ -1,8 +1,26 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import{join}from'node:path';
 import{withCurrentCore}from'../../src/current-core.mjs';import{nativeStageService}from'../../src/native-stage-service.mjs';
+import{resumeNativeSession}from'../../src/native-session-resume.mjs';import{createNativeCycle}from'../../src/native-delivery-store.mjs';
 const request={version:1,repository:'example/project',request:'retained-request',runId:'100',attempt:'1'};
 const source=async r=>{assert.deepEqual(r,request);return{issue:'55',stage:'shape'};};
 async function settled(service){for(let n=0;n<100;n++){const value=await service.status(request);if(value.status!=='running')return value;await new Promise(r=>setTimeout(r,10));}throw Error('stage did not settle');}
+
+test('Owner-reconciled native continuation restores the original role conversation and rejects cross-member or cross-role reuse',async()=>withCurrentCore(async(core,context)=>{
+ const root=join(context.root,'session-cycle');await fs.mkdir(root,{mode:0o700});
+ const store=await createNativeCycle(core,{root,target:{repository:'example/project',repositoryId:'42',databaseId:'55',issueId:'I_55',number:'55'},value:{cycle:'original-cycle',scopeHash:core.bodyDigest('Original Scope')}});
+ const original=join(context.root,'original-session'),directory=join(context.root,'restored-session'),id='11111111-1111-4111-8111-111111111111';
+ await fs.mkdir(original,{mode:0o700});await fs.mkdir(directory,{mode:0o700});const bytes=JSON.stringify({type:'session_meta',payload:{id}})+'\n';await fs.writeFile(join(original,id+'.jsonl'),bytes,{mode:0o600});
+ const metadata={id,memberId:'7',role:'shape',execution:'original-execution',adapter:'codex'},snapshot=core.captureRescueSession({directory:original,memberId:'7',role:'shape',session:id,execution:metadata.execution});
+ const reference=await store.retain({version:1,kind:'native-role-session',metadata,snapshot});
+ await store.update(s=>{s.sessionResumes={shape:{status:'UNACCEPTED',role:'shape',memberId:'7',scopeHash:s.scopeHash,cycle:s.cycle,caseId:'original-recovery',reference}};return s;});
+ await assert.rejects(resumeNativeSession(core,{store,role:'shape',memberId:'8',directory,request:'next'}),/original-case/);
+ await store.update(s=>{s.sessionResumes.accept={...s.sessionResumes.shape,role:'accept'};return s;});
+ await assert.rejects(resumeNativeSession(core,{store,role:'accept',memberId:'7',directory,request:'next'}),/original-session/);
+ assert.deepEqual(await fs.readdir(directory),[]);
+ const resumed=await resumeNativeSession(core,{store,role:'shape',memberId:'7',directory,request:'next'});
+ assert.equal(resumed.id,id);assert.equal(resumed.memberId,'7');assert.equal(await fs.readFile(join(directory,id+'.jsonl'),'utf8'),bytes);
+ assert.ok(Object.values((await store.read()).records).includes('native-role-continuation'));
+}));
 
 test('construction errors retain private diagnostics while exposing only the classified stage reason',async()=>withCurrentCore(async(core,context)=>{
  const root=join(context.root,'failed-stage');await fs.mkdir(root,{mode:0o700});

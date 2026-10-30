@@ -42,7 +42,7 @@
         },
         {
           "path": "docs/codex.md",
-          "sha256": "7d4d4aad0bb5ca8ca33b0c257509acb77280c97c12f0572fb4660d2875a1383b"
+          "sha256": "e39b360a9277f5438ba2f19d065d3ea54b4c8cb3a04b80c605a807d423aa9a3b"
         },
         {
           "path": "docs/collaboration.md",
@@ -342,7 +342,7 @@
         },
         {
           "path": "src/codex-entry.mjs",
-          "sha256": "51d38550fdedb77e5c8270b76c4dc87467bb67a6cbb809aff1039ee9c5e34221"
+          "sha256": "c2078535c8592f72b837cfdd5769f71f4cce0472b799c9207c5fe22d256f16ad"
         },
         {
           "path": "src/codex.mjs",
@@ -402,7 +402,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "4028307236c29fb9dbeb647edcc539812d4167b7dc391e4bd3aa7be72b8023b0"
+          "sha256": "fa4d746be7d64e873c526e74d80fff4f1037169d12260d8cb214ac76f17e852c"
         },
         {
           "path": "src/distribution.mjs",
@@ -749,7 +749,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "7adb2ef9c50ff295c86338963fadc8d37e5899a11dc9a1cb1859908be624312a"
+      "sha256": "4a4887201334c42422f2d3b836f307a7c6ca71ac77168c92636aca4e3b967163"
     },
     "skills": {
       "version": "0.1.0",
@@ -928,7 +928,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "4028307236c29fb9dbeb647edcc539812d4167b7dc391e4bd3aa7be72b8023b0"
+    "sourceMapSha256": "fa4d746be7d64e873c526e74d80fff4f1037169d12260d8cb214ac76f17e852c"
   },
   "entries": [
     {

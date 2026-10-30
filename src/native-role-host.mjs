@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';import{join}from'node:path';import{userInfo}from'node:os';import{spawn}from'node:child_process';
 import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./local-state.mjs';import{backendReady}from'./create.mjs';
 import{retainUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
+import{resumeNativeSession}from'./native-session-resume.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
 export function nativeReadBrokerDirectory(lease){
@@ -27,7 +28,7 @@ export async function publicCheckout(repository,commit,path,signal){
 // One maintained composition of the public Core role host. Physical slots are
 // separate from the six isolated role workspaces. Only the same member's model
 // login is shared, and the Agent gets a finite public read broker, never gh auth.
-export async function nativeRoleHost(core,{root,binding,base,repository,memberId,source,retain,checkpoint,signal,progress=async()=>{}}={}){
+export async function nativeRoleHost(core,{root,binding,base,repository,memberId,source,retain,checkpoint,signal,store,progress=async()=>{}}={}){
  need(core.distributionAPI?.nativeHost===1,'compatible-native-core-required');
  need(/^[a-f0-9]{64}$/.test(binding.jobRecord?.lease?.identity??'')&&typeof retain==='function'&&typeof checkpoint==='function','composition');
  const member=await readNativeMember(core,{root,memberId}),directory=join(root,'jobs',binding.jobRecord.lease.identity,'roles');
@@ -73,7 +74,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   sessions:{
    prepare:async({task,memberId:actualMember})=>{
     need(actualMember===memberId,'session-member');const instance=instances[roles.indexOf(task.role)],directory=join(instance.service,'session');
-    await fs.mkdir(directory,{mode:0o700});return {directory,id:null,memberId};
+    await fs.mkdir(directory,{mode:0o700});return store?resumeNativeSession(core,{store,role:task.role,memberId,directory,request:binding.request.id}):{directory,id:null,memberId};
    },
    retain:async record=>{
     need(record.memberId===memberId,'session-member');
