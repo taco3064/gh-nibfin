@@ -7,10 +7,13 @@ export async function publicCheckout(repository,commit,path,signal){
  need(/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(repository)&&/^[a-f0-9]{40}$/.test(commit),'checkout-binding');
  await privatePath(path,{directory:true});need((await fs.readdir(path)).length===0,'existing-workspace');
  const git=async args=>new Promise((resolve,reject)=>{
-  const child=spawn('/usr/bin/git',['-c','core.hooksPath=/dev/null','-c','protocol.file.allow=never',...args],{cwd:path,signal,
+  const child=spawn('/usr/bin/git',['-c','core.hooksPath=/dev/null','-c','protocol.file.allow=never',...args],{cwd:path,detached:true,
    env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:path,LANG:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0'},stdio:'ignore'});
-  const timer=setTimeout(()=>child.kill('SIGKILL'),120000);child.once('error',()=>{clearTimeout(timer);reject(Error('native-role-host:source-acquisition'));});
-  child.once('close',code=>{clearTimeout(timer);code===0?resolve():reject(Error('native-role-host:source-acquisition'));});
+  const stop=()=>{if(child.pid)try{process.kill(-child.pid,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;}};
+  const timer=setTimeout(stop,120000);signal?.addEventListener('abort',stop,{once:true});if(signal?.aborted)stop();
+  const cleanup=()=>{clearTimeout(timer);signal?.removeEventListener('abort',stop);};
+  child.once('error',()=>{cleanup();reject(Error('native-role-host:source-acquisition'));});
+  child.once('close',code=>{cleanup();code===0&&!signal?.aborted?resolve():reject(Error('native-role-host:source-acquisition'));});
  });
  await git(['init','--template=','--object-format=sha1','.']);await git(['fetch','--no-tags','--depth=1','https://github.com/'+repository+'.git',commit]);
  await git(['checkout','--detach',commit]);await git(['config','core.hooksPath','/dev/null']);
@@ -25,6 +28,8 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  const member=await readNativeMember(core,{root,memberId}),directory=join(root,'jobs',binding.jobRecord.lease.identity,'roles');
  await fs.mkdir(directory,{mode:0o700});
  const allocatedDirectory=await fs.lstat(directory);
+ let broker;
+ try{
  const instances=[];
  for(const role of roles){const parent=join(directory,role);await fs.mkdir(parent,{mode:0o700});
   const instance={id:binding.request.id+'-'+role,workspace:join(parent,'work'),registration:join(parent,'registration'),service:join(parent,'service')};
@@ -37,7 +42,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  const runner={version:1,platform:'linux',arch:'x64',account:{user:userInfo().username,uid:userInfo().uid,githubUserId:memberId},
   path:core.supportedRunnerDefaults.path,interpreter:core.supportedRunnerDefaults.interpreter,
   work:join(runnerRoot,'work'),scratch:join(runnerRoot,'scratch'),cache:join(runnerRoot,'cache')};
- const brokerPath=join(directory,'github-read'),broker=await core.startGithubReadBroker({directory:brokerPath,
+ const brokerPath=join(directory,'github-read');broker=await core.startGithubReadBroker({directory:brokerPath,
   repositories:binding.configuration.targets.map(t=>t.repository),environment:{PATH:runner.path,HOME:userInfo().homedir}});
  const backend=instance=>({root:member.base,image:member.image,socket:'/run/user/'+userInfo().uid+'/docker.sock',runtimeProfile:member.runtimeProfile,
   environment,instanceId:instance.id,egress:{image:member.image,node:true},githubRead:{directory:brokerPath,repositories:binding.configuration.targets.map(t=>t.repository)}});
@@ -113,4 +118,12 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    await fs.rm(directory,{recursive:true});return {status:'completed'};
   }
  });
+ }catch(error){
+  // Construction has not exposed any lifecycle to Core and cannot launch a
+  // model. Close the read broker before retiring this exact disposable tree.
+  if(broker)await new Promise(resolve=>broker.close(resolve));
+  await privatePath(directory,{directory:true});const current=await fs.lstat(directory);
+  need(current.ino===allocatedDirectory.ino&&current.dev===allocatedDirectory.dev,'workspace-directory-changed');
+  await fs.rm(directory,{recursive:true});throw error;
+ }
 }
