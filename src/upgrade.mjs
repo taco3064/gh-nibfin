@@ -42,7 +42,7 @@ async function resourcePaths(resources,services,directory){
   const seen=new Set();
   const names=new Set();
   for(const r of resources){
-    need(r&&Object.keys(r).sort().join(' ')==='current name next previous'&&/^[a-z0-9-]+$/.test(r.name),'resource-schema');
+    need(r&&['current name next previous','current kind name next previous'].includes(Object.keys(r).sort().join(' '))&&(!r.kind||['directory','file'].includes(r.kind))&&/^[a-z0-9-]+$/.test(r.name),'resource-schema');
     need(!names.has(r.name),'resource-name');names.add(r.name);
     for(const k of ['current','next','previous']){
       need(typeof r[k]==='string'&&resolve(r[k])===r[k]&&!seen.has(r[k]),'resource-path');seen.add(r[k]);
@@ -90,7 +90,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
     const state=await store.read();need(same(core,state.installation,current),'installation-drift');
     const plan=core.planInstallationTransition({version:1,current,next,work:state.work},{maintenance:true});
     need(plan.status==='planned','unsafe-work-boundary');
-    for(const r of resources){await privatePath(r.current,{directory:true});need(await verify(r,'current')===true,'current-resource-unverified');}
+    for(const r of resources){await privatePath(r.current,{directory:r.kind!=='file'});need(await verify(r,'current')===true,'current-resource-unverified');}
     return {state,plan};
   };
   if(check){const result=await inspect();return {status:'checked',operation:result.plan.operation,current,next,services:[...services]};}
@@ -101,7 +101,7 @@ export async function coordinateUpgrade({core,directory,store,current,next,resou
     need(!existing||existing.phase==='complete'||existing.phase==='rolled-back','reconciliation-required');
     const {state,plan}=await inspect();
     if(plan.operation==='unchanged')return {status:'unchanged'};
-    for(const r of resources){await privatePath(r.next,{directory:true});need(await absent(r.previous)&&await verify(r,'next')===true,'staged-resource-unverified');}
+    for(const r of resources){await privatePath(r.next,{directory:r.kind!=='file'});need(await absent(r.previous)&&await verify(r,'next')===true,'staged-resource-unverified');}
     const journal={version:1,transaction:randomUUID(),phase:'prepared',current,next,protectedState:core.contentIdentity(state.work),
       resources:structuredClone(resources),services:[...services],moves:[]};
     await writePrivate(path,journal);
@@ -165,7 +165,7 @@ export async function rollbackUpgrade({core,directory,store,verify,manager=upgra
       for(const r of [...journal.resources].reverse()){
         assertLease();
         if(await absent(r.previous)){need(await verify(r,'current')===true,'original-resource-unavailable');continue;}
-        await privatePath(r.previous,{directory:true});need(await verify(r,'previous')===true,'previous-resource-unverified');
+        await privatePath(r.previous,{directory:r.kind!=='file'});need(await verify(r,'previous')===true,'previous-resource-unverified');
         if(!await absent(r.current)){
           need(await absent(r.next)&&await verify(r,'activated')===true,'rollback-resource-conflict');
           await fs.rename(r.current,r.next);

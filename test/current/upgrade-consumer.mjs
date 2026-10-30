@@ -144,3 +144,16 @@ test('six-runner upgrade stops and switches every slot and rolls back without lo
  const hostile=structuredClone(body);hostile.resources[6].name='runner-99';
  assert.throws(()=>managedUpgradeLayout(f.core,f.directory,{...hostile,identity:f.core.contentIdentity(hostile)}),/resource-set/);
 },6));
+
+test('native metadata file and runtime directory switch and roll back at one protected service boundary',()=>fixture(async f=>{
+ const metadata={name:'installation',kind:'file',current:join(f.directory,'native-installation.json'),next:join(f.directory,'native-installation-next.json'),previous:join(f.directory,'native-installation-previous.json')};
+ for(const [key,body]of [['current','original metadata'],['next','updated metadata']])await fs.writeFile(metadata[key],body,{mode:0o600});
+ const verify=async(r,position)=>r.name!=='installation'?f.verify(r,position):
+  await fs.readFile(r[position==='activated'?'current':position],'utf8')===(['current','previous'].includes(position)?'original metadata':'updated metadata');
+ const options={...f.options,resources:[...f.resources,metadata],verify};
+ assert.equal((await coordinateUpgrade({...options,check:true})).status,'checked');assert.equal(f.calls.length,0);
+ assert.equal((await coordinateUpgrade(options)).status,'switched');assert.equal(await fs.readFile(metadata.current,'utf8'),'updated metadata');
+ assert.equal(f.active.size,1);assert.deepEqual((await f.store.read()).work,f.work);
+ assert.equal((await rollbackUpgrade(options)).status,'rolled-back');assert.equal(await fs.readFile(metadata.current,'utf8'),'original metadata');
+ assert.deepEqual((await f.store.read()).work,f.work);
+},0));
