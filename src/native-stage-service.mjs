@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import {join} from 'node:path';
 import {readPrivate,writePrivate,ensurePrivateDirectory} from './local-state.mjs';
 import {maintenanceLock} from './upgrade.mjs';
@@ -54,7 +53,7 @@ export async function nativeStageService(core,{root,source,execute,signal}={}){
   async submit(request){validate(request);need(!closed&&!signal?.aborted,'cancelled');
    return maintenanceLock(directory,async()=>{
     const existing=await read(request);if(existing)return project(await reconcile(existing));
-    const binding=await source(request,{signal});need(id(binding.issue)&&core.validDisplayStage(binding.stage),'source');
+    const binding=await source(request,{signal});need(id(binding.issue)&&core.coreStages.includes(binding.stage),'source');
     const record={version:1,request:structuredClone(request),issue:binding.issue,stage:binding.stage,phase:'running',conclusion:null,progress:[],progressCount:0};
     await save(record);const pending=run(record).catch(()=>{}).finally(()=>running.delete(request.request));running.set(request.request,pending);
     return project(record);

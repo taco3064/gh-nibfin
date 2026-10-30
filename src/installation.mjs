@@ -14,7 +14,7 @@ export function installationOptions(args,{upgrade=false}={}){
   const v={};for(let i=0;i<args.length;i++){
     const key=args[i];if(Object.hasOwn(v,key))throw Error('Duplicate installation option.');
     if(['--check','--auto-register'].includes(key))v[key]=true;
-    else if(['--repo','--execution-repo','--pool-repos','--runner-count',...(upgrade?['--runner','--version']:[])].includes(key)&&args[i+1]&&!args[i+1].startsWith('--'))v[key]=args[++i];
+    else if(['--repo','--execution-repo','--pool-repos','--runner-count','--image','--runtime-profile',...(upgrade?['--runner','--version']:[])].includes(key)&&args[i+1]&&!args[i+1].startsWith('--'))v[key]=args[++i];
     else throw Error('Use init --repo OWNER/REPO [--check] [--auto-register] [--pool-repos OWNER/ONE,OWNER/TWO --runner-count N], or upgrade --repo OWNER/REPO [--check] [--version VERSION].');
   }
   if(!v['--repo']||v['--runner'])throw Error('Select --repo OWNER/REPO; local Runner upgrade requires its separately reconciled registration.');
@@ -31,8 +31,11 @@ export function installationOptions(args,{upgrade=false}={}){
       ||names.some(n=>!/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(n)))throw Error('Select a finite unique canonical pool including the initialized repository.');
     pool={id:'member-default',capacity:Number(count),targets:names};
   }
+  if(v['--image']&&!/^sha256:[a-f0-9]{64}$/.test(v['--image']))throw Error('Select a pinned --image sha256 digest.');
+  if(v['--runtime-profile']&&!v['--image'])throw Error('Select --image with its reviewed --runtime-profile.');
+  if((v['--image']||v['--runtime-profile'])&&(upgrade||!pool))throw Error('Native member runtime selection belongs to pooled init.');
   if(v['--version']&&![currentPin.packageVersion,currentProducer].includes(v['--version']))throw Error('Version is not in the reviewed immutable compatibility catalog.');
-  return {repo:v['--repo'],check:!!v['--check'],automatic:v['--auto-register']===true?true:undefined,version:v['--version'],...(pool?{pool}:{})};
+  return {repo:v['--repo'],check:!!v['--check'],automatic:v['--auto-register']===true?true:undefined,version:v['--version'],...(pool?{pool}:{}),...(v['--image']?{memberRuntime:{image:v['--image'],runtimeProfile:v['--runtime-profile']??'linux-amd64-codex-v1'}}:{})};
 }
 export function installationProvider(core,{transport,repo,write}){
   const prefix='/repos/'+repo;
@@ -138,7 +141,7 @@ export async function initializeRepository(args,dependencies={}){
     if(!report.desired)return report;
     if(report.diagnostics.some(d=>d.capability==='executionPool'))return {status:'blocked',diagnostics:report.diagnostics};
     if(host.prepare){
-      const prepared=await host.prepare({core,context,repo:selected.repo,executionPool:report.executionPool});
+      const prepared=await host.prepare({core,context,repo:selected.repo,executionPool:report.executionPool,memberId,...(selected.memberRuntime?{memberRuntime:selected.memberRuntime}:{})});
       if(prepared?.status!=='ready')return {status:'blocked',phase:prepared?.status??'unknown',diagnostics:prepared?.diagnostics??[{capability:'host',code:'native-preparation-unconfirmed'}]};
     }
     const nextInstallation={packageVersion:currentPin.packageVersion,pins:context.identity.pins};

@@ -114,3 +114,14 @@ test('real diagnostic subprocesses use the execution login context; provider out
   assert.doesNotMatch(await fs.readFile(join(d.root,'sample/environment.json'),'utf8'),/credential-sentinel/);
   await fs.writeFile(join(bin,'gh'),'#!/bin/sh\nprintf "HTTP 403 credential-sentinel" >&2\nexit 1\n',{mode:0o700});await assert.rejects(createEnvironment(args('rejected'),d),e=>!e.message.includes(sentinel));await absent(join(d.root,'rejected'));
 }));
+
+
+test('native init reuses the member-owned login through the maintained create owner without copying or replacing credentials',()=>scratch(async root=>{
+ const d=deps(root),loginSpace=join(root,'member-auth');await fs.mkdir(loginSpace,{mode:0o700});
+ const auth=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:sentinel}});await fs.writeFile(join(loginSpace,'auth.json'),auth,{mode:0o600});
+ const record=await createEnvironment(args('native-member',2),{...d,configuration:{...d.configuration,loginSpace,runtimeRoot:root},
+  login:()=>assert.fail('existing member login must be retained')});
+ assert.equal(record.loginSpace,loginSpace);assert.equal(await fs.readFile(join(loginSpace,'auth.json'),'utf8'),auth);
+ assert.equal(record.instances.length,2);assert.ok(record.instances.every(i=>i.loginSpace===loginSpace));
+ await absent(join(d.root,'native-member/login'));
+}));
