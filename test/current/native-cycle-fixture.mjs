@@ -21,14 +21,14 @@ export async function nativeCycleFixture(core,context){
  const issue={id:'123',node_id:'I_123',number:55,title:'Document native onboarding',state:'open',updated_at:'2026-10-30T00:00:00Z',
   body:'Document the native Owner and Member setup.\nNo additional untracked or ignored Candidate artifacts are required.\nDeployment is not required for this source-only change.',
   url:'https://api.github.com/repos/'+repository+'/issues/55',repository_url:'https://api.github.com/repos/'+repository,
-  assignees:[member],labels:[{name:'scope'}]};
+  assignees:[member],labels:[{id:'900',name:'scope'}]};
  const repo={id:'100',full_name:repository,private:false,visibility:'public',default_branch:'main',owner:{id:'7',type:'User',login:'example'},
   permissions:{admin:true},allow_rebase_merge:true};
  const baseCommit='b'.repeat(40),workflow='name: CI\non: push\n';let denied=false;
  const transport=async r=>{
   if(denied)return{status:403,body:'{}'};
   if(r.method==='PATCH'&&r.endpoint==='/repos/'+repository+'/issues/55'){issue.body=JSON.parse(r.body).body;return{status:200,body:JSON.stringify(issue)};}
-  if(r.method==='POST'&&r.endpoint==='/repos/'+repository+'/issues/55/labels'){issue.labels.push({name:'shaped'});return{status:200,body:JSON.stringify(issue.labels)};}
+  if(r.method==='POST'&&r.endpoint==='/repos/'+repository+'/issues/55/labels'){issue.labels.push({id:'901',name:'shaped'});return{status:200,body:JSON.stringify(issue.labels)};}
   assert.equal(r.method,'GET','unexpected fixture mutation');
   let data;
   if(r.endpoint==='/user'||r.endpoint==='/users/member')data=member;
