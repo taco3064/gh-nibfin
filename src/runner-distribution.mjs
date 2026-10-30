@@ -35,30 +35,45 @@ export async function verifyRunnerDistribution(directory,{signal,unregistered=fa
     const extracted=join(scratch,'extracted');await fs.mkdir(extracted);
     await promisify(execFile)('tar',['--extract','--gzip','--file',snapshot,'--directory',extracted,'--no-same-owner'],
       {signal,timeout:30000,maxBuffer:4096,env:{PATH:process.env.PATH,LANG:'C'}});
-    const expectedPaths=new Set([runnerDistribution.archive]);
-    const compare=async relative=>{
-      for(const entry of await fs.readdir(join(extracted,relative),{withFileTypes:true})) {
-        const name=join(relative,entry.name);expectedPaths.add(name);const expected=join(extracted,name),actual=join(directory,name);
-        if(entry.isDirectory()){await safePath(actual);await compare(name);}
-        else if(entry.isFile()){await safePath(actual,{directory:false});if(await hash(expected)!==await hash(actual))throw Error();}
-        else if(entry.isSymbolicLink()){
-          const target=await distributionLink(extracted,name),stat=await fs.lstat(actual);
-          await safePath(dirname(actual));
-          if(!stat.isSymbolicLink()||stat.uid!==userInfo().uid||stat.nlink!==1
-            ||await distributionLink(directory,name)!==target||await hash(expected)!==await hash(actual))throw Error();
-        }else throw Error();
-      }
-    };
-    await compare('');
-    if(unregistered){
-      const exact=async(relative='')=>{for(const e of await fs.readdir(join(directory,relative),{withFileTypes:true})){
-        const name=join(relative,e.name);if(!expectedPaths.has(name))throw Error('Unrecognized Runner state preserved.');
-        if(e.isDirectory())await exact(name);
-      }};await exact();
-    }
+    await verifyRunnerTree(extracted,directory,{signal,unregistered});
     return runnerDistribution;
   } catch {throw Error(`Registration requires the pinned official Linux x64 Runner v${runnerDistribution.version} archive, matching extracted application bytes, and local tar. Preserve incompatible installations for reconciled upgrade; no registration was requested.`);}
   finally {if(scratch)await fs.rm(scratch,{recursive:true,force:true});}
+}
+
+// The caller authenticates and extracts the fixed official archive first.
+// Walk ownership/types once, then compare regular file bytes in bounded native
+// checksum batches. Rewalking every ancestor for every file made init take minutes.
+export async function verifyRunnerTree(expectedRoot,directory,{signal,unregistered=false}={}){
+  await safePath(directory);const expectedPaths=new Set([runnerDistribution.archive]),files=[];
+  let count=0;
+  const walk=async(relative='',depth=0)=>{
+    if(depth>64)throw Error('Runner tree depth');
+    for(const entry of await fs.readdir(join(expectedRoot,relative),{withFileTypes:true})){
+      const name=join(relative,entry.name),actual=join(directory,name),stat=await fs.lstat(actual);
+      if(++count>100000||name.length>4096||stat.uid!==userInfo().uid)throw Error('Runner tree ownership');
+      expectedPaths.add(name);
+      if(entry.isDirectory()){
+        if(!stat.isDirectory()||(stat.mode&0o077)!==0)throw Error('Runner directory');
+        await walk(name,depth+1);
+      }else if(entry.isFile()){
+        if(!stat.isFile()||stat.nlink!==1||(stat.mode&0o077)!==0)throw Error('Runner file');files.push(name);
+      }else if(entry.isSymbolicLink()){
+        if(!stat.isSymbolicLink()||stat.nlink!==1||await distributionLink(directory,name)!==await distributionLink(expectedRoot,name))throw Error('Runner link');
+      }else throw Error('Runner file type');
+    }
+  };await walk();
+  for(let i=0;i<files.length;i+=256){
+    const paths=files.slice(i,i+256),options={signal,timeout:30000,maxBuffer:16777216,encoding:null,env:{PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'C'}};
+    const [expected,actual]=await Promise.all([expectedRoot,directory].map(cwd=>promisify(execFile)('/usr/bin/sha256sum',['--zero','--',...paths],{...options,cwd})));
+    if(!expected.stdout.equals(actual.stdout))throw Error('Runner bytes');
+  }
+  if(unregistered){const exact=async(relative='')=>{
+    for(const e of await fs.readdir(join(directory,relative),{withFileTypes:true})){
+      const name=join(relative,e.name);if(!expectedPaths.has(name))throw Error('Unrecognized Runner state preserved.');
+      if(e.isDirectory())await exact(name);
+    }
+  };await exact();}
 }
 
 // First-party pinned acquisition, called only by registration, never by --check.
