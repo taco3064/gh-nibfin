@@ -8,6 +8,11 @@ import {maintenanceLock} from './upgrade.mjs';
 import {verifyNativeRuntime,nativeServiceUnit,nativeServiceName} from './native-control-service.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
 import {nativePoolCoordinator} from './native-pool-coordinator.mjs';
+import {nativeStageService} from './native-stage-service.mjs';
+import {executeNativeDelivery} from './native-delivery.mjs';
+import {readNativeMember} from './native-member.mjs';
+import {readNativeOwnerPolicy} from './native-owner-policy.mjs';
+import {verifyCurrentCore} from './current-core.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -36,7 +41,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   await privatePath(join(root,nativeServiceName));
   need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
   await verifyNativeRuntime(root,record);assertLease();
-  let poolStore,installedCore,coordinator;
+  let poolStore,installedCore,coordinator,stages;
   if(record.executionPool?.version===2){
    installedCore=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
    poolStore=nativePoolStore(installedCore,{root,configuration:record.executionPool});await poolStore.status();
@@ -47,11 +52,17 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   const clients=new Set();let bound,serverError;
   const server=createServer({allowHalfOpen:true},socket=>{
    clients.add(socket);socket.once('close',()=>clients.delete(socket));socket.on('error',()=>socket.destroy());
-   socket.setTimeout(3000,()=>socket.destroy());let bytes='';
+   socket.setTimeout(60000,()=>socket.destroy());let bytes='';
    socket.on('data',b=>{bytes+=b;if(Buffer.byteLength(bytes)>1024)socket.destroy();});
    socket.once('end',async()=>{try{
     assertLease();const request=JSON.parse(bytes);
     need(request&&request.version===1,'request');
+    if(['stage','stage-status'].includes(request.operation)){
+     need(stages&&Object.keys(request).sort().join(' ')==='attempt operation repository request runId version','stage-request');
+     const{operation,...selector}=request;
+     const value=operation==='stage'?await stages.submit(selector):await stages.status(selector);
+     assertLease();socket.end(JSON.stringify(value)+'\n');return;
+    }
     if(request.operation==='enqueue'){
      need(Object.keys(request).sort().join(' ')==='jobId operation repository runId version'&&coordinator,'enqueue-request');
      const retained=await coordinator.enqueue({repository:request.repository,runId:request.runId,jobId:request.jobId});
@@ -71,12 +82,23 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
     coordinator=await nativePoolCoordinator(installedCore,{root,record,signal,onProgress:value=>
      process.stdout.write(installedCore.actionLogLine(value,'runner-pool'))});
     live.runnerPool='running';live.reason='native-stage-composition-pending';
+    const configured=await readPrivate(join(root,'member-runtime.json'),{missing:true});
+    const policy=await readPrivate(join(root,'owner-policy.json'),{missing:true});
+    if(configured&&policy){
+     await readNativeMember(installedCore,{root,memberId:coordinator.memberId});await readNativeOwnerPolicy(installedCore,{root});
+     const verified=await verifyCurrentCore(pathToFileURL(join(root,'runtime/docs/handoffs/current/')));
+     const context={...verified,root:join(root,'runtime'),identity:installedCore.distributionIdentity()};
+     const provider=installedCore.createGithubProvider({attempts:1});
+     stages=await nativeStageService(installedCore,{root,signal,source:(request,options)=>coordinator.stageSource(request,options),
+      execute:(binding,options)=>executeNativeDelivery(installedCore,{root,binding,context,provider,...options})});
+     live.stageEntry='configured';
+    }
    }
    await ready(live);
    await Promise.race([failed,new Promise(resolve=>{if(signal?.aborted)resolve();else signal?.addEventListener('abort',resolve,{once:true});})]);
    if(serverError)throw serverError;
   }finally{
-   await coordinator?.close();
+   await stages?.close();await coordinator?.close();
    for(const socket of clients)socket.destroy();
    await new Promise(resolve=>server.close(()=>resolve()));
    // Node removes its own listening socket. If one remains, never remove a

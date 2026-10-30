@@ -28,7 +28,7 @@ test('native composition runs actual Shape, independent Validator and controlled
      start:async()=>{prepared.push({role:task.role,run:source.runId,id:bound.input.execution.id});return{status:'started'};},
      collect:async()=>({status:'complete',exitCode:0,evidence:structuredClone(expected)}),termination:async()=>({status:'terminated'}),
      stop:async()=>({status:'requested'}),cleanup:async()=>({status:'completed',residuals:[]})};
-    const id='fixture-'+binding.request.id,lifecycle=core.createAgentLifecycle({environment:{id,agent:'recording',loginSpace:'/fixture/login',instances:[
+    const id='fixture-'+binding.request.id,lifecycle=core.createAgentLifecycle({environment:{id:id+'-environment',agent:'recording',loginSpace:'/fixture/login',instances:[
      {id,workspace:'/fixture/work-'+id,registration:'/fixture/reg-'+id,service:'/fixture/service-'+id}]},instanceId:id,backend,current,
      startCurrent:bound.startCurrent});
     const value={input:bound.input,lifecycle,current,readBody:()=>body,taskIdentity:core.contentIdentity(task.task)};

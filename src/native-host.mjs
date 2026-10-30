@@ -11,6 +11,7 @@ import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from '.
 import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
 import {nativeControlService} from './native-control-service.mjs';
 import {prepareNativeMember} from './native-member.mjs';
+import {prepareNativeOwnerPolicy} from './native-owner-policy.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
 import {transitionStagedNativeHost} from './native-staged-transition.mjs';
 
@@ -18,7 +19,7 @@ const need=(ok,code)=>{if(!ok)throw Error('native-host:'+code);};
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
 const clientRoot=dirname(fileURLToPath(import.meta.url));
 const remaining=()=>[
- {capability:'runner',code:'native-runner-registrations-pending'},
+ {capability:'member',code:'native-member-runtime-unconfigured'},
  {capability:'handover',code:'retained-original-work-reconciliation-required'}
 ];
 
@@ -136,9 +137,13 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    }
    await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
    await writePrivate(join(root,'native-installation.json'),record);
-   if(memberRuntime||await readPrivate(join(root,'member-runtime.json'),{missing:true}))
-    await prepareNativeMember(core,{root,context,memberId,capacity:pool.capacity,...memberRuntime});
+   let member;
+   if(memberRuntime||await readPrivate(join(root,'member-runtime.json'),{missing:true})){
+    member=await prepareNativeMember(core,{root,context,memberId,capacity:pool.capacity,...memberRuntime});
+    if(member?.memberId)await prepareNativeOwnerPolicy(core,{root,configuration:pool,provider:core.createGithubProvider({attempts:1})});
+   }
    const observed=await control.install();
+   if(member?.memberId)return {status:'prepared',runnerCount:pool.capacity,diagnostics:[{capability:'activation',code:'native-project-installation-and-activation-pending'}]};
    return {status:'staged',runnerCount:pool.capacity,diagnostics:[...observed.diagnostics,...remaining()]};
   });
  }
