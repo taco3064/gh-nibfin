@@ -166,7 +166,7 @@
         },
         {
           "path": "docs/runner-pools.md",
-          "sha256": "e1e2cb8c9aea3faaa5862d903134cf2c1e9b61070fa57446f4711c796dae3aea"
+          "sha256": "4a384bb9b463792eb325c7c36e974c1c41b184607c29b0ede5eb55a469605b19"
         },
         {
           "path": "docs/scope.md",
@@ -402,7 +402,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "67aaddfaecee739ac2b28005b3ecea67cfdf7db3b83a0dc74d02fef92c3a68d8"
+          "sha256": "e7df3067acc2874987a78c8f815d1d21a3bbe4e1c4a41bf24c2af09f8523262d"
         },
         {
           "path": "src/distribution.mjs",
@@ -654,7 +654,7 @@
         },
         {
           "path": "src/runner-pool-host.mjs",
-          "sha256": "9978bc97931f330eed687741261b20a04247e928fb41777ca46a1c136c78a0d0"
+          "sha256": "91d1563ba59650f3df465313147122b96862adc7344f3b5650824d0e27740291"
         },
         {
           "path": "src/runner.mjs",
@@ -745,7 +745,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "b0c6202a43db14a52fee010d57bcbc4fb2d7714b741b677c0d38b5661be81b01"
+      "sha256": "51036e8855c1856662cb787504a94a922b87e13ba58465d13b7c78bde5b6797f"
     },
     "skills": {
       "version": "0.1.0",
@@ -922,7 +922,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "67aaddfaecee739ac2b28005b3ecea67cfdf7db3b83a0dc74d02fef92c3a68d8"
+    "sourceMapSha256": "e7df3067acc2874987a78c8f815d1d21a3bbe4e1c4a41bf24c2af09f8523262d"
   },
   "entries": [
     {

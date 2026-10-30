@@ -63,9 +63,14 @@ test('foreign repository, unapproved actor, mismatched Job, absent request label
   ['/repos/example/project/actions/runs/300',v=>{v.display_title='#55 | accept';}],
   ['/repos/example/project/actions/jobs/200',v=>{v.run_attempt=2;}],
   ['/repos/example/project/actions/jobs/200',v=>{v.labels=v.labels.filter(s=>!s.startsWith('nibfin-request-'));}],
-  ['/repos/example/project/issues/55',v=>{v.body+=' changed';}],
-  ['/repos/example/project/issues/55',v=>{v.assignees=[];}]];
+  ['/repos/example/project/issues/55',v=>{v.pull_request={};}]];
  for(const [path,change]of cases){const original=structuredClone(f.routes.get(path));change(f.routes.get(path));
   await assert.rejects(f.source.inspect('request-0'),/native-pool-source:/);f.routes.set(path,original);}
  assert.ok(f.calls.every(r=>r.method==='GET'));
+ const issue=f.routes.get('/repos/example/project/issues/55'),original=structuredClone(issue);
+ for(const change of [v=>{v.body+=' changed';},v=>{v.assignees=[];},v=>{v.state='closed';}]){
+  Object.assign(issue,structuredClone(original));change(issue);
+  const observation=await f.source.inspect('request-0');assert.equal(observation.authorized,true);
+  assert.equal(observation.launchAuthorized,false);assert.equal(observation.identity,f.retained.identity);
+ }
 }));
