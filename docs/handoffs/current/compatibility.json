@@ -398,7 +398,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "d802aeb7c3812b0203c2916c6afd5eed99b318569dce3a40a7a74aaf0ca1e076"
+          "sha256": "2342fdd3b5c61a734af10710e795fdb1a24417cff4ef1c88d2e9caa4a33c8198"
         },
         {
           "path": "src/distribution.mjs",
@@ -422,7 +422,7 @@
         },
         {
           "path": "src/evidence.mjs",
-          "sha256": "a298e7a6a2f915c8ec29600d6dd74c5557ad2f2e12c638d6c52a071e6147c2f0"
+          "sha256": "99e9f2216c5b16d8a46e0b40654c33152b22d2e2768fe0a23a901f6209e7d971"
         },
         {
           "path": "src/execution-pool.mjs",
@@ -478,7 +478,7 @@
         },
         {
           "path": "src/installation.mjs",
-          "sha256": "88334b05ebf2c3bd16813ffcbed7d546bbb19949b2ad87c5900ebff446343ed9"
+          "sha256": "79eeb67926b0c5b9e445f71180e379ed83774273e54fb1f718fc59a11ec49038"
         },
         {
           "path": "src/instructions.mjs",
@@ -646,7 +646,7 @@
         },
         {
           "path": "src/runner-pool-capacity.mjs",
-          "sha256": "3a0401d74d06daa1ebf22141fb7c829c82b815bf6992f3b6c7273d300b52b921"
+          "sha256": "940ce07d7cfedfc300e79c78ca5070bf8a900fecffa1ad5694d67e13d67a56c3"
         },
         {
           "path": "src/runner.mjs",
@@ -737,7 +737,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "db7c42fe96366c1c476ffdc9fd39c956a682e8dde22a11728481bd11b58c0acc"
+      "sha256": "8bb95992953598242c649c977acf5177f2e2c5c38a063b9e788d044207b778c8"
     },
     "skills": {
       "version": "0.1.0",
@@ -914,7 +914,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "d802aeb7c3812b0203c2916c6afd5eed99b318569dce3a40a7a74aaf0ca1e076"
+    "sourceMapSha256": "2342fdd3b5c61a734af10710e795fdb1a24417cff4ef1c88d2e9caa4a33c8198"
   },
   "entries": [
     {
@@ -1174,7 +1174,7 @@
         {
           "type": "source-contract",
           "reference": "test/installation.test.mjs",
-          "sha256": "a19ab150fefdb83ea59ac9800b4cab1b1a5f26ef23698e03a9c96327c33c3b6e",
+          "sha256": "416158e6a178081f2d700ed9e58f40d2270ecf03f8bc0c1589022e35d3c827d8",
           "capability": "source-contract",
           "configuration": "5f09c14f2210e01eaf6952e58b56af6ca229f1847cc2aee23bdb614c1abb83ad"
         }
