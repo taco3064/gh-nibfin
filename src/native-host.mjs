@@ -9,6 +9,7 @@ import {maintenanceLock} from './upgrade.mjs';
 import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from './local-state.mjs';
 import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
 import {nativeControlService} from './native-control-service.mjs';
+import {nativePoolStore} from './native-pool-store.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-host:'+code);};
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
@@ -92,6 +93,7 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
     &&record.runnerCount===pool.capacity&&core.canonicalJSON(record.executionPool)===core.canonicalJSON(pool),'installation-identity');
    const files=await runtimeInputs(context);await verifyRuntime(join(root,'runtime'),files);
    for(let i=1;i<=pool.capacity;i++)await verify(join(root,'runner-'+i));
+   await nativePoolStore(core,{root,configuration:pool}).status();
    const observed=await control.check();
    return {status:'blocked',phase:'staged',diagnostics:[...observed.diagnostics,...remaining()]};
   }catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-installation-reconciliation-required'}]};}
@@ -106,6 +108,7 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    const files=await runtimeInputs(context);assertLease();await publishRuntime(root,files);
    await stageRunner(root,'runner-1',{prepare,verify});assertLease();
    for(let i=2;i<=pool.capacity;i++){await stageRunner(root,'runner-'+i,{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();}
+   await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
    const record={version:1,phase:'staged',producer:currentProducer,core:currentPin.coreSha256,
     executionPool:pool,runnerCount:pool.capacity,runnerDistribution,
     runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
