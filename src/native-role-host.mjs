@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';import{join}from'node:path';import{userInfo}from'node:os';import{spawn}from'node:child_process';
 import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./local-state.mjs';import{backendReady}from'./create.mjs';
+import{retainUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
-async function publicCheckout(repository,commit,path,signal){
+export async function publicCheckout(repository,commit,path,signal){
  need(/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(repository)&&/^[a-f0-9]{40}$/.test(commit),'checkout-binding');
  await privatePath(path,{directory:true});need((await fs.readdir(path)).length===0,'existing-workspace');
  const git=async args=>new Promise((resolve,reject)=>{
@@ -28,6 +29,8 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   const instance={id:binding.request.id+'-'+role,workspace:join(parent,'work'),registration:join(parent,'registration'),service:join(parent,'service')};
   for(const path of [instance.workspace,instance.registration,instance.service])await fs.mkdir(path,{mode:0o700});instances.push(instance);}
  const environment=core.createAgentEnvironments().describe({id:'native-'+binding.request.id,agent:'codex',loginSpace:member.loginSpace,instances});
+ const sourceDirectory=join(directory,'source');await fs.mkdir(sourceDirectory,{mode:0o700});await publicCheckout(repository,base,sourceDirectory,signal);
+ const candidateDirectory=join(directory,'candidate-source');await fs.mkdir(candidateDirectory,{mode:0o700});
  const runnerRoot=join(directory,'runner');await fs.mkdir(runnerRoot,{mode:0o700});
  for(const name of ['work','scratch','cache'])await fs.mkdir(join(runnerRoot,name),{mode:0o700});
  const runner={version:1,platform:'linux',arch:'x64',account:{user:userInfo().username,uid:userInfo().uid,githubUserId:memberId},
@@ -77,6 +80,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return value;}
  });
  return Object.freeze({
+  sourceDirectory,candidateDirectory,
   workspace(role){need(roles.includes(role),'role');return instances[roles.indexOf(role)].workspace;},
   async prepareRole(task){
    const path=this.workspace(task.role);
@@ -85,7 +89,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    await progress({status:'running',reason:'native-'+task.role+'-launch-prepared'});return value;
   },
   get:id=>{need(prepared.has(id),'execution');return host.get(id);},
-  async close(){
+  async close({preserveWriter=false}={}){
    let settled=true;
    for(const [id,value]of prepared){try{
     let observed=await value.lifecycle.termination(id);
@@ -93,6 +97,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
      do{await new Promise(r=>setTimeout(r,200));observed=await value.lifecycle.termination(id);}while(observed.termination.status!=='terminated'&&Date.now()<until);}
     if(observed.termination.status!=='terminated'){settled=false;continue;}
     if(['pending','unknown','unresolved'].includes(observed.result.status))await value.lifecycle.collect(id);
+    if(preserveWriter&&value.input.execution.role==='deliver')await retainUnacceptedWorkspace({directory:this.workspace('deliver'),execution:value.input.execution,retain});
     const cleanup=await value.lifecycle.cleanup();if(cleanup.status!=='completed')settled=false;
    }catch{settled=false;}}
    await new Promise(resolve=>broker.close(resolve));

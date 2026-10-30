@@ -78,6 +78,13 @@ export async function openNativeCycle(core,{root,target}={}){
   async retain(value){const identity=await retainRecord('retained',value);await update(state=>{state.records[identity]=value.kind??'retained';return state;});return 'native-record:'+identity;},
   async get(reference){need(typeof reference==='string'&&/^native-record:[a-f0-9]{64}$/.test(reference),'reference');return record(reference.slice(14),'retained');},
   operationRecords,completionRecords,
+  publicationHistory:{
+   async locate({identity}){const state=await read(),records=state.publications[identity];
+    return records?{outcome:'found',records:structuredClone(records)}:{outcome:'new',identity};},
+   async retain({identity,record:value}){await update(state=>{const values=state.publications[identity]??[];
+    need(value.identity===identity&&value.sequence===values.length&&value.previous===(values.length?core.contentIdentity(values.at(-1)):null),'publication-sequence');
+    values.push(structuredClone(value));state.publications[identity]=values;return state;});return {outcome:'retained'};}
+  },
   async locateCompletion({identity,phase}){const state=await read(),value=state.completions[identity]?.[phase];
    return value?{outcome:'found',...structuredClone(value)}:{outcome:'new',identity};},
   async locateOperation({identity}){const state=await read(),value=state.operations[identity];
