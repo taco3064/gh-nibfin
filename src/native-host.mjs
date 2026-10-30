@@ -79,7 +79,8 @@ async function stageRunner(root,name,{prepare,verify,copyFrom}){
  * Existing work and earlier installations are never reset to make init pass. */
 export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDistribution,verify=verifyRunnerDistribution,service}={}){
  const control=service??nativeControlService({root});
- const poolFor=(core,value)=>value===undefined?null:core.validateExecutionPool(value);
+ const poolFor=(core,value)=>{if(value===undefined)return null;const p=core.validateExecutionPool(value);
+  need(p.version===2,'legacy-central-pool-reconciliation-required');return p;};
  const selectPool=()=>({status:'blocked',diagnostics:[{capability:'host',code:'native-execution-pool-selection-required'}]});
  async function check({core,context,executionPool}){
   const pool=poolFor(core,executionPool);
@@ -88,9 +89,9 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
    const record=await readPrivate(join(root,'native-installation.json'),{missing:true});
    if(!record)return {status:'blocked',diagnostics:[{capability:'host',code:'native-host-not-staged'}]};
    need(record.version===1&&record.phase==='staged'&&record.core===currentPin.coreSha256
-    &&record.runnerCount===2&&core.canonicalJSON(record.executionPool)===core.canonicalJSON(pool),'installation-identity');
+    &&record.runnerCount===pool.capacity&&core.canonicalJSON(record.executionPool)===core.canonicalJSON(pool),'installation-identity');
    const files=await runtimeInputs(context);await verifyRuntime(join(root,'runtime'),files);
-   for(const name of ['runner-1','runner-2'])await verify(join(root,name));
+   for(let i=1;i<=pool.capacity;i++)await verify(join(root,'runner-'+i));
    const observed=await control.check();
    return {status:'blocked',phase:'staged',diagnostics:[...observed.diagnostics,...remaining()]};
   }catch{return {status:'blocked',diagnostics:[{capability:'host',code:'native-installation-reconciliation-required'}]};}
@@ -104,13 +105,13 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
     &&core.canonicalJSON(previous.executionPool)===core.canonicalJSON(pool),'preserve-existing-installation');
    const files=await runtimeInputs(context);assertLease();await publishRuntime(root,files);
    await stageRunner(root,'runner-1',{prepare,verify});assertLease();
-   await stageRunner(root,'runner-2',{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();
+   for(let i=2;i<=pool.capacity;i++){await stageRunner(root,'runner-'+i,{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();}
    const record={version:1,phase:'staged',producer:currentProducer,core:currentPin.coreSha256,
-    executionPool:pool,runnerCount:2,runnerDistribution,
+    executionPool:pool,runnerCount:pool.capacity,runnerDistribution,
     runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
    await writePrivate(join(root,'native-installation.json'),record);
    const observed=await control.install();
-   return {status:'staged',runnerCount:2,diagnostics:[...observed.diagnostics,...remaining()]};
+   return {status:'staged',runnerCount:pool.capacity,diagnostics:[...observed.diagnostics,...remaining()]};
   });
  }
  return Object.freeze({check,prepare:prepareHost,async install(options){return check(options);}});

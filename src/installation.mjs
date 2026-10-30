@@ -14,19 +14,22 @@ export function installationOptions(args,{upgrade=false}={}){
   const v={};for(let i=0;i<args.length;i++){
     const key=args[i];if(Object.hasOwn(v,key))throw Error('Duplicate installation option.');
     if(['--check','--auto-register'].includes(key))v[key]=true;
-    else if(['--repo','--execution-repo','--pool-repos',...(upgrade?['--runner','--version']:[])].includes(key)&&args[i+1]&&!args[i+1].startsWith('--'))v[key]=args[++i];
-    else throw Error('Use init --repo OWNER/REPO [--check] [--auto-register] [--execution-repo OWNER/SOURCE --pool-repos OWNER/SOURCE,OWNER/TARGET], or upgrade --repo OWNER/REPO [--check] [--version VERSION].');
+    else if(['--repo','--execution-repo','--pool-repos','--runner-count',...(upgrade?['--runner','--version']:[])].includes(key)&&args[i+1]&&!args[i+1].startsWith('--'))v[key]=args[++i];
+    else throw Error('Use init --repo OWNER/REPO [--check] [--auto-register] [--pool-repos OWNER/ONE,OWNER/TWO --runner-count N], or upgrade --repo OWNER/REPO [--check] [--version VERSION].');
   }
   if(!v['--repo']||v['--runner'])throw Error('Select --repo OWNER/REPO; local Runner upgrade requires its separately reconciled registration.');
   if(upgrade&&v['--auto-register'])throw Error('Automatic registration policy changes use Owner init.');
-  if(upgrade&&(v['--execution-repo']||v['--pool-repos']))throw Error('Pool membership transitions require reconciled installation; upgrade cannot replace them implicitly.');
-  if(Boolean(v['--execution-repo'])!==Boolean(v['--pool-repos']))throw Error('Supply --execution-repo and --pool-repos together.');
+  if(v['--execution-repo'])throw Error('Central execution repositories are no longer supported; use --pool-repos with --runner-count. Existing installations require preserved-work reconciliation.');
+  if(upgrade&&(v['--pool-repos']||v['--runner-count']))throw Error('Pool membership transitions require reconciled installation; upgrade cannot replace them implicitly.');
+  if(v['--runner-count']&&!v['--pool-repos'])throw Error('Supply --pool-repos with --runner-count.');
   let pool;
-  if(v['--execution-repo']){
+  if(v['--pool-repos']){
     const names=v['--pool-repos'].split(',');
-    if(names.length>32||new Set(names).size!==names.length||!names.includes(v['--execution-repo'])||!names.includes(v['--repo'])
-      ||names.some(n=>!/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(n)))throw Error('Select a finite unique canonical pool including the execution and initialized repositories.');
-    pool={source:v['--execution-repo'],targets:names};
+    const count=v['--runner-count']??'2';
+    if(!/^[1-9][0-9]*$/.test(count)||Number(count)>128)throw Error('Runner capacity must be an integer from 1 to 128.');
+    if(names.length>128||new Set(names).size!==names.length||!names.includes(v['--repo'])
+      ||names.some(n=>!/^[a-z0-9-]+\/[a-z0-9_.-]+$/.test(n)))throw Error('Select a finite unique canonical pool including the initialized repository.');
+    pool={id:'member-default',capacity:Number(count),targets:names};
   }
   if(v['--version']&&![currentPin.packageVersion,currentProducer].includes(v['--version']))throw Error('Version is not in the reviewed immutable compatibility catalog.');
   return {repo:v['--repo'],check:!!v['--check'],automatic:v['--auto-register']===true?true:undefined,version:v['--version'],...(pool?{pool}:{})};
@@ -64,7 +67,7 @@ async function managedObservation(provider,repo,path,admin){
 }
 export async function expectedInstallation(core,context,{automatic=false,allowedActorIds=[],executionPool,repo}={}){
   const source=core.createInstallation({version:1,expected:currentPin,profile:'source',observeCapability:async({version,sha256})=>({version,status:'verified',sha256})});
-  const plan=await source.plan({commit:currentProducer,hostRepository:'taco3064/nibfin',hostCommit:currentProducer,
+  const plan=await source.plan({commit:currentProducer,hostRepository:'taco3064/nibfin',hostCommit:currentProducer,repository:repo,
     ...(executionPool?{executionPool}:{})});
   if(plan.status!=='planned')throw Error('Packaged installation plan rejected the reviewed source.');
   const files=new Map(managedWorkflowPlan(core,{executionPool,repository:repo}).files);

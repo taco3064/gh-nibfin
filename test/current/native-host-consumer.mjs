@@ -3,7 +3,7 @@ import fs from'node:fs/promises';import{join}from'node:path';
 import{withCurrentCore}from'../../src/current-core.mjs';
 import{nativeControlHost}from'../../src/native-host.mjs';
 import{initializeRepository}from'../../src/installation.mjs';
-const pool=()=>({version:1,source:{version:1,repository:'example/core',repositoryId:'42',ownerId:'7',ownerType:'User'},
+const pool=()=>({version:2,id:'member-default',capacity:2,
  targets:['core','cli','action'].map((name,i)=>({version:1,repository:'example/'+name,repositoryId:String(42+i),ownerId:'7',ownerType:'User'}))});
 
 test('first-party staging retains actual installed runtime and exactly two unregistered Runner applications; check never stages or starts',async()=>{
@@ -49,10 +49,26 @@ test('native preparation is completed before any repository mutation; incomplete
    if(r.endpoint.endsWith('/labels?per_page=100'))return{status:200,headers:{},body:'[]'};
    return{status:404,headers:{},body:'{}'};
   };
-  const args=['--repo','example/core','--execution-repo','example/core','--pool-repos','example/core,example/cli,example/action'];
+  const args=['--repo','example/core','--pool-repos','example/core,example/cli,example/action'];
   const dependencies={core,context,transport,memberId:'8',root,host};
   assert.equal((await initializeRepository([...args,'--check'],dependencies)).status,'blocked');assert.equal(prepared,0);
   const result=await initializeRepository(args,dependencies);assert.equal(result.phase,'staged');assert.equal(result.status,'blocked');
   assert.equal(prepared,1);assert.equal(writes,0);assert.equal(result.diagnostics[0].code,'control-pending');
+ });
+});
+
+test('six physical applications are independent of three repositories and legacy central pools cannot be activated',async()=>{
+ await withCurrentCore(async(core,context)=>{
+  const root=join(context.root,'six-slots');let acquired=0,installed=0;
+  const prepare=async(directory,{archive}={})=>{if(!archive)acquired++;await fs.writeFile(join(directory,'fixture'),'runner',{mode:0o600});};
+  const verify=async directory=>assert.equal(await fs.readFile(join(directory,'fixture'),'utf8'),'runner');
+  const service={check:async()=>({diagnostics:[]}),install:async()=>{installed++;return {diagnostics:[]};}};
+  const host=nativeControlHost({root,prepare,verify,service}),executionPool={...pool(),capacity:6};
+  assert.equal((await host.prepare({core,context,executionPool})).runnerCount,6);
+  assert.equal(acquired,1);assert.equal(installed,1);
+  assert.equal((await fs.readdir(root)).filter(n=>/^runner-[0-9]+$/.test(n)).length,6);
+  const old={version:1,source:executionPool.targets[0],targets:executionPool.targets};
+  await assert.rejects(host.prepare({core,context,executionPool:old}),/legacy-central-pool-reconciliation-required/);
+  assert.equal(installed,1);
  });
 });
