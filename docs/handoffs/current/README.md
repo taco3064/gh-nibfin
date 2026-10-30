@@ -1,13 +1,13 @@
 # Current reviewed public runtime
 
 This integration branch selects the reviewed public Core candidate source snapshot at
-`137555ca4be4e62ea8c9e9e2e6cc9e94cce8dd68`, package `@nibfin/core@0.1.0`.
+`a79b532b3920d0ca40fdeeeea183eabe0433ef89`, package `@nibfin/core@0.1.0`.
 The exact reviewed inputs are retained here:
 
 | Input | SHA-256 |
 | --- | --- |
 | nibfin-core.tgz | bbb5f8b3c9a8e0f55fb6179529776b5080db5f3639f49a6c300a53dc6cd52171 |
-| release-manifest.json | 6512fa3feb9866487555f0a00073f0bbede329161d4fbe8dde678fa54d714f85 |
+| release-manifest.json | 7342c6f0ed526589ea7062f155a4b3fd9fcf8dc133beb8fd28ca8158da578c0d |
 | compatibility.json | e703851df7626bc13fdac05493ab20628bebe3c1680b903a227ef57c283e8de1 |
 
 The Core component identity is

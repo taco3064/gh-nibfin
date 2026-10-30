@@ -1049,7 +1049,7 @@
       },
       {
         "path": "test/runner-pool-capacity.test.mjs",
-        "sha256": "29209062ea3e21c5a4cf61cab96809d35f82a3cefbc076b226fe12bdde7387a7"
+        "sha256": "21143ff4fd291bbc4484e27afced53662fe51fdea9bc248d1504b961f3acbfb5"
       },
       {
         "path": "test/runner-pool-host.test.mjs",
@@ -1244,7 +1244,7 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "31ca1031acb2f6229c2acea6c62e2edb1af3145315e47cb5791e97635234aed3"
+    "contentSha256": "4fbca7e52a30e85271645dad3c22f329d594d777e29f41e549a5afb652795fae"
   },
   "components": {
     "core": {
