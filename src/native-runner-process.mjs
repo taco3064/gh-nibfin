@@ -51,10 +51,13 @@ export async function runNativeRunner(root,selector,{signal,invocation=process.e
   await admissionCheck({id:admission.instance,registration:application},admission.environment);
   const environment=nativeRunnerEnvironment(admission.environment),path=join(directory,'process.json');
   const service=await (serviceState??(()=>nativeRunnerService({root,selector,slot:record.lease.slot,lease:record.lease.identity}).state()))();
-  need(service.pid===process.pid&&service.invocation===invocation&&['active','activating'].includes(service.status),'actual-service');
+  need(service.pid===process.pid&&service.invocation===invocation&&['active','activating'].includes(service.status)
+   &&typeof service.controlGroup==='string'&&service.controlGroup.startsWith('/user.slice/user-'+userInfo().uid+'.slice/'),'actual-service');
   need(await readPrivate(path,{missing:true})===null,'original-launch-retained');
   need(!signal?.aborted,'cancelled');assertLease();
-  const initial={version:1,lease:record.lease.identity,invocation,controlGroup:service.controlGroup,entryPid:process.pid,phase:'launch-intent',configuration:record.configuration,admission:record.admission};
+  const stat=await fs.readFile('/proc/self/stat','utf8'),entryStart=stat.slice(stat.lastIndexOf(')')+2).split(' ')[19];
+  need(/^[0-9]+$/.test(entryStart),'process-start');
+  const initial={version:1,lease:record.lease.identity,invocation,controlGroup:service.controlGroup,entryPid:process.pid,entryStart,phase:'launch-intent',configuration:record.configuration,admission:record.admission};
   await writePrivate(path,initial,{exclusive:true});
   const log=await fs.open(join(directory,'listener.log'),'wx',0o600);let child,timer,ended,aborted=false;
   const stop=()=>{aborted=true;if(child?.pid){try{process.kill(-child.pid,'SIGTERM');}catch{}

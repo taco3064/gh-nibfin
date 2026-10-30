@@ -30,7 +30,13 @@ export function nativeRunnerService({root,selector,slot,lease,run=nativeSystemct
    &&properties.ControlGroup.split('/').slice(1).every(p=>/^[A-Za-z0-9_.@:-]+$/.test(p)),'control-group');
   return {status:properties.ActiveState,pid:Number(properties.MainPID),invocation:properties.InvocationID,controlGroup:properties.ControlGroup};
  }
- return Object.freeze({state,
+ const absent=async()=>{
+  const result=run(['show',name,'--property=LoadState','--property=ActiveState','--property=MainPID','--property=FragmentPath']);
+  if(!result.ok&&result.status!==4)return false;
+  const p=Object.fromEntries(result.output.trim().split('\n').map(line=>{const at=line.indexOf('=');return[line.slice(0,at),line.slice(at+1)];}));
+  return p.LoadState==='not-found'&&p.ActiveState==='inactive'&&p.MainPID==='0'&&p.FragmentPath==='';
+ };
+ return Object.freeze({state,absent,
   async start(){
    await privatePath(root,{directory:true});await privatePath(directory,{directory:true});
    // The Core owner has retained launch-intent before calling us. Never adopt an
@@ -40,6 +46,18 @@ export function nativeRunnerService({root,selector,slot,lease,run=nativeSystemct
    for(const args of [['link',unit],['daemon-reload'],['start',name]])need(run(args).ok,'start-unconfirmed');
    const observed=await state();need(['active','activating'].includes(observed.status)&&observed.pid>0,'start-unconfirmed');
    return {status:'started',lease};
+  },
+  async retire(){
+   const receipt=await readPrivate(path);need(receipt.version===1&&receipt.lease===lease&&receipt.selector===selector&&receipt.unit===sha(bytes),'receipt');
+   if(!await absent()){
+    const observed=await state();need(['inactive','failed'].includes(observed.status)&&observed.pid===0,'still-running');
+    await writePrivate(path,{...receipt,retirement:'intent'});
+    for(const args of [['stop',name],['reset-failed',name],['disable',name],['daemon-reload']])need(run(args).ok,'retirement-unconfirmed');
+   }else need(['intent','completed'].includes(receipt.retirement),'retirement-intent-missing');
+   need(await absent(),'retirement-readback');
+   try{await privatePath(unit);need(sha(await fs.readFile(unit))===receipt.unit,'unit');await fs.unlink(unit);}
+   catch(error){if(error.code!=='ENOENT')throw error;}
+   await writePrivate(path,{...receipt,retirement:'completed'});return {status:'retired',lease};
   }
  });
 }

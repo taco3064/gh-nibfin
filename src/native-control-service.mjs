@@ -18,7 +18,7 @@ export function nativeServiceUnit(root,node=process.execPath){
 export function nativeSystemctl(args){
  const r=spawnSync('/usr/bin/systemctl',['--user',...args],{encoding:'utf8',timeout:60000,maxBuffer:8192,
   env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:userInfo().homedir,LANG:'C',XDG_RUNTIME_DIR:'/run/user/'+userInfo().uid}});
- return {ok:!r.error&&r.status===0,output:r.status===0?r.stdout:''};
+ return {ok:!r.error&&r.status===0,status:r.status??null,output:r.stdout??''};
 }
 export async function nativeServiceStatus(root){
  await privatePath(root,{directory:true});const path=join(root,'control.sock'),s=await fs.lstat(path);

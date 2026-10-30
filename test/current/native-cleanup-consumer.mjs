@@ -1,0 +1,46 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {join} from 'node:path';
+import {withCurrentCore} from '../../src/current-core.mjs';
+import {ensurePrivateDirectory,readPrivate} from '../../src/local-state.mjs';
+import {retireNativeApplication} from '../../src/native-resource-cleanup.mjs';
+async function fixture(context){
+ const root=join(context.root,'cleanup-host'),lease='a'.repeat(64),outcome='b'.repeat(64),directory=join(root,'jobs',lease);
+ await ensurePrivateDirectory(join(root,'pool-state'));await ensurePrivateDirectory(directory);
+ await fs.writeFile(join(directory,'temporary'),'disposable application',{mode:0o600});
+ return {root,lease,outcome,directory,parked:join(root,'jobs','retired-'+lease),journal:join(root,'pool-state','cleanup-'+lease+'.json')};
+}
+test('cleanup requires custody and actual unused files, preserves external symlink targets and rejects replacement work',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(context),external=join(context.root,'retained-original');await fs.writeFile(external,'UNACCEPTED ORIGINAL',{mode:0o600});
+ await fs.symlink(external,join(f.directory,'original-link'));
+ await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>false}),/custody-or-service-unconfirmed/);
+ const file=await fs.open(join(f.directory,'temporary'),'r');
+ try{await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>true}),/process-reference/);}finally{await file.close();}
+ assert.equal((await retireNativeApplication(core,{...f,confirm:async()=>true})).status,'completed');
+ assert.equal(await fs.readFile(external,'utf8'),'UNACCEPTED ORIGINAL');await assert.rejects(fs.stat(f.directory),{code:'ENOENT'});
+ assert.equal((await readPrivate(f.journal)).inventory.entries,undefined);
+ assert.equal((await retireNativeApplication(core,{...f,confirm:async()=>true})).status,'completed');
+ await fs.mkdir(f.directory,{mode:0o700});await fs.writeFile(join(f.directory,'new-work'),'PRESERVE',{mode:0o600});
+ await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>true}),/completed-path-reused/);
+ assert.equal(await fs.readFile(join(f.directory,'new-work'),'utf8'),'PRESERVE');
+}));
+test('interrupted parking resumes the same inode and never treats missing work as empty or discards changed files',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(context);let calls=0;
+ await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>++calls<3}),/custody-or-service-unconfirmed/);
+ assert.equal((await readPrivate(f.journal)).phase,'parked');await assert.rejects(fs.stat(f.directory),{code:'ENOENT'});
+ assert.equal(await fs.readFile(join(f.parked,'temporary'),'utf8'),'disposable application');
+ await fs.writeFile(join(f.parked,'new-work'),'PRESERVE',{mode:0o600});
+ await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>true}),/tree-changed/);
+ await fs.unlink(join(f.parked,'new-work'));
+ assert.equal((await retireNativeApplication(core,{...f,confirm:async()=>true})).status,'completed');
+}));
+test('known partial removal resumes only an unchanged subset of its retained inventory',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(context);await fs.writeFile(join(f.directory,'second'),'disposable second file',{mode:0o600});let calls=0;
+ await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>++calls<4}),/custody-or-service-unconfirmed/);
+ assert.equal((await readPrivate(f.journal)).phase,'remove-intent');
+ await fs.unlink(join(f.parked,'temporary'));await fs.writeFile(join(f.parked,'unexpected'),'PRESERVE',{mode:0o600});
+ await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>true}),/tree-changed/);
+ await fs.unlink(join(f.parked,'unexpected'));
+ assert.equal((await retireNativeApplication(core,{...f,confirm:async()=>true})).status,'completed');
+}));
