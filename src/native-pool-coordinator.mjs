@@ -96,7 +96,7 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
    const actual=await provider.request({endpoint:'/repos/'+request.repository+'/actions/jobs/'+retained.request.jobId,
     target:retained.request.repositoryId,operation:'native-stage-source',correlation:request.request,signal:caller});
    need(actual.outcome==='read'&&actual.data.id===retained.request.jobId&&actual.data.run_id===request.runId
-    &&String(actual.data.run_attempt)===request.attempt&&actual.data.status==='in_progress'
+    &&(actual.data.run_attempt===undefined||String(actual.data.run_attempt)===request.attempt)&&actual.data.status==='in_progress'
     &&actual.data.runner_id===selected.runnerId,'actual-stage-job');
    return {...structuredClone(retained),jobRecord:structuredClone(selected),configuration:structuredClone(configuration),
     ownerType:configuration.targets.find(t=>t.repository===request.repository).ownerType};

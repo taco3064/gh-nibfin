@@ -4,7 +4,7 @@ const need=(ok,code)=>{if(!ok)throw Error('native-execution:'+code);};
 
 // Actual local Owner policy and Issue observations form the authority boundary.
 // No event, role output or imported historical label can supply eligibility.
-export async function nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport}={}){
+export async function nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport,poolReadiness}={}){
  const state=await store.read(),owner=await readNativeOwnerPolicy(core,{root}),target=state.target;
  need(owner.memberId===state.member.id&&configuration.targets.some(t=>t.repositoryId===target.repositoryId&&t.repository===target.repository),'owner');
  const repository={id:target.repositoryId,name:target.repository,visibility:'public'};
@@ -40,13 +40,15 @@ export async function nativeExecutionInputs(core,{root,store,configuration,bindi
     return value.completion?{identity:value.completion.identity,expected:value.completionCurrent}:null;
    }catch(e){if(e.code==='ENOENT')return null;throw e;}},
   retrieve:async issue=>{const prior=await openNativeCycle(core,{root,target:issue});return (await prior.read()).completion;}});
- const selector=core.createAssigneeSelector({provider,authorizationFor:async member=>{need(member.id===state.member.id,'selected-member');return authorization;},
+ const ownedSelector=core.createAssigneeSelector({provider,authorizationFor:async member=>{need(member.id===state.member.id,'selected-member');return authorization;},
   maxCheckpointMs:120000,executionPool:configuration,poolReadiness:async request=>{
-   await checkpoint();need(binding.jobRecord.runnerId&&request.memberId===state.member.id,'actual-runner-member');
+   await checkpoint();if(poolReadiness)return poolReadiness(request);
+   need(binding.jobRecord?.runnerId&&request.memberId===state.member.id,'actual-runner-member');
    return {memberId:state.member.id,pool:core.contentIdentity(configuration),status:'ready',observedAt:Date.now()};
   }});
  const operation=stage=>({publication:'publish-shape',pr:'commit-pr',ci:'observe-ci',final:'verify-deployment',closure:'close',delivered:'mark-delivered'})[stage]??stage;
  const observedAt=Date.now();
+ const selector=Object.freeze({select:(input,options={})=>ownedSelector.select(input,{...options,memberId:state.member.id})});
  return {state,authorization,dependencies,dependencyInput,selector,grantContext,
   selectionInput:stage=>({target:{id:selected.repositoryId,owner:selected.repository.split('/')[0],repository:selected.repository.split('/')[1],ownerId:selected.ownerId,ownerType:selected.ownerType},
    registration:{level:'repository',id:selected.repositoryId},executionPool:configuration,issueId:target.issueId,number:target.number,
