@@ -4,10 +4,11 @@ Local GitHub CLI extension with seven command paths. The current integration
 selects the immutable reviewed Core integration package; see the
 [current package inputs](docs/handoffs/current/README.md) and
 [current integration guide](docs/onboarding-integration.md) for exact identities.
-Initialization, creation and registration adapters are being integrated with its
-installation, readiness and admission contracts. Upgrade/rollback, complete host
-onboarding and fresh retained lifecycle regression evidence remain incomplete;
-this snapshot is not ready for independent Acceptance or platform use.
+The maintained native shared-pool init now composes preparation, protected source
+installation and activation with the source-only delivery pilot. This is source
+implementation status, not completed host onboarding, fresh lifecycle regression
+proof or supported-platform certification. See the current guides for the
+implemented path and remaining evidence boundaries.
 
 The older boundary descriptions below retain historical N01/N15/N17 implementation
 and verification context. They do not describe the newly selected production
@@ -46,9 +47,9 @@ Neither command is actual GitHub CLI installation verification.
 
 The seven paths have these responsibilities:
 
-| Path | Responsibility (complete native host onboarding remains in progress) |
+| Path | Responsibility |
 | --- | --- |
-| init | Initialize repository workflows/labels and optional automatic registration. |
+| init | Prepare the native shared pool, install project-local managed source through a protected PR, and activate after all selected projects verify; optional automatic registration. |
 | runner create | Create one fixed-Agent environment with a positive integer total of unregistered instances; default 2. |
 | runner register | Register existing instances, without silently adding instances. |
 | runner unregister | Unregister one instance while retaining its environment and other registrations. |
@@ -59,9 +60,23 @@ The seven paths have these responsibilities:
 Help/version are options, not additional commands. Unknown options, extra tokens
 and incomplete paths fail with usage guidance. Baseline refusals perform no
 initialization, authentication, network access, service operation or registration.
-Implemented lifecycle parameters are described below. The maintained init and
-upgrade entries retain explicit refusals for incomplete native onboarding; see
-[integration status and maintenance prerequisites](docs/onboarding-integration.md).
+Implemented lifecycle parameters are described below. The public entry is
+`gh nibfin init --repo OWNER/REPO`, with `--check`, `--auto-register`,
+`--pool-repos`, `--runner-count`, `--image` and `--runtime-profile` as described in
+[the setup and resume journey](docs/onboarding-integration.md#owner-and-member-contexts).
+Pooled init requires a reviewed immutable image/profile for initial member runtime
+preparation. Finite project membership and physical Runner capacity are separate:
+capacity defaults to 2 (1–128), regardless of project count. Ordinary repeated init
+resumes the original protected source PR and required CI; initial activation waits
+for verified source in every selected project. `--check` only observes existing
+source/host state. Legacy `--execution-repo` is rejected, despite stale help text.
+
+The maintained composition is a **source-only pilot**, not a completed rollout.
+Prepared resources, a running control process, an active identity and passing
+fixtures are not live-delivery proof. Owner pauses and unresolved original work
+remain protected. See [runtime boundaries](docs/native-runner-runtime.md) for
+execution, isolation and observation limits. This documentation does not change
+#55 or its acceptance status and does not depend on accepting or replacing it.
 
 ## Verified Core boundary
 
