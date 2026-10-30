@@ -1,17 +1,17 @@
 # Current reviewed public runtime
 
 This integration branch selects the reviewed public Core candidate source snapshot at
-`ad2c5c0913b4edf58c3de098df5b12c81816291b`, package `@nibfin/core@0.1.0`.
+`aee2bb305be1e384399a06682e2bd54d135f2f24`, package `@nibfin/core@0.1.0`.
 The exact reviewed inputs are retained here:
 
 | Input | SHA-256 |
 | --- | --- |
-| nibfin-core.tgz | 24a4005173d439e509589a0c2b2c531de4162ec85081fa575a843ffe32477ce3 |
-| release-manifest.json | 373e1f8cf87ed9681dcfddad113811b1be465b0b5021a8e25495fed989f2e8bb |
-| compatibility.json | 6b24e2164c8d8f294892be17099b41f3a24fac31eb2431b8349915516a3c5da7 |
+| nibfin-core.tgz | f761964125844ae8dbdda09eda3645d73d6d0ccbb1a4bd3f35a9f14612417eb6 |
+| release-manifest.json | fa68815e807232ccb48aadbca429f91755c4b1d176fd2c212c0d18afd2166790 |
+| compatibility.json | d7ea5f0326a04564aecd399f01d997c1bafe7912cd34f927e85cb4949c005276 |
 
 The Core component identity is
-`de6ac88833e7d6fca0a42d258745cd325831886917c0562746832bff1775f21e`.
+`2e7a65bddfcf8019e3c839c463033152656cff493dec881878ce3ce17a417609`.
 The release manifest honestly retains the producer's candidate source identity;
 these files do not establish publication of a release. The superseded #233 input and incompatibility report remain available in Git history; they are not installation inputs.
 N01/N15/N17 remain separately pinned historical contracts.
