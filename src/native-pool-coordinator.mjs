@@ -7,6 +7,7 @@ import {nativePoolIntake} from './native-pool-intake.mjs';
 import {nativePoolRuntime} from './native-pool-runtime.mjs';
 import {nativeWorkCustody} from './native-work-custody.mjs';
 import {nativeGithubProvider} from './native-github-provider.mjs';
+import {nativeActivationStatus} from './native-activation.mjs';
 import {verifyCurrentCore,currentPin} from './current-core.mjs';
 import {readPrivate,writePrivate,ensurePrivateDirectory} from './local-state.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-pool-coordinator:'+code);};
@@ -44,7 +45,8 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
    ...(value.record?{issue:value.record.issue,stage:value.record.stage}:{}),ai_status:'not-yet-diagnosed'});
   return {status:'retained'};
  }
- const intake=await nativePoolIntake(core,{root,configuration,memberId,provider,onBlocked:blocked,installationRoot});
+ const launchAllowed=async()=>(await nativeActivationStatus(core,{root})).status==='ready';
+ const intake=await nativePoolIntake(core,{root,configuration,memberId,provider,onBlocked:blocked,installationRoot,launchAllowed});
  const custody=await nativeWorkCustody(core,{root,configuration,store,...(observeResources?{resources:observeResources}:{})});
  const runtime=nativePoolRuntime(core,{root,configuration,context,provider,custody,...runtimeOptions});
  const capacity=core.createRunnerPoolCapacity({configuration,records:store.capacity,observeRelease:runtime.observeRelease});
@@ -72,6 +74,7 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
   try{while(pending&&!closed){pending=false;const queued=await intake.list(),active=await store.jobs.pending();
     const keys=[...new Set([...active.map(r=>r.request.id),...queued.map(r=>r.request.id)])];
     for(const key of keys){if(closed||signal?.aborted)break;const record=await store.jobs.read(key);if(record?.phase==='released')continue;
+     if((!record||['prepare-intent','prepared','registration-intent','issued','admitted','launch-intent'].includes(record.phase))&&!await launchAllowed())continue;
      const result=await host.advance(key,{signal});
      onProgress({status:result.status,reason:result.reason??'runner-lifecycle',...(record?{issue:record.issue,stage:record.stage}:{})});
     }
@@ -82,7 +85,9 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
  const ledgerWatch=watch(join(root,'pool-state'),(_event,name)=>{if(name===null||name.toString()==='ledger.json')wake();});
  ledgerWatch.on('error',()=>{fatal='pool-subscription-unavailable';wake();});
  const jobsWatch=watch(join(root,'jobs'),()=>wake());jobsWatch.on('error',()=>{fatal='process-subscription-unavailable';wake();});
- const stop=()=>{closed=true;unsubscribe();ledgerWatch.close();jobsWatch.close();for(const w of watchers.values())w.close();for(const t of timers.values())clearTimeout(t);};
+ const workWatch=watch(join(root,'state'),(_event,name)=>{if(name===null||name.toString()==='store.json')wake();});
+ workWatch.on('error',()=>{fatal='work-subscription-unavailable';wake();});
+ const stop=()=>{closed=true;unsubscribe();ledgerWatch.close();jobsWatch.close();workWatch.close();for(const w of watchers.values())w.close();for(const t of timers.values())clearTimeout(t);};
  signal?.addEventListener('abort',stop,{once:true});wake();
  return Object.freeze({memberId,
   async enqueue(hint){need(!closed&&!fatal,'unavailable');const retained=await intake.accept(hint,{signal});wake();return retained;},

@@ -14,14 +14,14 @@ const selector=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v);
  * only locates an Issue; it cannot authenticate a workflow or authorize a role.
  * No Runner token or registration effect occurs in this intake owner.
  */
-export async function nativePoolIntake(core,{root,configuration,memberId,provider,onBlocked,installationRoot}={}){
+export async function nativePoolIntake(core,{root,configuration,memberId,provider,onBlocked,installationRoot,launchAllowed}={}){
  const pool=core.validateExecutionPool(configuration);need(pool.version===2&&id(memberId)&&typeof onBlocked==='function','composition');
  const directory=join(root,'pool-intake');await ensurePrivateDirectory(directory);
  const validate=value=>{const {identity,...body}=value;need(value.version===1&&identity===core.contentIdentity(body),'private-integrity');return value;};
  let tail=Promise.resolve();
  const readUnlocked=async key=>{need(selector(key),'selector');const value=await readPrivate(join(directory,key+'.json'),{missing:true});return value===null?null:validate(value);};
  const read=async key=>{await tail;return readUnlocked(key);};
- const sourceFor=dispatches=>nativePoolSource(core,{configuration:pool,memberId,provider,dispatches,onBlocked,
+ const sourceFor=dispatches=>nativePoolSource(core,{configuration:pool,memberId,provider,dispatches,onBlocked,launchAllowed,
   closedContinuation:async({issue,target,retained})=>{
    try{
     const selected={repository:target.repository,repositoryId:target.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:String(issue.number)};

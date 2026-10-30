@@ -9,11 +9,16 @@ import {nativePoolCoordinator} from '../../src/native-pool-coordinator.mjs';
 import {nativePoolStore} from '../../src/native-pool-store.mjs';
 import {ensurePrivateDirectory,writePrivate,readPrivate} from '../../src/local-state.mjs';
 import {nativePoolSourceFixture} from '../../tooling/native-pool-source-fixture.mjs';
+import {initializeFileHostStore} from '../../src/host-store.mjs';
 async function until(predicate){const end=Date.now()+20000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,20));}assert.fail('Coordinator did not reach the expected retained state');}
 
 test('maintained coordinator consumes a real authenticated intake, retains original work through Core and releases only after cleanup',async()=>withCurrentCore(async(core,context)=>{
  const f=await nativePoolSourceFixture(core,context),root=join(context.root,'coordinator');await ensurePrivateDirectory(root);
  const store=nativePoolStore(core,{root,configuration:f.configuration});await store.initialize();
+ const installation={core:currentPin.coreSha256,executionPool:f.configuration};await writePrivate(join(root,'native-installation.json'),installation);
+ const activation={version:1,phase:'active',installation:core.contentIdentity(installation)};await writePrivate(join(root,'activation.json'),{...activation,identity:core.contentIdentity(activation)});
+ const protectedStore=await initializeFileHostStore(core,{directory:join(root,'state'),installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},repositories:f.configuration.targets.map(({repository,repositoryId})=>({repository,repositoryId}))});
+ const initial=await protectedStore.read();await protectedStore.updateWork({expected:initial.identity,work:{...initial.work,paused:false}});
  const counts={registrations:0,starts:0,removals:0},state={running:true,retired:false};let remote;
  // GitHub/systemd/archive/admission and Docker observations are explicit doubles.
  // Core, intake authentication, kernel lease, JIT/private files, process proof,
@@ -62,5 +67,5 @@ test('maintained coordinator consumes a real authenticated intake, retains origi
   assert.equal(await fs.readFile(join(root,'original-work',record.lease.identity,'blobs',original.sha256),'utf8'),'UNACCEPTED ORIGINAL');
   const receipt=await readPrivate(join(root,'original-work','receipt-'+record.lease.identity+'.json'));
   assert.equal(receipt.job.conclusion,'failure');assert.ok(progress.some(r=>r.status==='released'));
- }finally{abort.abort();await coordinator.close();}
+ }finally{abort.abort();await coordinator.close();await protectedStore.close();}
 }));
