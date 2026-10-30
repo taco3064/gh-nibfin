@@ -14,8 +14,16 @@ export function nativeJitConfiguration(encoded,record){
  need(files&&Object.getPrototypeOf(files)===Object.prototype
   &&Object.keys(files).sort().join(' ')==='.credentials .credentials_rsaparams .runner','files');
  for(const value of Object.values(files))base64(value);
- const settings=JSON.parse(base64(files['.runner']).toString('utf8'));
- need(settings&&Object.getPrototypeOf(settings)===Object.prototype,'settings');
+ const decoded=JSON.parse(base64(files['.runner']).toString('utf8'));
+ need(decoded&&Object.getPrototypeOf(decoded)===Object.prototype,'settings');
+ // The GitHub JIT service emits the official .NET settings names and string
+ // booleans. Locally configured Runner settings use camelCase JSON values.
+ // Read both explicit representations; never rewrite the credential files.
+ const settings={...decoded};
+ for(const [lower,upper]of Object.entries({agentId:'AgentId',agentName:'AgentName',ephemeral:'Ephemeral',disableUpdate:'DisableUpdate',workFolder:'WorkFolder',gitHubUrl:'GitHubUrl',serverUrl:'ServerUrl',serverUrlV2:'ServerUrlV2'})){
+  need(!(Object.hasOwn(decoded,lower)&&Object.hasOwn(decoded,upper)),'ambiguous-settings');
+  if(Object.hasOwn(decoded,upper))settings[lower]=['ephemeral','disableUpdate'].includes(lower)?decoded[upper]==='True'?true:decoded[upper]==='False'?false:decoded[upper]:decoded[upper];
+ }
  const runnerId=typeof settings.agentId==='number'&&Number.isSafeInteger(settings.agentId)?String(settings.agentId):settings.agentId;
  need(runnerId===record.runnerId&&settings.agentName===record.runnerName&&settings.ephemeral===true
   &&settings.disableUpdate===true&&settings.workFolder==='_work','runner-identity');
