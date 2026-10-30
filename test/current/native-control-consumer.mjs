@@ -85,3 +85,20 @@ test('upgrade staging links only the owned inactive unit, checks readback and ne
  assert.deepEqual(calls,['show']);active=false;assert.equal((await service.stageUnit()).status,'linked');
  assert.equal(calls.includes('start'),false);assert.equal(calls.filter(c=>c==='show').length,3);
 }));
+
+
+test('successive upgrade may stop only its authenticated empty staging daemon, never an occupied or active delivery host',async()=>withCurrentCore(async(core,context)=>{
+ const root=join(context.root,'idle-staging');await fs.mkdir(root,{mode:0o700});
+ const unit=nativeServiceUnit(root),generation='12345678-1234-1234-1234-123456789abc',installation={executionPool:{version:2}};
+ await fs.writeFile(join(root,nativeServiceName),unit,{mode:0o600});await writePrivate(join(root,'native-installation.json'),installation);
+ await writePrivate(join(root,'control-service.json'),{version:1,account:userInfo().uid,generation,unit:sha(unit)});
+ let active=true,occupied=1,delivery='blocked';const calls=[];
+ const run=args=>{calls.push(args[0]);if(args[0]==='stop')active=false;return {ok:true,status:0,output:args[0]==='show'?
+  'LoadState=loaded\nActiveState='+ (active?'active':'inactive')+'\nMainPID='+ (active?String(process.pid):'0')+'\nControlPID=0\nType=notify\nFragmentPath='+join(root,nativeServiceName)+'\n':''};};
+ const status=async()=>({version:1,generation,pid:process.pid,installation:sha(JSON.stringify(installation)),service:'running',
+  delivery,reason:'native-stage-composition-pending',runnerPool:'running',pool:{host:'running',occupied,pending:0}});
+ const service=nativeControlService({root,run,status});
+ await assert.rejects(service.stageUnit(),/stage-unit-active/);assert.equal(calls.includes('stop'),false);
+ occupied=0;delivery='running';await assert.rejects(service.stageUnit(),/stage-unit-active/);assert.equal(calls.includes('stop'),false);
+ delivery='blocked';assert.equal((await service.stageUnit()).status,'linked');assert.equal(calls.filter(c=>c==='stop').length,1);assert.equal(calls.includes('start'),false);
+}));
