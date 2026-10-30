@@ -63,7 +63,7 @@ adds inspectable upstream evidence. G04 Shape must explicitly account for the
 reviewed N15 package, its real dependency and loader compatibility; adapting the
 loader belongs to normal G04 implementation and independent review. Never pass
 N15 bytes to the N01 four-file verifier, silently change old pins, infer broader
-capabilities from a package version, or make private Kairo a runtime dependency.
+capabilities from a package version, or make private upstream a runtime dependency.
 
 ## Reproduce the local package check
 
