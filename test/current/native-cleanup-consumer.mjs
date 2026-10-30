@@ -2,6 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {join} from 'node:path';
+import {userInfo} from 'node:os';
+import {spawn} from 'node:child_process';
 import {withCurrentCore} from '../../src/current-core.mjs';
 import {ensurePrivateDirectory,readPrivate} from '../../src/local-state.mjs';
 import {retireNativeApplication} from '../../src/native-resource-cleanup.mjs';
@@ -9,7 +11,8 @@ async function fixture(context){
  const root=join(context.root,'cleanup-host'),lease='a'.repeat(64),outcome='b'.repeat(64),directory=join(root,'jobs',lease);
  await ensurePrivateDirectory(join(root,'pool-state'));await ensurePrivateDirectory(directory);
  await fs.writeFile(join(directory,'temporary'),'disposable application',{mode:0o600});
- return {root,lease,outcome,directory,parked:join(root,'jobs','retired-'+lease),journal:join(root,'pool-state','cleanup-'+lease+'.json')};
+ return {root,lease,outcome,retiredGroup:'/user.slice/user-'+userInfo().uid+'.slice/fixture-gone.service',directory,
+  parked:join(root,'jobs','retired-'+lease),journal:join(root,'pool-state','cleanup-'+lease+'.json')};
 }
 test('cleanup requires custody and actual unused files, preserves external symlink targets and rejects replacement work',async()=>withCurrentCore(async(core,context)=>{
  const f=await fixture(context),external=join(context.root,'retained-original');await fs.writeFile(external,'UNACCEPTED ORIGINAL',{mode:0o600});
@@ -43,4 +46,14 @@ test('known partial removal resumes only an unchanged subset of its retained inv
  await assert.rejects(retireNativeApplication(core,{...f,confirm:async()=>true}),/tree-changed/);
  await fs.unlink(join(f.parked,'unexpected'));
  assert.equal((await retireNativeApplication(core,{...f,confirm:async()=>true})).status,'completed');
+}));
+test('an unrelated non-dumpable process is not mistaken for a live task in the authenticated retired group',async()=>withCurrentCore(async(core,context)=>{
+ const f=await fixture(context),child=spawn('/usr/bin/python3',['-u','-c',
+  "import ctypes,time; ctypes.CDLL(None).prctl(4,0); print('ready',flush=True); time.sleep(30)"],{stdio:['ignore','pipe','ignore']});
+ const ended=new Promise(resolve=>{child.once('error',resolve);child.once('close',resolve);});
+ try{
+  await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('error',reject);child.once('exit',()=>reject(Error('fixture exited')));});
+  await assert.rejects(fs.readFile('/proc/'+child.pid+'/environ'),error=>['EACCES','EPERM'].includes(error.code));
+  assert.equal((await retireNativeApplication(core,{...f,confirm:async()=>true})).status,'completed');
+ }finally{child.kill('SIGTERM');await ended;}
 }));
