@@ -10,6 +10,7 @@ import {privatePath,readPrivate,writePrivate,ensurePrivateDirectory,sha} from '.
 import {prepareRunnerDistribution,verifyRunnerDistribution,runnerDistribution} from './runner-distribution.mjs';
 import {nativeControlService} from './native-control-service.mjs';
 import {nativePoolStore} from './native-pool-store.mjs';
+import {transitionStagedNativeHost} from './native-staged-transition.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-host:'+code);};
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
@@ -102,16 +103,21 @@ export function nativeControlHost({root=nativeHostRoot(),prepare=prepareRunnerDi
   need(process.platform==='linux'&&process.arch==='x64'&&process.versions.node.split('.')[0]==='22','platform');
   const pool=poolFor(core,executionPool);if(!pool)return selectPool();await ensurePrivateDirectory(root);
   return maintenanceLock(root,async assertLease=>{
-   const previous=await readPrivate(join(root,'native-installation.json'),{missing:true});
-   if(previous)need(previous.version===1&&previous.phase==='staged'&&previous.core===currentPin.coreSha256
-    &&core.canonicalJSON(previous.executionPool)===core.canonicalJSON(pool),'preserve-existing-installation');
-   const files=await runtimeInputs(context);assertLease();await publishRuntime(root,files);
-   await stageRunner(root,'runner-1',{prepare,verify});assertLease();
-   for(let i=2;i<=pool.capacity;i++){await stageRunner(root,'runner-'+i,{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();}
-   await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
+   let previous=await readPrivate(join(root,'native-installation.json'),{missing:true});
+   const files=await runtimeInputs(context);assertLease();
    const record={version:1,phase:'staged',producer:currentProducer,core:currentPin.coreSha256,
     executionPool:pool,runnerCount:pool.capacity,runnerDistribution,
     runtimeInventory:[...files].map(([path,bytes])=>({path,sha256:sha(bytes)}))};
+   if(previous&&(previous.core!==currentPin.coreSha256||core.canonicalJSON(previous.executionPool)!==core.canonicalJSON(pool))){
+    await transitionStagedNativeHost(core,{root,previous,next:record,pool,control,verifyRunner:verify,publish:()=>publishRuntime(root,files)});
+    previous=await readPrivate(join(root,'native-installation.json'));
+   }
+   if(previous)need(previous.version===1&&previous.phase==='staged'&&previous.core===currentPin.coreSha256
+    &&core.canonicalJSON(previous.executionPool)===core.canonicalJSON(pool),'preserve-existing-installation');
+   await publishRuntime(root,files);
+   await stageRunner(root,'runner-1',{prepare,verify});assertLease();
+   for(let i=2;i<=pool.capacity;i++){await stageRunner(root,'runner-'+i,{prepare,verify,copyFrom:join(root,'runner-1')});assertLease();}
+   await nativePoolStore(core,{root,configuration:pool}).initialize();assertLease();
    await writePrivate(join(root,'native-installation.json'),record);
    const observed=await control.install();
    return {status:'staged',runnerCount:pool.capacity,diagnostics:[...observed.diagnostics,...remaining()]};

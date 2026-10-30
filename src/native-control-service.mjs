@@ -32,7 +32,7 @@ export async function nativeServiceStatus(root){
   socket.once('end',()=>{socket.destroy();try{resolve(JSON.parse(bytes));}catch{fail();}});
  });
 }
-export async function verifyNativeRuntime(root,record){
+export async function verifyNativeRuntime(root,record,{directory=join(root,'runtime')}={}){
  need(record?.version===1&&record.phase==='staged'&&Array.isArray(record.runtimeInventory)
   &&record.runtimeInventory.length>0&&record.runtimeInventory.length<=10000,'installation');
  const inventory=new Map();
@@ -41,7 +41,7 @@ export async function verifyNativeRuntime(root,record){
    &&f.path.split('/').every(p=>/^[A-Za-z0-9_.@+-]+$/.test(p)&&p!=='.'&&p!=='..')
    &&/^[a-f0-9]{64}$/.test(f.sha256)&&!inventory.has(f.path),'inventory');inventory.set(f.path,f.sha256);
  }
- const seen=new Set(),directory=join(root,'runtime');await privatePath(directory,{directory:true});
+ const seen=new Set();await privatePath(directory,{directory:true});
  const walk=async relative=>{
   for(const name of await fs.readdir(join(directory,relative))){
    const path=relative?relative+'/'+name:name,absolute=join(directory,path),s=await fs.lstat(absolute);
@@ -82,5 +82,36 @@ export function nativeControlService({root,run=nativeSystemctl,status=nativeServ
   for(const args of [['link',unit],['daemon-reload'],['enable',nativeServiceName],['start',nativeServiceName]])need(run(args).ok,'installation-interrupted');
   return inspect();
  }
- return Object.freeze({check,install});
+ async function retire(){
+  await privatePath(root,{directory:true});
+  const retained=await readPrivate(receipt),bytes=await fs.readFile(unit);
+  need(retained.version===1&&retained.account===userInfo().uid&&retained.unit===sha(bytes)
+   &&retained.unit===sha(nativeServiceUnit(root)),'retirement-identity');
+  const path=join(root,'control-retirement.json');
+  const previous=await readPrivate(path,{missing:true});
+  if(previous)need(previous.version===1&&previous.generation===retained.generation&&previous.unit===retained.unit,'retirement-intent');
+  const observe=()=>{
+   const r=run(['show',nativeServiceName,'--property=LoadState','--property=ActiveState','--property=FragmentPath','--property=MainPID','--property=ControlPID','--property=ControlGroup']);
+   const value=Object.fromEntries(r.output.trim().split('\n').map(line=>{const i=line.indexOf('=');return[line.slice(0,i),line.slice(i+1)];}));
+   need(r.ok||r.status===4&&value.LoadState==='not-found','retirement-observation');return value;
+  };
+  let observed=observe();
+  need(observed.ActiveState==='inactive'&&observed.MainPID==='0'&&observed.ControlPID==='0','retirement-active-work');
+  if(observed.LoadState==='not-found'){
+   need(previous&&['intent','retired'].includes(previous.phase),'retirement-unknown-service');
+   if(previous.phase==='intent')await writePrivate(path,{...previous,phase:'retired'});
+  }
+  else{
+   need(observed.LoadState==='loaded'&&await fs.realpath(observed.FragmentPath)===unit,'retirement-fragment');
+   if(observed.ControlGroup){const group=observed.ControlGroup;need(group.startsWith('/')&&!group.includes('..'),'retirement-group');
+    try{need((await fs.readFile('/sys/fs/cgroup'+group+'/cgroup.procs','utf8')).trim()==='','retirement-processes');}catch(e){if(e.code!=='ENOENT')throw e;}}
+   await writePrivate(path,{version:1,generation:retained.generation,unit:retained.unit,phase:'intent'});
+   need(run(['disable',nativeServiceName]).ok&&run(['daemon-reload']).ok,'retirement-interrupted');
+   observed=observe();need(observed.LoadState==='not-found'&&observed.ActiveState==='inactive'
+    &&observed.MainPID==='0'&&observed.ControlPID==='0','retirement-unconfirmed');
+   await writePrivate(path,{version:1,generation:retained.generation,unit:retained.unit,phase:'retired'});
+  }
+  return {status:'retired',generation:retained.generation,unit:retained.unit};
+ }
+ return Object.freeze({check,install,retire});
 }

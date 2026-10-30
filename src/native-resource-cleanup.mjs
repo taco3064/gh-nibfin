@@ -8,7 +8,7 @@ import {maintenanceLock} from './upgrade.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-cleanup:'+code);};
 const inside=(value,root)=>value===root||value.startsWith(root+'/');
 const absent=async path=>{try{await fs.lstat(path);return false;}catch(e){if(e.code==='ENOENT')return true;throw e;}};
-async function unused(roots,retiredGroup){
+export async function assertNativeResourcesUnused(roots,retiredGroup){
  // Check actual user processes, open descriptors and visible mounts. Model
  // containers and their mounts additionally require the fresh custody proof.
  for(const id of await fs.readdir('/proc')){
@@ -81,7 +81,7 @@ export async function retireNativeApplication(core,{root,lease,outcome,retiredGr
   if(record){const {identity,...body}=record;need(identity===core.contentIdentity(body)&&record.lease===lease&&record.outcome===outcome&&record.retiredGroup===retiredGroup
    &&['parking-intent','parked','remove-intent','completed'].includes(record.phase),'journal');}
   else{
-   await privatePath(original,{directory:true});need(await absent(parked),'parked-conflict');await unused([original,parked],retiredGroup);
+   await privatePath(original,{directory:true});need(await absent(parked),'parked-conflict');await assertNativeResourcesUnused([original,parked],retiredGroup);
    const s=await fs.lstat(original),snapshot=await inventory(original);
    record=await save({version:1,lease,outcome,retiredGroup,phase:'parking-intent',inode:s.ino,device:s.dev,inventory:snapshot});
   }
@@ -101,19 +101,19 @@ export async function retireNativeApplication(core,{root,lease,outcome,retiredGr
   }
   if(record.phase==='parking-intent'){
    if(!await absent(original)){
-    need(await absent(parked),'parked-conflict');await check(original);await unused([original,parked],retiredGroup);await fresh();
+    need(await absent(parked),'parked-conflict');await check(original);await assertNativeResourcesUnused([original,parked],retiredGroup);await fresh();
     await fs.rename(original,parked);await syncJobs();
    }else need(!await absent(parked),'original-missing');
    await check(parked);await update('parked');
   }
   if(record.phase==='parked'){
-   need(await absent(original),'original-path-reused');await check(parked);await unused([original,parked],retiredGroup);await fresh();
+   need(await absent(original),'original-path-reused');await check(parked);await assertNativeResourcesUnused([original,parked],retiredGroup);await fresh();
    await update('remove-intent');
   }
   if(record.phase==='remove-intent'){
    need(await absent(original),'original-path-reused');
    if(!await absent(parked)){
-    await check(parked,{partial:true});await unused([original,parked],retiredGroup);await fresh();
+    await check(parked,{partial:true});await assertNativeResourcesUnused([original,parked],retiredGroup);await fresh();
     // Both absolute targets are fixed descendants of the checked private jobs
     // directory. Symlinks are inventoried and never followed by recursive rm.
     await fs.rm(parked,{recursive:true});await syncJobs();
