@@ -18,9 +18,7 @@ available with distinct immutable identities.
 - All 23 archived regular files were checked against Git blob identities in the
   immutable merged tree. `provenance.json` records those identities and raw-byte
   SHA-256 values, plus upstream completion and acceptance references.
-- `producer-contract.md` is the exact upstream `docs/package.md`, not a rewritten
-  specification. Its **Runner observation API v1** section defines N15. The public
-  entry and implementation are preserved inside the archive.
+- The exact upstream docs/package.md contract remains inside the pinned Core archive. The verifier checks its original hash and byte length after installation; no rewritten duplicate is retained.
 - `producer-tests.mjs` and `producer-lock.json` are exact upstream
   `test/runners.test.mjs` and `package-lock.json` bytes at that commit.
 - `jose-6.2.13.tgz` is the genuine registry dependency, checked against the

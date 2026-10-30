@@ -15,6 +15,9 @@ const provenance=JSON.parse(raw);
 assert.equal(provenance.producer.commit,'e4e2a835f4236975d41ddb4f4bc5ada7dbae1b30');
 assert.equal(provenance.artifact.sha256,'01f6b5fbd01ebbba37ea6723db7bdfff25f5cc44c68e832206974248e5717fef');
 for(const [name,expected] of Object.entries(provenance.assets)){
+ // The original contract remains inside the pinned archive, not a duplicated
+ // tracked document. Verify its exact original bytes after installation below.
+ if(name==='producer-contract.md')continue;
  const b=await readFile(join(directory,name));assert.equal(b.length,expected.bytes);assert.equal(sha(b),expected.sha256);
 }
 const lock=JSON.parse(await readFile(join(directory,'producer-lock.json'),'utf8'));
@@ -29,6 +32,9 @@ try{
  await writeFile(join(scratch,'package.json'),JSON.stringify({private:true,type:'module'}));
  execFileSync('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund','--package-lock=false',join(directory,'jose-6.2.13.tgz'),join(directory,'nibfin-core.tgz')],{cwd:scratch,env,stdio:'pipe'});
  const root=join(scratch,'node_modules/@nibfin/core');
+ const contract=await readFile(join(root,'docs/package.md'));
+ assert.equal(contract.length,provenance.assets['producer-contract.md'].bytes);
+ assert.equal(sha(contract),provenance.assets['producer-contract.md'].sha256);
  for(const [path,expected] of Object.entries(provenance.files)){
   const b=await readFile(join(root,path));assert.equal(b.length,expected.bytes);assert.equal(sha(b),expected.sha256);
  }
