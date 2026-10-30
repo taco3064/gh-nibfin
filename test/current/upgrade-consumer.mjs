@@ -12,7 +12,7 @@ import {writePrivate} from '../../src/local-state.mjs';
 
 // Actual private filesystem and installed Core/store. Service observations are
 // explicit doubles; these tests do not certify a real Runner or systemd upgrade.
-async function fixture(consume){return withCurrentCore(async(core,context)=>{
+async function fixture(consume,count=2){return withCurrentCore(async(core,context)=>{
   const directory=join(context.root,'maintenance');await fs.mkdir(directory,{mode:0o700});
   const current={packageVersion:context.identity.packageVersion,pins:context.identity.pins};
   const next={...current,pins:{...current.pins,runtime:'b'.repeat(64),source:'c'.repeat(64)}};
@@ -22,13 +22,14 @@ async function fixture(consume){return withCurrentCore(async(core,context)=>{
     pending:[{id:'original-candidate',status:'UNACCEPTED'}],receipts:[{id:'accepted-history',identity:'d'.repeat(64)}]};
   await store.updateWork({expected:before.identity,work});
   const resources=[];
-  for(const name of ['runtime','runner-1','runner-2']){
+  const names=['runtime',...Array.from({length:count},(_,i)=>'runner-'+(i+1))];
+  for(const name of names){
     const r={name,current:join(directory,name),next:join(directory,name+'-next'),previous:join(directory,name+'-previous')};
     for(const [position,version] of [['current','original'],['next','updated']]){
       await fs.mkdir(r[position],{mode:0o700});await fs.writeFile(join(r[position],'version'),version,{mode:0o600});
     }resources.push(r);
   }
-  const services=['nibfin-control.service','nibfin-runner-1.service','nibfin-runner-2.service'];
+  const services=['nibfin-control.service',...names.slice(1).map(n=>'nibfin-'+n+'.service')];
   const active=new Set(services),calls=[],flags={};
   const manager={observe:async unit=>({active:active.has(unit),stopped:!active.has(unit)}),
     stop:async unit=>{calls.push(['stop',unit]);active.delete(unit);},
@@ -130,3 +131,16 @@ test('the maintained upgrade entry uses a finite data-only layout and checks rea
   assert.equal((await upgradeManagedInstallation(['--rollback'],options)).status,'rolled-back');
   assert.deepEqual((await f.store.read()).work,f.work);
 }));
+
+test('six-runner upgrade stops and switches every slot and rolls back without losing original work',()=>fixture(async f=>{
+ const inventory=text=>[{kind:'file',path:'version',mode:0o600,sha256:createHash('sha256').update(text).digest('hex')}];
+ const body={version:1,current:f.current,next:f.next,resources:f.resources.map(r=>({name:r.name,current:inventory('original'),next:inventory('updated')}))};
+ const plan={...body,identity:f.core.contentIdentity(body)},layout=managedUpgradeLayout(f.core,f.directory,plan);
+ assert.equal(layout.resources.length,7);assert.equal(layout.services.length,7);
+ assert.equal((await coordinateUpgrade({...f.options,...layout})).status,'switched');assert.equal(f.active.size,7);
+ assert.deepEqual(f.calls.filter(c=>c[0]==='stop').map(c=>c[1]),f.services);
+ assert.equal((await rollbackUpgrade({...f.options,...layout})).status,'rolled-back');assert.equal(f.active.size,7);
+ assert.deepEqual((await f.store.read()).work,f.work);
+ const hostile=structuredClone(body);hostile.resources[6].name='runner-99';
+ assert.throws(()=>managedUpgradeLayout(f.core,f.directory,{...hostile,identity:f.core.contentIdentity(hostile)}),/resource-set/);
+},6));

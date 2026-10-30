@@ -9,8 +9,6 @@ import {coordinateUpgrade,rollbackUpgrade,upgradeOptions} from './upgrade.mjs';
 
 const need=(value,code)=>{if(!value)throw Error('managed-upgrade:'+code);};
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-const names=['runtime','runner-1','runner-2'];
-const services=['nibfin-control.service','nibfin-runner-1.service','nibfin-runner-2.service'];
 export const nativeHostRoot=()=>join(userInfo().homedir,'.local/share/nibfin/control');
 const relativePath=value=>typeof value==='string'&&value.length<1024&&!value.includes('\\')
   &&value.split('/').every(p=>p!=='.'&&p!=='..'&&/^[a-zA-Z0-9_.@+-]+$/.test(p));
@@ -22,7 +20,10 @@ export function managedUpgradeLayout(core,root,plan){
   need(resolve(root)===root,'root');
   need(plan&&Object.keys(plan).sort().join(' ')==='current identity next resources version'&&plan.version===1,'plan-schema');
   const {identity,...body}=plan;need(core.contentIdentity(body)===identity,'plan-integrity');
-  need(Array.isArray(plan.resources)&&plan.resources.length===3
+  need(Array.isArray(plan.resources)&&plan.resources.length>=2&&plan.resources.length<=129,'resource-set');
+  const names=['runtime',...Array.from({length:plan.resources.length-1},(_,i)=>'runner-'+(i+1))];
+  const services=['nibfin-control.service',...names.slice(1).map(n=>'nibfin-'+n+'.service')];
+  need(
     &&plan.resources.every((r,i)=>r.name===names[i]&&Object.keys(r).sort().join(' ')==='current name next'),'resource-set');
   const inventories=new Map();
   for(const resource of plan.resources){
