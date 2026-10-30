@@ -23,6 +23,9 @@ async function fixture(core,context){
  const path='client/native-host.mjs',changed=Buffer.concat([await fs.readFile(join(root,'runtime',path)),Buffer.from('\n// earlier reviewed CLI generation\n')]);
  await fs.writeFile(join(root,'runtime',path),changed);
  previous.runtimeInventory.find(f=>f.path===path).sha256=sha(changed);await writePrivate(join(root,'native-installation.json'),previous);
+ // This fixture represents the earlier complete generation, including its CAS selection.
+ const oldStore=await readPrivate(join(root,'state/store.json'));delete oldStore.identity;oldStore.installation=nativeInstallationSelection(core,context.identity,previous);
+ await writePrivate(join(root,'state/store.json'),{...oldStore,identity:core.contentIdentity(oldStore)});
  const files=await nativeRuntimeInputs(context);
  const stage=async()=>{const target=join(root,'runtime-next');await fs.mkdir(target,{mode:0o700});
   for(const [path,bytes]of files){await fs.mkdir(dirname(join(target,path)),{recursive:true,mode:0o700});await fs.writeFile(join(target,path),bytes,{mode:0o600});}};
