@@ -10,8 +10,8 @@ export const currentProducer='5572f32e875899240751c46fb40de109000f7215';
 export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'f416631b565771ecbd5761da80f618a1dee167703685b761e571eac4cdc94da7'});
 const handoff=new URL('../docs/handoffs/current/',import.meta.url);
 const hashes=Object.freeze({'nibfin-core.tgz':'ec03432dd55488ecf1419f2fc90ac57336a4c0c07423127fd3e8712e8de017a8',
-  'release-manifest.json':'481a0dfc812724411a481edaaa5e3d519ba7d6fa5467a40b46eb05323d2f4774',
-  'compatibility.json':'90bffbed030e3836742bc622f60467dfa0acab2cdd430c1ca51186a911d77f7a'});
+  'release-manifest.json':'197dfeca851c57a49f463c990d21c05966ea099794f1a4a73c40ba9c940e9cf9',
+  'compatibility.json':'f7c1a78801619f68271ebfcaa931a2e4a36baac37b291e9dd69816fcf13f6f1a'});
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const need=(ok,message)=>{if(!ok)throw Error('Current Core verification: '+message);};
 const exportsRequired=['observeRequirementAuthority','observeIssueAuthority','runnerJobPolicy','protectedWorkRestriction','createRescueRecords','initialRescueRecords','contentIdentity','canonicalJSON','releaseHash','validateExecutionPool','projectExecutionContext','createHostRouting','createHostIdentityAdapters','loadProtectedHost','loadProtectedDeployment','createInstallation','distributionIdentity','runnerConfiguration','preflightRunner','createAgentEnvironments',
