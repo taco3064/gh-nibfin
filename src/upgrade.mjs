@@ -82,7 +82,7 @@ export function upgradeServiceManager(){
 export async function coordinateUpgrade({core,directory,store,current,next,resources,services,verify,
   manager=upgradeServiceManager(),check=false}={}){
   need(core&&typeof store?.read==='function'&&typeof store?.transitionCapabilities==='function'
-    &&typeof verify==='function'&&Array.isArray(resources)&&resources.length>0&&resources.length<=16
+    &&typeof verify==='function'&&Array.isArray(resources)&&resources.length>0&&resources.length<=129
     &&Array.isArray(services)&&services.length>0&&services.length<=129&&new Set(services).size===services.length,'configuration');
   await privatePath(directory,{directory:true});
   await resourcePaths(resources,services,directory);
