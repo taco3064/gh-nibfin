@@ -28,7 +28,25 @@ export async function writePrivate(path,value,{exclusive=false}={}){
     const d=await fs.open(dirname(path),'r');try{await d.sync();}finally{await d.close();}
   }catch(e){await fs.rm(pending,{force:true});throw e;}
 }
+// Persistent kernel lease: process termination releases exclusivity. Reconcile
+// a legacy PID file under that lease without deleting its inode or work state.
 export async function localLock(root,name,work){
-  await privatePath(root,{directory:true});const file=join(root,'.'+name+'.lock'),h=await fs.open(file,'wx',0o600);
-  try{await h.writeFile(String(process.pid));await h.sync();return await work();}finally{await h.close();await fs.unlink(file);}
+  if(typeof name!=='string'||!/^[a-z][a-z0-9-]*$/.test(name))throw Error('Invalid local lock name.');
+  const {maintenanceLock}=await import('./kernel-lock.mjs');
+  return maintenanceLock(root,async()=>{
+    const path=join(root,'.'+name+'.lock');await privatePath(path);
+    const retained=await fs.readFile(path,'utf8');
+    if(retained!==''){
+      if(!/^[1-9][0-9]{0,9}$/.test(retained))throw Error('Legacy lock requires reconciliation.');
+      const pid=Number(retained);let gone=false;
+      try{process.kill(pid,0);}catch(e){if(e.code==='ESRCH')gone=true;else throw Error('Legacy lock owner is unconfirmed.');}
+      if(!gone)throw Error('Legacy lock owner is still running.');
+      const h=await fs.open(path,fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW);
+      try{const before=await fs.lstat(path),held=await h.stat();
+        if(before.ino!==held.ino||before.dev!==held.dev||held.nlink!==1)throw Error('Lock identity changed.');
+        await h.truncate(0);await h.sync();
+      }finally{await h.close();}
+    }
+    return work();
+  },{name:'.'+name+'.lock'});
 }
