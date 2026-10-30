@@ -1,6 +1,6 @@
 import{join,dirname}from'node:path';import{readPrivate,writePrivate,sha}from'./local-state.mjs';
 import{openFileHostStore}from'./host-store.mjs';import{readNativeMember}from'./native-member.mjs';
-import{readNativeOwnerPolicy}from'./native-owner-policy.mjs';import{nativePoolStore}from'./native-pool-store.mjs';
+import{readNativeOwnerPolicy,nativeOwnerSigner}from'./native-owner-policy.mjs';import{nativePoolStore}from'./native-pool-store.mjs';
 import{managedWorkflowPlan}from'./workflow-inputs.mjs';import{currentPin}from'./current-core.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-activation:'+code);};
 
@@ -21,7 +21,8 @@ export async function nativeActivationStatus(core,{root}={}){
 export async function activateNativeHost(core,{root,configuration,provider,signal}={}){
  const previous=await readPrivate(join(root,'activation.json'),{missing:true});
  if(previous?.phase==='active')return nativeActivationStatus(core,{root});
- const owner=await readNativeOwnerPolicy(core,{root});await readNativeMember(core,{root,memberId:owner.memberId});
+ if(previous){const{identity,...body}=previous;need(previous.version===1&&previous.phase==='prepared'&&core.contentIdentity(body)===identity,'original-activation');}
+ const owner=await readNativeOwnerPolicy(core,{root});await nativeOwnerSigner(core,{root});await readNativeMember(core,{root,memberId:owner.memberId});
  const installation=await readPrivate(join(root,'native-installation.json')),projects=[];
  need(core.canonicalJSON(configuration)===core.canonicalJSON(installation.executionPool),'pool');
  const get=async(target,endpoint)=>{const r=await provider.request({endpoint,target:target.repositoryId,operation:'native-activation',correlation:'owner-init',signal});
@@ -52,6 +53,7 @@ export async function activateNativeHost(core,{root,configuration,provider,signa
  const store=await openFileHostStore(core,{directory:join(root,'state')});
  try{
   const before=await store.read(),work=before.work;
+  need(!previous||work.paused===false,'prepared-activation-reconciliation-required');
   need(work.restrictionsChecked&&work.hold===null&&!work.unknownWrite&&!work.active&&work.terminated&&work.reconciled
    &&work.pending.length===0&&work.conversations.length===0&&work.receipts.length===0,'original-work-reconciliation-required');
   const body={version:1,phase:'prepared',installation:core.contentIdentity(installation),memberId:owner.memberId,projects};
