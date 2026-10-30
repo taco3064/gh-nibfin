@@ -45,7 +45,11 @@ async function fixture(core,context){
 test('JIT source revalidates the project Run, Job, immutable installed workflow and live Issue without a write',async()=>withCurrentCore(async(core,context)=>{
  const f=await fixture(core,context),result=await f.source.inspect('request-0');
  assert.equal(result.authorized,true);assert.deepEqual(result.request,f.request);assert.equal(result.stage,'deliver');
- assert.equal(result.identity,f.retained.identity);assert.ok(f.calls.length>=9);
+ assert.equal(result.identity,f.retained.identity);
+ for(const path of ['/user','/repos/example/project','/repos/example/project/actions/runs/300',
+  '/repos/example/project/actions/jobs/200','/repos/example/project/issues/55'])assert.ok(f.calls.some(r=>r.endpoint===path));
+ for(const path of ['.nibfin/runtime.json','.github/workflows/nibfin-stage.yml','.github/workflows/nibfin-delivery.yml'])
+  assert.ok(f.calls.some(r=>r.endpoint.includes('/contents/'+path+'?ref='+f.retained.sourceCommit)));
  f.routes.get('/repos/example/project/actions/jobs/200').status='in_progress';
  assert.equal((await f.source.inspect('request-0')).identity,result.identity);
  assert.equal((await f.source.blocked({request:'request-0'})).status,'retained');
