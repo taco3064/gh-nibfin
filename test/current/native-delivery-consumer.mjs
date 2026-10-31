@@ -16,6 +16,9 @@ test('native composition runs actual Shape, independent Validator and controlled
   'Candidate hooks applicability: The inspected source has no applicable Hook setup.',
   '```nibfin-candidate','{"artifacts":[],"hooks":[]}','```'].join('\n')});
  const prepared=[],closed=[],progress=[];let preparationError=null;
+ let operationActive=false,slowGuards=0;
+ const executionCore={...core,createControlledOperations:options=>{const owner=core.createControlledOperations(options);return{...owner,execute:async(...args)=>{operationActive=true;try{return await owner.execute(...args);}finally{operationActive=false;}}};}};
+ f.intercept(async r=>{if(operationActive&&r.endpoint==='/repos/example/project'&&slowGuards<2){slowGuards++;await new Promise(resolve=>setTimeout(resolve,16000));}});
  // Model/process doubles only; real native isolation is established separately.
  const roleFactory=async(_core,{source,retain,binding})=>{
   const metadata=core.createNativeRoleBindings({ownership:'personal',source,retain}),values=new Map();
@@ -39,7 +42,7 @@ test('native composition runs actual Shape, independent Validator and controlled
   const binding={configuration:f.configuration,ownerType:'User',memberId:'7',issue:'55',stage,correlation:'native-step-'+i,
    request:{id:'native-step-'+i,repository:'example/project',repositoryId:'100',runId:String(3000+i),attempt:'1'},
    jobRecord:{runnerId:'999'},sourceCommit:'b'.repeat(40)};
-  const result=await executeNativeDelivery(core,{root:f.root,binding,context,provider:f.provider,transport:f.transport,roleFactory,progress:async value=>{progress.push(value);}});
+  const result=await executeNativeDelivery(executionCore,{root:f.root,binding,context,provider:f.provider,transport:f.transport,roleFactory,progress:async value=>{progress.push(value);}});
   assert.equal(result.disposition,'completed',JSON.stringify({result,preparationError,prepared,progress}));assert.equal(result.executed,stage);
  }
  const target={repository:'example/project',repositoryId:'100',databaseId:'123',issueId:'I_123',number:'55'};
@@ -50,4 +53,5 @@ test('native composition runs actual Shape, independent Validator and controlled
  assert.equal(core.parseRequirementsDocument(f.issue.body).scope,original);assert.ok(state.receipts.publication);
  assert.equal(state.receipts.publication.execution.source.runId,'3002');
  assert.equal(core.nextDeliveryStage(state.receipts),'deliver');
+ assert.equal(slowGuards,2,'controlled publication retains both fresh guards even when they exceed a single-request budget in total');
 }));
