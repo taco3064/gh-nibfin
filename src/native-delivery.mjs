@@ -3,6 +3,7 @@ import{prepareNativeCycle}from'./native-cycle-policy.mjs';import{observeNativeOb
 import{openFileHostStore}from'./host-store.mjs';import{join}from'node:path';
 import{nativeDeliveryOwners}from'./native-delivery-owners.mjs';
 import{nativeStageWork}from'./native-stage-work.mjs';
+import{refreshNativeDeliveryBase}from'./native-delivery-base.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-delivery:'+code);};
 const copy=structuredClone;
 
@@ -31,7 +32,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
  try{
  await checkpoint();
  store=await prepareNativeCycle(core,{root,configuration,repository,number:binding.issue,provider,context,signal});
- const state=await store.read(),stage=core.nextDeliveryStage(state.receipts,null);
+ let state=await store.read();const stage=core.nextDeliveryStage(state.receipts,null);
  need(stage===binding.stage,'fresh-stage-required');
  const source={repositoryId:state.target.repositoryId,workflow:core.bodyDigest(binding.sourceCommit+':.github/workflows/nibfin-stage.yml'),
   runId:binding.request.runId,attempt:binding.request.attempt};
@@ -41,6 +42,7 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
  work=nativeStageWork(hostStore,{request:binding.request.id,cycle:state.cycle,stage});await work.enter();
  await store.update(s=>{need(!s.attempts[stage],'original-stage-reconciliation-required');
   s.attempts[stage]={request:binding.request.id,source,phase:'running'};return s;});
+ if(stage==='deliver'){await refreshNativeDeliveryBase(core,{store,provider,request:binding.request.id,signal});state=await store.read();}
   await checkpoint();
   const input=await nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport});
   const role=['shape','shape-validator','deliver','accept','shaper-review'].includes(stage)?stage:stage==='publication'?'shape':'deliver';
