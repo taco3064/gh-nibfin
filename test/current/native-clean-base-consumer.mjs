@@ -25,6 +25,11 @@ test('native repair prepares a fresh base before the same Writer, preserving dir
   git(work,['reset','--hard',old]);await fs.writeFile(join(work,'README.md'),'unaccepted edit\n');original=await snapshot();
   await assert.rejects(prepareNativeCleanBase(core,{directory:work,sourceDirectory:source,base,state,snapshot:original,reference:'dirty-custody',retain}),/three-way-repair-required/);
   assert.equal(await fs.readFile(join(work,'README.md'),'utf8'),'unaccepted edit\n');
+  await prepareNativeCleanBase(core,{directory:work,sourceDirectory:source,base,state,snapshot:original,reference:'conflict-custody',retain,allowConflicts:true});
+  assert.equal(git(work,['rev-parse','HEAD']),base);assert.match(await fs.readFile(join(work,'README.md'),'utf8'),/<<<<<<<[\s\S]*unaccepted edit/);
+  assert.ok(git(work,['ls-files','--unmerged']).includes('README.md'));
+  assert.equal(records.at(-1).diagnostic.conflicts,true,'conflicts reach the original Writer, never a false Candidate pass');
+  git(work,['reset','--hard',old]);
   await fs.writeFile(join(work,'README.md'),'old\n');await fs.writeFile(join(work,'ignored'),'preserve me');original=await snapshot();
   await assert.rejects(prepareNativeCleanBase(core,{directory:work,sourceDirectory:source,base,state,snapshot:original,reference:'ignored-custody',retain}),/untracked-bytes-require-repair/);
   assert.equal(await fs.readFile(join(work,'ignored'),'utf8'),'preserve me');

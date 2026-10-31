@@ -5,7 +5,7 @@ const need=(v,c)=>{if(!v)throw Error('native-clean-base:'+c);};
 // The upstream repair owner prepares the current base before restoring edits.
 // Preserve Core-captured edits with the upstream owner's binary three-way
 // restoration. Conflicts and extra ignored bytes remain unaccepted, never lost.
-export async function prepareNativeCleanBase(core,{directory,sourceDirectory,base,state,snapshot,reference,retain}){
+export async function prepareNativeCleanBase(core,{directory,sourceDirectory,base,state,snapshot,reference,retain,allowConflicts=false}){
  const head=(await fs.readFile(join(directory,'.git/HEAD'),'utf8')).trim();
  need(/^[a-f0-9]{40}$/.test(head),'detached-original-required');if(head===base)return;
  need(snapshot.kind==='native-unaccepted-workspace'&&snapshot.status==='UNACCEPTED'&&reference&&typeof retain==='function','original-custody');
@@ -39,6 +39,15 @@ export async function prepareNativeCleanBase(core,{directory,sourceDirectory,bas
    // verified fresh target as upstream does before applying any retained edit.
    git(['read-tree','--reset','-u',base]);
    try{git(['apply','--3way','--index','--binary','-'],original.diff);}catch(error){
+    const unmerged=git(['ls-files','--unmerged','-z']).toString().split('\0').filter(Boolean);
+    if(allowConflicts&&error.status===1&&unmerged.length&&unmerged.every(line=>{
+     const path=line.slice(line.indexOf('\t')+1);return original.candidate.paths.includes(path);
+    })){
+     await retain({kind:'native-three-way-repair-observation',status:'UNACCEPTED',original:reference,base,
+      diagnostic:{exitCode:1,conflicts:true,paths:[...new Set(unmerged.map(line=>line.slice(line.indexOf('\t')+1)))]},
+      instruction:'Original Writer must resolve the retained three-way conflicts and repeat all verification gates.'});
+     await fs.rm(saved,{recursive:true});return{status:'conflicts-for-original-writer'};
+    }
     await retain({kind:'native-three-way-repair-observation',status:'UNACCEPTED',original:reference,base,
      diagnostic:{exitCode:error.status,indexMismatch:String(error.stderr).includes('does not match index'),conflicts:String(error.stderr).includes('with conflicts')}});
     throw Error('native-clean-base:three-way-repair-required');
