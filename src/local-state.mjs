@@ -3,6 +3,9 @@ import {join,resolve,dirname} from 'node:path';
 import {userInfo} from 'node:os';
 import {createHash,randomUUID} from 'node:crypto';
 export const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Shared by all storage adapters in this host process. A reader must not
+// inspect an inode halfway through another adapter's atomic publication.
+const publications=new Map();
 export async function privatePath(path,{directory=false,missing=false}={}){
   if(typeof path!=='string'||resolve(path)!==path||path==='/'||/[\x00-\x1f\x7f]/.test(path))throw Error('Unsafe private path.');
   for(let p=path;p!=='/';p=dirname(p)){
@@ -13,6 +16,7 @@ export async function privatePath(path,{directory=false,missing=false}={}){
   return path;
 }
 export async function readPrivate(path,{missing=false,limit=1048576}={}){
+  for(let pending=publications.get(path);pending;pending=publications.get(path))await pending;
   // Atomic publication can expose a short-lived second link (exclusive create)
   // or unlink a reader's previous inode (replacement). Reobserve locally; never
   // accept unsafe metadata. Validate the actual descriptor as well as the path.
@@ -30,13 +34,19 @@ export async function readPrivate(path,{missing=false,limit=1048576}={}){
 export async function ensurePrivateDirectory(path){
   await privatePath(path,{directory:true,missing:true});await fs.mkdir(path,{recursive:true,mode:0o700});await privatePath(path,{directory:true});return path;
 }
-export async function writePrivate(path,value,{exclusive=false}={}){
+async function publishPrivate(path,value,{exclusive=false}={}){
   await privatePath(dirname(path),{directory:true});await privatePath(path,{missing:true});
   const pending=path+'.'+randomUUID();const h=await fs.open(pending,'wx',0o600);
   try{await h.writeFile(JSON.stringify(value,null,2)+'\n');await h.sync();}finally{await h.close();}
   try{if(exclusive){await fs.link(pending,path);await fs.unlink(pending);}else await fs.rename(pending,path);
     const d=await fs.open(dirname(path),'r');try{await d.sync();}finally{await d.close();}
   }catch(e){await fs.rm(pending,{force:true});throw e;}
+}
+export async function writePrivate(path,value,options={}){
+  const previous=publications.get(path)??Promise.resolve();
+  const next=previous.then(()=>publishPrivate(path,value,options)),settled=next.catch(()=>{});
+  publications.set(path,settled);
+  try{return await next;}finally{if(publications.get(path)===settled)publications.delete(path);}
 }
 // Persistent kernel lease: process termination releases exclusivity. Reconcile
 // a legacy PID file under that lease without deleting its inode or work state.
