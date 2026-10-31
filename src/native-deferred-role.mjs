@@ -11,7 +11,9 @@ export async function prepareDeferredNativeRole(core,{store,binding,memberId}){
  need(binding.request.repository===s.target.repository&&binding.request.repositoryId===s.target.repositoryId
   &&binding.issue===s.target.number&&binding.memberId===memberId,'invocation');
  const proof=await store.get(seed.proof),session=await store.get(seed.sessionReference);
- need(proof.kind==='native-owner-shape-revision'&&proof.scopeHash===s.scopeHash&&proof.memberId===memberId
+ const ownerProof=proof.kind==='native-owner-shape-revision'||proof.kind==='native-owner-code-repair'&&role==='deliver'
+  &&proof.core===s.core&&proof.shapeHash===core.bodyDigest(s.shapeBody);
+ need(ownerProof&&proof.scopeHash===s.scopeHash&&proof.memberId===memberId
   &&proof.cycle===s.cycle&&session.kind==='native-role-session'&&session.metadata.role===role
   &&session.metadata.memberId===memberId&&session.snapshot.terminated===true,'owner-and-original-session');
  need(seed.target.execution===session.metadata.execution&&seed.target.role===role&&seed.target.session===session.metadata.id
