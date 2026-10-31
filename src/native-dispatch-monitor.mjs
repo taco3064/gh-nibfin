@@ -35,16 +35,24 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
  const writes=core.createGithubProvider({attempts:1,...(transport?{transport}:{}),authorize:async request=>{
   const active=activeWrite;need(active&&request.method==='POST'&&request.endpoint===active.endpoint
    &&request.target===active.target.repositoryId&&core.canonicalJSON(request.body)===core.canonicalJSON(active.body),'dispatch-write');
-  await active.guard();return !signal?.aborted;
+  await active.guard();if(signal?.aborted)return false;
+  // Only this marker crosses the official-write boundary. A prepared claim
+  // can resume after a pre-send interruption; sending/legacy intents require
+  // official readback and must never be blindly submitted again.
+  active.claim=await save({...active.claim,phase:'dispatch-sending'});return true;
  }});
  async function advance(claim){
   if(claim.phase==='completed')return claim;
+  if(claim.phase==='dispatch-prepared')return claim;
   const target=configuration.targets.find(t=>t.repository===claim.repository&&t.repositoryId===claim.repositoryId);need(target,'claim-target');
   const base='/repos/'+target.repository;
   if(!claim.runId){
    const runs=await list(target,base+'/actions/workflows/'+claim.workflowId+'/runs?event=workflow_dispatch&per_page=100','workflow_runs');
    const matching=runs.filter(r=>r.display_title===claim.title&&r.head_sha===claim.sourceCommit&&r.event==='workflow_dispatch');
-   need(matching.length<=1,'ambiguous-original-run');if(!matching.length)return claim;
+   need(matching.length<=1,'ambiguous-original-run');if(!matching.length){
+    if(claim.phase!=='dispatch-submitted')report(claim.id,{status:'blocked',issue:claim.issue,stage:claim.stage,reason:'native-dispatch:original-submission-unknown'});
+    return claim;
+   }
    claim=await save({...claim,phase:'run-observed',runId:matching[0].id});
   }
   const run=await get(target,base+'/actions/runs/'+claim.runId);
@@ -67,7 +75,7 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
   const previous=[];for(const claim of await claims()){
    try{previous.push(await advance(claim));}catch(e){previous.push(claim);report(claim.id,{status:'blocked',issue:claim.issue,stage:claim.stage,reason:code(e)});}
   }
-  let available=Math.max(0,configuration.capacity-previous.filter(c=>c.phase!=='completed').length);
+  let available=Math.max(0,configuration.capacity-previous.filter(c=>!['completed','dispatch-prepared'].includes(c.phase)).length);
   for(const target of configuration.targets){
    const issues=await list(target,'/repos/'+target.repository+'/issues?state=all&labels=scope&assignee='+encodeURIComponent(owner.memberLogin)+'&per_page=100');
    for(const issue of issues){if(closed||signal?.aborted)return;if(issue.pull_request)continue;
@@ -82,10 +90,12 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
       if(feedback.outcome==='revision-prepared'){wake();continue;}
      }
      if(state?.fanout?.outcome==='discovered'&&state.completion)continue;
+     let prepared;
      if(state?.dispatch){
       const claim=previous.find(c=>c.id===state.dispatch.id);need(claim,'original-dispatch-missing');
-      if(claim.phase!=='completed')continue;
-      if(claim.conclusion!=='success'){
+      if(claim.phase==='dispatch-prepared')prepared=claim;
+      else if(claim.phase!=='completed')continue;
+      if(!prepared&&claim.conclusion!=='success'){
        const feedback=await nativeShapeFeedback(core,{root,store,claim,provider});
        if(feedback.outcome==='revision-prepared'){report(key,{status:'queued',issue:number,stage:'shape',reason:'original-author-format-feedback'});wake();continue;}
        if(feedback.outcome==='waiting'){report(key,{status:'waiting',issue:number,stage:claim.stage,reason:'shape-feedback-runner-drain'});continue;}
@@ -98,7 +108,7 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      store=await prepareNativeCycle(core,{root,configuration,repository:target.repository,number,provider,context,signal});state=await store.read();
      for(const[name,receipt]of Object.entries(state.receipts))core.compareEvidence(receipt,state.expectations[name]);
      const stage=core.nextDeliveryStage(state.receipts,null);need(!state.attempts[stage],'original-stage-reconciliation-required');
-     const id='native-'+randomUUID();
+     const id=prepared?.id??'native-'+randomUUID();
      const checkpoint=async()=>{need(!signal?.aborted&&(await nativeActivationStatus(core,{root})).status==='ready','owner-restriction');};
      const inputs=await nativeExecutionInputs(core,{root,store,configuration,binding:{request:{id}},provider,signal,checkpoint,transport,
       poolReadiness:async request=>{await readNativeMember(core,{root,memberId:request.memberId});const current=await coordinator.status();
@@ -115,7 +125,8 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      const endpoint=base+'/actions/workflows/'+workflow.id+'/dispatches';
      const claim={version:1,id,provenance:{kind:'native-owner-dispatch',memberId:owner.memberId},repository:target.repository,repositoryId:target.repositoryId,
       issue:number,cycle:state.cycle,stage,workflowId:workflow.id,sourceCommit:head,issueBodySha256:sha(issue.body),
-      title:core.actionRunName({issue:number,stage,correlation:id}),createdAt:Date.now(),phase:'dispatch-intent'};
+      title:core.actionRunName({issue:number,stage,correlation:id}),createdAt:prepared?.createdAt??Date.now(),phase:'dispatch-prepared'};
+     need(!prepared||(prepared.cycle===state.cycle&&prepared.stage===stage&&prepared.issueBodySha256===claim.issueBodySha256),'original-prepared-authority');
      const guard=async()=>{
       await checkpoint();const latest=await get(target,base+'/issues/'+number),cycle=await store.read();
       need(sha(latest.body)===claim.issueBodySha256&&core.nextDeliveryStage(cycle.receipts,null)===stage,'fresh-scope-required');
@@ -124,10 +135,13 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
       need((await get(target,base+'/git/ref/heads/main')).object.sha===head,'workflow-ref-changed');
      };
      await guard();await save(claim);await store.update(s=>{need(!s.dispatch||s.dispatch.id===state.dispatch?.id,'dispatch-conflict');s.dispatch={id,stage};return s;});
-     activeWrite={target,endpoint,body,guard};
-     try{await writes.request({method:'POST',endpoint,target:target.repositoryId,operation:'installation',correlation:id,body,signal});}
+     activeWrite={target,endpoint,body,guard,claim};
+     let submitted;
+     try{const result=await writes.request({method:'POST',endpoint,target:target.repositoryId,operation:'installation',correlation:id,body,signal});
+      if(result.outcome==='submitted')submitted=await save({...activeWrite.claim,phase:'dispatch-submitted'});
+     }
      finally{activeWrite=null;}
-     available--;await advance(claim);report(key,{status:'queued',issue:number,stage,reason:'native-owner-dispatch-retained'});
+     available--;await advance(submitted??await readPrivate(join(directory,id+'.json')));report(key,{status:'queued',issue:number,stage,reason:'native-owner-dispatch-retained'});
     }catch(e){report(key,{status:'blocked',issue:number,reason:code(e)});}
    }
   }
