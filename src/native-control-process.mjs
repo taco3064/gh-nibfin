@@ -17,6 +17,8 @@ import {verifyCurrentCore} from './current-core.mjs';
 import {nativeActivationStatus} from './native-activation.mjs';
 import {nativeDispatchMonitor} from './native-dispatch-monitor.mjs';
 import {nativeRescue} from './native-rescue.mjs';
+import{retainNativeGithubRateLimit}from'./native-github-rate-limit.mjs';
+import{nativeGithubTransport}from'./native-github-transport.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -45,7 +47,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   await privatePath(join(root,nativeServiceName));
   need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
   await verifyNativeRuntime(root,record);assertLease();
-  let poolStore,installedCore,coordinator,stages,monitor,rescue;
+  let poolStore,installedCore,coordinator,stages,monitor,rescue,transport;
   if(record.executionPool?.version===2){
    installedCore=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
    poolStore=nativePoolStore(installedCore,{root,configuration:record.executionPool});await poolStore.status();
@@ -76,7 +78,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
     const pool=coordinator?await coordinator.status():poolStore?await poolStore.status():undefined;assertLease();
     if(stages){const activation=await nativeActivationStatus(installedCore,{root});
      live.delivery=activation.status==='ready'?'ready':'blocked';live.reason=activation.status==='ready'?'native-core-ready':activation.reason;}
-    socket.end(JSON.stringify({...live,...(pool?{pool}:{})})+'\n');
+    socket.end(JSON.stringify({...live,...(pool?{pool}:{}),...(transport?{github:transport.metrics()}:{})})+'\n');
    }catch{socket.destroy();}});
   });
   server.maxConnections=16;
@@ -85,7 +87,8 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    server.removeAllListeners('error');const failed=new Promise(resolve=>server.once('error',e=>{serverError=e;resolve();}));
    await fs.chmod(path,0o600);bound=await fs.lstat(path);assertLease();
    if(installedCore){
-    coordinator=await nativePoolCoordinator(installedCore,{root,record,signal,onProgress:value=>{
+    transport=nativeGithubTransport(installedCore,{onResponse:response=>retainNativeGithubRateLimit(root,response)});
+    coordinator=await nativePoolCoordinator(installedCore,{root,record,signal,transport,onProgress:value=>{
      process.stdout.write(installedCore.actionLogLine(value,'runner-pool'));if(value.status==='released')monitor?.wake();}});
     live.runnerPool='running';live.reason='native-stage-composition-pending';
     const configured=await readPrivate(join(root,'member-runtime.json'),{missing:true});
@@ -94,13 +97,13 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
      await readNativeMember(installedCore,{root,memberId:coordinator.memberId});await readNativeOwnerPolicy(installedCore,{root});
      const verified=await verifyCurrentCore(pathToFileURL(join(root,'runtime/docs/handoffs/current/')));
      const context={...verified,root:join(root,'runtime'),identity:installedCore.distributionIdentity()};
-     const provider=nativeGithubProvider(installedCore,{attempts:1});
-     rescue=await nativeRescue(installedCore,{root,configuration:record.executionPool,provider,signal,onDispatch:async()=>monitor?.wake()});
+     const provider=nativeGithubProvider(installedCore,{attempts:1,transport});
+     rescue=await nativeRescue(installedCore,{root,configuration:record.executionPool,provider,signal,transport,onDispatch:async()=>monitor?.wake()});
      stages=await nativeStageService(installedCore,{root,signal,source:async(request,options)=>{
       need((await nativeActivationStatus(installedCore,{root})).status==='ready','native-activation-required');return coordinator.stageSource(request,options);},
-      execute:async(binding,options)=>{try{return binding.jobName==='rescue'?await rescue.execute(binding,options):await executeNativeDelivery(installedCore,{root,binding,context,provider,...options});}
+      execute:async(binding,options)=>{try{return binding.jobName==='rescue'?await rescue.execute(binding,options):await executeNativeDelivery(installedCore,{root,binding,context,provider,transport,...options});}
        finally{monitor?.wake();}}});
-     monitor=await nativeDispatchMonitor(installedCore,{root,record,coordinator,context,provider,signal,rescue,onProgress:value=>
+     monitor=await nativeDispatchMonitor(installedCore,{root,record,coordinator,context,provider,signal,rescue,transport,onProgress:value=>
       process.stdout.write(installedCore.actionLogLine(value,'native-dispatch'))});
      live.stageEntry='configured';
     }

@@ -17,7 +17,8 @@ test('diagnosis sees retained completed Shape envelopes with sanitized summaries
  assert.match(result[0].summary,/REDACTED/);assert.ok(!JSON.stringify(result).includes('private-secret'));assert.ok(!JSON.stringify(result).includes(body));assert.ok(!JSON.stringify(result).includes('private tool transcript'));
 }));
 
-for(const role of ['shape','deliver','pr'])test('native '+role+' recovery preserves original work and diagnoses protected owners without replay',async()=>withCurrentCore(async(core,context)=>{
+for(const scenario of ['shape','deliver','pr','pr-pre-diagnosis-failure'])test('native '+scenario+' recovery preserves original work and diagnoses protected owners without replay',async()=>withCurrentCore(async(core,context)=>{
+ const retryDiagnosis=scenario==='pr-pre-diagnosis-failure',role=retryDiagnosis?'pr':scenario;
  const f=await nativeCycleFixture(core,context),store=await prepareNativeCycle(core,f.options),s=await store.read();
  const request='native-11111111-1111-4111-8111-111111111111',execution='role-original',sessionId='11111111-1111-4111-8111-111111111111';
  const original=join(context.root,'original-session');await fs.mkdir(original,{mode:0o700});
@@ -41,9 +42,10 @@ for(const role of ['shape','deliver','pr'])test('native '+role+' recovery preser
  const blob=(path)=>createHash('sha1').update('blob '+Buffer.byteLength(files.get(path))+'\0').update(files.get(path)).digest('hex');
  const source={id:'1000',run_attempt:1,repository:f.repo,head_repository:f.repo,path:'.github/workflows/nibfin-stage.yml',event:'workflow_dispatch',head_branch:'main',head_sha:head,
   actor:{id:'7'},triggering_actor:{id:'7'},status:'completed',conclusion:'failure'};
- const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0,delayedRunList=false,visibleAfter=0,observationChurn=0;
+ const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0,delayedRunList=false,visibleAfter=0,observationChurn=0,deniedBeforeDiagnosis=false;
  const reply=data=>({status:200,body:JSON.stringify(data)});
  f.intercept(async r=>{
+  if(deniedBeforeDiagnosis&&r.endpoint.includes('/collaborators/member/permission'))return{status:403,body:'{}'};
   if(r.endpoint===base+'/issues/55'){
    const current=await store.read();
    if(Object.values(current.nativeRescueContinuations??{}).some(c=>c.status==='prepared'))
@@ -95,17 +97,25 @@ for(const role of ['shape','deliver','pr'])test('native '+role+' recovery preser
   assert.equal(await observe(),id);
   assert.equal((await store.read()).revision,observedRevision,'duplicate blocked observations do not mutate the original cycle');
   assert.equal(writes.length,1,'the same stopped execution does not queue another notification');
-  const notification=dispatched[0];assert.equal(notification.body.inputs.request_id,id);
+  let notification=dispatched[0];assert.equal(notification.body.inputs.request_id,id);
   await assert.rejects(rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:'9999'},correlation:notification.body.inputs.nibfin_correlation,
    issue:'55',stage:role,jobName:'rescue',mode:role==='pr'?'diagnose':'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}}),/actual-rescue-invocation/);
   assert.equal(diagnoses,0,'a different Run cannot borrow the retained notification');
   const exhaustedKey=core.contentIdentity({repositoryId:'100',issueId:s.target.issueId,cycle:s.cycle});
   if(role==='pr'){const h=await openFileHostStore(core,{directory:join(f.root,'state')});try{await h.rescue('100').update(v=>{v.budgets[exhaustedKey]={attempts:3,lastAt:Date.now()};return v;});}finally{await h.close();}}
-  const result=await rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:notification.run.id},correlation:notification.body.inputs.nibfin_correlation,
+  deniedBeforeDiagnosis=retryDiagnosis;
+  let result=await rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:notification.run.id},correlation:notification.body.inputs.nibfin_correlation,
    issue:'55',stage:role,jobName:'rescue',mode:role==='pr'?'diagnose':'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}});
+  if(retryDiagnosis){
+   assert.equal(diagnoses,0);assert.notEqual(result.reason,'PROTECTED_STAGE_DIAGNOSED');assert.equal((await store.read()).protectedStageCases[request].status,'diagnosis-unavailable');
+   deniedBeforeDiagnosis=false;assert.equal((await rescue.observeProtected({store,claim})).outcome,'diagnosing');notification=dispatched.at(-1);
+   assert.equal((await store.read()).protectedStageCases[request].attempts,2);assert.equal(writes.length,2);
+   result=await rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:notification.run.id},correlation:notification.body.inputs.nibfin_correlation,
+    issue:'55',stage:role,jobName:'rescue',mode:'diagnose',jobRecord:{lease:{identity:'a'.repeat(64)}}});
+  }
   if(role==='pr'){
    assert.equal(notification.body.inputs.nibfin_stage,'pr');assert.equal(notification.body.inputs.mode,'diagnose');
-   assert.equal(result.rescue.outcome,'UNRESOLVED');assert.equal(result.disposition,'blocked');assert.equal(diagnoses,1);assert.equal(writes.length,1);
+   assert.equal(result.rescue.outcome,'UNRESOLVED');assert.equal(result.disposition,'blocked');assert.equal(diagnoses,1);assert.equal(writes.length,retryDiagnosis?2:1);
    const h=await openFileHostStore(core,{directory:join(f.root,'state')});try{assert.equal((await h.rescue('100').read()).budgets[exhaustedKey].attempts,3,'read-only diagnosis neither consumes a fourth repair nor resets the exhausted budget');}finally{await h.close();}
    assert.equal((await store.read()).attempts.pr.phase,'unresolved');assert.equal((await rescue.observeProtected({store,claim})).outcome,'diagnosed');return;
   }

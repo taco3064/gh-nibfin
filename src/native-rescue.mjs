@@ -7,6 +7,7 @@ import{nativeRescueAgent}from'./native-rescue-agent.mjs';import{readPrivate,sha,
 import{nativePoolStore}from'./native-pool-store.mjs';
 import{retainNativeCandidate}from'./native-base-revision.mjs';
 import{reconcileNativePublication}from'./native-publication-reconcile.mjs';
+import{nativeGithubRateLimit}from'./native-github-rate-limit.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-rescue:'+code);};
 const modelRoles=['shape','shape-validator','deliver','accept','shaper-review'];
 const verifyUnknownContinuation=c=>c.outcome==='UNRESOLVED'&&c.code==='UNKNOWN_DISPATCH'&&c.continuation?.outcome==='confirmed-success';
@@ -161,7 +162,8 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
   const value={records,controller,provenance,policy,cycle:initial.cycle,busy:()=>jobBinding!==null,
    async notifyProtected(id){
     const c=(await records.read()).cases[id];await controller.checkpoint(c);
-    const proof={fingerprint:core.contentIdentity({target:c.target,source:c.source,protectedStage:true})};
+    const s=await store.read(),original=s.nativeRescueTargets[core.contentIdentity(c.target)],marker=s.protectedStageCases[original.failureRequest];
+    const proof={fingerprint:core.contentIdentity({target:c.target,source:c.source,protectedStage:true,diagnosisAttempt:marker.attempts??1})};
     const v=await intent({case:c,kind:'notification',proof});
     const owned=await protectedOperations({case:c,intent:v,beforeSubmit:async actual=>{
      need(same(actual,v)&&same(await intent({case:c,kind:'notification',proof}),v),'protected-notification-changed');await controller.checkpoint(c);
@@ -169,7 +171,9 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
     const result=await owned.execute(v);
     await records.update(s=>{s.notifications[id]={...proof,outcome:result.outcome,observation:result.observation??null};
      s.cases[id]={...s.cases[id],triggered:result.outcome==='confirmed-success',outcome:result.outcome==='confirmed-success'?'DEFERRED':'UNRESOLVED',
-      code:result.outcome==='confirmed-success'?'PROTECTED_STAGE_DIAGNOSIS_QUEUED':'UNKNOWN_DISPATCH',nextCheckAt:null};return s;});return result;
+      code:result.outcome==='confirmed-success'?'PROTECTED_STAGE_DIAGNOSIS_QUEUED':'UNKNOWN_DISPATCH',nextCheckAt:null};return s;});
+    if(result.outcome!=='confirmed-success')await store.update(v=>{v.protectedStageCases[original.failureRequest].status=result.outcome==='unknown'?'notification-unresolved':'diagnosis-unavailable';return v;});
+    return result;
    },
    async execute(binding){
     need(!jobBinding,'diagnosis-already-active');
@@ -189,8 +193,10 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
       // Protected owners have no model execution to retry. Diagnose their real
       // failure without spending/resetting the original-role repair budget or
       // pretending that diagnosis alone repaired the product stage.
-      await records.update(v=>{v.cases[id]={...v.cases[id],outcome:'UNRESOLVED',code:'PROTECTED_STAGE_DIAGNOSED',nextCheckAt:null};return v;});
-      await store.update(v=>{const marker=v.protectedStageCases?.[original.failureRequest];need(marker?.caseId===id,'protected-case');marker.status='diagnosed';return v;});
+      const diagnosed=Boolean(result.diagnosis?.record),code=diagnosed?'PROTECTED_STAGE_DIAGNOSED':result.code??'DIAGNOSIS_NOT_STARTED';
+      await records.update(v=>{v.cases[id]={...v.cases[id],outcome:'UNRESOLVED',code,nextCheckAt:null};return v;});
+      await store.update(v=>{const marker=v.protectedStageCases?.[original.failureRequest];need(marker?.caseId===id,'protected-case');
+       marker.status=diagnosed?'diagnosed':'diagnosis-unavailable';marker.lastFailure={code,runId:binding.request.runId};return v;});
       return{...(await records.read()).cases[id],failureStage:original.failureStage};
      }return result;
     }
@@ -232,14 +238,31 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
   const blocked={outcome:'blocked',execution:target.execution,role:target.role,target,failureClass:'implementation_defect',contractConflicts:[],
    summary:s.attempts[claim.stage].reason};
   const id=await c.controller.register({target,source,code:'STAGE_BLOCKED',blocked});
-  if(protectedStage)await store.update(v=>{v.protectedStageCases??={};v.protectedStageCases[claim.id]={caseId:id,stage:claim.stage,status:'diagnosing'};return v;});
+  if(protectedStage)await store.update(v=>{v.protectedStageCases??={};v.protectedStageCases[claim.id]={caseId:id,stage:claim.stage,status:'diagnosing',attempts:1};return v;});
   if(protectedStage)await c.notifyProtected(id);else await c.controller.wake(id);return id;
  }
  return Object.freeze({observe,
   async observeProtected({store,claim}){
    if(modelRoles.includes(claim.stage)||!core.coreStages.includes(claim.stage))return{outcome:'not-applicable'};
    const s=await store.read();if(s.attempts[claim.stage]?.phase!=='unresolved')return{outcome:'not-applicable'};
-   const old=s.protectedStageCases?.[claim.id];if(old)return{outcome:old.status};
+   let old=s.protectedStageCases?.[claim.id];if(old){
+    const c=(await host.rescue(s.target.repositoryId).read()).cases[old.caseId];need(c,'protected-case');
+    if(old.status==='diagnosed'&&!c.diagnosis?.record){
+     await store.retain({kind:'native-diagnosis-marker-correction',caseId:c.id,previous:old,reason:'No retained AI result exists; the earlier marker was not a completed diagnosis.'});
+     await store.update(v=>{v.protectedStageCases[claim.id]={...old,status:'diagnosis-unavailable',attempts:old.attempts??1};return v;});
+     old=(await store.read()).protectedStageCases[claim.id];
+    }
+    if(old.status==='notification-unresolved')return{outcome:'unknown',reason:'original-notification-readback-required'};
+    if(old.status!=='diagnosis-unavailable')return{outcome:old.status};
+    const quota=await nativeGithubRateLimit(root);if(quota)return{outcome:'waiting',reason:'github-api-rate-limit-until-'+new Date(quota.resetAt).toISOString()};
+    if(c.diagnosis?.attempted)return{outcome:'unknown',reason:'original-diagnosis-reconciliation-required'};
+    if((old.attempts??1)>=3)return{outcome:'unknown',reason:'protected-diagnosis-retry-exhausted'};
+    if((await nativePoolStore(core,{root,configuration}).jobs.pending()).some(j=>j.issue===s.target.number&&j.request.repository===s.target.repository))return{outcome:'waiting',reason:'protected-diagnosis-runner-drain'};
+    const original=await composition(store);await original.controller.checkpoint(c);
+    await original.records.update(v=>{v.cases[c.id]={...v.cases[c.id],outcome:'PENDING',code:'PRE_DIAGNOSIS_RETRY',nextCheckAt:null};return v;});
+    await store.update(v=>{need(same(v.protectedStageCases[claim.id],old),'protected-case-changed');v.protectedStageCases[claim.id]={...old,status:'diagnosing',attempts:(old.attempts??1)+1};return v;});
+    await original.notifyProtected(c.id);return{outcome:'diagnosing'};
+   }
    const reconciled=await reconcileNativePublication(core,{root,store,claim,provider});
    if(reconciled.outcome==='unknown')return reconciled;
    if((await host.read()).work.unknownWrite)return{outcome:'unknown',reason:'original-write-reconciliation-required'};
