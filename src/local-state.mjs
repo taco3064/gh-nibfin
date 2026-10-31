@@ -8,14 +8,24 @@ export async function privatePath(path,{directory=false,missing=false}={}){
   for(let p=path;p!=='/';p=dirname(p)){
     let s;try{s=await fs.lstat(p);}catch(e){if(missing&&e.code==='ENOENT')continue;throw e;}
     if(s.isSymbolicLink()||p!==path&&!s.isDirectory())throw Error('Private path contains a link.');
-    if(p===path&&((directory?!s.isDirectory():!s.isFile())||s.uid!==userInfo().uid||s.mode&0o077||!directory&&s.nlink!==1))throw Error('Private path ownership, type or permissions mismatch.');
+    if(p===path&&((directory?!s.isDirectory():!s.isFile())||s.uid!==userInfo().uid||s.mode&0o077||!directory&&s.nlink!==1))throw Object.assign(Error('Private path ownership, type or permissions mismatch.'),{code:'PRIVATE_PATH_METADATA'});
   }
   return path;
 }
 export async function readPrivate(path,{missing=false,limit=1048576}={}){
-  try{await privatePath(path);const h=await fs.open(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
-    try{const s=await h.stat();if(s.size>limit)throw Error('Oversized private record.');return JSON.parse(await h.readFile('utf8'));}finally{await h.close();}
-  }catch(e){if(missing&&e.code==='ENOENT')return null;throw e;}
+  // Atomic publication can expose a short-lived second link (exclusive create)
+  // or unlink a reader's previous inode (replacement). Reobserve locally; never
+  // accept unsafe metadata. Validate the actual descriptor as well as the path.
+  for(let attempt=0;;attempt++)try{
+    await privatePath(path);const h=await fs.open(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+    try{const s=await h.stat();
+      if(!s.isFile()||s.uid!==userInfo().uid||s.mode&0o077||s.nlink!==1)throw Object.assign(Error('Private record descriptor metadata mismatch.'),{code:'PRIVATE_PATH_METADATA'});
+      if(s.size>limit)throw Error('Oversized private record.');return JSON.parse(await h.readFile('utf8'));
+    }finally{await h.close();}
+  }catch(e){if(missing&&e.code==='ENOENT')return null;
+    if(e.code!=='PRIVATE_PATH_METADATA'||attempt>=7)throw e;
+    await new Promise(resolve=>setTimeout(resolve,1));
+  }
 }
 export async function ensurePrivateDirectory(path){
   await privatePath(path,{directory:true,missing:true});await fs.mkdir(path,{recursive:true,mode:0o700});await privatePath(path,{directory:true});return path;
