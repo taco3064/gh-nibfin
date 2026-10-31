@@ -11,6 +11,9 @@ test('native execution wait preserves unknown, expiration and cancellation inste
  const signal=AbortSignal.abort();
  await assert.rejects(awaitNativeRoleExit({...value,budget:{cutoff:9}},{signal,checkpoint:async()=>{},now:()=>clock}),/cancelled/);
  await assert.rejects(awaitNativeRoleExit({...value,budget:{cutoff:9}},{checkpoint:async()=>{throw Error('owner pause');},now:()=>clock}),/owner pause/);
- const unknown=await awaitNativeRoleExit({...value,budget:{cutoff:9},lifecycle:{termination:async()=>({termination:{status:'unknown'}})}},{checkpoint:async()=>{},now:()=>clock});
- assert.equal(unknown.termination.status,'unknown');assert.equal(stops,0);
+ let unknownReads=0,checkpoints=0;
+ const unknown=await awaitNativeRoleExit({...value,budget:{cutoff:9},lifecycle:{termination:async()=>{unknownReads++;return{termination:{status:'unknown'}};}}},{checkpoint:async()=>{checkpoints++;},now:()=>clock,sleep:async()=>clock++});
+ assert.equal(unknown.termination.status,'unknown');assert.equal(clock,9);assert.equal(unknownReads,7);assert.equal(checkpoints,6);assert.equal(stops,0);
+ await assert.rejects(awaitNativeRoleExit({...value,budget:{cutoff:12},lifecycle:{termination:async()=>({termination:{status:'unknown'}})}},{signal,checkpoint:async()=>{},now:()=>clock}),/cancelled/);
+ await assert.rejects(awaitNativeRoleExit({...value,budget:{cutoff:12},lifecycle:{termination:async()=>({termination:{status:'unknown'}})}},{checkpoint:async()=>{throw Error('owner pause');},now:()=>clock}),/owner pause/);
 });

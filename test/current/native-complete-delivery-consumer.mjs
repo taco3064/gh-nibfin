@@ -77,7 +77,7 @@ test('one native cycle retains every actual owner output through independent rev
      start:async()=>{launched.push({role:task.role,run:provenance.runId,id:bound.input.execution.id});
       if(task.role==='deliver')assert.equal(cloned,true);return{status:'started'};},
      collect:async()=>({status:'complete',exitCode:0,evidence:structuredClone(expected)}),termination:async()=>{
-      if(task.role==='deliver'&&++writerObservations<4)return{status:'running'};
+       if(task.role==='deliver'&&++writerObservations<4)return{status:writerObservations===2?'running':'unknown'};
       if(task.role==='deliver')await fs.writeFile(join(work,'README.md'),'native onboarding procedure\n');
       return{status:'terminated'};
      },stop:async()=>{if(task.role==='deliver')writerStops++;return{status:'requested'};},cleanup:async()=>({status:'completed',residuals:[]})};
