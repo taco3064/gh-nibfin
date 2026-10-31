@@ -39,7 +39,7 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
  const blob=(path)=>createHash('sha1').update('blob '+Buffer.byteLength(files.get(path))+'\0').update(files.get(path)).digest('hex');
  const source={id:'1000',run_attempt:1,repository:f.repo,head_repository:f.repo,path:'.github/workflows/nibfin-stage.yml',event:'workflow_dispatch',head_branch:'main',head_sha:head,
   actor:{id:'7'},triggering_actor:{id:'7'},status:'completed',conclusion:'failure'};
- const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0,delayedRunList=false;
+ const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0,delayedRunList=false,visibleAfter=0;
  const reply=data=>({status:200,body:JSON.stringify(data)});
  f.intercept(async r=>{
   if(r.endpoint.includes('/contents/.github/workflows/nibfin-')){const path=r.endpoint.split('/contents/')[1].split('?')[0],text=files.get(path);return reply({type:'file',path,sha:blob(path),encoding:'base64',content:Buffer.from(text).toString('base64'),size:Buffer.byteLength(text)});}
@@ -52,14 +52,16 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
    return reply(source);
   }
   if(r.endpoint===base+'/actions/runs/1000/attempts/1/jobs?per_page=100')return reply({jobs:[{id:'5000',name:'stage / execute',status:'completed'}]});
+  if(/\/actions\/runs\/6[0-9]+\/attempts\/1\/jobs\?/.test(r.endpoint))return reply({jobs:[{id:'5001',name:'stage / execute',status:'queued'}]});
   if(r.method==='POST'&&r.endpoint.endsWith('/dispatches')){
    const body=JSON.parse(r.body),rescue=r.endpoint.includes('/901/'),id=String(6000+dispatched.length);
    const run={...source,id,workflow_id:rescue?'901':'900',path:'.github/workflows/nibfin-'+(rescue?'rescue':'stage')+'.yml',status:'queued',conclusion:null,
     display_title:core.actionRunName({issue:'55',stage:role,correlation:body.inputs.nibfin_correlation,...(rescue?{rescue:true,mode:body.inputs.mode}:{})})};
+   if(role==='deliver'&&dispatched.length===0)visibleAfter=Date.now()+15000;
    dispatched.push({run,body});writes.push(r);return{status:204,body:''};
   }
   if(r.endpoint.includes('/actions/workflows/')&&r.endpoint.includes('/runs?')){const workflow=r.endpoint.split('/workflows/')[1].split('/')[0];const runs=dispatched.filter(d=>d.run.workflow_id===workflow).map(d=>d.run);
-   if(role==='deliver'&&runs.length===1&&!delayedRunList){delayedRunList=true;return reply({total_count:0,workflow_runs:[]});}
+   if(role==='deliver'&&runs.length===1&&Date.now()<visibleAfter){delayedRunList=true;return reply({total_count:0,workflow_runs:[]});}
    return reply({total_count:runs.length,workflow_runs:runs});}
   if(r.endpoint.includes('/actions/runs/')){const id=r.endpoint.split('/actions/runs/')[1].split('/')[0],run=dispatched.find(d=>d.run.id===id)?.run;if(run)return reply(run);}
  });
@@ -88,6 +90,12 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
   assert.equal(resume.reference,sessionReference);assert.equal(resume.next.session,sessionId);assert.notEqual(resume.next.execution,execution);
   assert.equal(dispatched[1].body.inputs.nibfin_member,'7');assert.equal(dispatched[1].body.inputs.nibfin_request,resume.next.request);
   assert.equal(after.attempts[role],undefined);assert.equal(after.receipts[role],undefined);assert.equal(after.recoveries[0].attempt.request,request);
+  const h=await openFileHostStore(core,{directory:join(f.root,'state')});
+  try{await h.rescue('100').update(v=>{v.cases[id].outcome='UNRESOLVED';v.cases[id].code='UNKNOWN_DISPATCH';v.cases[id].nextCheckAt=null;return v;});}finally{await h.close();}
+  await rescue.refresh();const fresh=await openFileHostStore(core,{directory:join(f.root,'state')});
+  try{const c=(await fresh.rescue('100').read()).cases[id];assert.equal(c.outcome,'DEFERRED');assert.equal(c.code,'CONTINUATION_ACTIVE');}finally{await fresh.close();}
+  assert.equal(writes.length,2,'independent verification of an existing continuation never re-dispatches it');
+  assert.equal((await store.read()).receipts[role],undefined,'a reporting error cannot create role acceptance');
  }finally{await rescue.close();}
 }));
 
