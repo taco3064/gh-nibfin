@@ -57,7 +57,8 @@ const details =
   'reconciliation. Linux non-root user-systemd only. Init: ' +
   'init --repo OWNER/REPO [--pool-repos OWNER/REPO,...] ' +
   '[--runner-count N] [--image sha256:DIGEST] ' +
-  '[--runtime-profile PROFILE] [--check] [--auto-register]. ' +
+  '[--runtime-profile PROFILE] [--check] [--auto-register] ' +
+  '[--handover ARCHIVE]. ' +
   'Physical capacity defaults to 2, shared across selected projects. ' +
   'Initial runtime preparation requires reviewed image and profile inputs. ' +
   '--check observes managed sources and the existing ' +
@@ -66,7 +67,10 @@ const details =
   '[--check|--apply|--rollback] consumes the native ' +
   "installer's sealed generation plan; checks " +
   'are read-only and all transitions preserve pause and ' +
-  'original work. Missing native onboarding or staged ' +
+  'original work. Owner init --handover verifies the complete ' +
+  'private data-only archive and creates fresh bounded approval for ' +
+  'retained merged work. --check does not sign or import; retained ' +
+  'UNACCEPTED work is reported separately. Missing onboarding or staged ' +
   'evidence returns exit 2.\nPublic repositories may have ' +
   'personal or Organization owners.\nRepo ownership, Runner ' +
   'registration level and auto-registration policy are ' +

@@ -26,9 +26,41 @@ execution permission or Owner authorization.
 See [Core/Host consolidation and publication](docs/core-host-consolidation.md).
 The maintained release workflow publishes exact merged source and a checksum
 manifest only after the matching immutable Core release is independently verified.
-Use `gh extension install taco3064/gh-nibfin --pin v0.1.3` after that release
+Use `gh extension install taco3064/gh-nibfin --pin v0.1.4` after that release
 is published. Fresh Linux/WSL and full lifecycle evidence remain separately
 required; source tests and publication do not establish platform support.
+
+## Original work after a clean installation
+
+After official initialization has verified every project in the shared pool,
+the Owner can use the existing init entry to check and import a private retained
+work archive:
+
+```sh
+gh nibfin init --repo OWNER/REPO --handover /private/retained-work --check
+gh nibfin init --repo OWNER/REPO --handover /private/retained-work
+```
+
+The format-1 manifest identifies every file by relative path, byte length and
+SHA-256, with `authority: historical-data-only` and `activationAuthorized: false`.
+The installer verifies ownership, inventory, original private records, actual Git
+objects and recoverable Writer session bytes. Fresh GitHub reads must confirm the
+current Owner, assigned Issue, unchanged Scope/Shape, merged PR and original Run.
+
+For merged native work waiting for final verification, init creates a fresh,
+narrower Owner Grant through the normal native key owner. Original successful
+receipts and attempts stay unchanged; new executions identify the new approval
+and execution Core. The existing final, closure and delivery owners still perform
+their normal independent checks. No separate key setup or signing command is
+required. The retired private signing key and old activation are never imported.
+
+`--check` signs nothing and imports nothing. Legacy UNACCEPTED work stays in the
+archive and is reported as retained, so a mixed archive can return partial status
+after its merged work is imported. Requirement changes and unaccepted-work
+recovery need their own authorized continuation; neither a label nor old
+Acceptance supplies a new pass. An unused activated pool may cross the existing
+safe upgrade boundary with a recorded installer pause; earlier execution, Owner
+holds and uncertain effects require their original reconciliation owner.
 
 ## Prerequisites and local checks
 

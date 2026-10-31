@@ -196,7 +196,7 @@ export async function executeNativeDelivery(
       authority: {
         export: state.authority,
         context: {
-          grant: state.grant,
+          grant: input.grant,
           grantContext: input.grantContext(
             stage === 'publication' ? 'publish-shape' : stage,
           ),
@@ -209,6 +209,16 @@ export async function executeNativeDelivery(
         },
       },
       receipts: state.receipts,
+      ...(input.continuation
+        ? {
+            continuation: {
+              approval: input.continuation.approval,
+              parent: input.continuation.parent,
+              execution: input.continuation.plannedExecution,
+              context: input.continuation.context,
+            },
+          }
+        : {}),
       evidenceCurrent: state.expectations,
       candidate: state.candidate,
       base: state.base,
@@ -374,7 +384,11 @@ export async function executeNativeDelivery(
       },
     };
     const runtime = core.createCore({
-      current: () => copy(pin),
+      current: () => {
+        const value = copy(pin);
+        if (value.continuation) value.continuation.context.now = Date.now();
+        return value;
+      },
       provider,
       authorization: input.authorization,
       dependencies,
