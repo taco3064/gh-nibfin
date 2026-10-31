@@ -8,6 +8,10 @@ test('native model prompts explicitly project the protected Core role, preservin
  assert.ok(projected.prompt.startsWith('Core execution role: shape-validator. Core Skill identity: '+instructions.identity+'.\n'));
  assert.equal(projected.input,original.input);assert.equal(projected.current,original.current);assert.deepEqual(projected.current(),original.current());
  assert.equal(nativeAssignedRolePrompt(core,projected),projected,'a corrected Core prompt is not prefixed twice');
+ assert.match(projected.prompt,/Inspect the test harness and its real prerequisites/);
+ assert.match(projected.prompt,/rootless daemon does not imply a non-root UID/);
+ assert.match(projected.prompt,/mandatory exact-head CI/);
+ assert.match(projected.prompt,/Validator: independently confirm feasibility/);
  const sourceOnly=nativeAssignedRolePrompt(core,original,{sourceOnly:true});
  assert.match(sourceOnly.prompt,/root has neither package.json nor package-lock.json/);
  assert.match(sourceOnly.prompt,/verification-runner.mjs/);assert.match(sourceOnly.prompt,/skip required tests/);
