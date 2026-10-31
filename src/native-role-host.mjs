@@ -14,8 +14,12 @@ export function nativeAssignedRolePrompt(core,value){
   &&input.binding.instructions===input.instructions.identity
   &&core.bodyDigest(input.instructions.content)===input.instructions.identity,'protected-role-assignment');
  const header='Core execution role: '+role+'. Core Skill identity: '+input.instructions.identity+'.';
+ const format=['shape','shape-validator'].includes(role)?'Empty Candidate arrays require separate explanation lines beginning exactly "Candidate artifacts applicability:" and "Candidate hooks applicability:" in the Shape plan, outside code fences. Preserve the exact Scope.\n':'';
  need(typeof value.prompt==='string','protected-role-prompt');
- return value.prompt.startsWith(header+'\n')?value:{...value,prompt:header+'\n'+value.prompt};
+ const prefix=header+'\n'+format;
+ if(value.prompt.startsWith(prefix))return value;
+ const original=value.prompt.startsWith(header+'\n')?value.prompt.slice(header.length+1):value.prompt;
+ return{...value,prompt:prefix+original};
 }
 export function nativeReadBrokerDirectory(lease){
  need(/^[a-f0-9]{64}$/.test(lease),'broker-lease');
@@ -114,6 +118,9 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   async prepareRole(task){
    const path=this.workspace(task.role);
    const s=store?await store.read():null,resume=s?.sessionResumes?.[task.role];
+   if(task.role==='shape'&&s?.shapeRevision)task={...task,task:{...task.task,revision:{kind:'unpublished-proposal-format-feedback',
+    previousBody:s.shapeRevision.previousBody,diagnostics:s.shapeRevision.diagnostics,
+    instruction:'Revise the original proposal using this machine feedback. Preserve Scope and substantive plan; make the empty-inventory applicability explanations parseable. A fresh independent Validator and all original publication gates remain required.'}}};
    if(task.role==='deliver'&&resume?.next?.request===binding.request.id&&resume.workspaceReference){
     const original=await store.get(resume.workspaceReference),session=await store.get(resume.reference);
     await restoreUnacceptedWorkspace({directory:path,snapshot:original,execution:session.metadata.execution});

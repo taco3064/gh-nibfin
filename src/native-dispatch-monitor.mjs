@@ -4,6 +4,7 @@ import{readNativeOwnerPolicy}from'./native-owner-policy.mjs';import{readNativeMe
 import{prepareNativeCycle}from'./native-cycle-policy.mjs';import{openNativeCycle}from'./native-delivery-store.mjs';
 import{nativeExecutionInputs}from'./native-execution-inputs.mjs';import{nativeActivationStatus}from'./native-activation.mjs';
 import{managedWorkflowPlan}from'./workflow-inputs.mjs';
+import{nativeShapeFeedback}from'./native-shape-feedback.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-dispatch:'+code);};
 const code=e=>typeof e?.message==='string'&&/^native-[a-z-]+:[a-z-]+$/.test(e.message)?e.message:'native-dispatch:observation-unavailable';
 
@@ -76,11 +77,18 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      let store;
      try{store=await openNativeCycle(core,{root,target:selected});}catch(e){if(e.code!=='ENOENT')throw e;if(issue.state==='closed')continue;}
      let state=store?await store.read():null;
+     if(state?.shapeRevision?.phase==='prepared'){
+      const feedback=await nativeShapeFeedback(core,{root,store,claim:{},provider});
+      if(feedback.outcome==='revision-prepared'){wake();continue;}
+     }
      if(state?.fanout?.outcome==='discovered'&&state.completion)continue;
      if(state?.dispatch){
       const claim=previous.find(c=>c.id===state.dispatch.id);need(claim,'original-dispatch-missing');
       if(claim.phase!=='completed')continue;
       if(claim.conclusion!=='success'){
+       const feedback=await nativeShapeFeedback(core,{root,store,claim,provider});
+       if(feedback.outcome==='revision-prepared'){report(key,{status:'queued',issue:number,stage:'shape',reason:'original-author-format-feedback'});wake();continue;}
+       if(feedback.outcome==='waiting'){report(key,{status:'waiting',issue:number,stage:claim.stage,reason:'shape-feedback-runner-drain'});continue;}
        if(rescue&&state.attempts[claim.stage]?.phase==='unresolved')await rescue.observe({store,claim});
        else report(key,{status:'blocked',issue:number,stage:claim.stage,reason:'native-dispatch:original-action-failed'});
        continue;
