@@ -64,6 +64,7 @@ test('maintained coordinator consumes a real authenticated intake, retains origi
    entryPid:child.pid,entryStart:'0',controlGroup:'/user.slice/user-'+userInfo().uid+'.slice/fixture-ended.service',
    configuration:record.configuration,admission:record.admission,exitCode:1});
   await until(async()=> (await store.jobs.read('request-0'))?.phase==='released');
+  await until(()=>progress.some(r=>r.status==='released'));
   assert.equal((await coordinator.status()).occupied,0);assert.equal(counts.starts,1);assert.equal(counts.registrations,1);assert.equal(counts.removals,1);
   await assert.rejects(fs.stat(directory),{code:'ENOENT'});
   const snapshot=await readPrivate(join(root,'original-work',record.lease.identity,'snapshot.json')),
