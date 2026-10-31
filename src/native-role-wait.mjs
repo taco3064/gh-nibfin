@@ -8,7 +8,10 @@ export async function awaitNativeRoleExit(value,{checkpoint,signal,now=Date.now,
  const original=value.lifecycle,cutoff=value.budget?.cutoff;
  if(!Number.isSafeInteger(cutoff)||typeof checkpoint!=='function')throw Error('native-role-wait:configuration');
   const id=value.input.execution.id;let observed=await original.termination(id);
-  while(observed.termination.status==='running'&&now()<cutoff){
+  // The Linux backend reports unknown while its attached process promise is
+  // pending. Only verified termination permits collection; an unknown read is
+  // still bounded by this original execution's deadline and Owner checkpoint.
+  while(['running','unknown'].includes(observed.termination.status)&&now()<cutoff){
    if(signal?.aborted)throw Error('native-role-wait:cancelled');
    await checkpoint();await sleep(Math.min(1000,Math.max(1,cutoff-now())));
    observed=await original.termination(id);
