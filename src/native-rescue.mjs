@@ -98,7 +98,10 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    adapter:async t=>{need(jobBinding&&activeCase,'authenticated-rescue-job');adapter=await agent(core,{root,binding:jobBinding,store,target:t,caseId:activeCase,checkpoint:()=>checkpoint(store),signal});return adapter;},
    retainDiagnosis:async value=>{await store.retain({kind:'native-rescue-diagnosis',...value});return{outcome:'retained'};},continueRole:continuation,intent,
    operations:async({case:c,intent:v,beforeSubmit})=>{
-    const normal=core.createControlledOperations({authorization:input.authorization,provider,operationRecords:store.operationRecords,locate:store.locateOperation,
+    // This includes the repeated provenance, live Scope and authorization
+    // guards plus official readback, not just one HTTP request. Keep all guards
+    // fresh and bounded without expiring at the provider's 30s request budget.
+    const normal=core.createControlledOperations({timeoutMs:180000,authorization:input.authorization,provider,operationRecords:store.operationRecords,locate:store.locateOperation,
      execution:{runId:c.target.source.runId,attempt:c.target.source.attempt},beforeSubmit:async actual=>{
       await beforeSubmit(actual);
       if(v.payload.inputs.request_id===undefined)await arm(c,(await store.read()).nativeRescueContinuations[c.id]);
