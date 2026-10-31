@@ -1,4 +1,5 @@
 import fs from'node:fs/promises';import{join}from'node:path';import{randomUUID}from'node:crypto';
+import{setTimeout as wait}from'node:timers/promises';
 import{openFileHostStore}from'./host-store.mjs';import{openNativeCycle}from'./native-delivery-store.mjs';
 import{readNativeOwnerPolicy}from'./native-owner-policy.mjs';import{nativeActivationStatus}from'./native-activation.mjs';
 import{nativeExecutionInputs}from'./native-execution-inputs.mjs';import{managedWorkflowPlan}from'./workflow-inputs.mjs';
@@ -6,6 +7,7 @@ import{nativeRescueAgent}from'./native-rescue-agent.mjs';import{readPrivate,sha,
 import{nativePoolStore}from'./native-pool-store.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-rescue:'+code);};
 const modelRoles=['shape','shape-validator','deliver','accept','shaper-review'];
+const verifyUnknownContinuation=c=>c.outcome==='UNRESOLVED'&&c.code==='UNKNOWN_DISPATCH'&&c.continuation?.outcome==='confirmed-success';
 
 // Native adapters for the existing Core recovery owners. The normal dispatcher
 // remains the only delivery entry; Rescue can diagnose and prepare one original
@@ -49,7 +51,8 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    const unaccepted=retained.workspaceReference?core.contentIdentity(await store.get(retained.workspaceReference)):null;
    const actual={...t,scopeHash:s.scopeHash,shapeHash:s.shapeBody===null?null:core.bodyDigest(s.shapeBody),authority:s.authority.identity,
     candidate:s.workspaceExpected?.identity??unaccepted};
-   const recovery=s.nativeRescueContinuations?.[activeCase??Object.entries((await records.read()).cases).find(([,c])=>same(c.target,t))?.[0]];
+   const prepared=s.nativeRescueContinuations?.[activeCase??s.sessionResumes?.[t.role]?.caseId];
+   const recovery=prepared&&same(prepared.target,t)?prepared:null;
    const receipt=recovery?s.receipts[t.role]:null;
    return {...h.work,target:actual,authority:s.authority.identity,conflict:false,
     stageReceipt:receipt?{caseId:recovery.caseId,receipt,expected:s.expectations[t.role]}:null};
@@ -111,12 +114,13 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
      // Actions may acknowledge a dispatch before its Run appears in the list.
      // Reopen only an already-retained result through the same Core operation
      // owner: its existing intent/attempt path re-observes without another POST.
-     for(const delay of [1000,2000,4000]){
-      if(result.outcome!=='unknown'||!result.refs?.result||signal?.aborted)break;
+     const readbackSignal=AbortSignal.any([AbortSignal.timeout(120000),...(signal?[signal]:[])]);
+     for(const delay of [1000,2000,4000,8000,16000,30000]){
+      if(result.outcome!=='unknown'||!result.refs?.result||readbackSignal.aborted)break;
       const prior=await store.locateOperation({identity:core.contentIdentity(actual)});
       need(prior.outcome==='found'&&same(prior.refs,result.refs),'original-readback-record');
-      await new Promise(resolve=>setTimeout(resolve,delay));
-      result=await normal.execute(actual,{signal});
+      try{await wait(delay,undefined,{signal:readbackSignal});}catch{break;}
+      result=await normal.execute(actual,{signal:readbackSignal});
      }
      if(result.outcome==='confirmed-success'){
       const s=await store.read(),inputs=actual.payload.inputs,rescue=inputs.request_id!==undefined;
@@ -192,13 +196,19 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
   async refresh(){
    // Reconstruct controllers from durable cases after a daemon restart.
    for(const target of configuration.targets)for(const c of Object.values((await host.rescue(target.repositoryId).read()).cases)){
-    if(!core.eligibleRescueRecheck(c)||cache.has(target.repositoryId+':'+c.target.cycle))continue;
+    if(!(core.eligibleRescueRecheck(c)||verifyUnknownContinuation(c))||cache.has(target.repositoryId+':'+c.target.cycle))continue;
     const issue=await get({target,cycle:c.target.cycle},'/repos/'+target.repository+'/issues/'+c.target.number);
     const store=await openNativeCycle(core,{root,target:{repository:target.repository,repositoryId:target.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:c.target.number}});
     need((await store.read()).cycle===c.target.cycle,'original-cycle-required');await composition(store);
    }
-   for(const c of cache.values())for(const item of Object.values((await c.records.read()).cases))
-    if(item.target.cycle===c.cycle&&core.eligibleRescueRecheck(item)&&item.nextCheckAt<=Date.now())await c.controller.wake(item.id);
+   for(const c of cache.values())for(const item of Object.values((await c.records.read()).cases)){
+    if(item.target.cycle!==c.cycle)continue;
+    // A reporting notification can be unknown even though the original role
+    // continuation is proven. Reuse Core's independent receipt verifier; an
+    // active continuation remains deferred and never becomes an accepted role.
+    if(verifyUnknownContinuation(item))await c.controller.verify(item.id);
+    else if(core.eligibleRescueRecheck(item)&&item.nextCheckAt<=Date.now())await c.controller.wake(item.id);
+   }
   },
   async close(){await host.close();}});
 }
