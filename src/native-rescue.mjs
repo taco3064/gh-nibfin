@@ -107,7 +107,17 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
       if(v.payload.inputs.request_id===undefined)await arm(c,(await store.read()).nativeRescueContinuations[c.id]);
      }});
     return{execute:async actual=>{
-     const result=await normal.execute(actual,{signal});
+     let result=await normal.execute(actual,{signal});
+     // Actions may acknowledge a dispatch before its Run appears in the list.
+     // Reopen only an already-retained result through the same Core operation
+     // owner: its existing intent/attempt path re-observes without another POST.
+     for(const delay of [1000,2000,4000]){
+      if(result.outcome!=='unknown'||!result.refs?.result||signal?.aborted)break;
+      const prior=await store.locateOperation({identity:core.contentIdentity(actual)});
+      need(prior.outcome==='found'&&same(prior.refs,result.refs),'original-readback-record');
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      result=await normal.execute(actual,{signal});
+     }
      if(result.outcome==='confirmed-success'){
       const s=await store.read(),inputs=actual.payload.inputs,rescue=inputs.request_id!==undefined;
       const id=rescue?actual.correlation:inputs.nibfin_request,issue=await get(s,base+'/issues/'+s.target.number);

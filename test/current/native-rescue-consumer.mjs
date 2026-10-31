@@ -39,7 +39,7 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
  const blob=(path)=>createHash('sha1').update('blob '+Buffer.byteLength(files.get(path))+'\0').update(files.get(path)).digest('hex');
  const source={id:'1000',run_attempt:1,repository:f.repo,head_repository:f.repo,path:'.github/workflows/nibfin-stage.yml',event:'workflow_dispatch',head_branch:'main',head_sha:head,
   actor:{id:'7'},triggering_actor:{id:'7'},status:'completed',conclusion:'failure'};
- const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0;
+ const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0,delayedRunList=false;
  const reply=data=>({status:200,body:JSON.stringify(data)});
  f.intercept(async r=>{
   if(r.endpoint.includes('/contents/.github/workflows/nibfin-')){const path=r.endpoint.split('/contents/')[1].split('?')[0],text=files.get(path);return reply({type:'file',path,sha:blob(path),encoding:'base64',content:Buffer.from(text).toString('base64'),size:Buffer.byteLength(text)});}
@@ -58,7 +58,9 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
     display_title:core.actionRunName({issue:'55',stage:role,correlation:body.inputs.nibfin_correlation,...(rescue?{rescue:true,mode:body.inputs.mode}:{})})};
    dispatched.push({run,body});writes.push(r);return{status:204,body:''};
   }
-  if(r.endpoint.includes('/actions/workflows/')&&r.endpoint.includes('/runs?')){const workflow=r.endpoint.split('/workflows/')[1].split('/')[0];const runs=dispatched.filter(d=>d.run.workflow_id===workflow).map(d=>d.run);return reply({total_count:runs.length,workflow_runs:runs});}
+  if(r.endpoint.includes('/actions/workflows/')&&r.endpoint.includes('/runs?')){const workflow=r.endpoint.split('/workflows/')[1].split('/')[0];const runs=dispatched.filter(d=>d.run.workflow_id===workflow).map(d=>d.run);
+   if(role==='deliver'&&runs.length===1&&!delayedRunList){delayedRunList=true;return reply({total_count:0,workflow_runs:[]});}
+   return reply({total_count:runs.length,workflow_runs:runs});}
   if(r.endpoint.includes('/actions/runs/')){const id=r.endpoint.split('/actions/runs/')[1].split('/')[0],run=dispatched.find(d=>d.run.id===id)?.run;if(run)return reply(run);}
  });
  const executionCore={...core,createControlledOperations:options=>{if(role==='shape')slowGuard=true;return core.createControlledOperations(options);}};
@@ -70,6 +72,7 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
   const observer=await openFileHostStore(core,{directory:join(f.root,'state')});let cases;
   try{cases=(await observer.rescue('100').read()).cases;}finally{await observer.close();}
   assert.equal(writes.length,1,JSON.stringify(cases[id]));assert.equal(diagnoses,0);
+  if(role==='deliver')assert.equal(delayedRunList,true,'an acknowledged notification absent from the first Run list is read back without another POST');
   if(role==='shape')assert.equal(guardsDelayed,2,'the notification survives serial fresh guards totaling more than thirty seconds');
   assert.equal(await rescue.observe({store,claim:{id:request,runId:'1000',stage:role,sourceCommit:head}}),id);
   assert.equal(writes.length,1,'the same stopped execution does not queue another notification');
