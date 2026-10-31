@@ -28,12 +28,21 @@ export async function prepareNativeCleanBase(core,{directory,sourceDirectory,bas
  const saved=await fs.mkdtemp(directory+'-original-base-');await fs.rename(directory,saved);
  try{
   await fs.cp(sourceDirectory,directory,{recursive:true,dereference:false,verbatimSymlinks:true});
+  const baseline=core.captureWorkspace({...input,root:directory,base});
+  need(core.canonicalJSON(baseline.expected)===core.canonicalJSON(fresh.expected),'copy-changed');
   if(original.diff.length){
    const git=(args,input)=>execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',...args],{
     cwd:directory,input,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LANG:'C',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'},
     timeout:30000,maxBuffer:1048576,stdio:['pipe','pipe','pipe']});
    for(const object of original.objects)need(git(['hash-object','-w','-t',object.type,'--stdin'],object.bytes).toString().trim()===object.oid,'repair-object');
-   try{git(['apply','--3way','--index','--binary','-'],original.diff);}catch{throw Error('native-clean-base:three-way-repair-required');}
+   // A copied index retains the source checkout's stat cache. Prepare the
+   // verified fresh target as upstream does before applying any retained edit.
+   git(['read-tree','--reset','-u',base]);
+   try{git(['apply','--3way','--index','--binary','-'],original.diff);}catch(error){
+    await retain({kind:'native-three-way-repair-observation',status:'UNACCEPTED',original:reference,base,
+     diagnostic:{exitCode:error.status,indexMismatch:String(error.stderr).includes('does not match index'),conflicts:String(error.stderr).includes('with conflicts')}});
+    throw Error('native-clean-base:three-way-repair-required');
+   }
   }
   const copied=core.captureWorkspace({...input,root:directory,base});
   if(!original.diff.length)need(core.canonicalJSON(copied.expected)===core.canonicalJSON(fresh.expected),'copy-changed');
