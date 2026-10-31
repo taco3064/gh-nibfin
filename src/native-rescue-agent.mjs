@@ -4,6 +4,26 @@ import{privatePath}from'./local-state.mjs';
 import{restoreUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-rescue-agent:'+code);};
 
+// Session contents remain private. Project only completed result metadata using
+// the maintained Action sanitizer; its formatted log line is not bare JSON.
+export function retainedFinalMessages(core,snapshot){
+ const finals=[];
+ for(const file of snapshot.files)for(const line of Buffer.from(file.bytes,'base64').toString('utf8').split('\n')){
+  let event,value;try{event=JSON.parse(line);if(event.type!=='event_msg'||event.payload?.type!=='task_complete')continue;
+   value=JSON.parse(event.payload.last_agent_message);
+  }catch{continue;}
+  if(!value||typeof value!=='object'||Array.isArray(value))continue;
+  const result=value.result??value;
+  if(!result||typeof result!=='object'||Array.isArray(result))continue;
+  if(!['ready','approved','accepted','changes_required','blocked','decision_required','proposal_update_required'].includes(result.outcome))continue;
+  const projected=core.actionLogLine({reason:String(result.summary??'')},'diagnostic'),prefix='Nibfin execution ';
+  need(projected.startsWith(prefix),'diagnostic-projection');
+  const safe=JSON.parse(projected.slice(prefix.length)).reason;
+  finals.push({at:event.timestamp,outcome:result.outcome,summary:safe,shapeEnvelope:typeof value.body==='string'&&Boolean(value.result),bodyLength:typeof value.body==='string'?value.body.length:null});
+ }
+ return finals.slice(-3);
+}
+
 // The existing Core diagnostic adapter owns CLI/schema/isolation/termination.
 // This composition supplies only a disposable source/evidence copy. It does not
 // restore the original role session or expose management authentication.
@@ -38,16 +58,8 @@ export async function nativeRescueAgent(core,{root,binding,store,target,caseId,c
    const request=Object.entries(state.records).filter(([,kind])=>kind==='native-role-request');
    for(const[key]of request){const v=await store.get('native-record:'+key);if(v.input.execution.id===target.execution)evidence.push({reference:'native-record:'+key,value:{execution:v.input.execution,expected:v.expected}});}
    if(retained){
-    const original=await store.get(retained.sessionReference),finals=[];
-    for(const file of original.snapshot.files)for(const line of Buffer.from(file.bytes,'base64').toString('utf8').split('\n')){
-     try{const event=JSON.parse(line);if(event.type!=='event_msg'||event.payload?.type!=='task_complete')continue;
-      const value=JSON.parse(event.payload.last_agent_message),result=value.result??value;
-      if(!['ready','approved','accepted','changes_required','blocked','decision_required','proposal_update_required'].includes(result.outcome))continue;
-      const safe=JSON.parse(core.actionLogLine({reason:String(result.summary??'')},'diagnostic')).reason;
-      finals.push({at:event.timestamp,outcome:result.outcome,summary:safe,shapeEnvelope:typeof value.body==='string'&&Boolean(value.result),bodyLength:typeof value.body==='string'?value.body.length:null});
-     }catch{/* Historical tool/session events are not result evidence. */}
-    }
-    evidence.push({reference:retained.sessionReference,value:{finalMessages:finals.slice(-3)}});
+    const original=await store.get(retained.sessionReference);
+    evidence.push({reference:retained.sessionReference,value:{finalMessages:retainedFinalMessages(core,original.snapshot)}});
    }
    await fs.writeFile(join(instance.workspace,'NIBFIN-RECOVERY-EVIDENCE.json'),JSON.stringify({target,scope:state.scopeBody,shape:state.shapeBody,evidence}),{flag:'wx',mode:0o400});
    const environment=core.createAgentEnvironments().describe({id:execution+'-environment',agent:'codex',loginSpace:member.loginSpace,instances:[instance]});

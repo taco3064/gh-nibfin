@@ -4,6 +4,18 @@ import{prepareNativeCycle}from'../../src/native-cycle-policy.mjs';import{initial
 import{writePrivate,ensurePrivateDirectory}from'../../src/local-state.mjs';import{managedWorkflowPlan}from'../../src/workflow-inputs.mjs';
 import{nativePoolStore}from'../../src/native-pool-store.mjs';import{nativeRescue}from'../../src/native-rescue.mjs';
 import{restoreUnacceptedWorkspace,retainUnacceptedWorkspace}from'../../src/native-unaccepted-work.mjs';
+import{retainedFinalMessages}from'../../src/native-rescue-agent.mjs';
+
+test('diagnosis sees retained completed Shape envelopes with sanitized summaries and no transcript or body',async()=>withCurrentCore(async core=>{
+ const body='The substantive Shape body must remain private',summary='Collected Shape; access_token=private-secret ::error::';
+ const events=[{type:'response_item',payload:{type:'function_call_output',output:'private tool transcript'}},
+  {type:'event_msg',timestamp:'2026-10-30T17:09:13Z',payload:{type:'task_complete',last_agent_message:JSON.stringify({body,result:{outcome:'ready',summary}})}},
+  {type:'event_msg',payload:{type:'task_complete',last_agent_message:'not JSON'}},
+  {type:'event_msg',payload:{type:'task_complete',last_agent_message:'null'}}];
+ const result=retainedFinalMessages(core,{files:[{bytes:Buffer.from(events.map(e=>JSON.stringify(e)).join('\n')).toString('base64')}]});
+ assert.equal(result.length,1);assert.equal(result[0].outcome,'ready');assert.equal(result[0].shapeEnvelope,true);assert.equal(result[0].bodyLength,body.length);
+ assert.match(result[0].summary,/REDACTED/);assert.ok(!JSON.stringify(result).includes('private-secret'));assert.ok(!JSON.stringify(result).includes(body));assert.ok(!JSON.stringify(result).includes('private tool transcript'));
+}));
 
 for(const role of ['shape','deliver'])test('native '+role+' recovery preserves the original unaccepted work and uses only its reserved continuation',async()=>withCurrentCore(async(core,context)=>{
  const f=await nativeCycleFixture(core,context),store=await prepareNativeCycle(core,f.options),s=await store.read();
