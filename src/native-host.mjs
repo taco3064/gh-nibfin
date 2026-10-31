@@ -35,6 +35,10 @@ import {
   verifyNativeProjectUpgrade,
 } from './native-unused-activation.mjs';
 import { importNativeMergedWork } from './native-merged-handover.mjs';
+import {
+  stageNativeRuntimeRepair,
+  nativeRuntimeRepairPending,
+} from './native-runtime-repair.mjs';
 
 const need = (ok, code) => {
   if (!ok) throw Error('native-host:' + code);
@@ -245,6 +249,7 @@ export function nativeControlHost({
     executionPool,
     memberId,
     memberRuntime,
+    handover,
   }) {
     need(
       process.platform === 'linux' &&
@@ -281,13 +286,7 @@ export function nativeControlHost({
         core.canonicalJSON(selected.executionPool) === core.canonicalJSON(pool),
         'preserve-existing-installation',
       );
-      await prepareUnusedActivationUpgrade(core, {
-        root,
-        previous: selected,
-        next: record,
-        memberId,
-      });
-      await stageUnactivatedNativeUpgrade(core, {
+      const staging = {
         root,
         previous: selected,
         next: record,
@@ -295,7 +294,27 @@ export function nativeControlHost({
         control,
         verifyRunner: verify,
         stage: () => publishRuntime(root, files, 'runtime-next'),
+      };
+      const ledger = await readPrivate(join(root, 'pool-state/ledger.json'), {
+        missing: true,
+        limit: 33554432,
       });
+      if (handover && ledger && Object.keys(ledger.jobs).length > 0)
+        await stageNativeRuntimeRepair(core, {
+          ...staging,
+          directory: handover,
+          memberId,
+          provider: core.createGithubProvider({ attempts: 1 }),
+        });
+      else {
+        await prepareUnusedActivationUpgrade(core, {
+          root,
+          previous: selected,
+          next: record,
+          memberId,
+        });
+        await stageUnactivatedNativeUpgrade(core, staging);
+      }
       const result = await upgradeManagedInstallation(['--apply'], {
         core,
         context,
@@ -414,6 +433,9 @@ export function nativeControlHost({
   return Object.freeze({
     check,
     prepare: prepareHost,
+    repairPending({ core, repository }) {
+      return nativeRuntimeRepairPending(core, { root, repository });
+    },
     handover({
       core,
       context,

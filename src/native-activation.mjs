@@ -7,6 +7,11 @@ import { nativePoolStore } from './native-pool-store.mjs';
 import { managedWorkflowPlan } from './workflow-inputs.mjs';
 import { currentPin } from './current-core.mjs';
 import { completeUnusedActivationUpgrade } from './native-unused-activation.mjs';
+import {
+  readNativeRuntimeRepair,
+  requireRepairWork,
+  retainRepairActivation,
+} from './native-runtime-repair.mjs';
 const need = (ok, code) => {
   if (!ok) throw Error('native-activation:' + code);
 };
@@ -176,8 +181,13 @@ export async function activateNativeHost(
   try {
     const before = await store.read(),
       work = before.work;
+    const repair = await readNativeRuntimeRepair(core, root);
+    const repairing =
+      ['staged', 'activated'].includes(repair?.phase) &&
+      repair.next === core.contentIdentity(installation);
+    if (repairing) requireRepairWork(core, work, repair);
     need(
-      !previous || work.paused === false,
+      !previous || work.paused === false || repairing,
       'prepared-activation-reconciliation-required',
     );
     need(
@@ -187,9 +197,10 @@ export async function activateNativeHost(
         !work.active &&
         work.terminated &&
         work.reconciled &&
-        work.pending.length === 0 &&
-        work.conversations.length === 0 &&
-        work.receipts.length === 0,
+        (repairing ||
+          (work.pending.length === 0 &&
+            work.conversations.length === 0 &&
+            work.receipts.length === 0)),
       'original-work-reconciliation-required',
     );
     const body = {
@@ -209,21 +220,30 @@ export async function activateNativeHost(
       ...body,
       identity: core.contentIdentity(body),
     });
-    if (work.paused)
+    if (work.paused && !repairing)
       await store.updateWork({
         expected: before.identity,
         work: { ...work, paused: false },
       });
-    await completeUnusedActivationUpgrade(core, {
-      root,
-      installation,
-      activation: body,
-    });
+    if (!repairing)
+      await completeUnusedActivationUpgrade(core, {
+        root,
+        installation,
+        activation: body,
+      });
     const active = { ...body, phase: 'active' };
-    await writePrivate(join(root, 'activation.json'), {
+    const activated = {
       ...active,
       identity: core.contentIdentity(active),
-    });
+    };
+    if (repairing)
+      await retainRepairActivation(core, {
+        root,
+        activation: activated,
+        journal: repair,
+        authorizationHost: before.identity,
+      });
+    await writePrivate(join(root, 'activation.json'), activated);
   } finally {
     await store.close();
   }

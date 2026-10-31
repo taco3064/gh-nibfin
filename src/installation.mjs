@@ -385,7 +385,12 @@ export async function initializeRepository(args, dependencies = {}) {
       scope: report.scope,
       diagnostics: report.diagnostics,
     };
-    if (!selected.handover || report.status !== 'ready') return result;
+    if (!selected.handover) return result;
+    if (
+      report.status !== 'ready' &&
+      !(await host.repairPending?.({ core, repository: selected.repo }))
+    )
+      return result;
     if (report.executionPool?.version !== 2 || typeof host.handover !== 'function')
       throw Error('Saved work requires the verified native shared pool.');
     const handover = await host.handover({
@@ -418,6 +423,7 @@ export async function initializeRepository(args, dependencies = {}) {
         repo: selected.repo,
         executionPool: report.executionPool,
         memberId,
+        ...(selected.handover ? { handover: selected.handover } : {}),
         ...(selected.memberRuntime ? { memberRuntime: selected.memberRuntime } : {}),
       });
       nativePrepared =

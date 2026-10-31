@@ -1,187 +1,737 @@
-import fs from'node:fs/promises';import{watch}from'node:fs';import{join}from'node:path';import{randomUUID}from'node:crypto';
-import{readPrivate,writePrivate,ensurePrivateDirectory,sha}from'./local-state.mjs';
-import{readNativeOwnerPolicy}from'./native-owner-policy.mjs';import{readNativeMember}from'./native-member.mjs';
-import{prepareNativeCycle}from'./native-cycle-policy.mjs';import{openNativeCycle}from'./native-delivery-store.mjs';
-import{nativeExecutionInputs}from'./native-execution-inputs.mjs';import{nativeActivationStatus}from'./native-activation.mjs';
-import{managedWorkflowPlan}from'./workflow-inputs.mjs';
-import{nativeShapeFeedback}from'./native-shape-feedback.mjs';
-import{prepareNativeBaseRevision}from'./native-base-revision.mjs';
-import{openFileHostStore}from'./host-store.mjs';
-import{nativeGithubRateLimit}from'./native-github-rate-limit.mjs';
-const need=(ok,code)=>{if(!ok)throw Error('native-dispatch:'+code);};
-const code=e=>typeof e?.message==='string'&&/^native-[a-z-]+:[a-z-]+$/.test(e.message)?e.message:'native-dispatch:observation-unavailable';
+import { nativeStageRetry } from './native-continuation-repair.mjs';
+import fs from 'node:fs/promises';
+import { watch } from 'node:fs';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import {
+  readPrivate,
+  writePrivate,
+  ensurePrivateDirectory,
+  sha,
+} from './local-state.mjs';
+import { readNativeOwnerPolicy } from './native-owner-policy.mjs';
+import { readNativeMember } from './native-member.mjs';
+import { prepareNativeCycle } from './native-cycle-policy.mjs';
+import { openNativeCycle } from './native-delivery-store.mjs';
+import { nativeExecutionInputs } from './native-execution-inputs.mjs';
+import { nativeActivationStatus } from './native-activation.mjs';
+import { managedWorkflowPlan } from './workflow-inputs.mjs';
+import { nativeShapeFeedback } from './native-shape-feedback.mjs';
+import { prepareNativeBaseRevision } from './native-base-revision.mjs';
+import { openFileHostStore } from './host-store.mjs';
+import { nativeGithubRateLimit } from './native-github-rate-limit.mjs';
+const need = (ok, code) => {
+  if (!ok) throw Error('native-dispatch:' + code);
+};
+const code = (e) =>
+  typeof e?.message === 'string' && /^native-[a-z-]+:[a-z-]+$/.test(e.message)
+    ? e.message
+    : 'native-dispatch:observation-unavailable';
 
 /** One local control-service observer, not a scheduled GitHub Action. GitHub
  * events are read-only hints; only fresh Core authority/dependencies/member
  * selection can dispatch. A native completion/file event wakes it immediately;
  * bounded remote observation also notices Issue and CI changes behind NAT.
  */
-export async function nativeDispatchMonitor(core,{root,record,coordinator,context,provider,signal,transport,rescue,onProgress=()=>{},intervalMs=30000}={}){
- need(Number.isInteger(intervalMs)&&intervalMs>=1000&&intervalMs<=300000,'interval');
- const configuration=core.validateExecutionPool(record.executionPool),owner=await readNativeOwnerPolicy(core,{root});
- const directory=join(root,'dispatches');await ensurePrivateDirectory(directory);let closed=false,pending=false,running=null,timer,activeWrite=null;
- const findings=new Map();
- function report(key,value){const identity=core.contentIdentity(value);if(findings.get(key)===identity)return;findings.set(key,identity);onProgress(value);}
- const save=async body=>{await writePrivate(join(directory,body.id+'.json'),{...body,identity:core.contentIdentity(body)});return body;};
- async function claims(){const values=[];for(const name of await fs.readdir(directory)){
-  need(/^(?:native-[a-f0-9-]{36}|rescue-[a-f0-9]{64})\.json$/.test(name),'claim-inventory');const value=await readPrivate(join(directory,name));
-  const{identity,...body}=value;need(identity===core.contentIdentity(body)&&name===body.id+'.json','claim-integrity');values.push(body);
- }return values;}
- const get=async(target,endpoint)=>{const r=await provider.request({endpoint,target:target.repositoryId,operation:'native-dispatch-observation',correlation:'native-monitor',signal});
-  need(r.outcome==='read','read');return r.data;};
- const list=async(target,endpoint,envelope)=>{
-  const r=await provider.collection({endpoint,target:target.repositoryId,operation:'native-dispatch-observation',correlation:'native-monitor',signal,
-   ...(envelope?{envelope}:{}),allowPage:p=>p.split('?')[0]===endpoint.split('?')[0]});need(r.outcome==='complete','collection');return r.data;
- };
- // Initial dispatch has explicit local Owner provenance, not a fabricated
- // Actions source Run. Actual Run/Job attribution starts with official readback.
- const writes=core.createGithubProvider({attempts:1,...(transport?{transport}:{}),authorize:async request=>{
-  const active=activeWrite;need(active&&request.method==='POST'&&request.endpoint===active.endpoint
-   &&request.target===active.target.repositoryId&&core.canonicalJSON(request.body)===core.canonicalJSON(active.body),'dispatch-write');
-  await active.guard();if(signal?.aborted)return false;
-  // Only this marker crosses the official-write boundary. A prepared claim
-  // can resume after a pre-send interruption; sending/legacy intents require
-  // official readback and must never be blindly submitted again.
-  active.claim=await save({...active.claim,phase:'dispatch-sending'});return true;
- }});
- async function advance(claim){
-  if(claim.phase==='completed')return claim;
-  if(claim.phase==='dispatch-prepared')return claim;
-  const target=configuration.targets.find(t=>t.repository===claim.repository&&t.repositoryId===claim.repositoryId);need(target,'claim-target');
-  const base='/repos/'+target.repository;
-  if(!claim.runId){
-   const runs=await list(target,base+'/actions/workflows/'+claim.workflowId+'/runs?event=workflow_dispatch&per_page=100','workflow_runs');
-   const matching=runs.filter(r=>r.display_title===claim.title&&r.head_sha===claim.sourceCommit&&r.event==='workflow_dispatch');
-   need(matching.length<=1,'ambiguous-original-run');if(!matching.length){
-    if(claim.phase!=='dispatch-submitted')report(claim.id,{status:'blocked',issue:claim.issue,stage:claim.stage,reason:'native-dispatch:original-submission-unknown'});
-    return claim;
-   }
-   claim=await save({...claim,phase:'run-observed',runId:matching[0].id});
+export async function nativeDispatchMonitor(
+  core,
+  {
+    root,
+    record,
+    coordinator,
+    context,
+    provider,
+    signal,
+    transport,
+    rescue,
+    onProgress = () => {},
+    intervalMs = 30000,
+  } = {},
+) {
+  need(
+    Number.isInteger(intervalMs) && intervalMs >= 1000 && intervalMs <= 300000,
+    'interval',
+  );
+  const configuration = core.validateExecutionPool(record.executionPool),
+    owner = await readNativeOwnerPolicy(core, { root });
+  const directory = join(root, 'dispatches');
+  await ensurePrivateDirectory(directory);
+  let closed = false,
+    pending = false,
+    running = null,
+    timer,
+    activeWrite = null;
+  const findings = new Map();
+  function report(key, value) {
+    const identity = core.contentIdentity(value);
+    if (findings.get(key) === identity) return;
+    findings.set(key, identity);
+    onProgress(value);
   }
-  const run=await get(target,base+'/actions/runs/'+claim.runId);
-  need(run.id===claim.runId&&run.run_attempt===1&&run.repository?.id===target.repositoryId&&run.head_repository?.id===target.repositoryId
-   &&run.display_title===claim.title&&run.head_sha===claim.sourceCommit&&run.path===(claim.workflowPath??'.github/workflows/nibfin-stage.yml')
-   &&run.actor?.id===owner.memberId&&run.triggering_actor?.id===owner.memberId,'run-binding');
-  if(run.status==='completed')return save({...claim,phase:'completed',conclusion:run.conclusion});
-  if(claim.phase!=='enqueued'){
-   const jobs=await list(target,base+'/actions/runs/'+run.id+'/attempts/1/jobs?per_page=100','jobs');
-   const matching=jobs.filter(j=>j.status==='queued'&&j.name===(claim.jobName??'stage / execute')&&j.labels?.includes('nibfin-request-'+claim.id));
-   need(matching.length<=1,'ambiguous-original-job');
-   if(matching.length){await coordinator.enqueue({repository:target.repository,runId:run.id,jobId:matching[0].id});claim=await save({...claim,phase:'enqueued',jobId:matching[0].id});}
+  const save = async (body) => {
+    await writePrivate(join(directory, body.id + '.json'), {
+      ...body,
+      identity: core.contentIdentity(body),
+    });
+    return body;
+  };
+  async function claims() {
+    const values = [];
+    for (const name of await fs.readdir(directory)) {
+      need(
+        /^(?:native-[a-f0-9-]{36}|rescue-[a-f0-9]{64})\.json$/.test(name),
+        'claim-inventory',
+      );
+      const value = await readPrivate(join(directory, name));
+      const { identity, ...body } = value;
+      need(
+        identity === core.contentIdentity(body) && name === body.id + '.json',
+        'claim-integrity',
+      );
+      values.push(body);
+    }
+    return values;
   }
-  return claim;
- }
- async function tick(){
-  const quota=await nativeGithubRateLimit(root);if(quota){report('github-quota',{status:'waiting',reason:'github-api-rate-limit-until-'+new Date(quota.resetAt).toISOString()});return;}
-  const ready=(await nativeActivationStatus(core,{root})).status==='ready';
-  if(!ready){const host=await openFileHostStore(core,{directory:join(root,'state')});try{
-   const {work}=await host.read();if(!work.restrictionsChecked||work.paused||work.hold||!work.unknownWrite)return;
-  }finally{await host.close();}}
-  await readNativeMember(core,{root,memberId:owner.memberId});const pool=await coordinator.status();need(pool.host==='running','pool-unavailable');
-  if(ready)await rescue?.refresh();
-  const previous=[];for(const claim of await claims()){
-   try{previous.push(await advance(claim));}catch(e){previous.push(claim);report(claim.id,{status:'blocked',issue:claim.issue,stage:claim.stage,reason:code(e)});}
-  }
-  if(!ready){
-   // A generic failed PR owner marks writes uncertain. Reconcile its exact
-   // branch/PR readback before clearing that marker; never submit new work here.
-   for(const claim of previous.filter(c=>c.phase==='completed'))try{
-    const issue=await get({repositoryId:claim.repositoryId},'/repos/'+claim.repository+'/issues/'+claim.issue);
-    const store=await openNativeCycle(core,{root,target:{repository:claim.repository,repositoryId:claim.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:claim.issue}});
-    const s=await store.read();if(s.dispatch?.id!==claim.id&&s.baseRevision?.source?.id!==claim.id)continue;
-    const protectedRescue=await rescue?.observeProtected?.({store,claim});
-    if(['diagnosing','waiting','unknown'].includes(protectedRescue?.outcome)){report(claim.id,{status:protectedRescue.outcome==='diagnosing'?'queued':protectedRescue.outcome==='waiting'?'waiting':'blocked',issue:claim.issue,stage:claim.stage,reason:protectedRescue.reason??'protected-stage-ai-diagnosis'});if(protectedRescue.outcome==='diagnosing')wake();continue;}
-    const result=await prepareNativeBaseRevision(core,{root,store,claim,provider,signal,transport});
-    if(result.outcome==='revision-prepared'){report(claim.id,{status:'queued',issue:claim.issue,stage:'deliver',reason:'default-branch-advanced-original-writer-rebase'});wake();}
-   }catch(e){report(claim.id,{status:'blocked',issue:claim.issue,reason:code(e)});}
-   return;
-  }
-  let available=Math.max(0,configuration.capacity-previous.filter(c=>!['completed','dispatch-prepared'].includes(c.phase)).length);
-  for(const target of configuration.targets){
-   const issues=await list(target,'/repos/'+target.repository+'/issues?state=all&labels=scope&assignee='+encodeURIComponent(owner.memberLogin)+'&per_page=100');
-   for(const issue of issues){if(closed||signal?.aborted)return;if(issue.pull_request)continue;
-    const number=String(issue.number),key=target.repositoryId+':'+number;
-    try{
-     const selected={repository:target.repository,repositoryId:target.repositoryId,issueId:issue.node_id,databaseId:issue.id,number};
-     let store;
-     try{store=await openNativeCycle(core,{root,target:selected});}catch(e){if(e.code!=='ENOENT')throw e;if(issue.state==='closed')continue;}
-     let state=store?await store.read():null;
-     const baseClaim=state?.baseRevision?.phase==='prepared'?state.baseRevision.source:previous.find(c=>c.id===state?.dispatch?.id&&c.phase==='completed');
-     if(state&&baseClaim){
-      const protectedRescue=baseClaim.conclusion!=='success'?await rescue?.observeProtected?.({store,claim:baseClaim}):null;
-      if(['diagnosing','waiting','unknown'].includes(protectedRescue?.outcome)){report(key,{status:protectedRescue.outcome==='diagnosing'?'queued':protectedRescue.outcome==='waiting'?'waiting':'blocked',issue:number,stage:baseClaim.stage,reason:protectedRescue.reason??'protected-stage-ai-diagnosis'});continue;}
-      const revision=await prepareNativeBaseRevision(core,{root,store,claim:baseClaim,provider,signal,transport});
-      if(revision.outcome==='revision-prepared'){report(key,{status:'queued',issue:number,stage:'deliver',reason:'default-branch-advanced-original-writer-rebase'});wake();continue;}
-      if(revision.outcome==='waiting'){report(key,{status:'waiting',issue:number,reason:'base-revision-runner-drain'});continue;}
-     }
-     if(state?.shapeRevision?.phase==='prepared'){
-      const feedback=await nativeShapeFeedback(core,{root,store,claim:{},provider});
-      if(feedback.outcome==='revision-prepared'){wake();continue;}
-     }
-     if(state?.fanout?.outcome==='discovered'&&state.completion)continue;
-     let prepared;
-     if(state?.dispatch){
-      const claim=previous.find(c=>c.id===state.dispatch.id);need(claim,'original-dispatch-missing');
-      if(claim.phase==='dispatch-prepared')prepared=claim;
-      else if(claim.phase!=='completed')continue;
-      if(!prepared&&claim.conclusion!=='success'){
-       const feedback=await nativeShapeFeedback(core,{root,store,claim,provider});
-       if(feedback.outcome==='revision-prepared'){report(key,{status:'queued',issue:number,stage:'shape',reason:'original-author-format-feedback'});wake();continue;}
-       if(feedback.outcome==='waiting'){report(key,{status:'waiting',issue:number,stage:claim.stage,reason:'shape-feedback-runner-drain'});continue;}
-       if(rescue&&state.attempts[claim.stage]?.phase==='unresolved')await rescue.observe({store,claim});
-       else report(key,{status:'blocked',issue:number,stage:claim.stage,reason:'native-dispatch:original-action-failed'});
-       continue;
+  const get = async (target, endpoint) => {
+    const r = await provider.request({
+      endpoint,
+      target: target.repositoryId,
+      operation: 'native-dispatch-observation',
+      correlation: 'native-monitor',
+      signal,
+    });
+    need(r.outcome === 'read', 'read');
+    return r.data;
+  };
+  const list = async (target, endpoint, envelope) => {
+    const r = await provider.collection({
+      endpoint,
+      target: target.repositoryId,
+      operation: 'native-dispatch-observation',
+      correlation: 'native-monitor',
+      signal,
+      ...(envelope ? { envelope } : {}),
+      allowPage: (p) => p.split('?')[0] === endpoint.split('?')[0],
+    });
+    need(r.outcome === 'complete', 'collection');
+    return r.data;
+  };
+  // Initial dispatch has explicit local Owner provenance, not a fabricated
+  // Actions source Run. Actual Run/Job attribution starts with official readback.
+  const writes = core.createGithubProvider({
+    attempts: 1,
+    ...(transport ? { transport } : {}),
+    authorize: async (request) => {
+      const active = activeWrite;
+      need(
+        active &&
+          request.method === 'POST' &&
+          request.endpoint === active.endpoint &&
+          request.target === active.target.repositoryId &&
+          core.canonicalJSON(request.body) === core.canonicalJSON(active.body),
+        'dispatch-write',
+      );
+      await active.guard();
+      if (signal?.aborted) return false;
+      // Only this marker crosses the official-write boundary. A prepared claim
+      // can resume after a pre-send interruption; sending/legacy intents require
+      // official readback and must never be blindly submitted again.
+      active.claim = await save({ ...active.claim, phase: 'dispatch-sending' });
+      return true;
+    },
+  });
+  async function advance(claim) {
+    if (claim.phase === 'completed') return claim;
+    if (claim.phase === 'dispatch-prepared') return claim;
+    const target = configuration.targets.find(
+      (t) =>
+        t.repository === claim.repository && t.repositoryId === claim.repositoryId,
+    );
+    need(target, 'claim-target');
+    const base = '/repos/' + target.repository;
+    if (!claim.runId) {
+      const runs = await list(
+        target,
+        base +
+          '/actions/workflows/' +
+          claim.workflowId +
+          '/runs?event=workflow_dispatch&per_page=100',
+        'workflow_runs',
+      );
+      const matching = runs.filter(
+        (r) =>
+          r.display_title === claim.title &&
+          r.head_sha === claim.sourceCommit &&
+          r.event === 'workflow_dispatch',
+      );
+      need(matching.length <= 1, 'ambiguous-original-run');
+      if (!matching.length) {
+        if (claim.phase !== 'dispatch-submitted')
+          report(claim.id, {
+            status: 'blocked',
+            issue: claim.issue,
+            stage: claim.stage,
+            reason: 'native-dispatch:original-submission-unknown',
+          });
+        return claim;
       }
-     }
-     if(!available)continue;
-     store=await prepareNativeCycle(core,{root,configuration,repository:target.repository,number,provider,context,signal});state=await store.read();
-     for(const[name,receipt]of Object.entries(state.receipts))core.compareEvidence(receipt,state.expectations[name]);
-     const stage=core.nextDeliveryStage(state.receipts,null);need(!state.attempts[stage],'original-stage-reconciliation-required');
-     const id=prepared?.id??'native-'+randomUUID();
-     const checkpoint=async()=>{need(!signal?.aborted&&(await nativeActivationStatus(core,{root})).status==='ready','owner-restriction');};
-     const inputs=await nativeExecutionInputs(core,{root,store,configuration,binding:{request:{id}},provider,signal,checkpoint,transport,
-      poolReadiness:async request=>{await readNativeMember(core,{root,memberId:request.memberId});const current=await coordinator.status();
-       need(current.pool===core.contentIdentity(configuration)&&current.host==='running','prepared-pool');
-       return {memberId:owner.memberId,pool:current.pool,status:'ready',observedAt:Date.now()};}});
-     const deps=await inputs.dependencies.evaluate(inputs.dependencyInput,{signal});need(deps.outcome==='ready','dependencies-pending');
-     const selection=await inputs.selector.select(inputs.selectionInput(stage),{signal});need(selection.outcome==='selected'&&selection.memberId===owner.memberId,'member-selection');
-     const base='/repos/'+target.repository,workflow=await get(target,base+'/actions/workflows/nibfin-stage.yml'),head=(await get(target,base+'/git/ref/heads/main')).object.sha;
-     need(workflow.path==='.github/workflows/nibfin-stage.yml'&&workflow.state==='active'&&/^[a-f0-9]{40}$/.test(head),'workflow');
-     const source=await get(target,base+'/contents/.github/workflows/nibfin-stage.yml?ref='+head);
-     const expected=managedWorkflowPlan(core,{executionPool:configuration,repository:target.repository}).files.get('.github/workflows/nibfin-stage.yml');
-     need(source.encoding==='base64'&&Buffer.from(source.content,'base64').equals(Buffer.from(expected)),'workflow-source');
-     const body={ref:'main',inputs:{nibfin_request:id,nibfin_correlation:id,nibfin_issue:number,nibfin_stage:stage,nibfin_member:owner.memberId}};
-     const endpoint=base+'/actions/workflows/'+workflow.id+'/dispatches';
-     const claim={version:1,id,provenance:{kind:'native-owner-dispatch',memberId:owner.memberId},repository:target.repository,repositoryId:target.repositoryId,
-      issue:number,cycle:state.cycle,stage,workflowId:workflow.id,sourceCommit:head,issueBodySha256:sha(issue.body),
-      title:core.actionRunName({issue:number,stage,correlation:id}),createdAt:prepared?.createdAt??Date.now(),phase:'dispatch-prepared'};
-     need(!prepared||(prepared.cycle===state.cycle&&prepared.stage===stage&&prepared.issueBodySha256===claim.issueBodySha256),'original-prepared-authority');
-     const guard=async()=>{
-      await checkpoint();const latest=await get(target,base+'/issues/'+number),cycle=await store.read();
-      need(sha(latest.body)===claim.issueBodySha256&&core.nextDeliveryStage(cycle.receipts,null)===stage,'fresh-scope-required');
-      need((await inputs.authorization.eligibility({operation:'dispatch'},{signal})).ok===true,'dispatch-authorization');
-      need((await inputs.dependencies.evaluate(inputs.dependencyInput,{signal})).outcome==='ready','dependencies-pending');
-      need((await get(target,base+'/git/ref/heads/main')).object.sha===head,'workflow-ref-changed');
-     };
-     await guard();await save(claim);await store.update(s=>{need(!s.dispatch||s.dispatch.id===state.dispatch?.id,'dispatch-conflict');s.dispatch={id,stage};return s;});
-     activeWrite={target,endpoint,body,guard,claim};
-     let submitted;
-     try{const result=await writes.request({method:'POST',endpoint,target:target.repositoryId,operation:'installation',correlation:id,body,signal});
-      if(result.outcome==='submitted')submitted=await save({...activeWrite.claim,phase:'dispatch-submitted'});
-     }
-     finally{activeWrite=null;}
-     available--;const observed=await advance(submitted??await readPrivate(join(directory,id+'.json')));
-     if(observed.phase==='dispatch-prepared')report(key,{status:'waiting',issue:number,stage,reason:'native-dispatch:original-submission-not-sent'});
-     else if(observed.phase==='dispatch-sending')report(key,{status:'blocked',issue:number,stage,reason:'native-dispatch:original-submission-unknown'});
-     else report(key,{status:'queued',issue:number,stage,reason:'native-owner-dispatch-retained'});
-    }catch(e){report(key,{status:'blocked',issue:number,reason:code(e)});}
-   }
+      claim = await save({ ...claim, phase: 'run-observed', runId: matching[0].id });
+    }
+    const run = await get(target, base + '/actions/runs/' + claim.runId);
+    need(
+      run.id === claim.runId &&
+        run.run_attempt === 1 &&
+        run.repository?.id === target.repositoryId &&
+        run.head_repository?.id === target.repositoryId &&
+        run.display_title === claim.title &&
+        run.head_sha === claim.sourceCommit &&
+        run.path === (claim.workflowPath ?? '.github/workflows/nibfin-stage.yml') &&
+        run.actor?.id === owner.memberId &&
+        run.triggering_actor?.id === owner.memberId,
+      'run-binding',
+    );
+    if (run.status === 'completed')
+      return save({ ...claim, phase: 'completed', conclusion: run.conclusion });
+    if (claim.phase !== 'enqueued') {
+      const jobs = await list(
+        target,
+        base + '/actions/runs/' + run.id + '/attempts/1/jobs?per_page=100',
+        'jobs',
+      );
+      const matching = jobs.filter(
+        (j) =>
+          j.status === 'queued' &&
+          j.name === (claim.jobName ?? 'stage / execute') &&
+          j.labels?.includes('nibfin-request-' + claim.id),
+      );
+      need(matching.length <= 1, 'ambiguous-original-job');
+      if (matching.length) {
+        await coordinator.enqueue({
+          repository: target.repository,
+          runId: run.id,
+          jobId: matching[0].id,
+        });
+        claim = await save({ ...claim, phase: 'enqueued', jobId: matching[0].id });
+      }
+    }
+    return claim;
   }
- }
- function wake(){if(closed)return;pending=true;if(!running)running=(async()=>{while(pending&&!closed){pending=false;try{await tick();}catch(e){report('observer',{status:'blocked',reason:code(e)});}}})().finally(()=>{running=null;});}
- const watcher=watch(root,(_event,name)=>{if(name===null||name.toString()==='activation.json')wake();});watcher.on('error',()=>report('observer',{status:'blocked',reason:'native-dispatch:subscription-unavailable'}));
- function next(){if(closed)return;timer=setTimeout(()=>{wake();next();},intervalMs);timer.unref();}
- next();wake();
- const stop=()=>{closed=true;clearTimeout(timer);watcher.close();};signal?.addEventListener('abort',stop,{once:true});
- return Object.freeze({wake,async settled(){await running;},async close(){stop();signal?.removeEventListener('abort',stop);await running;}});
+  async function tick() {
+    const quota = await nativeGithubRateLimit(root);
+    if (quota) {
+      report('github-quota', {
+        status: 'waiting',
+        reason:
+          'github-api-rate-limit-until-' + new Date(quota.resetAt).toISOString(),
+      });
+      return;
+    }
+    const ready = (await nativeActivationStatus(core, { root })).status === 'ready';
+    if (!ready) {
+      const host = await openFileHostStore(core, { directory: join(root, 'state') });
+      try {
+        const { work } = await host.read();
+        if (
+          !work.restrictionsChecked ||
+          work.paused ||
+          work.hold ||
+          !work.unknownWrite
+        )
+          return;
+      } finally {
+        await host.close();
+      }
+    }
+    await readNativeMember(core, { root, memberId: owner.memberId });
+    const pool = await coordinator.status();
+    need(pool.host === 'running', 'pool-unavailable');
+    if (ready) await rescue?.refresh();
+    const previous = [];
+    for (const claim of await claims()) {
+      try {
+        previous.push(await advance(claim));
+      } catch (e) {
+        previous.push(claim);
+        report(claim.id, {
+          status: 'blocked',
+          issue: claim.issue,
+          stage: claim.stage,
+          reason: code(e),
+        });
+      }
+    }
+    if (!ready) {
+      // A generic failed PR owner marks writes uncertain. Reconcile its exact
+      // branch/PR readback before clearing that marker; never submit new work here.
+      for (const claim of previous.filter((c) => c.phase === 'completed'))
+        try {
+          const issue = await get(
+            { repositoryId: claim.repositoryId },
+            '/repos/' + claim.repository + '/issues/' + claim.issue,
+          );
+          const store = await openNativeCycle(core, {
+            root,
+            target: {
+              repository: claim.repository,
+              repositoryId: claim.repositoryId,
+              issueId: issue.node_id,
+              databaseId: issue.id,
+              number: claim.issue,
+            },
+          });
+          const s = await store.read();
+          if (s.dispatch?.id !== claim.id && s.baseRevision?.source?.id !== claim.id)
+            continue;
+          const protectedRescue = await rescue?.observeProtected?.({ store, claim });
+          if (
+            ['diagnosing', 'waiting', 'unknown'].includes(protectedRescue?.outcome)
+          ) {
+            report(claim.id, {
+              status:
+                protectedRescue.outcome === 'diagnosing'
+                  ? 'queued'
+                  : protectedRescue.outcome === 'waiting'
+                    ? 'waiting'
+                    : 'blocked',
+              issue: claim.issue,
+              stage: claim.stage,
+              reason: protectedRescue.reason ?? 'protected-stage-ai-diagnosis',
+            });
+            if (protectedRescue.outcome === 'diagnosing') wake();
+            continue;
+          }
+          const result = await prepareNativeBaseRevision(core, {
+            root,
+            store,
+            claim,
+            provider,
+            signal,
+            transport,
+          });
+          if (result.outcome === 'revision-prepared') {
+            report(claim.id, {
+              status: 'queued',
+              issue: claim.issue,
+              stage: 'deliver',
+              reason: 'default-branch-advanced-original-writer-rebase',
+            });
+            wake();
+          }
+        } catch (e) {
+          report(claim.id, {
+            status: 'blocked',
+            issue: claim.issue,
+            reason: code(e),
+          });
+        }
+      return;
+    }
+    let available = Math.max(
+      0,
+      configuration.capacity -
+        previous.filter((c) => !['completed', 'dispatch-prepared'].includes(c.phase))
+          .length,
+    );
+    for (const target of configuration.targets) {
+      const issues = await list(
+        target,
+        '/repos/' +
+          target.repository +
+          '/issues?state=all&labels=scope&assignee=' +
+          encodeURIComponent(owner.memberLogin) +
+          '&per_page=100',
+      );
+      for (const issue of issues) {
+        if (closed || signal?.aborted) return;
+        if (issue.pull_request) continue;
+        const number = String(issue.number),
+          key = target.repositoryId + ':' + number;
+        try {
+          const selected = {
+            repository: target.repository,
+            repositoryId: target.repositoryId,
+            issueId: issue.node_id,
+            databaseId: issue.id,
+            number,
+          };
+          let store;
+          try {
+            store = await openNativeCycle(core, { root, target: selected });
+          } catch (e) {
+            if (e.code !== 'ENOENT') throw e;
+            if (issue.state === 'closed') continue;
+          }
+          let state = store ? await store.read() : null;
+          const baseClaim =
+            state?.baseRevision?.phase === 'prepared'
+              ? state.baseRevision.source
+              : previous.find(
+                  (c) => c.id === state?.dispatch?.id && c.phase === 'completed',
+                );
+          if (state && baseClaim) {
+            const protectedRescue =
+              baseClaim.conclusion !== 'success'
+                ? await rescue?.observeProtected?.({ store, claim: baseClaim })
+                : null;
+            if (
+              ['diagnosing', 'waiting', 'unknown'].includes(protectedRescue?.outcome)
+            ) {
+              report(key, {
+                status:
+                  protectedRescue.outcome === 'diagnosing'
+                    ? 'queued'
+                    : protectedRescue.outcome === 'waiting'
+                      ? 'waiting'
+                      : 'blocked',
+                issue: number,
+                stage: baseClaim.stage,
+                reason: protectedRescue.reason ?? 'protected-stage-ai-diagnosis',
+              });
+              continue;
+            }
+            const revision = await prepareNativeBaseRevision(core, {
+              root,
+              store,
+              claim: baseClaim,
+              provider,
+              signal,
+              transport,
+            });
+            if (revision.outcome === 'revision-prepared') {
+              report(key, {
+                status: 'queued',
+                issue: number,
+                stage: 'deliver',
+                reason: 'default-branch-advanced-original-writer-rebase',
+              });
+              wake();
+              continue;
+            }
+            if (revision.outcome === 'waiting') {
+              report(key, {
+                status: 'waiting',
+                issue: number,
+                reason: 'base-revision-runner-drain',
+              });
+              continue;
+            }
+          }
+          if (state?.shapeRevision?.phase === 'prepared') {
+            const feedback = await nativeShapeFeedback(core, {
+              root,
+              store,
+              claim: {},
+              provider,
+            });
+            if (feedback.outcome === 'revision-prepared') {
+              wake();
+              continue;
+            }
+          }
+          if (state?.fanout?.outcome === 'discovered' && state.completion) continue;
+          let prepared;
+          if (state?.dispatch) {
+            const claim = previous.find((c) => c.id === state.dispatch.id);
+            need(claim, 'original-dispatch-missing');
+            if (claim.phase === 'dispatch-prepared') prepared = claim;
+            else if (claim.phase !== 'completed') continue;
+            if (!prepared && claim.conclusion !== 'success') {
+              const feedback = await nativeShapeFeedback(core, {
+                root,
+                store,
+                claim,
+                provider,
+              });
+              if (feedback.outcome === 'revision-prepared') {
+                report(key, {
+                  status: 'queued',
+                  issue: number,
+                  stage: 'shape',
+                  reason: 'original-author-format-feedback',
+                });
+                wake();
+                continue;
+              }
+              if (feedback.outcome === 'waiting') {
+                report(key, {
+                  status: 'waiting',
+                  issue: number,
+                  stage: claim.stage,
+                  reason: 'shape-feedback-runner-drain',
+                });
+                continue;
+              }
+              if (rescue && state.attempts[claim.stage]?.phase === 'unresolved')
+                await rescue.observe({ store, claim });
+              else
+                report(key, {
+                  status: 'blocked',
+                  issue: number,
+                  stage: claim.stage,
+                  reason: 'native-dispatch:original-action-failed',
+                });
+              continue;
+            }
+          }
+          if (!available) continue;
+          store = await prepareNativeCycle(core, {
+            root,
+            configuration,
+            repository: target.repository,
+            number,
+            provider,
+            context,
+            signal,
+          });
+          state = await store.read();
+          for (const [name, receipt] of Object.entries(state.receipts))
+            core.compareEvidence(receipt, state.expectations[name]);
+          const stage = core.nextDeliveryStage(state.receipts, null);
+          await nativeStageRetry(core, { root, store, state, stage });
+          const id = prepared?.id ?? 'native-' + randomUUID();
+          const checkpoint = async () => {
+            need(
+              !signal?.aborted &&
+                (await nativeActivationStatus(core, { root })).status === 'ready',
+              'owner-restriction',
+            );
+          };
+          const inputs = await nativeExecutionInputs(core, {
+            root,
+            store,
+            configuration,
+            binding: { request: { id } },
+            provider,
+            signal,
+            checkpoint,
+            transport,
+            poolReadiness: async (request) => {
+              await readNativeMember(core, { root, memberId: request.memberId });
+              const current = await coordinator.status();
+              need(
+                current.pool === core.contentIdentity(configuration) &&
+                  current.host === 'running',
+                'prepared-pool',
+              );
+              return {
+                memberId: owner.memberId,
+                pool: current.pool,
+                status: 'ready',
+                observedAt: Date.now(),
+              };
+            },
+          });
+          const deps = await inputs.dependencies.evaluate(inputs.dependencyInput, {
+            signal,
+          });
+          need(deps.outcome === 'ready', 'dependencies-pending');
+          const selection = await inputs.selector.select(
+            inputs.selectionInput(stage),
+            { signal },
+          );
+          need(
+            selection.outcome === 'selected' && selection.memberId === owner.memberId,
+            'member-selection',
+          );
+          const base = '/repos/' + target.repository,
+            workflow = await get(
+              target,
+              base + '/actions/workflows/nibfin-stage.yml',
+            ),
+            head = (await get(target, base + '/git/ref/heads/main')).object.sha;
+          need(
+            workflow.path === '.github/workflows/nibfin-stage.yml' &&
+              workflow.state === 'active' &&
+              /^[a-f0-9]{40}$/.test(head),
+            'workflow',
+          );
+          const source = await get(
+            target,
+            base + '/contents/.github/workflows/nibfin-stage.yml?ref=' + head,
+          );
+          const expected = managedWorkflowPlan(core, {
+            executionPool: configuration,
+            repository: target.repository,
+          }).files.get('.github/workflows/nibfin-stage.yml');
+          need(
+            source.encoding === 'base64' &&
+              Buffer.from(source.content, 'base64').equals(Buffer.from(expected)),
+            'workflow-source',
+          );
+          const body = {
+            ref: 'main',
+            inputs: {
+              nibfin_request: id,
+              nibfin_correlation: id,
+              nibfin_issue: number,
+              nibfin_stage: stage,
+              nibfin_member: owner.memberId,
+            },
+          };
+          const endpoint = base + '/actions/workflows/' + workflow.id + '/dispatches';
+          const claim = {
+            version: 1,
+            id,
+            provenance: { kind: 'native-owner-dispatch', memberId: owner.memberId },
+            repository: target.repository,
+            repositoryId: target.repositoryId,
+            issue: number,
+            cycle: state.cycle,
+            stage,
+            workflowId: workflow.id,
+            sourceCommit: head,
+            issueBodySha256: sha(issue.body),
+            title: core.actionRunName({ issue: number, stage, correlation: id }),
+            createdAt: prepared?.createdAt ?? Date.now(),
+            phase: 'dispatch-prepared',
+          };
+          need(
+            !prepared ||
+              (prepared.cycle === state.cycle &&
+                prepared.stage === stage &&
+                prepared.issueBodySha256 === claim.issueBodySha256),
+            'original-prepared-authority',
+          );
+          const guard = async () => {
+            await checkpoint();
+            const latest = await get(target, base + '/issues/' + number),
+              cycle = await store.read();
+            need(
+              sha(latest.body) === claim.issueBodySha256 &&
+                core.nextDeliveryStage(cycle.receipts, null) === stage,
+              'fresh-scope-required',
+            );
+            need(
+              (
+                await inputs.authorization.eligibility(
+                  { operation: 'dispatch' },
+                  { signal },
+                )
+              ).ok === true,
+              'dispatch-authorization',
+            );
+            need(
+              (await inputs.dependencies.evaluate(inputs.dependencyInput, { signal }))
+                .outcome === 'ready',
+              'dependencies-pending',
+            );
+            need(
+              (await get(target, base + '/git/ref/heads/main')).object.sha === head,
+              'workflow-ref-changed',
+            );
+          };
+          await guard();
+          await save(claim);
+          await store.update((s) => {
+            need(
+              !s.dispatch || s.dispatch.id === state.dispatch?.id,
+              'dispatch-conflict',
+            );
+            s.dispatch = { id, stage };
+            return s;
+          });
+          activeWrite = { target, endpoint, body, guard, claim };
+          let submitted;
+          try {
+            const result = await writes.request({
+              method: 'POST',
+              endpoint,
+              target: target.repositoryId,
+              operation: 'installation',
+              correlation: id,
+              body,
+              signal,
+            });
+            if (result.outcome === 'submitted')
+              submitted = await save({
+                ...activeWrite.claim,
+                phase: 'dispatch-submitted',
+              });
+          } finally {
+            activeWrite = null;
+          }
+          available--;
+          const observed = await advance(
+            submitted ?? (await readPrivate(join(directory, id + '.json'))),
+          );
+          if (observed.phase === 'dispatch-prepared')
+            report(key, {
+              status: 'waiting',
+              issue: number,
+              stage,
+              reason: 'native-dispatch:original-submission-not-sent',
+            });
+          else if (observed.phase === 'dispatch-sending')
+            report(key, {
+              status: 'blocked',
+              issue: number,
+              stage,
+              reason: 'native-dispatch:original-submission-unknown',
+            });
+          else
+            report(key, {
+              status: 'queued',
+              issue: number,
+              stage,
+              reason: 'native-owner-dispatch-retained',
+            });
+        } catch (e) {
+          report(key, { status: 'blocked', issue: number, reason: code(e) });
+        }
+      }
+    }
+  }
+  function wake() {
+    if (closed) return;
+    pending = true;
+    if (!running)
+      running = (async () => {
+        while (pending && !closed) {
+          pending = false;
+          try {
+            await tick();
+          } catch (e) {
+            report('observer', { status: 'blocked', reason: code(e) });
+          }
+        }
+      })().finally(() => {
+        running = null;
+      });
+  }
+  const watcher = watch(root, (_event, name) => {
+    if (name === null || name.toString() === 'activation.json') wake();
+  });
+  watcher.on('error', () =>
+    report('observer', {
+      status: 'blocked',
+      reason: 'native-dispatch:subscription-unavailable',
+    }),
+  );
+  function next() {
+    if (closed) return;
+    timer = setTimeout(() => {
+      wake();
+      next();
+    }, intervalMs);
+    timer.unref();
+  }
+  next();
+  wake();
+  const stop = () => {
+    closed = true;
+    clearTimeout(timer);
+    watcher.close();
+  };
+  signal?.addEventListener('abort', stop, { once: true });
+  return Object.freeze({
+    wake,
+    async settled() {
+      await running;
+    },
+    async close() {
+      stop();
+      signal?.removeEventListener('abort', stop);
+      await running;
+    },
+  });
 }
