@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';import{join}from'node:path';import{userInfo}fr
 import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./local-state.mjs';import{backendReady}from'./create.mjs';
 import{retainUnacceptedWorkspace,restoreUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 import{resumeNativeSession}from'./native-session-resume.mjs';
+import{prepareNativeCleanBase}from'./native-clean-base.mjs';
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 
@@ -124,6 +125,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    if(task.role==='deliver'&&resume?.next?.request===binding.request.id&&resume.workspaceReference){
     const original=await store.get(resume.workspaceReference),session=await store.get(resume.reference);
     await restoreUnacceptedWorkspace({directory:path,snapshot:original,execution:session.metadata.execution});
+    await prepareNativeCleanBase(core,{directory:path,sourceDirectory,base,state:s,snapshot:original,reference:resume.workspaceReference,retain});
    }else if(['shape','shape-validator','shape-diagnosis','deliver'].includes(task.role))await publicCheckout(repository,base,path,signal);
    if(resume?.next?.request===binding.request.id)task={...task,task:{...task.task,recovery:{caseId:resume.caseId,plan:resume.plan,
     status:'UNACCEPTED',instruction:'Diagnosis is guidance only; all original role gates and verification still apply.'}}};

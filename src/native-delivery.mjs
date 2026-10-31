@@ -115,6 +115,12 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    const observed=await awaitNativeRoleExit(value,{checkpoint,signal});
    if(observed.termination.status==='terminated'){
     pin.prior={state:'unresolved',request:copy(request),stage};
+    // Re-observe the same authorized invocation after the actual Agent wait.
+    // Do not reuse an execution observation older than Core's freshness bound,
+    // extend that bound, or merely relabel an old timestamp as a fresh read.
+    await checkpoint();
+    const refreshed=await nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport});
+    pin.selectionInput=refreshed.selectionInput(stage);
     const fresh=await runtime.inspect(request,{signal});
     if(fresh.current&&fresh.disposition!=='blocked'){
      request.expected=fresh.current;result=await runtime.run(request,{signal});

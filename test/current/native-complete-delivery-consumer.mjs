@@ -5,7 +5,8 @@ import{openNativeCycle}from'../../src/native-delivery-store.mjs';
 
 // Real private records, Git objects and public Core stage owners. External
 // model/GitHub observations are explicit doubles, not live delivery evidence.
-test('one native cycle retains every actual owner output through independent reviews, protected merge and causal completion',async()=>withCurrentCore(async(core,context)=>{
+test('one native cycle retains every actual owner output through independent reviews, protected merge and causal completion',async t=>withCurrentCore(async(core,context)=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
  const f=await nativeCycleFixture(core,context),source=join(f.root,'source'),remote=join(f.root,'remote.git');
  await fs.mkdir(source,{mode:0o700});const env={PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'};
  const git=(cwd,args,input)=>execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null',...args],{cwd,env,input,stdio:['pipe','pipe','pipe']}).toString().trim();
@@ -78,12 +79,12 @@ test('one native cycle retains every actual owner output through independent rev
       if(task.role==='deliver')assert.equal(cloned,true);return{status:'started'};},
      collect:async()=>({status:'complete',exitCode:0,evidence:structuredClone(expected)}),termination:async()=>{
        if(task.role==='deliver'&&++writerObservations<4)return{status:writerObservations===2?'running':'unknown'};
-      if(task.role==='deliver')await fs.writeFile(join(work,'README.md'),'native onboarding procedure\n');
+      if(task.role==='deliver'){t.mock.timers.tick(180000);await fs.writeFile(join(work,'README.md'),'native onboarding procedure\n');}
       return{status:'terminated'};
      },stop:async()=>{if(task.role==='deliver')writerStops++;return{status:'requested'};},cleanup:async()=>({status:'completed',residuals:[]})};
     const id='fixture-'+binding.request.id,lifecycle=core.createAgentLifecycle({environment:{id:id+'-environment',agent:'recording',loginSpace:'/fixture/login',
      instances:[{id,workspace:work,registration:join(directory,'registration'),service:join(directory,'service')}]},instanceId:id,backend,current,startCurrent:bound.startCurrent});
-    const value={input:bound.input,lifecycle,current,readBody:()=>body,taskIdentity:core.contentIdentity(task.task),budget:core.createRoleBudget({deadlineAt:Date.now()+120000,reserveMs:1000}),
+    const value={input:bound.input,lifecycle,current,readBody:()=>body,taskIdentity:core.contentIdentity(task.task),budget:core.createRoleBudget({deadlineAt:Date.now()+600000,reserveMs:1000}),
      bindCandidate:async candidate=>{expected.inputs={...expected.inputs,candidate};}};values.set(bound.input.execution.id,value);
     return value;
    },get:id=>{assert.ok(values.has(id));return values.get(id);},async close(){}}
