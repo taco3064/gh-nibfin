@@ -3,6 +3,7 @@ import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./loca
 import{retainUnacceptedWorkspace,restoreUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 import{resumeNativeSession}from'./native-session-resume.mjs';
 import{prepareNativeCleanBase}from'./native-clean-base.mjs';
+import{prepareDeferredNativeRole}from'./native-deferred-role.mjs';
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 
@@ -61,6 +62,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   for(const path of [instance.workspace,instance.registration,instance.service])await fs.mkdir(path,{mode:0o700});instances.push(instance);}
  const environment=core.createAgentEnvironments().describe({id:'native-'+binding.request.id,agent:'codex',loginSpace:member.loginSpace,instances});
  const sourceDirectory=join(directory,'source');await fs.mkdir(sourceDirectory,{mode:0o700});await publicCheckout(repository,base,sourceDirectory,signal);
+ if(store)await prepareDeferredNativeRole(core,{store,binding,memberId});
  const candidateDirectory=join(directory,'candidate-source');await fs.mkdir(candidateDirectory,{mode:0o700});
  const runnerRoot=join(directory,'runner');await fs.mkdir(runnerRoot,{mode:0o700});
  for(const name of ['work','scratch','cache'])await fs.mkdir(join(runnerRoot,name),{mode:0o700});
@@ -122,9 +124,11 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   async prepareRole(task){
    const path=this.workspace(task.role);
    const s=store?await store.read():null,resume=s?.sessionResumes?.[task.role];
-   if(task.role==='shape'&&s?.shapeRevision)task={...task,task:{...task.task,revision:{kind:'unpublished-proposal-format-feedback',
+   if(task.role==='shape'&&s?.shapeRevision)task={...task,task:{...task.task,revision:{kind:s.shapeRevision.kind??'unpublished-proposal-format-feedback',
     previousBody:s.shapeRevision.previousBody,diagnostics:s.shapeRevision.diagnostics,
-    instruction:'Revise the original proposal using this machine feedback. Preserve Scope and substantive plan; make the empty-inventory applicability explanations parseable. A fresh independent Validator and all original publication gates remain required.'}}};
+    instruction:s.shapeRevision.kind==='owner-published-plan-revision'?
+     'Revise the original proposal using the explicit Owner verification-applicability concern. Preserve the exact Scope, substantive implementation and all existing independent Acceptance, hook, exact-head CI, protected merge and closure gates. Resolve the diagnosed verification mismatch using the supplied source/runtime evidence; obtain a fresh independent Validator before publication. Previous implementation is retained as UNACCEPTED input for the Writer.':
+     'Revise the original proposal using this machine feedback. Preserve Scope and substantive plan; make the empty-inventory applicability explanations parseable. A fresh independent Validator and all original publication gates remain required.'}}};
    if(task.role==='deliver'&&resume?.next?.request===binding.request.id&&resume.workspaceReference){
     const original=await store.get(resume.workspaceReference),session=await store.get(resume.reference);
     await restoreUnacceptedWorkspace({directory:path,snapshot:original,execution:session.metadata.execution});
