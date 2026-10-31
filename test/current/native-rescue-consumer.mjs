@@ -3,22 +3,23 @@ import{withCurrentCore}from'../../src/current-core.mjs';import{nativeCycleFixtur
 import{prepareNativeCycle}from'../../src/native-cycle-policy.mjs';import{initializeFileHostStore,openFileHostStore}from'../../src/host-store.mjs';
 import{writePrivate,ensurePrivateDirectory}from'../../src/local-state.mjs';import{managedWorkflowPlan}from'../../src/workflow-inputs.mjs';
 import{nativePoolStore}from'../../src/native-pool-store.mjs';import{nativeRescue}from'../../src/native-rescue.mjs';
-import{restoreUnacceptedWorkspace}from'../../src/native-unaccepted-work.mjs';
+import{restoreUnacceptedWorkspace,retainUnacceptedWorkspace}from'../../src/native-unaccepted-work.mjs';
 
-test('native recovery uses the installed Core controller to diagnose a stopped role and dispatch only its reserved original-session continuation',async()=>withCurrentCore(async(core,context)=>{
+for(const role of ['shape','deliver'])test('native '+role+' recovery preserves the original unaccepted work and uses only its reserved continuation',async()=>withCurrentCore(async(core,context)=>{
  const f=await nativeCycleFixture(core,context),store=await prepareNativeCycle(core,f.options),s=await store.read();
  const request='native-11111111-1111-4111-8111-111111111111',execution='role-original',sessionId='11111111-1111-4111-8111-111111111111';
  const original=join(context.root,'original-session');await fs.mkdir(original,{mode:0o700});
  await fs.writeFile(join(original,sessionId+'.jsonl'),JSON.stringify({type:'session_meta',payload:{id:sessionId}})+'\n',{mode:0o600});
- const metadata={id:sessionId,memberId:'7',role:'shape',execution,adapter:'codex'},snapshot=core.captureRescueSession({directory:original,memberId:'7',role:'shape',session:sessionId,execution});
+ const metadata={id:sessionId,memberId:'7',role:role,execution,adapter:'codex'},snapshot=core.captureRescueSession({directory:original,memberId:'7',role:role,session:sessionId,execution});
  const sessionReference=await store.retain({kind:'native-role-session',metadata,snapshot});
- await store.retain({kind:'native-role-request',input:{execution:{id:execution,role:'shape',source:{runId:'1000',attempt:'1'}}}});
- await store.update(v=>{v.attempts.shape={request,phase:'unresolved',reason:'owner-result'};v.dispatch={id:request,stage:'shape'};return v;});
+ await store.retain({kind:'native-role-request',input:{execution:{id:execution,role:role,source:{runId:'1000',attempt:'1'}}}});
+ if(role==='deliver'){const writer=join(context.root,'original-writer');await fs.mkdir(writer,{mode:0o700});await fs.writeFile(join(writer,'draft.txt'),'unfinished original edits',{mode:0o600});await retainUnacceptedWorkspace({directory:writer,execution:{id:execution},retain:v=>store.retain(v)});}
+ await store.update(v=>{v.attempts[role]={request,phase:'unresolved',reason:'owner-result'};v.dispatch={id:request,stage:role};if(role==='deliver')v.shapeBody=core.formatRequirementsDocument({scope:v.scopeBody,shape:'Original approved implementation plan'});return v;});
  const installation={executionPool:f.configuration};await writePrivate(join(f.root,'native-installation.json'),installation);
  const activation={version:1,phase:'active',installation:core.contentIdentity(installation)};await writePrivate(join(f.root,'activation.json'),{...activation,identity:core.contentIdentity(activation)});
  const host=await initializeFileHostStore(core,{directory:join(f.root,'state'),installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},repositories:[{repository:'example/project',repositoryId:'100'}]});
  try{const before=await host.read();await host.updateWork({expected:before.identity,work:{...before.work,paused:false,reconciled:false,
-  pending:[{kind:'native-stage',cycle:s.cycle,request,stage:'shape',status:'UNACCEPTED'}],conversations:[{reference:sessionReference,session:sessionId}]}});}finally{await host.close();}
+  pending:[{kind:'native-stage',cycle:s.cycle,request,stage:role,status:'UNACCEPTED'}],conversations:[{reference:sessionReference,session:sessionId}]}});}finally{await host.close();}
  const pool=nativePoolStore(core,{root:f.root,configuration:f.configuration});await pool.initialize();
  const released={request:{id:request},phase:'released',runnerId:'21'};
  await pool.jobs.write({id:request,expected:null,value:{...released,identity:core.contentIdentity(released)}});
@@ -37,7 +38,7 @@ test('native recovery uses the installed Core controller to diagnose a stopped r
   if(r.method==='POST'&&r.endpoint.endsWith('/dispatches')){
    const body=JSON.parse(r.body),rescue=r.endpoint.includes('/901/'),id=String(6000+dispatched.length);
    const run={...source,id,workflow_id:rescue?'901':'900',path:'.github/workflows/nibfin-'+(rescue?'rescue':'stage')+'.yml',status:'queued',conclusion:null,
-    display_title:core.actionRunName({issue:'55',stage:'shape',correlation:body.inputs.nibfin_correlation,...(rescue?{rescue:true,mode:body.inputs.mode}:{})})};
+    display_title:core.actionRunName({issue:'55',stage:role,correlation:body.inputs.nibfin_correlation,...(rescue?{rescue:true,mode:body.inputs.mode}:{})})};
    dispatched.push({run,body});writes.push(r);return{status:204,body:''};
   }
   if(r.endpoint.includes('/actions/workflows/')&&r.endpoint.includes('/runs?')){const workflow=r.endpoint.split('/workflows/')[1].split('/')[0];const runs=dispatched.filter(d=>d.run.workflow_id===workflow).map(d=>d.run);return reply({total_count:runs.length,workflow_runs:runs});}
@@ -47,23 +48,24 @@ test('native recovery uses the installed Core controller to diagnose a stopped r
   agent:async(_core,{target,caseId})=>({capabilities:{rescueReadOnly:true},diagnose:async()=>{diagnoses++;return{execution:'diagnosis-new',terminated:true,memberId:'7',adapter:'codex',result:{outcome:'ready',failureClass:'implementation_defect',
    body:JSON.stringify({action:'retry-original-role',steps:['Resume the original Shape conversation using the corrected completed-message decoder']}),rootCause:'The previous parser discarded the valid Shape envelope',summary:'diagnosed',evidenceReferences:[caseId],contractConflicts:[]}};},close:async()=>{}})});
  try{
-  const id=await rescue.observe({store,claim:{id:request,runId:'1000',stage:'shape',sourceCommit:head}});
+  const id=await rescue.observe({store,claim:{id:request,runId:'1000',stage:role,sourceCommit:head}});
   const observer=await openFileHostStore(core,{directory:join(f.root,'state')});let cases;
   try{cases=(await observer.rescue('100').read()).cases;}finally{await observer.close();}
   assert.equal(writes.length,1,JSON.stringify(cases[id]));assert.equal(diagnoses,0);
-  assert.equal(await rescue.observe({store,claim:{id:request,runId:'1000',stage:'shape',sourceCommit:head}}),id);
+  assert.equal(await rescue.observe({store,claim:{id:request,runId:'1000',stage:role,sourceCommit:head}}),id);
   assert.equal(writes.length,1,'the same stopped execution does not queue another notification');
   const notification=dispatched[0];assert.equal(notification.body.inputs.request_id,id);
   await assert.rejects(rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:'9999'},correlation:notification.body.inputs.nibfin_correlation,
-   issue:'55',stage:'shape',jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}}),/actual-rescue-invocation/);
+   issue:'55',stage:role,jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}}),/actual-rescue-invocation/);
   assert.equal(diagnoses,0,'a different Run cannot borrow the retained notification');
   const result=await rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:notification.run.id},correlation:notification.body.inputs.nibfin_correlation,
-   issue:'55',stage:'shape',jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}});
+   issue:'55',stage:role,jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}});
   assert.equal(result.rescue.outcome,'PENDING_VERIFICATION',JSON.stringify(result));assert.equal(diagnoses,1);assert.equal(writes.length,2);
-  const after=await store.read(),resume=after.sessionResumes.shape;
+  const after=await store.read(),resume=after.sessionResumes[role];
+  if(role==='deliver'){assert.ok(resume.workspaceReference);const original=await store.get(resume.workspaceReference);assert.equal(original.status,'UNACCEPTED');assert.equal(after.candidate,null);}
   assert.equal(resume.reference,sessionReference);assert.equal(resume.next.session,sessionId);assert.notEqual(resume.next.execution,execution);
   assert.equal(dispatched[1].body.inputs.nibfin_member,'7');assert.equal(dispatched[1].body.inputs.nibfin_request,resume.next.request);
-  assert.equal(after.attempts.shape,undefined);assert.equal(after.receipts.shape,undefined);assert.equal(after.recoveries[0].attempt.request,request);
+  assert.equal(after.attempts[role],undefined);assert.equal(after.receipts[role],undefined);assert.equal(after.recoveries[0].attempt.request,request);
  }finally{await rescue.close();}
 }));
 

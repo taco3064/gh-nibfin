@@ -3,8 +3,8 @@ import{readPrivate,writePrivate}from'../../src/local-state.mjs';
 
 test('private readers reobserve a transient publication link but never accept a persistent hardlink, public file or symlink',async t=>{
  const root=await fs.mkdtemp(join(tmpdir(),'nibfin-private-read-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const pending=join(root,'pending'),path=join(root,'record.json');await fs.writeFile(pending,'{"version":1}',{mode:0o600});await fs.link(pending,path);
- const publication=new Promise(resolve=>setTimeout(async()=>{await fs.unlink(pending);resolve();},2));
+ const pending=join(root,'pending'),path=join(root,'record.json');
+ const publication=writePrivate(path,{version:1},{exclusive:true});
  assert.deepEqual(await readPrivate(path),{version:1});await publication;
  await fs.link(path,pending);await assert.rejects(readPrivate(path),/metadata|permissions/);assert.equal((await fs.stat(path)).nlink,2);
  await fs.unlink(pending);await fs.chmod(path,0o644);await assert.rejects(readPrivate(path),/metadata|permissions/);
