@@ -31,10 +31,12 @@ test('shared capacity admission verifies the actual project-owned Job and immuta
     const all=[];
     for(const id of ['21','22']){
       const result=await observeAdmissionPlan(core,{...input,state:{...input.state,runnerId:id,runnerName:'worker-'+id}});
-      assert.equal(result.sourceCommit,commit);assert.equal(result.policies.length,1);all.push(...result.policies);
-      const stages=result.policies;
+      assert.equal(result.sourceCommit,commit);assert.equal(result.policies.length,2);all.push(...result.policies);
+      const stages=result.policies.filter(p=>p.workflowPath==='.github/workflows/nibfin-stage.yml');
       assert.equal(stages.length,1);assert.ok(stages.every(p=>p.repositoryId==='42'));
       for(const p of stages){assert.equal(p.workflowPath,'.github/workflows/nibfin-stage.yml');assert.equal(p.jobName,'stage / execute');assert.equal(p.workflowDependencies,undefined);}
+      const rescue=result.policies.find(p=>p.workflowPath==='.github/workflows/nibfin-rescue.yml');
+      assert.equal(rescue.jobName,'rescue');assert.equal(rescue.repositoryId,'42');
     }
     assert.equal(new Set(all.map(p=>p.runnerId)).size,2);
     assert.ok(calls.filter(r=>r.endpoint.includes('/contents/')).every(r=>r.endpoint.endsWith('?ref='+commit)));
