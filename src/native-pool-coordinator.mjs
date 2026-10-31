@@ -7,6 +7,7 @@ import {nativePoolIntake} from './native-pool-intake.mjs';
 import {nativePoolRuntime} from './native-pool-runtime.mjs';
 import {nativeWorkCustody} from './native-work-custody.mjs';
 import {nativeGithubProvider} from './native-github-provider.mjs';
+import{nativeGithubRateLimit,retainNativeGithubRateLimit}from'./native-github-rate-limit.mjs';
 import {nativeActivationStatus} from './native-activation.mjs';
 import {verifyCurrentCore,currentPin} from './current-core.mjs';
 import {readPrivate,writePrivate,ensurePrivateDirectory} from './local-state.mjs';
@@ -19,12 +20,13 @@ const id=v=>typeof v==='string'&&/^[1-9][0-9]*$/.test(v);
  * completion lag after a locally observed process exit. It cannot clear a hold.
  */
 export async function nativePoolCoordinator(core,{root,record,signal,onProgress=()=>{},
- provider,context,installationRoot,runtimeOptions={},observeResources}={}){
+ provider,context,installationRoot,runtimeOptions={},observeResources,transport}={}){
  const configuration=core.validateExecutionPool(record.executionPool);need(configuration.version===2,'configuration');
  need(record.core===currentPin.coreSha256&&typeof onProgress==='function','installation');
  const store=nativePoolStore(core,{root,configuration});await store.status();
  const targets=new Map(configuration.targets.map(t=>[t.repositoryId,t]));
- provider??=nativeGithubProvider(core,{attempts:1,retainResponse:async(request,response)=>{
+ provider??=nativeGithubProvider(core,{attempts:1,...(transport?{transport}:{}),retainResponse:async(request,response)=>{
+  if(!transport)await retainNativeGithubRateLimit(root,response);
   if(request.method!=='POST'||!request.endpoint.endsWith('/actions/runners/generate-jitconfig')||response?.status!==201)return;
   const labels=JSON.parse(request.body).labels.filter(label=>label.startsWith('nibfin-request-'));
   need(labels.length===1&&/^[A-Za-z0-9_-]{1,80}$/.test(labels[0].slice(15)),'response-selector');
@@ -70,14 +72,17 @@ export async function nativePoolCoordinator(core,{root,record,signal,onProgress=
    }
    // Only a terminated actual process can trigger a finite provider-lag retry.
    const process=await readPrivate(join(root,'jobs',lease,'process.json'),{missing:true});
-   const count=retries.get(lease)??0;
-   if(process?.phase==='terminated'&&count<60&&!timers.has(lease)){
-    retries.set(lease,count+1);const timer=setTimeout(()=>{timers.delete(lease);wake();},5000);timer.unref();timers.set(lease,timer);
+   const count=retries.get(lease)??0,quota=await nativeGithubRateLimit(root);
+   if(process?.phase==='terminated'&&(quota||count<60)&&!timers.has(lease)){
+    if(!quota)retries.set(lease,count+1);
+    const timer=setTimeout(()=>{timers.delete(lease);wake();},quota?Math.max(1,quota.resetAt-Date.now()+1000):5000);timer.unref();timers.set(lease,timer);
    }
   }
  }
  async function drain(){
-  try{while(pending&&!closed){pending=false;const queued=await intake.list(),active=await store.jobs.pending();
+  try{while(pending&&!closed){pending=false;
+    if(await nativeGithubRateLimit(root)){await observeJobs(await store.jobs.pending());break;}
+    const queued=await intake.list(),active=await store.jobs.pending();
     const keys=[...new Set([...active.map(r=>r.request.id),...queued.map(r=>r.request.id)])];
     for(const key of keys){if(closed||signal?.aborted)break;const record=await store.jobs.read(key);if(record?.phase==='released')continue;
      if((!record||['prepare-intent','prepared','registration-intent','issued','admitted','launch-intent'].includes(record.phase))&&!await launchAllowed())continue;
