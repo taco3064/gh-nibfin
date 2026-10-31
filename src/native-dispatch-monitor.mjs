@@ -87,6 +87,8 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
     const issue=await get({repositoryId:claim.repositoryId},'/repos/'+claim.repository+'/issues/'+claim.issue);
     const store=await openNativeCycle(core,{root,target:{repository:claim.repository,repositoryId:claim.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:claim.issue}});
     const s=await store.read();if(s.dispatch?.id!==claim.id&&s.baseRevision?.source?.id!==claim.id)continue;
+    const protectedRescue=await rescue?.observeProtected?.({store,claim});
+    if(['diagnosing','unknown'].includes(protectedRescue?.outcome)){report(claim.id,{status:protectedRescue.outcome==='diagnosing'?'queued':'blocked',issue:claim.issue,stage:claim.stage,reason:protectedRescue.reason??'protected-stage-ai-diagnosis'});if(protectedRescue.outcome==='diagnosing')wake();continue;}
     const result=await prepareNativeBaseRevision(core,{root,store,claim,provider,signal,transport});
     if(result.outcome==='revision-prepared'){report(claim.id,{status:'queued',issue:claim.issue,stage:'deliver',reason:'default-branch-advanced-original-writer-rebase'});wake();}
    }catch(e){report(claim.id,{status:'blocked',issue:claim.issue,reason:code(e)});}
@@ -104,6 +106,8 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      let state=store?await store.read():null;
      const baseClaim=state?.baseRevision?.phase==='prepared'?state.baseRevision.source:previous.find(c=>c.id===state?.dispatch?.id&&c.phase==='completed');
      if(state&&baseClaim){
+      const protectedRescue=baseClaim.conclusion!=='success'?await rescue?.observeProtected?.({store,claim:baseClaim}):null;
+      if(['diagnosing','unknown'].includes(protectedRescue?.outcome)){report(key,{status:protectedRescue.outcome==='diagnosing'?'queued':'blocked',issue:number,stage:baseClaim.stage,reason:protectedRescue.reason??'protected-stage-ai-diagnosis'});continue;}
       const revision=await prepareNativeBaseRevision(core,{root,store,claim:baseClaim,provider,signal,transport});
       if(revision.outcome==='revision-prepared'){report(key,{status:'queued',issue:number,stage:'deliver',reason:'default-branch-advanced-original-writer-rebase'});wake();continue;}
       if(revision.outcome==='waiting'){report(key,{status:'waiting',issue:number,reason:'base-revision-runner-drain'});continue;}

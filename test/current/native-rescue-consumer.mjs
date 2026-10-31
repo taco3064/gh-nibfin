@@ -17,16 +17,18 @@ test('diagnosis sees retained completed Shape envelopes with sanitized summaries
  assert.match(result[0].summary,/REDACTED/);assert.ok(!JSON.stringify(result).includes('private-secret'));assert.ok(!JSON.stringify(result).includes(body));assert.ok(!JSON.stringify(result).includes('private tool transcript'));
 }));
 
-for(const role of ['shape','deliver'])test('native '+role+' recovery preserves the original unaccepted work and uses only its reserved continuation',async()=>withCurrentCore(async(core,context)=>{
+for(const role of ['shape','deliver','pr'])test('native '+role+' recovery preserves original work and diagnoses protected owners without replay',async()=>withCurrentCore(async(core,context)=>{
  const f=await nativeCycleFixture(core,context),store=await prepareNativeCycle(core,f.options),s=await store.read();
  const request='native-11111111-1111-4111-8111-111111111111',execution='role-original',sessionId='11111111-1111-4111-8111-111111111111';
  const original=join(context.root,'original-session');await fs.mkdir(original,{mode:0o700});
  await fs.writeFile(join(original,sessionId+'.jsonl'),JSON.stringify({type:'session_meta',payload:{id:sessionId}})+'\n',{mode:0o600});
- const metadata={id:sessionId,memberId:'7',role:role,execution,adapter:'codex'},snapshot=core.captureRescueSession({directory:original,memberId:'7',role:role,session:sessionId,execution});
+ const originalRole=role==='pr'?'shape':role;
+ const metadata={id:sessionId,memberId:'7',role:originalRole,execution,adapter:'codex'},snapshot=core.captureRescueSession({directory:original,memberId:'7',role:originalRole,session:sessionId,execution});
  const sessionReference=await store.retain({kind:'native-role-session',metadata,snapshot});
- await store.retain({kind:'native-role-request',input:{execution:{id:execution,role:role,source:{runId:'1000',attempt:'1'}}}});
+ await store.retain({kind:'native-role-request',input:{execution:{id:execution,role:originalRole,source:{runId:'1000',attempt:'1'}}}});
  if(role==='deliver'){const writer=join(context.root,'original-writer');await fs.mkdir(writer,{mode:0o700});await fs.writeFile(join(writer,'draft.txt'),'unfinished original edits',{mode:0o600});await retainUnacceptedWorkspace({directory:writer,execution:{id:execution},retain:v=>store.retain(v)});}
  await store.update(v=>{v.attempts[role]={request,phase:'unresolved',reason:'owner-result'};v.dispatch={id:request,stage:role};if(role==='deliver')v.shapeBody=core.formatRequirementsDocument({scope:v.scopeBody,shape:'Original approved implementation plan'});return v;});
+ if(role==='pr')await store.update(v=>{v.receipts.shape={execution:{id:execution}};return v;});
  const installation={executionPool:f.configuration};await writePrivate(join(f.root,'native-installation.json'),installation);
  const activation={version:1,phase:'active',installation:core.contentIdentity(installation)};await writePrivate(join(f.root,'activation.json'),{...activation,identity:core.contentIdentity(activation)});
  const host=await initializeFileHostStore(core,{directory:join(f.root,'state'),installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},repositories:[{repository:'example/project',repositoryId:'100'}]});
@@ -81,22 +83,32 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
    return{execution:'diagnosis-new',terminated:true,memberId:'7',adapter:'codex',result:{outcome:'ready',failureClass:'implementation_defect',
    body:JSON.stringify({action:'retry-original-role',steps:['Resume the original Shape conversation using the corrected completed-message decoder']}),rootCause:'The previous parser discarded the valid Shape envelope',summary:'diagnosed',evidenceReferences:[caseId],contractConflicts:[]}};},close:async()=>{}})});
  try{
-  const id=await rescue.observe({store,claim:{id:request,runId:'1000',stage:role,sourceCommit:head}});
+  const claim={id:request,runId:'1000',stage:role,sourceCommit:head};
+  const observe=async()=>{if(role!=='pr')return rescue.observe({store,claim});await rescue.observeProtected({store,claim});return(await store.read()).protectedStageCases[request].caseId;};
+  const id=await observe();
   const observer=await openFileHostStore(core,{directory:join(f.root,'state')});let cases;
   try{cases=(await observer.rescue('100').read()).cases;}finally{await observer.close();}
   assert.equal(writes.length,1,JSON.stringify(cases[id]));assert.equal(diagnoses,0);
   if(role==='deliver')assert.equal(delayedRunList,true,'an acknowledged notification absent from the first Run list is read back without another POST');
   if(role==='shape')assert.equal(guardsDelayed,2,'the notification survives serial fresh guards totaling more than thirty seconds');
   const observedRevision=(await store.read()).revision;
-  assert.equal(await rescue.observe({store,claim:{id:request,runId:'1000',stage:role,sourceCommit:head}}),id);
+  assert.equal(await observe(),id);
   assert.equal((await store.read()).revision,observedRevision,'duplicate blocked observations do not mutate the original cycle');
   assert.equal(writes.length,1,'the same stopped execution does not queue another notification');
   const notification=dispatched[0];assert.equal(notification.body.inputs.request_id,id);
   await assert.rejects(rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:'9999'},correlation:notification.body.inputs.nibfin_correlation,
-   issue:'55',stage:role,jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}}),/actual-rescue-invocation/);
+   issue:'55',stage:role,jobName:'rescue',mode:role==='pr'?'diagnose':'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}}),/actual-rescue-invocation/);
   assert.equal(diagnoses,0,'a different Run cannot borrow the retained notification');
+  const exhaustedKey=core.contentIdentity({repositoryId:'100',issueId:s.target.issueId,cycle:s.cycle});
+  if(role==='pr'){const h=await openFileHostStore(core,{directory:join(f.root,'state')});try{await h.rescue('100').update(v=>{v.budgets[exhaustedKey]={attempts:3,lastAt:Date.now()};return v;});}finally{await h.close();}}
   const result=await rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:notification.run.id},correlation:notification.body.inputs.nibfin_correlation,
-   issue:'55',stage:role,jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}});
+   issue:'55',stage:role,jobName:'rescue',mode:role==='pr'?'diagnose':'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}});
+  if(role==='pr'){
+   assert.equal(notification.body.inputs.nibfin_stage,'pr');assert.equal(notification.body.inputs.mode,'diagnose');
+   assert.equal(result.rescue.outcome,'UNRESOLVED');assert.equal(result.disposition,'blocked');assert.equal(diagnoses,1);assert.equal(writes.length,1);
+   const h=await openFileHostStore(core,{directory:join(f.root,'state')});try{assert.equal((await h.rescue('100').read()).budgets[exhaustedKey].attempts,3,'read-only diagnosis neither consumes a fourth repair nor resets the exhausted budget');}finally{await h.close();}
+   assert.equal((await store.read()).attempts.pr.phase,'unresolved');assert.equal((await rescue.observeProtected({store,claim})).outcome,'diagnosed');return;
+  }
   assert.equal(result.rescue.outcome,'PENDING_VERIFICATION',JSON.stringify(result));assert.equal(diagnoses,1);assert.equal(writes.length,2);
   assert.ok(observationChurn>0,'unrelated retained observations occur during the guarded continuation');
   const after=await store.read(),resume=after.sessionResumes[role];

@@ -5,6 +5,7 @@ import{nativeDeliveryOwners}from'./native-delivery-owners.mjs';
 import{nativeStageWork}from'./native-stage-work.mjs';
 import{refreshNativeDeliveryBase}from'./native-delivery-base.mjs';
 import{awaitNativeRoleExit}from'./native-role-wait.mjs';
+import{nativePublicationGuard}from'./native-publication-guard.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-delivery:'+code);};
 const copy=structuredClone;
 
@@ -17,15 +18,16 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
  let roles,firstCheckpoint=true,lastRemote=0,completed=false;
  const hostStore=await openFileHostStore(core,{directory:join(root,'state')});
  const configuration=binding.configuration,repository=binding.request.repository;
- const checkpoint=async()=>{
+ const checkpoint=async({forceRemote=false,exactBody=false}={})=>{
   need(!signal?.aborted,'cancelled');const state=await hostStore.read();
   // A retained pause/hold cannot be cleared by a request or by model output.
   need(state.work.restrictionsChecked&&state.work.paused===false&&!state.work.hold&&!state.work.unknownWrite,'host-restriction');
-  if(firstCheckpoint||Date.now()-lastRemote>=30000){firstCheckpoint=false;
+  if(forceRemote||firstCheckpoint||Date.now()-lastRemote>=30000){firstCheckpoint=false;
    const r=await provider.request({endpoint:'/repos/'+repository+'/issues/'+binding.issue,target:binding.request.repositoryId,
     operation:'native-live-scope',correlation:binding.request.id,signal});
    need(r.outcome==='read'&&r.data.assignees?.some(a=>a.id===binding.memberId),'live-issue');
-   if(store){const retained=await store.read();need(core.parseRequirementsDocument(r.data.body).scope===retained.scopeBody,'scope-drift');}
+   if(store){const retained=await store.read();need(core.parseRequirementsDocument(r.data.body).scope===retained.scopeBody,'scope-drift');
+    if(exactBody)need(r.data.body===(retained.receipts.publication?retained.shapeBody:retained.scopeBody),'requirements-document-drift');}
    lastRemote=Date.now();
   }
  };
@@ -46,6 +48,8 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
  if(stage==='deliver'){await refreshNativeDeliveryBase(core,{store,provider,request:binding.request.id,signal});state=await store.read();}
   await checkpoint();
   const input=await nativeExecutionInputs(core,{root,store,configuration,binding,provider,signal,checkpoint,transport});
+  const publicationGuard=stage==='pr'?await nativePublicationGuard(core,{store,checkpoint,dependencies:input.dependencies}):null;
+  const dependencies=publicationGuard?.dependencies??input.dependencies;
   const role=['shape','shape-validator','deliver','accept','shaper-review'].includes(stage)?stage:stage==='publication'?'shape':'deliver';
   const instructions=core.selectInstructions({skill:core.skillForRole(role),role});
   const authority={authority:state.authority.identity,grant:core.contentIdentity(state.grant),policy:core.contentIdentity(state.policy),core:state.core,
@@ -65,15 +69,18 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
    core.materializeWorkspace(candidate,{expected:state.workspaceExpected,root:roles.candidateDirectory});}
   const observations=await observeNativeObligations(core,{directory:state.workspace?roles.candidateDirectory:roles.sourceDirectory,scopeBody:state.scopeBody,base:state.base,repository});
   await store.retain({kind:'native-source-obligations',observations});
-  const operations=options=>core.createControlledOperations({...options,timeoutMs:180000,authorization:input.authorization,provider,
+  const operations=options=>core.createControlledOperations({...options,...(publicationGuard?{beforeSubmit:async intent=>{
+   await publicationGuard.checkpoint();if(options.beforeSubmit)await options.beforeSubmit(intent);
+  }}:{}),timeoutMs:180000,authorization:input.authorization,provider,
    operationRecords:store.operationRecords,locate:store.locateOperation,execution:{runId:source.runId,attempt:source.attempt}});
   const evidenceCurrent=async id=>{
    try{return roles.get(id).current();}catch{
     const expected=Object.values(state.expectations).find(e=>e.expected.execution.id===id);need(expected,'retained-role-expectation');return copy(expected);
    }
   };
-  const composed=await nativeDeliveryOwners(core,{root,state,stage,pin,roles,store,provider,authorization:input.authorization,dependencies:input.dependencies,
-   dependencyInput:input.dependencyInput,operations,evidenceCurrent,source,observations,checkpoint,signal,progress,publicationGitFactory});
+  const composed=await nativeDeliveryOwners(core,{root,state,stage,pin,roles,store,provider,authorization:input.authorization,dependencies,
+   dependencyInput:input.dependencyInput,operations,evidenceCurrent,source,observations,checkpoint,signal,progress,publicationGitFactory,
+   publicationCheckpoint:publicationGuard?.checkpoint});
   if(stage==='pr'){
    const session=(publicationGitFactory??core.createPublicationGit)({repository,repositoryId:state.target.repositoryId}).open(composed.workspace,composed.message,composed.author,{signal});
    try{state.head=session.commit;pin.head=session.commit;}finally{session.close();}
@@ -86,8 +93,8 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
     operationBinding:{cycle:state.cycle,runId:source.runId,attempt:source.attempt,candidate:null,base:state.base,head:null}}),
    prepareRole:task=>roles.prepareRole(task),readBody:async id=>roles.get(id).readBody(),operations,evidenceCurrent,
    obligations:async()=>copy(observations)}};
-  const runtime=core.createCore({current:()=>copy(pin),provider,authorization:input.authorization,dependencies:input.dependencies,
-   selector:input.selector,owners,checkpoint,onDiagnostic:async diagnostic=>{
+  const runtime=core.createCore({current:()=>copy(pin),provider,authorization:input.authorization,dependencies,
+   selector:input.selector,owners,...(publicationGuard?{}:{checkpoint}),onDiagnostic:async diagnostic=>{
     await store.retain({kind:'native-core-diagnostic',diagnostic});await progress({status:'blocked',reason:diagnostic.code});
    }});
   if(stage==='closure')await store.update(s=>{need(!s.completionPlan,'original-completion-plan-required');s.completionPlan=composed.completionState;return s;});
