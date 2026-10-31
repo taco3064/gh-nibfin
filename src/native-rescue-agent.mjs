@@ -72,7 +72,8 @@ export async function nativeRescueAgent(core,{root,binding,store,target,caseId,c
      +'Return the Rescue diagnostic schema. A ready result must state the concrete rootCause and evidenceReferences, failureClass external_failure or implementation_defect, '
      +'no contractConflicts, and body containing JSON {"action":"retry-original-role","steps":["concrete bounded correction for the original role"]}. '
      +'You cannot edit host code, remove gates, modify Scope, publish changes, or claim that a repair succeeded. If the installed runtime itself still needs a code fix, report blocked. '
-     +'The original conversation will be resumed only through the authorized role owner. Current runtime includes corrected completed Shape-envelope decoding and executable read-only gh bridge.'};
+     +'The original conversation will be resumed only through the authorized role owner. Current runtime includes corrected completed Shape-envelope decoding, executable read-only gh bridge, '
+     +'and explicit trusted Core execution-role and Skill-identity assignment before untrusted task data.'};
   }});
  return Object.freeze({capabilities:adapter.capabilities,diagnose:async request=>{need(!closed,'closed');await checkpoint();
    const result=await adapter.diagnose(request);settled=true;return result;},

@@ -2,8 +2,21 @@ import fs from 'node:fs/promises';import{join}from'node:path';import{userInfo}fr
 import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./local-state.mjs';import{backendReady}from'./create.mjs';
 import{retainUnacceptedWorkspace,restoreUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 import{resumeNativeSession}from'./native-session-resume.mjs';
-const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
+const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
+
+// Older, already-authorized Core pins carry the trusted role in metadata but
+// omit its name from the prompt. Project that existing assignment, as the
+// controller does upstream, without changing any receipt or authority binding.
+export function nativeAssignedRolePrompt(core,value){
+ const input=value.input,role=input.execution.role;
+ need(roles.includes(role)&&core.skillForRole(role)===input.execution.skill
+  &&input.binding.instructions===input.instructions.identity
+  &&core.bodyDigest(input.instructions.content)===input.instructions.identity,'protected-role-assignment');
+ const header='Core execution role: '+role+'. Core Skill identity: '+input.instructions.identity+'.';
+ need(typeof value.prompt==='string','protected-role-prompt');
+ return value.prompt.startsWith(header+'\n')?value:{...value,prompt:header+'\n'+value.prompt};
+}
 export function nativeReadBrokerDirectory(lease){
  need(/^[a-f0-9]{64}$/.test(lease),'broker-lease');
  const directory=join('/run/user/'+userInfo().uid,'nibfin-gh-'+lease);
@@ -93,7 +106,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    }
    return {status:backendReady(report)?'verified':'blocked',...(capability==='github-identity'?{userId:memberId}:{})};
   },
-  bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return value;}
+  bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return nativeAssignedRolePrompt(core,value);}
  });
  return Object.freeze({
   sourceDirectory,candidateDirectory,
