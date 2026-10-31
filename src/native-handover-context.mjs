@@ -280,6 +280,7 @@ export async function readNativeMergedContinuation(
     core.verifyMergedContinuation(value.approval, {
       parent: value.parent,
       execution: value.execution,
+      ...(value.repair ? { repair: value.repair } : {}),
       context,
     }),
   );
@@ -288,6 +289,7 @@ export async function readNativeMergedContinuation(
     approval: value.approval,
     parent: value.parent,
     plannedExecution: value.execution,
+    ...(value.repair ? { repair: value.repair } : {}),
     context,
   };
 }

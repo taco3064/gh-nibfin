@@ -62,6 +62,18 @@ Acceptance supplies a new pass. An unused activated pool may cross the existing
 safe upgrade boundary with a recorded installer pause; earlier execution, Owner
 holds and uncertain effects require their original reconciliation owner.
 
+For a failed closure after successful final verification, the same Owner init
+entry can prepare a reviewed runtime upgrade only when all original jobs are
+released and independent GitHub and operation-custody reads prove no close or
+label submission. It records a pause and effect reconciliation while keeping the
+original UNACCEPTED work, receipts, attempts and repair budgets. All project
+sources must complete their normal protected installation before a fresh signed
+execution-only approval can resume closure. The successful final is frozen;
+the exact original completion intents are reused. The failed attempt remains
+historical, and the approval permits one closure retry rather than acceptance of
+the failure. Owner holds, unknown effects, changed requirements, live sessions
+and occupied slots continue to block this path.
+
 ## Prerequisites and local checks
 
 Installation prerequisites are Node.js 22.x, npm 10.x, a POSIX `/bin/sh` interpreter,

@@ -6,6 +6,7 @@ import { openFileHostStore } from './host-store.mjs';
 import { join } from 'node:path';
 import { nativeDeliveryOwners } from './native-delivery-owners.mjs';
 import { nativeStageWork } from './native-stage-work.mjs';
+import { nativeStageRetry } from './native-continuation-repair.mjs';
 import { refreshNativeDeliveryBase } from './native-delivery-base.mjs';
 import { awaitNativeRoleExit } from './native-role-wait.mjs';
 import { nativePublicationGuard } from './native-publication-guard.mjs';
@@ -111,15 +112,27 @@ export async function executeNativeDelivery(
     };
     // Claim the original execution before any role preparation. Interruption is
     // retained as uncertainty and cannot become permission to launch it again.
-    need(!state.attempts[stage], 'original-stage-reconciliation-required');
+    const retry = await nativeStageRetry(core, { root, store, state, stage });
     work = nativeStageWork(hostStore, {
       request: binding.request.id,
       cycle: state.cycle,
       stage,
+      retry,
     });
     await work.enter();
     await store.update((s) => {
-      need(!s.attempts[stage], 'original-stage-reconciliation-required');
+      if (retry) {
+        need(
+          s.runtimeRepair?.phase === 'approved' &&
+            s.attempts[stage]?.request === retry,
+          'original-stage-drift',
+        );
+        s.attemptHistory ??= {};
+        s.attemptHistory[stage] ??= [];
+        s.attemptHistory[stage].push(s.attempts[stage]);
+        s.runtimeRepair.phase = 'claimed';
+        s.runtimeRepair.request = binding.request.id;
+      } else need(!s.attempts[stage], 'original-stage-reconciliation-required');
       s.attempts[stage] = { request: binding.request.id, source, phase: 'running' };
       return s;
     });
@@ -215,6 +228,9 @@ export async function executeNativeDelivery(
               approval: input.continuation.approval,
               parent: input.continuation.parent,
               execution: input.continuation.plannedExecution,
+              ...(input.continuation.repair
+                ? { repair: input.continuation.repair }
+                : {}),
               context: input.continuation.context,
             },
           }
@@ -402,8 +418,14 @@ export async function executeNativeDelivery(
     });
     if (stage === 'closure')
       await store.update((s) => {
-        need(!s.completionPlan, 'original-completion-plan-required');
-        s.completionPlan = composed.completionState;
+        if (s.completionPlan)
+          need(
+            retry &&
+              core.canonicalJSON(s.completionPlan) ===
+                core.canonicalJSON(composed.completionState),
+            'original-completion-plan-required',
+          );
+        else s.completionPlan = composed.completionState;
         return s;
       });
     const request = {

@@ -69,7 +69,8 @@ const details =
   'are read-only and all transitions preserve pause and ' +
   'original work. Owner init --handover verifies the complete ' +
   'private data-only archive and creates fresh bounded approval for ' +
-  'retained merged work. --check does not sign or import; retained ' +
+  'retained merged work, including a stopped no-write closure after a ' +
+  'verified runtime repair. --check does not sign or import; retained ' +
   'UNACCEPTED work is reported separately. Missing onboarding or staged ' +
   'evidence returns exit 2.\nPublic repositories may have ' +
   'personal or Organization owners.\nRepo ownership, Runner ' +

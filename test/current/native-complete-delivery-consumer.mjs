@@ -1,3 +1,4 @@
+import { retainedRuntimeRepairFixture } from './native-runtime-repair-fixture.mjs';
 import { handoverMergedFixture } from './native-handover-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import { openNativeCycle } from '../../src/native-delivery-store.mjs';
 
 // Real private records, Git objects and public Core stage owners. External
 // model/GitHub observations are explicit doubles, not live delivery evidence.
-for (const handover of [false, true])
+for (const handover of [false, true, 'repair'])
   test('complete native cycle; fresh Owner handover: ' + handover, async (t) =>
     withCurrentCore(async (core, context) => {
       t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
@@ -455,6 +456,15 @@ for (const handover of [false, true])
           });
           executionRoot = handoverProof.root;
         }
+        if (handover === 'repair' && stage === 'final')
+          await retainedRuntimeRepairFixture(core, {
+            root: executionRoot,
+            archive: handoverProof.archive,
+            target,
+            configuration: f.configuration,
+            provider: f.provider,
+            sourceCommit: base,
+          });
       }
       const store = await openNativeCycle(core, { root: executionRoot, target });
       state = await store.read();

@@ -9,6 +9,7 @@ import {
 } from './native-handover-context.mjs';
 import { nativeOwnerSigner } from './native-owner-policy.mjs';
 import { withUnusedNativeMaintenance } from './native-unused-maintenance.mjs';
+import { authorizeNativeContinuationRepair } from './native-continuation-repair.mjs';
 import { nativeCycleDirectory, openNativeCycle } from './native-delivery-store.mjs';
 import { verifyNativeRuntime } from './native-control-service.mjs';
 import {
@@ -190,6 +191,25 @@ export async function importNativeMergedWork(
     directory,
     hostRoot: root,
   });
+  const retained = Object.entries(archive.metadata)
+    .filter(([, value]) => value.status === 'UNACCEPTED')
+    .map(([number]) => ({ number, status: 'UNACCEPTED', reason: 'not-imported' }));
+  const repaired = await authorizeNativeContinuationRepair(core, {
+    root,
+    configuration,
+    repository,
+    directory,
+    provider,
+    checkOnly,
+  });
+  if (repaired)
+    return {
+      status: retained.length ? 'partial' : 'ready',
+      archive: archive.identity,
+      effects: repaired.effects,
+      results: [repaired],
+      retained,
+    };
   need(archive.candidates.length <= 128, 'cycle-limit');
   const results = [];
   for (const path of archive.candidates) {
@@ -297,9 +317,6 @@ export async function importNativeMergedWork(
     );
     results.push(result);
   }
-  const retained = Object.entries(archive.metadata)
-    .filter(([, value]) => value.status === 'UNACCEPTED')
-    .map(([number]) => ({ number, status: 'UNACCEPTED', reason: 'not-imported' }));
   need(results.length > 0, 'no-matching-merged-work');
   return {
     status: retained.length ? 'partial' : 'ready',
