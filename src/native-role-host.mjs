@@ -9,7 +9,7 @@ const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 // Older, already-authorized Core pins carry the trusted role in metadata but
 // omit its name from the prompt. Project that existing assignment, as the
 // controller does upstream, without changing any receipt or authority binding.
-export function nativeAssignedRolePrompt(core,value){
+export function nativeAssignedRolePrompt(core,value,{sourceOnly=false}={}){
  const input=value.input,role=input.execution.role;
  need(roles.includes(role)&&core.skillForRole(role)===input.execution.skill
   &&input.binding.instructions===input.instructions.identity
@@ -17,7 +17,8 @@ export function nativeAssignedRolePrompt(core,value){
  const header='Core execution role: '+role+'. Core Skill identity: '+input.instructions.identity+'.';
  const format=['shape','shape-validator'].includes(role)?'Empty Candidate arrays require separate explanation lines beginning exactly "Candidate artifacts applicability:" and "Candidate hooks applicability:" in the Shape plan, outside code fences. Preserve the exact Scope.\n':'';
  need(typeof value.prompt==='string','protected-role-prompt');
- const prefix=header+'\n'+format;
+ const preparation=sourceOnly?'Verification preparation applicability (trusted source observation): this repository root has neither package.json nor package-lock.json. The generic locked npm preparation helper is not applicable to these dependency-free source checks. As in the upstream verification contract, npm preparation is mandatory for locked Node projects and required nested projects, not every command implemented in Node. Run the existing Node/Python source regression harness through node /verification-runner.mjs -- <absolute executable> [arguments]; use its bounded temporary fixtures or an exact writable source copy when required. Keep /work identities unchanged during verification, retain real command receipts, and reverify changed bytes. Do not invent package manifests, skip required tests, run dependency scripts, bypass the guarded lane or report preparation as a pass. If a command needs dependencies or mutates source, use its appropriate bounded preparation; report an actual unsupported requirement truthfully.\n':'';
+ const prefix=header+'\n'+format+preparation;
  if(value.prompt.startsWith(prefix))return value;
  const original=value.prompt.startsWith(header+'\n')?value.prompt.slice(header.length+1):value.prompt;
  return{...value,prompt:prefix+original};
@@ -75,6 +76,8 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    if(!resume?.next||resume.next.request!==binding.request.id)return null;
    need(resume.next.role===role&&resume.next.memberId===memberId,'recovery-execution');
    return{id:resume.next.execution,request:resume.next.request,result:resume.next.result};}});
+ const rootPackages=await Promise.all(['package.json','package-lock.json'].map(async name=>{try{await fs.lstat(join(sourceDirectory,name));return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}}));
+ const sourceOnly=rootPackages.every(p=>!p);
  const profiles=roles.map((role,i)=>({id:role,agent:'codex',os:'linux',backend:backend(instances[i])}));
  let observed,probeCleanup=true;
  async function probe(){
@@ -111,7 +114,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    }
    return {status:backendReady(report)?'verified':'blocked',...(capability==='github-identity'?{userId:memberId}:{})};
   },
-  bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return nativeAssignedRolePrompt(core,value);}
+  bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return nativeAssignedRolePrompt(core,value,{sourceOnly});}
  });
  return Object.freeze({
   sourceDirectory,candidateDirectory,
