@@ -4,6 +4,7 @@ import{openFileHostStore}from'./host-store.mjs';import{join}from'node:path';
 import{nativeDeliveryOwners}from'./native-delivery-owners.mjs';
 import{nativeStageWork}from'./native-stage-work.mjs';
 import{refreshNativeDeliveryBase}from'./native-delivery-base.mjs';
+import{awaitNativeRoleExit}from'./native-role-wait.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-delivery:'+code);};
 const copy=structuredClone;
 
@@ -101,7 +102,26 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
   // Retain the exact Core decision and its independently owned cycle references.
   await store.retain({kind:'native-execution-intent',request,inputs:inspection.inputs,binding:authority,cycle:state.cycle,cycleRevision:state.revision});
   await progress({status:'running',reason:'core-'+stage+'-owner-started'});
-  const result=await runtime.run(request,{signal});resultReference=await store.retain({kind:'native-core-result',result});
+  let result=await runtime.run(request,{signal});
+  // Core's Writer seam intentionally returns reconciliation-required while
+  // its original process is running. Await that process, then use the same
+  // Core owner's reconcile path and invocation; do not close/kill it or launch
+  // another Writer merely because the first nonblocking observation is pending.
+  if(stage==='deliver'&&result.disposition==='unresolved'&&result.owner?.output?.reconciliationRequired){
+   const execution=result.owner.output.reconciliationRequired,value=roles.get(execution);
+   need(value.input.execution.role==='deliver','original-writer-required');
+   await store.retain({kind:'native-core-pending-role',result,execution,request:binding.request.id});
+   await progress({status:'waiting',reason:'native-deliver-original-execution-running'});
+   const observed=await awaitNativeRoleExit(value,{checkpoint,signal});
+   if(observed.termination.status==='terminated'){
+    pin.prior={state:'unresolved',request:copy(request),stage};
+    const fresh=await runtime.inspect(request,{signal});
+    if(fresh.current&&fresh.disposition!=='blocked'){
+     request.expected=fresh.current;result=await runtime.run(request,{signal});
+    }else result=fresh;
+   }
+  }
+  resultReference=await store.retain({kind:'native-core-result',result});
   unknownWrite=result.disposition==='unresolved'&&['publication','pr','merge','closure','delivered','recovery'].includes(stage);
   if(result.disposition==='completed'){
    const output=result.owner.output;let receipt;
