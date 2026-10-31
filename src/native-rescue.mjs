@@ -45,8 +45,10 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    candidate:s.candidate,workspace:s.workspace,unaccepted:retained.workspaceReference??null,session:session.snapshot.digest});};
   const current=async t=>{
    const {s,h}=await checkpoint(store);await original(t);
+   const {retained}=await original(t);
+   const unaccepted=retained.workspaceReference?core.contentIdentity(await store.get(retained.workspaceReference)):null;
    const actual={...t,scopeHash:s.scopeHash,shapeHash:s.shapeBody===null?null:core.bodyDigest(s.shapeBody),authority:s.authority.identity,
-    candidate:s.workspaceExpected?.identity??null};
+    candidate:s.workspaceExpected?.identity??unaccepted};
    const recovery=s.nativeRescueContinuations?.[activeCase??Object.entries((await records.read()).cases).find(([,c])=>same(c.target,t))?.[0]];
    const receipt=recovery?s.receipts[t.role]:null;
    return {...h.work,target:actual,authority:s.authority.identity,conflict:false,
@@ -147,14 +149,16 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
   need(sessions.length===1,'original-session-required');const session=sessions[0];
   const job=await nativePoolStore(core,{root,configuration}).jobs.read(claim.id);
   need(job?.phase==='released'&&session.value.snapshot.terminated===true,'original-resources-active');
+  let workspaceReference=null,unaccepted=null;for(const[key,kind]of Object.entries(s.records))if(kind==='native-unaccepted-workspace'){
+   const value=await store.get('native-record:'+key);if(value.execution.id===session.value.metadata.execution){workspaceReference='native-record:'+key;unaccepted=core.contentIdentity(value);}}
   const target={repository:s.target.repository,repositoryId:s.target.repositoryId,issueId:s.target.issueId,number:s.target.number,cycle:s.cycle,
    authority:s.authority.identity,requirements:s.scopeHash,scopeHash:s.scopeHash,shapeHash:s.shapeBody===null?null:core.bodyDigest(s.shapeBody),
-   candidate:s.workspaceExpected?.identity??null,execution:session.value.metadata.execution,role:claim.stage,adapter:'codex',access:'read-only',status:'UNACCEPTED',
+   // A stopped Writer can have edits without a qualified Core Candidate. Bind
+   // its retained UNACCEPTED snapshot, never fabricate a normal stage receipt.
+   candidate:s.workspaceExpected?.identity??unaccepted,execution:session.value.metadata.execution,role:claim.stage,adapter:'codex',access:'read-only',status:'UNACCEPTED',
    memberId:s.member.id,sessionMemberId:s.member.id,runnerMemberId:s.member.id,runnerId:job.runnerId,session:session.value.metadata.id,
    source:{runId:claim.runId,attempt:'1'}};
   core.validateRescueTarget(target);
-  let workspaceReference=null;for(const[key,kind]of Object.entries(s.records))if(kind==='native-unaccepted-workspace'){
-   const value=await store.get('native-record:'+key);if(value.execution.id===target.execution)workspaceReference='native-record:'+key;}
   need(target.role!=='deliver'||workspaceReference,'writer-preservation-required');
   await store.update(v=>{v.nativeRescueTargets??={};const key=core.contentIdentity(target),value={sessionReference:session.reference,workspaceReference};
    if(v.nativeRescueTargets[key])need(same(v.nativeRescueTargets[key],value),'target-rebinding');else v.nativeRescueTargets[key]=value;return v;});

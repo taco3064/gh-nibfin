@@ -68,7 +68,17 @@ test('installed runtime retains failed Job evidence and original work before ser
  assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);
  assert.equal(f.counts.retains,1);assert.equal(await fs.readFile(f.retained,'utf8'),'UNACCEPTED ORIGINAL');
  f.flags.resources=true;const held=await fs.open(join(directory,'application/.credentials'),'r');
- try{assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);}
+ try{
+  // Concurrent fixture subprocesses can produce an earlier conservative /proc
+  // observation. Keep the real descriptor open until the actual FD gate is
+  // reached; every observation must still preserve the occupied slot.
+  for(let n=0;n<12;n++){
+   assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);
+   if(f.blocks.some(b=>b.diagnostic==='native-pool-runtime:cleanup-process-reference'))break;
+   await new Promise(resolve=>setTimeout(resolve,5));
+  }
+  assert.ok(f.blocks.some(b=>b.diagnostic==='native-pool-runtime:cleanup-process-reference'),JSON.stringify(f.blocks));
+ }
  finally{await held.close();}
  const unexpected=join(f.root,'nibfin-runner-1.service');await fs.writeFile(unexpected,'PRESERVE REPLACEMENT',{mode:0o600});
  assert.equal((await f.make().advance(request.id)).status,'unresolved');assert.equal((await f.store.status()).occupied,1);
