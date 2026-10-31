@@ -41,7 +41,8 @@ test('actual installed installation API: first/repeat init, modified bytes, expl
       assert.equal(unsupported.status,'blocked');assert.ok(unsupported.diagnostics.some(d=>d.code==='protected-shared-host-onboarding-incomplete'));
       assert.equal(calls.some(r=>r.method!=='GET'),false);assert.equal(hostInstalls,0);
       assert.equal((await initializeRepository([...poolArgs,'--auto-register'],deps)).status,'ready');
-      assert.equal(files.size,6);assert.equal(labels.length,3);assert.equal(hostInstalls,1);
+      assert.equal(files.size,7);assert.equal(labels.length,3);assert.equal(hostInstalls,1);
+      assert.ok(files.has('.github/workflows/nibfin-rescue.yml'));
       const runtime=JSON.parse(files.get('.nibfin/runtime.json'));
       assert.equal(runtime.automaticRegistration,true);assert.deepEqual(runtime.allowedActorIds,['8']);
       assert.equal(runtime.executionPool.source,undefined);assert.equal(runtime.executionPool.capacity,6);assert.equal(runtime.executionPool.targets.length,3);
@@ -49,7 +50,8 @@ test('actual installed installation API: first/repeat init, modified bytes, expl
       assert.ok(files.has('.github/workflows/nibfin-stage.yml'));assert.equal(files.has('.github/workflows/nibfin-delivery.yml'),false);
       assert.ok(![...files.keys()].some(p=>/nibfin-stage-[0-9]+/.test(p)));
       const logical=managedWorkflowPlan(core,{executionPool:runtime.executionPool,repository:'example/cli'});
-      assert.equal(logical.files.size,1);assert.equal(logical.files.has('.github/workflows/nibfin-stage.yml'),true);
+      assert.equal(logical.files.size,2);assert.equal(logical.files.has('.github/workflows/nibfin-stage.yml'),true);
+      assert.equal(logical.files.has('.github/workflows/nibfin-rescue.yml'),true);
       assert.equal(logical.files.has('.github/workflows/nibfin-delivery.yml'),false);
       assert.equal(logical.files.has('.github/workflows/nibfin-wakeup.yml'),false);
       assert.throws(()=>managedWorkflowPlan(core,{executionPool:runtime.executionPool,repository:'example/other'}));
