@@ -1,2 +1,2 @@
-/docs/handoffs/n15/* -text
-/docs/handoffs/current/* -text
+* text=auto eol=lf
+/docs/handoffs/** -text

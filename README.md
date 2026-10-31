@@ -13,13 +13,22 @@ implemented path and remaining evidence boundaries.
 The older boundary descriptions below retain historical N01/N15/N17 implementation
 and verification context. They do not describe the newly selected production
 runtime or certify the changed candidate. In particular, previous test counts do
-not apply to the current source. No release or supported-platform claim is made.
+not apply to the current source. Publication and installed-platform evidence are tracked separately.
 
 Public repositories owned by personal accounts or Organizations are in product
 scope. Repo ownership, Repository/Organization Runner registration level and
 Owner-enabled automatic registration are separate dimensions. Private repositories
 are outside scope. Identity syntax and routing labels confer no registration,
 execution permission or Owner authorization.
+
+## Official publication and responsibilities
+
+See [Core/Host consolidation and publication](docs/core-host-consolidation.md).
+The maintained release workflow publishes exact merged source and a checksum
+manifest only after the matching immutable Core release is independently verified.
+Use `gh extension install taco3064/gh-nibfin --pin v0.1.1` after that release
+is published. Fresh Linux/WSL and full lifecycle evidence remain separately
+required; source tests and publication do not establish platform support.
 
 ## Prerequisites and local checks
 
@@ -69,7 +78,7 @@ preparation. Finite project membership and physical Runner capacity are separate
 capacity defaults to 2 (1–128), regardless of project count. Ordinary repeated init
 resumes the original protected source PR and required CI; initial activation waits
 for verified source in every selected project. `--check` only observes existing
-source/host state. Legacy `--execution-repo` is rejected, despite stale help text.
+source/host state. Legacy `--execution-repo` is rejected; help describes the current pool options.
 
 The maintained composition is a **source-only pilot**, not a completed rollout.
 Prepared resources, a running control process, an active identity and passing

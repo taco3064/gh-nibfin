@@ -2,16 +2,8 @@
   "format": 1,
   "components": {
     "core": {
-      "version": "0.1.0",
+      "version": "0.1.1",
       "files": [
-        {
-          "path": ".github/workflows/nibfin-delivery.yml",
-          "sha256": "ffbd7be38ede4537e6b39f22ea6314377888ec696b4d69a4b285a8feeb0b9c41"
-        },
-        {
-          "path": ".github/workflows/nibfin-registration.yml",
-          "sha256": "47a6c36982225b24103f7c0e3077ec1a798d598d13e2682d90b9d0d7037124f7"
-        },
         {
           "path": "README.md",
           "sha256": "d36b1e3a184b4b626f6b8d5ab7aa634b7caeb0486688494deb8392129c46c397"
@@ -51,6 +43,10 @@
         {
           "path": "docs/completion.md",
           "sha256": "d1ef38c579f01594b3d23073cfb929a104b57567de063923f413c59d757ff968"
+        },
+        {
+          "path": "docs/core-host-consolidation.md",
+          "sha256": "ffc799521557e3e808ffe2b81fdacac93ddbc9da6c8d1b9c7b0d74a2ad9cf6d6"
         },
         {
           "path": "docs/core.md",
@@ -110,7 +106,7 @@
         },
         {
           "path": "docs/package.md",
-          "sha256": "031bce54bd6569bd879825ad004b3b34cd101172a836ddc954c5d9eaffc85ed9"
+          "sha256": "50b5924f9b2fa11cada8f02ceb8ca9b6d877a38fa52e5575c1e742d373b59629"
         },
         {
           "path": "docs/protected-host.md",
@@ -182,7 +178,7 @@
         },
         {
           "path": "docs/workflows.md",
-          "sha256": "0761b6bcae1c647ff8f5ecf8ad08748f622bcea642a8bf3c6b02a12761a6f012"
+          "sha256": "e2d48ee94a4c7b21f6a4c0dc5d3c03a16c837c6996d973e5d696d9cfc0a68e28"
         },
         {
           "path": "docs/workspace.md",
@@ -250,11 +246,15 @@
         },
         {
           "path": "npm-shrinkwrap.json",
-          "sha256": "855a0d81ba89b0b83407944e215347608cea33d3c1fac7849e2658955c907e46"
+          "sha256": "8dcc94c2b16b003fec545f79bfe5ee101590beec9d622f8f76aa8a9b6d2d6326"
         },
         {
           "path": "package.json",
-          "sha256": "f4fe5c7737f0675422538de71687fe1d199d2b7c42f95161f6dfca5818b01b96"
+          "sha256": "d917a5e9a13a00fc560d5e8e2f3bc56e6bb99fb98eb4b50882f08ec5a3a4d469"
+        },
+        {
+          "path": "provenance/controller-baseline.json",
+          "sha256": "27969bc84ead2e8f840748557d4305519016d530ebaeeee16fb835a4bbfd7cb2"
         },
         {
           "path": "skills/accept/SKILL.md",
@@ -346,7 +346,7 @@
         },
         {
           "path": "src/codex.mjs",
-          "sha256": "b4ad4eac8741fa3d7b655884ba16999da24d8c123fe678b1bd9194c37cd8b72d"
+          "sha256": "e8919c973fa5b4104d6e771e6b486c0e686fb65b76a21a2dc0cccb8c13b5cb67"
         },
         {
           "path": "src/collaboration.mjs",
@@ -361,8 +361,16 @@
           "sha256": "0ac2fe5d9513430d0a604bba3ada7e2ffbdb56b595f47189116b9a1b8f717d7b"
         },
         {
+          "path": "src/core-contract.mjs",
+          "sha256": "2d330595d4df8740aeed18265c522767874683a0355dc8e22039a394f4100969"
+        },
+        {
+          "path": "src/core-deliver.mjs",
+          "sha256": "bdf695628275ca0777072b60dc6d7368691b435ee66471e23ab52b6662838d53"
+        },
+        {
           "path": "src/core.mjs",
-          "sha256": "0cda825214e9da68f0b6ebacbca3614acebb2d03fc406fb832050e848e57d3e2"
+          "sha256": "2b57ececb3a9e2b6c4b1467d0af777e19f24e852d7588fa36938d076bb32a767"
         },
         {
           "path": "src/credential-output.mjs",
@@ -390,7 +398,11 @@
         },
         {
           "path": "src/delivery-planner.mjs",
-          "sha256": "bdd3069a16d1faad0e5d46430b93835dc484120aa394e9430044ee4b4f5e8c2a"
+          "sha256": "b3a38ec6b849b5fbaa4ba239e608a17c2c8b7689184a611af49f309ecb0abff6"
+        },
+        {
+          "path": "src/delivery-revision.mjs",
+          "sha256": "10ff7d1741ab92281f597ac2e24780afae65d502797940f87e40da826c3eb412"
         },
         {
           "path": "src/deployment.mjs",
@@ -398,11 +410,11 @@
         },
         {
           "path": "src/distribution-contract.mjs",
-          "sha256": "6b2981b4107521a52a7307e0e8f358bb102360e4a95ad0d1099b9ff3c195cdfe"
+          "sha256": "bc25b7ba70c4ee7cd16b7432f5e477484204db2d8c068065cb098ee4ca922a93"
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "93a77d103d56f4036b217101bb76db229d0e1e09546986536162bf61708ed3a5"
+          "sha256": "a3e181050f427773814b9e615c093b2ff4c40a161e6967bc62e86559c0177d45"
         },
         {
           "path": "src/distribution.mjs",
@@ -449,6 +461,22 @@
           "sha256": "dd9956fb4a3306e84ad70a488b41ebced0564ee482f9ecae1febd056a04c288c"
         },
         {
+          "path": "src/github-conditional.mjs",
+          "sha256": "8e60fb0cb985ec773ecd8351fb5692721119ffd11bdb858b50409eb2e3f3da9e"
+        },
+        {
+          "path": "src/github-contract.mjs",
+          "sha256": "385cdc9c30e4b6b128b8380607069678420507158a33d267859fcb7e8995f464"
+        },
+        {
+          "path": "src/github-rate-limit.mjs",
+          "sha256": "c73a4fe36f677cc14d2b11bd7b98f22d52a67bc107a1dffdb82e36ab9e2570f3"
+        },
+        {
+          "path": "src/github-transport.mjs",
+          "sha256": "922d9a0134e99acbdd81f7dd6eb906c32db1990e0c950e385b378b55871fa58a"
+        },
+        {
           "path": "src/github.mjs",
           "sha256": "276c35505a2c7d07ceb45eca0223643c709e4de8244c8d6f6e987769d067546b"
         },
@@ -478,7 +506,7 @@
         },
         {
           "path": "src/index.mjs",
-          "sha256": "f315d04ce8cd1ac36c329dedb2f71982a29b41090ab340f782671e02ea38ecaa"
+          "sha256": "615114bc9e3c48b9e2e498ea89e1658d3dbec336cfede9f5c19ed3de66818df9"
         },
         {
           "path": "src/installation.mjs",
@@ -498,7 +526,7 @@
         },
         {
           "path": "src/native-role-bindings.mjs",
-          "sha256": "1dc2335d02b0f6302c1d4ed7bc9fe9b7812a3b98498fa3b2e46862afa1feee34"
+          "sha256": "f75d64cc4a27f04135173f25f0301c27b9ec6b9a97813bb8b5ad7a33de957f78"
         },
         {
           "path": "src/node-verification.mjs",
@@ -506,7 +534,7 @@
         },
         {
           "path": "src/obligations.mjs",
-          "sha256": "4081bb9172b40dbd62959e37da7f979b1fdf5c6ec5d3df7e184f4df75b6731c7"
+          "sha256": "823fa05ef4b33117522eb285c0aa9611f23557e81b146116614bd13d78e02de1"
         },
         {
           "path": "src/operations.mjs",
@@ -525,8 +553,12 @@
           "sha256": "4bc70075d6a5ab3f4537d876e6337aeeac0ded67d9826f3435486702ddbd0ba8"
         },
         {
+          "path": "src/protected-rescue-policy.mjs",
+          "sha256": "0138caaaf5377f2cbfc214f24d8edbccdbe61c9060a1e2e7cd808f6c31d2cadd"
+        },
+        {
           "path": "src/provider.mjs",
-          "sha256": "4aad440c8f3f1c348550333f1a96399a18fa5114e58433ff91cd60eece3d5a09"
+          "sha256": "9dfbe9a16ee988631b23b9287d63eb9d06728e00fb7aadc54f2c4b431009aab7"
         },
         {
           "path": "src/publication.mjs",
@@ -538,7 +570,7 @@
         },
         {
           "path": "src/readonly-tools.mjs",
-          "sha256": "94dddbcd163380380edd977b1d2188e05196b34e2c425a9ffd6d1e8d9f1d6333"
+          "sha256": "901805e3d4897cca0070477e6d296b1c2fa88e48f948e358dd16ce44f6bfdea7"
         },
         {
           "path": "src/recovery.mjs",
@@ -634,7 +666,7 @@
         },
         {
           "path": "src/role-host.mjs",
-          "sha256": "9d4f829db160048a76e0e2c244d28907ec7dca607b72ad2c9309ccb6c66ba337"
+          "sha256": "177cbfa76ffcf9157e20d6dd69d86aeaadfdcddf6a9d841a40541d7c06c9ce4b"
         },
         {
           "path": "src/role-session.mjs",
@@ -706,7 +738,7 @@
         },
         {
           "path": "src/workflow-install.mjs",
-          "sha256": "e6ee041c7e5ff65412e0f688cc1dcd48e88f8359479df3a39c48b6debb6ac698"
+          "sha256": "6c657f555e961f20b06e7d97c65eb84afc0708bb6437c8e662b7de22d98aafa2"
         },
         {
           "path": "src/workflow.mjs",
@@ -733,8 +765,16 @@
           "sha256": "d23cd10e1c224d37eb5fb3d4bed674662cb912a4dc97f891c9c6e48756ff4253"
         },
         {
+          "path": "workflow/templates/nibfin-delivery.yml",
+          "sha256": "ffbd7be38ede4537e6b39f22ea6314377888ec696b4d69a4b285a8feeb0b9c41"
+        },
+        {
           "path": "workflow/templates/nibfin-register.yml",
           "sha256": "2ba4d2a53d255895dc531cb02a0e63a60b1ff8da044c947f8021e5c3e56abe0a"
+        },
+        {
+          "path": "workflow/templates/nibfin-registration.yml",
+          "sha256": "47a6c36982225b24103f7c0e3077ec1a798d598d13e2682d90b9d0d7037124f7"
         },
         {
           "path": "workflow/templates/nibfin-rescue.yml",
@@ -749,10 +789,10 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "57288363f0eb4bf55687ebbb006299f6393f651106ec03957695aa81b0c0e656"
+      "sha256": "ccd81d38461def983f8c2f6165257921588750725bbf0653b7f6449ee89ca338"
     },
     "skills": {
-      "version": "0.1.0",
+      "version": "0.1.1",
       "files": [
         {
           "path": "instructions/scope.md",
@@ -778,23 +818,15 @@
       "sha256": "e256f4f4da556f8a8c66e6764ff83f1b7dd347967de4814bc865fcf453ec1b96"
     },
     "workflow": {
-      "version": "0.1.0",
+      "version": "0.1.1",
       "files": [
-        {
-          "path": ".github/workflows/nibfin-delivery.yml",
-          "sha256": "ffbd7be38ede4537e6b39f22ea6314377888ec696b4d69a4b285a8feeb0b9c41"
-        },
-        {
-          "path": ".github/workflows/nibfin-registration.yml",
-          "sha256": "47a6c36982225b24103f7c0e3077ec1a798d598d13e2682d90b9d0d7037124f7"
-        },
         {
           "path": "docs/protected-host.md",
           "sha256": "d5430a9d06a237309d9a5c1861560867ff60c1c6529ed4422b80ab727cb26e03"
         },
         {
           "path": "docs/workflows.md",
-          "sha256": "0761b6bcae1c647ff8f5ecf8ad08748f622bcea642a8bf3c6b02a12761a6f012"
+          "sha256": "e2d48ee94a4c7b21f6a4c0dc5d3c03a16c837c6996d973e5d696d9cfc0a68e28"
         },
         {
           "path": "host/configuration.example.json",
@@ -830,7 +862,7 @@
         },
         {
           "path": "src/workflow-install.mjs",
-          "sha256": "e6ee041c7e5ff65412e0f688cc1dcd48e88f8359479df3a39c48b6debb6ac698"
+          "sha256": "6c657f555e961f20b06e7d97c65eb84afc0708bb6437c8e662b7de22d98aafa2"
         },
         {
           "path": "src/workflow.mjs",
@@ -841,8 +873,16 @@
           "sha256": "d23cd10e1c224d37eb5fb3d4bed674662cb912a4dc97f891c9c6e48756ff4253"
         },
         {
+          "path": "workflow/templates/nibfin-delivery.yml",
+          "sha256": "ffbd7be38ede4537e6b39f22ea6314377888ec696b4d69a4b285a8feeb0b9c41"
+        },
+        {
           "path": "workflow/templates/nibfin-register.yml",
           "sha256": "2ba4d2a53d255895dc531cb02a0e63a60b1ff8da044c947f8021e5c3e56abe0a"
+        },
+        {
+          "path": "workflow/templates/nibfin-registration.yml",
+          "sha256": "47a6c36982225b24103f7c0e3077ec1a798d598d13e2682d90b9d0d7037124f7"
         },
         {
           "path": "workflow/templates/nibfin-rescue.yml",
@@ -857,7 +897,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "e873364038b501bae1330dd149eea52b69b3da3b01ae0b4e12dfdf30000a81db"
+      "sha256": "3e94a70da9fe3cec42567d93dae7adc9f320627ca01616d0c620126d2702c05b"
     },
     "action": {
       "version": "unknown",
@@ -884,7 +924,10 @@
       "jobAdmission": 1,
       "evidence": 1,
       "nativeHost": 1,
-      "nativeNotifications": 1
+      "nativeNotifications": 1,
+      "githubTransport": 1,
+      "deliveryRevision": 1,
+      "protectedDiagnosis": 1
     },
     "profiles": [
       {
@@ -928,7 +971,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "93a77d103d56f4036b217101bb76db229d0e1e09546986536162bf61708ed3a5"
+    "sourceMapSha256": "a3e181050f427773814b9e615c093b2ff4c40a161e6967bc62e86559c0177d45"
   },
   "entries": [
     {
@@ -1161,7 +1204,7 @@
         {
           "type": "source-contract",
           "reference": "test/release.test.mjs",
-          "sha256": "a86e0a9469f129bf1fc39c866d1df59359089cd5c52ddf194717390ffdd709d5",
+          "sha256": "bf35dc3204ba209e32f934076c23055d5dfb71a37fa5d92c6ff3c5abad93003d",
           "capability": "source-contract",
           "configuration": "5f09c14f2210e01eaf6952e58b56af6ca229f1847cc2aee23bdb614c1abb83ad"
         }
@@ -1188,7 +1231,7 @@
         {
           "type": "source-contract",
           "reference": "test/installation.test.mjs",
-          "sha256": "416158e6a178081f2d700ed9e58f40d2270ecf03f8bc0c1589022e35d3c827d8",
+          "sha256": "2d2e64078ebfbe0b0c9270af5fa2d22db33cde0e03509c7b92528a5a8e1eb982",
           "capability": "source-contract",
           "configuration": "5f09c14f2210e01eaf6952e58b56af6ca229f1847cc2aee23bdb614c1abb83ad"
         }
