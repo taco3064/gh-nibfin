@@ -38,6 +38,18 @@ existing tag/release/assets, preserves unknown writes and reads back the immutab
 release, exact asset digests and tag after publishing. Conflicting bytes fail;
 there is no automatic release deletion or retagging.
 
+CLI 0.1.1 publication Run 41219793493 detected `immutable=false` on remote
+readback. The repository setting was disabled; this is a failed publication,
+not a supported immutable installation target. Its tag/release/assets remain as
+historical evidence. Immutability was enabled and independently read back before
+preparing 0.1.2. GitHub applies that setting to future releases only.
+
+The publisher defaults to an authenticated immutability-settings preflight.
+GitHub's job token lacks Administration permission, so the official workflow uses
+the explicit repository-enforced policy, matching the Core/Action workflows.
+That policy still requires the actual final release to report immutable; it
+cannot turn an unknown or mutable result into publication success.
+
 Official installation uses GitHub CLI's source-extension path pinned to the
 immutable published tag, with an independent installed-source readback. Publication
 does not itself certify Linux/Windows/WSL or the complete autonomous lifecycle.

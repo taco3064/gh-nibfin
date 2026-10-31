@@ -10,7 +10,18 @@ import {
   assetNames,
 } from './release-contract.mjs';
 
-export async function publishRelease({ manifest, assets, run, request, record }) {
+export async function publishRelease({
+  manifest,
+  assets,
+  run,
+  request,
+  record,
+  immutabilityPolicy = 'api-preflight',
+}) {
+  need(
+    ['api-preflight', 'repository-enforced'].includes(immutabilityPolicy),
+    'policy',
+  );
   const m = manifest,
     base = '/repos/' + repository;
   need(m?.format === 1 && m.package === 'gh-nibfin', 'manifest');
@@ -107,6 +118,9 @@ export async function publishRelease({ manifest, assets, run, request, record })
     branch = await get(base + '/branches/main');
   need(String(repo.id) === repositoryId && repo.full_name === repository, 'repo');
   need(repo.visibility === 'public' && branch.protected === true, 'protected-main');
+  if (immutabilityPolicy === 'api-preflight') {
+    need((await get(base + '/immutable-releases')).enabled === true, 'immutability');
+  }
   const prs = await get(base + '/commits/' + m.source + '/pulls?per_page=100');
   need(
     prs.some(
@@ -258,6 +272,7 @@ if (
         attempt: env.GITHUB_RUN_ATTEMPT,
       },
       request: githubRequest(env.GH_TOKEN),
+      immutabilityPolicy: env.NIBFIN_RELEASE_IMMUTABILITY_POLICY ?? 'api-preflight',
       record: (r) =>
         writeFileSync(
           'out/publication-result.json',

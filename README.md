@@ -26,7 +26,7 @@ execution permission or Owner authorization.
 See [Core/Host consolidation and publication](docs/core-host-consolidation.md).
 The maintained release workflow publishes exact merged source and a checksum
 manifest only after the matching immutable Core release is independently verified.
-Use `gh extension install taco3064/gh-nibfin --pin v0.1.1` after that release
+Use `gh extension install taco3064/gh-nibfin --pin v0.1.2` after that release
 is published. Fresh Linux/WSL and full lifecycle evidence remain separately
 required; source tests and publication do not establish platform support.
 

@@ -105,6 +105,8 @@ function fixture({ fault, published = false, conflicting = false } = {}) {
         visibility: 'public',
       };
     else if (path === base + '/branches/main') result = { protected: true };
+    else if (path === base + '/immutable-releases')
+      result = { enabled: fault !== 'setting' };
     else if (path.includes('/commits/'))
       result = [
         {
@@ -174,4 +176,9 @@ test('mutable remote release cannot be reported as success', async () => {
   const f = fixture({ fault: 'mutable' });
   await assert.rejects(f.publish(), /immutable-readback/);
   assert.notEqual(f.records.at(-1).status, 'published');
+});
+test('disabled immutability prevents all release writes in API preflight', async () => {
+  const f = fixture({ fault: 'setting' });
+  await assert.rejects(f.publish(), /cli-release:immutability$/);
+  assert.equal(f.writes.length, 0);
 });
