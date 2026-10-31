@@ -5,6 +5,8 @@ import{readNativeOwnerPolicy}from'./native-owner-policy.mjs';import{nativeActiva
 import{nativeExecutionInputs}from'./native-execution-inputs.mjs';import{managedWorkflowPlan}from'./workflow-inputs.mjs';
 import{nativeRescueAgent}from'./native-rescue-agent.mjs';import{readPrivate,sha,writePrivate,ensurePrivateDirectory}from'./local-state.mjs';
 import{nativePoolStore}from'./native-pool-store.mjs';
+import{retainNativeCandidate}from'./native-base-revision.mjs';
+import{reconcileNativePublication}from'./native-publication-reconcile.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-rescue:'+code);};
 const modelRoles=['shape','shape-validator','deliver','accept','shaper-review'];
 const verifyUnknownContinuation=c=>c.outcome==='UNRESOLVED'&&c.code==='UNKNOWN_DISPATCH'&&c.continuation?.outcome==='confirmed-success';
@@ -34,7 +36,7 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    stageWorkflow:'.github/workflows/nibfin-stage.yml',stageBlob:files.stage.sha,rescueBlob:files.rescue.sha,actorIds:[owner.memberId],historical:[],
    maxRepairs:3,cooldownMs:30000,jobTimeoutMinutes:60,authority:initial.authority.identity,expiresAt:initial.grant.payload.expiresAt};
   const provenance=core.createRescueProvenance({policy,provider});
-  let jobBinding=null,activeCase=null,adapter=null;
+  let jobBinding=null,activeCase=null,adapter=null,protectedOperations;
   const input=await nativeExecutionInputs(core,{root,store,configuration,provider,signal,transport,binding:{request:{id:'native-rescue'}},checkpoint:()=>checkpoint(store)});
   const original=async t=>{
    const s=await store.read(),retained=s.nativeRescueTargets?.[core.contentIdentity(t)];need(retained,'original-target');
@@ -96,12 +98,17 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    }
    need(false,'work-update-unavailable');
   }
-  const intent=core.createRescueDispatch({policy,provenance,memberId:initial.member.id,load:async({target:t,kind})=>{
+  const originalIntent=core.createRescueDispatch({policy,provenance,memberId:initial.member.id,load:async({target:t,kind})=>{
    const s=await store.read(),workflow=await provenance.workflow(kind),request=activeCase??core.contentIdentity(t);
    return {workflow,source:{request,event:'workflow_dispatch',repositoryId:t.repositoryId,runId:t.source.runId,attempt:t.source.attempt,actorId:t.memberId},
     binding:{repository:t.repository,repositoryId:t.repositoryId,issueId:t.issueId,number:t.number,cycle:t.cycle,scopeHash:t.scopeHash,shapeHash:t.shapeHash,
      authorization:core.contentIdentity(s.grant),runId:t.source.runId,attempt:t.source.attempt,candidate:t.candidate,base:s.base,head:s.head}};
   }});
+  const intent=async value=>{
+   const result=await originalIntent(value),s=await store.read(),retained=s.nativeRescueTargets?.[core.contentIdentity(value.case.target)];
+   if(value.kind==='notification'&&retained?.failureStage){result.payload.inputs.mode='diagnose';result.payload.inputs.nibfin_stage=retained.failureStage;result.payload.display.stage=retained.failureStage;}
+   return core.controlledIntent(result);
+  };
   const controller=core.createRescueController({policy,records,provenance,current,capture,
    authorize:async({target:t})=>{const {s,issue}=await checkpoint(store),a=await input.authorization.eligibility({operation:'dispatch'},{signal});
     const permission=await get(s,base+'/collaborators/'+s.member.login+'/permission');
@@ -110,7 +117,7 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    deterministic:async()=>null,
    adapter:async t=>{need(jobBinding&&activeCase,'authenticated-rescue-job');adapter=await agent(core,{root,binding:jobBinding,store,target:t,caseId:activeCase,checkpoint:()=>checkpoint(store),signal});return adapter;},
    retainDiagnosis:async value=>{await store.retain({kind:'native-rescue-diagnosis',...value});return{outcome:'retained'};},continueRole:continuation,intent,
-   operations:async({case:c,intent:v,beforeSubmit})=>{
+   operations:protectedOperations=async({case:c,intent:v,beforeSubmit})=>{
     // This includes the repeated provenance, live Scope and authorization
     // guards plus official readback, not just one HTTP request. Keep all guards
     // fresh and bounded without expiring at the provider's 30s request budget.
@@ -136,10 +143,10 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
       const s=await store.read(),inputs=actual.payload.inputs,rescue=inputs.request_id!==undefined;
       const id=rescue?actual.correlation:inputs.nibfin_request,issue=await get(s,base+'/issues/'+s.target.number);
       const claim={version:1,id,provenance:{kind:'native-rescue-dispatch',memberId:s.member.id,caseId:c.id},repository:s.target.repository,
-       repositoryId:s.target.repositoryId,issue:s.target.number,cycle:s.cycle,stage:c.target.role,workflowId:actual.target.workflow,
+       repositoryId:s.target.repositoryId,issue:s.target.number,cycle:s.cycle,stage:inputs.nibfin_stage,workflowId:actual.target.workflow,
        workflowPath:rescue?'.github/workflows/nibfin-rescue.yml':'.github/workflows/nibfin-stage.yml',jobName:rescue?'rescue':'stage / execute',
        sourceCommit:actual.payload.refIdentity.sha,issueBodySha256:sha(issue.body),correlation:actual.correlation,
-       title:core.actionRunName({issue:s.target.number,stage:c.target.role,correlation:actual.correlation,...(rescue?{rescue:true,mode:inputs.mode}:{})}),
+       title:core.actionRunName({issue:s.target.number,stage:inputs.nibfin_stage,correlation:actual.correlation,...(rescue?{rescue:true,mode:inputs.mode}:{})}),
        createdAt:Date.now(),phase:'run-observed',runId:String(result.observation.id)};
       await ensurePrivateDirectory(join(root,'dispatches'));
       const file=join(root,'dispatches',id+'.json'),prior=await readPrivate(file,{missing:true});
@@ -152,6 +159,18 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
     const c=Object.values(s.nativeRescueContinuations??{}).find(c=>c.status==='armed');
     return{receipt:s.completion,expected:s.completionCurrent,cycle:s.cycle,caseId:c?.caseId??null,continuation:c? s.receipts[c.target.role]?.execution.source.runId:null};}});
   const value={records,controller,provenance,policy,cycle:initial.cycle,busy:()=>jobBinding!==null,
+   async notifyProtected(id){
+    const c=(await records.read()).cases[id];await controller.checkpoint(c);
+    const proof={fingerprint:core.contentIdentity({target:c.target,source:c.source,protectedStage:true})};
+    const v=await intent({case:c,kind:'notification',proof});
+    const owned=await protectedOperations({case:c,intent:v,beforeSubmit:async actual=>{
+     need(same(actual,v)&&same(await intent({case:c,kind:'notification',proof}),v),'protected-notification-changed');await controller.checkpoint(c);
+    }});
+    const result=await owned.execute(v);
+    await records.update(s=>{s.notifications[id]={...proof,outcome:result.outcome,observation:result.observation??null};
+     s.cases[id]={...s.cases[id],triggered:result.outcome==='confirmed-success',outcome:result.outcome==='confirmed-success'?'DEFERRED':'UNRESOLVED',
+      code:result.outcome==='confirmed-success'?'PROTECTED_STAGE_DIAGNOSIS_QUEUED':'UNKNOWN_DISPATCH',nextCheckAt:null};return s;});return result;
+   },
    async execute(binding){
     need(!jobBinding,'diagnosis-already-active');
     const matches=Object.values((await records.read()).cases).filter(c=>c.target.cycle===initial.cycle);
@@ -163,44 +182,73 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
      &&claim.correlation===binding.correlation&&claim.workflowPath==='.github/workflows/nibfin-rescue.yml'
      &&binding.mode===notification.intent.payload.inputs.mode,'actual-rescue-invocation');
     need(matches.some(c=>c.id===id),'case-cycle');jobBinding=binding;activeCase=id;
-    try{return binding.mode==='verify'?await controller.verify(id):await controller.run(id,{signal,diagnoseOnly:binding.mode==='diagnose'});}
+    try{
+     const s=await store.read(),selected=matches.find(c=>c.id===id),original=s.nativeRescueTargets?.[core.contentIdentity(selected.target)];
+     const result=binding.mode==='verify'?await controller.verify(id):await controller.run(id,{signal,diagnoseOnly:binding.mode==='diagnose'});
+     if(original?.failureStage&&result.outcome!=='RESOLVED'){
+      // Protected owners have no model execution to retry. Diagnose their real
+      // failure without spending/resetting the original-role repair budget or
+      // pretending that diagnosis alone repaired the product stage.
+      await records.update(v=>{v.cases[id]={...v.cases[id],outcome:'UNRESOLVED',code:'PROTECTED_STAGE_DIAGNOSED',nextCheckAt:null};return v;});
+      await store.update(v=>{const marker=v.protectedStageCases?.[original.failureRequest];need(marker?.caseId===id,'protected-case');marker.status='diagnosed';return v;});
+      return{...(await records.read()).cases[id],failureStage:original.failureStage};
+     }return result;
+    }
     finally{try{await adapter?.close();}finally{adapter=null;jobBinding=null;activeCase=null;}}
    }};
   cache.set(key,value);return value;
  }
  async function observe({store,claim}){
-  const s=await store.read();need(modelRoles.includes(claim.stage)&&s.attempts[claim.stage]?.phase==='unresolved','unresolved-role-required');
+  const s=await store.read(),protectedStage=!modelRoles.includes(claim.stage);
+  need(core.coreStages.includes(claim.stage)&&s.attempts[claim.stage]?.phase==='unresolved','unresolved-role-required');
+  if(protectedStage&&s.protectedStageCases?.[claim.id])return s.protectedStageCases[claim.id].caseId;
+  const role=protectedStage?(s.receipts.deliver?'deliver':'shape'):claim.stage;
+  const originalExecution=protectedStage?s.receipts[role]?.execution.id:null;need(!protectedStage||originalExecution,'original-role-required');
   const sessions=[];for(const[key,kind]of Object.entries(s.records)){if(kind!=='native-role-session')continue;const value=await store.get('native-record:'+key);
-   if(value.metadata.role===claim.stage){const requests=Object.entries(s.records).filter(([,k])=>k==='native-role-request');
+   if(protectedStage&&value.metadata.role===role&&value.metadata.execution===originalExecution)sessions.push({reference:'native-record:'+key,value});
+   else if(!protectedStage&&value.metadata.role===claim.stage){const requests=Object.entries(s.records).filter(([,k])=>k==='native-role-request');
     for(const[r]of requests){const original=await store.get('native-record:'+r);if(original.input.execution.id===value.metadata.execution&&original.input.execution.source?.runId===claim.runId)sessions.push({reference:'native-record:'+key,value});}}}
   need(sessions.length===1,'original-session-required');const session=sessions[0];
   const job=await nativePoolStore(core,{root,configuration}).jobs.read(claim.id);
   need(job?.phase==='released'&&session.value.snapshot.terminated===true,'original-resources-active');
-  let workspaceReference=null,unaccepted=null;for(const[key,kind]of Object.entries(s.records))if(kind==='native-unaccepted-workspace'){
+  let workspaceReference=protectedStage&&role==='deliver'?await retainNativeCandidate(core,{root,state:s,store,execution:s.receipts.deliver.execution}):null,unaccepted=null;
+  for(const[key,kind]of Object.entries(s.records))if(!workspaceReference&&kind==='native-unaccepted-workspace'){
    const value=await store.get('native-record:'+key);if(value.execution.id===session.value.metadata.execution){workspaceReference='native-record:'+key;unaccepted=core.contentIdentity(value);}}
   const target={repository:s.target.repository,repositoryId:s.target.repositoryId,issueId:s.target.issueId,number:s.target.number,cycle:s.cycle,
    authority:s.authority.identity,requirements:s.scopeHash,scopeHash:s.scopeHash,shapeHash:s.shapeBody===null?null:core.bodyDigest(s.shapeBody),
    // A stopped Writer can have edits without a qualified Core Candidate. Bind
    // its retained UNACCEPTED snapshot, never fabricate a normal stage receipt.
-   candidate:s.workspaceExpected?.identity??unaccepted,execution:session.value.metadata.execution,role:claim.stage,adapter:'codex',access:'read-only',status:'UNACCEPTED',
+   candidate:s.workspaceExpected?.identity??unaccepted,execution:session.value.metadata.execution,role,adapter:'codex',access:'read-only',status:'UNACCEPTED',
    memberId:s.member.id,sessionMemberId:s.member.id,runnerMemberId:s.member.id,runnerId:job.runnerId,session:session.value.metadata.id,
    source:{runId:claim.runId,attempt:'1'}};
   core.validateRescueTarget(target);
   need(target.role!=='deliver'||workspaceReference,'writer-preservation-required');
-  await store.update(v=>{v.nativeRescueTargets??={};const key=core.contentIdentity(target),value={sessionReference:session.reference,workspaceReference};
+  await store.update(v=>{v.nativeRescueTargets??={};const key=core.contentIdentity(target),value={sessionReference:session.reference,workspaceReference,
+   ...(protectedStage?{failureStage:claim.stage,failureRequest:claim.id}:{})};
    if(v.nativeRescueTargets[key]){need(same(v.nativeRescueTargets[key],value),'target-rebinding');return null;}
    v.nativeRescueTargets[key]=value;return v;});
   const c=await composition(store),source={runId:claim.runId,attempt:'1',head:claim.sourceCommit};
   await c.provenance.verify(source.runId,source.attempt);
   const blocked={outcome:'blocked',execution:target.execution,role:target.role,target,failureClass:'implementation_defect',contractConflicts:[],
    summary:s.attempts[claim.stage].reason};
-  const id=await c.controller.register({target,source,code:'STAGE_BLOCKED',blocked});await c.controller.wake(id);return id;
+  const id=await c.controller.register({target,source,code:'STAGE_BLOCKED',blocked});
+  if(protectedStage)await store.update(v=>{v.protectedStageCases??={};v.protectedStageCases[claim.id]={caseId:id,stage:claim.stage,status:'diagnosing'};return v;});
+  if(protectedStage)await c.notifyProtected(id);else await c.controller.wake(id);return id;
  }
  return Object.freeze({observe,
+  async observeProtected({store,claim}){
+   if(modelRoles.includes(claim.stage)||!core.coreStages.includes(claim.stage))return{outcome:'not-applicable'};
+   const s=await store.read();if(s.attempts[claim.stage]?.phase!=='unresolved')return{outcome:'not-applicable'};
+   const old=s.protectedStageCases?.[claim.id];if(old)return{outcome:old.status};
+   const reconciled=await reconcileNativePublication(core,{root,store,claim,provider});
+   if(reconciled.outcome==='unknown')return reconciled;
+   if((await host.read()).work.unknownWrite)return{outcome:'unknown',reason:'original-write-reconciliation-required'};
+   await observe({store,claim});return{outcome:'diagnosing'};
+  },
   async execute(binding,{progress=async()=>{}}={}){
    const selected=configuration.targets.find(t=>t.repository===binding.request.repository),issue=await get({target:selected,cycle:binding.request.id},'/repos/'+selected.repository+'/issues/'+binding.issue);
    const store=await openNativeCycle(core,{root,target:{repository:selected.repository,repositoryId:selected.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:binding.issue}});
-   const c=await composition(store),result=await c.execute(binding);await progress(core.rescueActionReport(result,result));
+   const c=await composition(store),result=await c.execute(binding);await progress({...core.rescueActionReport(result,result),...(result.failureStage?{stage:result.failureStage}:{})});
    return{disposition:result.outcome==='RESOLVED'?'completed':core.eligibleRescueRecheck(result)?'waiting':'blocked',reason:result.code??result.outcome,
     rescue:{outcome:result.outcome,caseId:result.id,diagnosis:result.diagnosis??null}};
   },

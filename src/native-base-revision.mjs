@@ -4,6 +4,15 @@ import{retainUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 import{readNativeOwnerPolicy}from'./native-owner-policy.mjs';
 const need=(v,c)=>{if(!v)throw Error('native-base-revision:'+c);};
 const later=['pre-commit-hooks','pr','ci','shaper-review','merge'];
+export async function retainNativeCandidate(core,{root,state:s,store,execution}){
+ const parent=await fs.mkdtemp(join(root,'base-revision-')),directory=join(parent,'original');
+ try{
+  const workspace=core.importWorkspace(Buffer.from(core.canonicalJSON(s.workspace)),{expected:s.workspaceExpected});
+  core.materializeWorkspace(workspace,{expected:s.workspaceExpected,root:directory});
+  execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null','update-ref','--no-deref','HEAD',s.base],{cwd:directory,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'},timeout:30000,stdio:'pipe'});
+  return await retainUnacceptedWorkspace({directory,execution,retain:store.retain});
+ }finally{await fs.rm(parent,{recursive:true,force:true});}
+}
 
 // Like the upstream repair path, advancing main preserves the whole Candidate
 // and original Writer conversation, then repeats Candidate/review/CI gates.
@@ -74,13 +83,7 @@ export async function prepareNativeBaseRevision(core,{root,store,claim,provider,
   need(prs.outcome==='complete','pull-readback');
   prs.data=prs.data.filter(pr=>pr.head.ref===oldBranch&&pr.head.repo?.id===s.target.repositoryId);
   for(const pr of prs.data)need(pr.head.ref===oldBranch&&pr.head.repo.id===s.target.repositoryId&&commits.includes(pr.head.sha)&&!pr.merged_at,'published-pr-changed-or-merged');
-  const parent=await fs.mkdtemp(join(root,'base-revision-')),directory=join(parent,'original');let workspaceReference;
-  try{
-   const workspace=core.importWorkspace(Buffer.from(core.canonicalJSON(s.workspace)),{expected:s.workspaceExpected});
-   core.materializeWorkspace(workspace,{expected:s.workspaceExpected,root:directory});
-   execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null','update-ref','--no-deref','HEAD',s.base],{cwd:directory,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'},timeout:30000,stdio:'pipe'});
-   workspaceReference=await retainUnacceptedWorkspace({directory,execution,retain:store.retain});
-  }finally{await fs.rm(parent,{recursive:true,force:true});}
+  const workspaceReference=await retainNativeCandidate(core,{root,state:s,store,execution});
   const proof={kind:'native-base-revision',core:s.core,scopeHash:s.scopeHash,shapeHash:core.bodyDigest(s.shapeBody),cycle:s.cycle,memberId:s.member.id,
    previousBase:s.base,base:head.sha,source:claim,sessionReference:session.reference,workspaceReference,accepted:false,
    previous:{receipts:s.receipts,expectations:s.expectations,attempts:s.attempts,dispatch:s.dispatch,workspace:s.workspace,workspaceExpected:s.workspaceExpected,

@@ -49,11 +49,11 @@ export async function nativeRescueAgent(core,{root,binding,store,target,caseId,c
     const candidate=core.importWorkspace(Buffer.from(core.canonicalJSON(state.workspace)),{expected:state.workspaceExpected});
     core.materializeWorkspace(candidate,{expected:state.workspaceExpected,root:instance.workspace});
    }else await publicCheckout(target.repository,state.base,instance.workspace,signal);
-   const evidence=[];
+   const evidence=[],failureStage=retained?.failureStage??target.role;
    for(const[key,kind]of Object.entries(state.records)){
     if(!['native-core-result','role-collection','native-completion-diagnostic'].includes(kind))continue;
     const value=await store.get('native-record:'+key);
-    if(value.execution?.id===target.execution||value.result?.request===state.attempts[target.role]?.request)evidence.push({reference:'native-record:'+key,value});
+    if(value.execution?.id===target.execution||value.result?.request===state.attempts[failureStage]?.request)evidence.push({reference:'native-record:'+key,value});
    }
    const request=Object.entries(state.records).filter(([,kind])=>kind==='native-role-request');
    for(const[key]of request){const v=await store.get('native-record:'+key);if(v.input.execution.id===target.execution)evidence.push({reference:'native-record:'+key,value:{execution:v.input.execution,expected:v.expected}});}
@@ -61,7 +61,9 @@ export async function nativeRescueAgent(core,{root,binding,store,target,caseId,c
     const original=await store.get(retained.sessionReference);
     evidence.push({reference:retained.sessionReference,value:{finalMessages:retainedFinalMessages(core,original.snapshot)}});
    }
-   await fs.writeFile(join(instance.workspace,'NIBFIN-RECOVERY-EVIDENCE.json'),JSON.stringify({target,scope:state.scopeBody,shape:state.shapeBody,evidence}),{flag:'wx',mode:0o400});
+   await fs.writeFile(join(instance.workspace,'NIBFIN-RECOVERY-EVIDENCE.json'),JSON.stringify({target,failureStage,
+    protectedOwner:retained?.failureStage?{attempt:state.attempts[failureStage],publications:state.publications}:null,
+    scope:state.scopeBody,shape:state.shapeBody,evidence}),{flag:'wx',mode:0o400});
    const environment=core.createAgentEnvironments().describe({id:execution+'-environment',agent:'codex',loginSpace:member.loginSpace,instances:[instance]});
    return{memberId:target.memberId,disposable:true,originalWorkspace:null,target,caseId,
     binding:{authority:state.authority.identity,grant:core.contentIdentity(state.grant),policy:core.contentIdentity(state.policy),core:state.core,
