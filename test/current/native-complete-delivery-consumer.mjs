@@ -60,8 +60,8 @@ test('one native cycle retains every actual owner output through independent rev
   }
   if(path.startsWith(root+'/compare/'))return reply({status:'identical',ahead_by:0,behind_by:0,base_commit:{sha:mergeCommit},merge_base_commit:{sha:mergeCommit}});
  });
- const launched=[],progress=[];
- const roleFactory=async(_core,{source:provenance,retain,binding})=>{
+ const launched=[],progress=[];let writerObservations=0,writerStops=0;
+ const roleFactory=async(_core,{source:provenance,retain,binding,checkpoint,signal})=>{
   const directory=join(f.root,binding.request.id);await fs.mkdir(directory,{mode:0o700});
   const candidateDirectory=join(directory,'candidate');await fs.mkdir(candidateDirectory,{mode:0o700});
   const work=join(directory,'work');await fs.mkdir(work,{mode:0o700});let cloned=false;const values=new Map();
@@ -75,12 +75,17 @@ test('one native cycle retains every actual owner output through independent rev
     const current=()=>({expected:structuredClone(expected),consumed:[]});
     const backend={readiness:async()=>({login:'available',tool:'available',isolation:'verified',read:'verified',write:'verified',evidence:['recording-only'],limitations:[]}),
      start:async()=>{launched.push({role:task.role,run:provenance.runId,id:bound.input.execution.id});
-      if(task.role==='deliver'){assert.equal(cloned,true);await fs.writeFile(join(work,'README.md'),'native onboarding procedure\n');}return{status:'started'};},
-     collect:async()=>({status:'complete',exitCode:0,evidence:structuredClone(expected)}),termination:async()=>({status:'terminated'}),stop:async()=>({status:'requested'}),cleanup:async()=>({status:'completed',residuals:[]})};
+      if(task.role==='deliver')assert.equal(cloned,true);return{status:'started'};},
+     collect:async()=>({status:'complete',exitCode:0,evidence:structuredClone(expected)}),termination:async()=>{
+      if(task.role==='deliver'&&++writerObservations<4)return{status:'running'};
+      if(task.role==='deliver')await fs.writeFile(join(work,'README.md'),'native onboarding procedure\n');
+      return{status:'terminated'};
+     },stop:async()=>{if(task.role==='deliver')writerStops++;return{status:'requested'};},cleanup:async()=>({status:'completed',residuals:[]})};
     const id='fixture-'+binding.request.id,lifecycle=core.createAgentLifecycle({environment:{id:id+'-environment',agent:'recording',loginSpace:'/fixture/login',
      instances:[{id,workspace:work,registration:join(directory,'registration'),service:join(directory,'service')}]},instanceId:id,backend,current,startCurrent:bound.startCurrent});
-    const value={input:bound.input,lifecycle,current,readBody:()=>body,taskIdentity:core.contentIdentity(task.task),
-     bindCandidate:async candidate=>{expected.inputs={...expected.inputs,candidate};}};values.set(bound.input.execution.id,value);return value;
+    const value={input:bound.input,lifecycle,current,readBody:()=>body,taskIdentity:core.contentIdentity(task.task),budget:core.createRoleBudget({deadlineAt:Date.now()+120000,reserveMs:1000}),
+     bindCandidate:async candidate=>{expected.inputs={...expected.inputs,candidate};}};values.set(bound.input.execution.id,value);
+    return value;
    },get:id=>{assert.ok(values.has(id));return values.get(id);},async close(){}}
  };
  const stages=[...core.coreStages.slice(0,14),'fanout'];
@@ -99,4 +104,5 @@ test('one native cycle retains every actual owner output through independent rev
  assert.deepEqual(launched.map(v=>v.role),['shape','shape-validator','deliver','accept','shaper-review']);assert.equal(new Set(launched.map(v=>v.run)).size,5);
  assert.equal(f.issue.state,'closed');assert.ok(f.issue.labels.some(l=>l.name==='delivered'));assert.equal(state.fanout.outcome,'discovered');
  assert.equal(writes.filter(v=>v.path.endsWith('/merge')).length,1);assert.equal(writes.filter(v=>v.method==='PATCH'&&v.path.endsWith('/55')).length,2);
+ assert.equal(writerObservations,4);assert.equal(writerStops,0,'a running Writer is awaited, never stopped as normal completion');
 }));
