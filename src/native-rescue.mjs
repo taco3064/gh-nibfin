@@ -76,15 +76,25 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    if(prepared.status==='armed'&&pending.length===0){need(s.dispatch?.id===prepared.next.request&&!s.attempts[c.target.role],'armed-continuation-changed');return;}
    need(pending.length===1&&pending[0].status==='UNACCEPTED','original-work-unaccepted');
    if(prepared.status==='prepared')await store.update(v=>{
-    need(v.identity===s.identity&&v.attempts[c.target.role]?.phase==='unresolved','original-attempt');
+    // Observation/operation records share this file but do not change the
+    // original stopped work. Compare the protected inputs inside the store
+    // transaction instead of rejecting unrelated telemetry revisions.
+    need(same(v.attempts[c.target.role],s.attempts[c.target.role])&&v.attempts[c.target.role]?.phase==='unresolved'
+     &&same(v.dispatch,s.dispatch)&&same(v.nativeRescueContinuations[c.id],prepared)
+     &&['core','installation','cycle','scopeHash','authority','policy','grant','base','head','candidate','workspace','workspaceExpected','shapeBody']
+      .every(key=>same(v[key]??null,s[key]??null)),'original-attempt');
     v.recoveries??=[];v.recoveries.push({kind:'ai-rescue',caseId:c.id,attempt:v.attempts[c.target.role],dispatch:v.dispatch,proof:prepared.proof});
     delete v.attempts[c.target.role];v.dispatch={id:prepared.next.request,stage:c.target.role};
     v.sessionResumes??={};v.sessionResumes[c.target.role]={status:'UNACCEPTED',role:c.target.role,memberId:c.target.memberId,scopeHash:s.scopeHash,
      cycle:s.cycle,caseId:c.id,reference:prepared.sessionReference,workspaceReference:prepared.workspaceReference,next:prepared.next,plan:prepared.plan};
     v.nativeRescueContinuations[c.id].status='armed';return v;
    });
-   const fresh=await host.read();need(same(fresh.work,h.work),'work-changed');
-   await host.updateWork({expected:fresh.identity,work:{...fresh.work,pending:fresh.work.pending.filter(p=>p.cycle!==s.cycle),reconciled:true}});
+   for(let attempt=0;attempt<20;attempt++){
+    const fresh=await host.read();need(same(fresh.work,h.work),'work-changed');
+    try{await host.updateWork({expected:fresh.identity,work:{...fresh.work,pending:fresh.work.pending.filter(p=>p.cycle!==s.cycle),reconciled:true}});return;}
+    catch(e){if(!e.message?.endsWith('work-compare-and-swap'))throw e;}
+   }
+   need(false,'work-update-unavailable');
   }
   const intent=core.createRescueDispatch({policy,provenance,memberId:initial.member.id,load:async({target:t,kind})=>{
    const s=await store.read(),workflow=await provenance.workflow(kind),request=activeCase??core.contentIdentity(t);
@@ -141,7 +151,7 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
    },completion:async()=>{const s=await store.read();if(!s.completion)return null;
     const c=Object.values(s.nativeRescueContinuations??{}).find(c=>c.status==='armed');
     return{receipt:s.completion,expected:s.completionCurrent,cycle:s.cycle,caseId:c?.caseId??null,continuation:c? s.receipts[c.target.role]?.execution.source.runId:null};}});
-  const value={records,controller,provenance,policy,cycle:initial.cycle,
+  const value={records,controller,provenance,policy,cycle:initial.cycle,busy:()=>jobBinding!==null,
    async execute(binding){
     need(!jobBinding,'diagnosis-already-active');
     const matches=Object.values((await records.read()).cases).filter(c=>c.target.cycle===initial.cycle);
@@ -178,7 +188,8 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
   core.validateRescueTarget(target);
   need(target.role!=='deliver'||workspaceReference,'writer-preservation-required');
   await store.update(v=>{v.nativeRescueTargets??={};const key=core.contentIdentity(target),value={sessionReference:session.reference,workspaceReference};
-   if(v.nativeRescueTargets[key])need(same(v.nativeRescueTargets[key],value),'target-rebinding');else v.nativeRescueTargets[key]=value;return v;});
+   if(v.nativeRescueTargets[key]){need(same(v.nativeRescueTargets[key],value),'target-rebinding');return null;}
+   v.nativeRescueTargets[key]=value;return v;});
   const c=await composition(store),source={runId:claim.runId,attempt:'1',head:claim.sourceCommit};
   await c.provenance.verify(source.runId,source.attempt);
   const blocked={outcome:'blocked',execution:target.execution,role:target.role,target,failureClass:'implementation_defect',contractConflicts:[],
@@ -201,13 +212,16 @@ export async function nativeRescue(core,{root,configuration,provider,signal,tran
     const store=await openNativeCycle(core,{root,target:{repository:target.repository,repositoryId:target.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:c.target.number}});
     need((await store.read()).cycle===c.target.cycle,'original-cycle-required');await composition(store);
    }
-   for(const c of cache.values())for(const item of Object.values((await c.records.read()).cases)){
+   for(const c of cache.values()){
+    if(c.busy())continue;
+    for(const item of Object.values((await c.records.read()).cases)){
     if(item.target.cycle!==c.cycle)continue;
     // A reporting notification can be unknown even though the original role
     // continuation is proven. Reuse Core's independent receipt verifier; an
     // active continuation remains deferred and never becomes an accepted role.
     if(verifyUnknownContinuation(item))await c.controller.verify(item.id);
     else if(core.eligibleRescueRecheck(item)&&item.nextCheckAt<=Date.now())await c.controller.wake(item.id);
+    }
    }
   },
   async close(){await host.close();}});
