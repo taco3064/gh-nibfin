@@ -38,7 +38,7 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
   firstReceiptCurrent:{identity:first.receipt.identity,consumed:[]},firstStage:state.receipts['pre-accept-hooks'],firstStageCurrent:current('pre-accept-hooks')};};
  const reviewEvidence=()=>Object.fromEntries(Object.entries({author:'shape',validator:'shape-validator',publication:'publication',deliver:'deliver',
   accept:'accept',secondStage:'pre-commit-hooks',pr:'pr',ci:'ci'}).map(([key,value])=>[key,item(value)]));
- const target={...t,cycle:state.cycle,headRef:'nibfin/issue-'+t.number+'-'+state.cycle.slice(-12),baseRef:state.policy.merge.baseBranch,
+ const target={...t,cycle:state.cycle,headRef:state.branchRef??'nibfin/issue-'+t.number+'-'+state.cycle.slice(-12),baseRef:state.policy.merge.baseBranch,
   branchPrefix:'nibfin',paths:state.paths,...(state.publication?{prId:state.publication.pr.observation.id,
    prNumber:state.publication.pr.observation.endpoint.split('/').at(-1)}:{})};
  const owners={deliver:{current:()=>copy({...common,capture:{root:roles.workspace('deliver'),base:state.base,permittedPaths:state.paths,
@@ -69,6 +69,9 @@ export async function nativeDeliveryOwners(core,{root,state,stage,pin,roles,stor
   // successful CI receipt, nor causes repeated Writer/Action submissions.
   const until=Date.now()+1200000;let observation;
   do{await checkpoint();observation=await core.observeGithubCI({provider,expected});
+   const main=await provider.request({endpoint:'/repos/'+t.repository+'/git/ref/heads/'+target.baseRef,target:t.repositoryId,
+    operation:'native-ci-base',correlation:pin.invocation.request,signal});
+   need(main.outcome==='read','base-observation');need(main.data.object.sha===state.base,'default-branch-advanced');
    if(observation.status==='satisfied'&&observation.qualifies===true)break;
    need(observation.status==='pending','ci-unavailable-or-failed');await progress({status:'waiting',reason:'exact-head-ci-pending'});
    await new Promise(r=>setTimeout(r,10000));

@@ -12,7 +12,9 @@ export async function prepareDeferredNativeRole(core,{store,binding,memberId}){
   &&binding.issue===s.target.number&&binding.memberId===memberId,'invocation');
  const proof=await store.get(seed.proof),session=await store.get(seed.sessionReference);
  const ownerProof=proof.kind==='native-owner-shape-revision'||proof.kind==='native-owner-code-repair'&&role==='deliver'
-  &&proof.core===s.core&&proof.shapeHash===core.bodyDigest(s.shapeBody);
+  &&proof.core===s.core&&proof.shapeHash===core.bodyDigest(s.shapeBody)
+  ||proof.kind==='native-base-revision'&&role==='deliver'&&proof.core===s.core&&proof.shapeHash===core.bodyDigest(s.shapeBody)
+   &&proof.base===s.base&&proof.workspaceReference===seed.workspaceReference&&proof.sessionReference===seed.sessionReference;
  need(ownerProof&&proof.scopeHash===s.scopeHash&&proof.memberId===memberId
   &&proof.cycle===s.cycle&&session.kind==='native-role-session'&&session.metadata.role===role
   &&session.metadata.memberId===memberId&&session.snapshot.terminated===true,'owner-and-original-session');

@@ -5,6 +5,8 @@ import{prepareNativeCycle}from'./native-cycle-policy.mjs';import{openNativeCycle
 import{nativeExecutionInputs}from'./native-execution-inputs.mjs';import{nativeActivationStatus}from'./native-activation.mjs';
 import{managedWorkflowPlan}from'./workflow-inputs.mjs';
 import{nativeShapeFeedback}from'./native-shape-feedback.mjs';
+import{prepareNativeBaseRevision}from'./native-base-revision.mjs';
+import{openFileHostStore}from'./host-store.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-dispatch:'+code);};
 const code=e=>typeof e?.message==='string'&&/^native-[a-z-]+:[a-z-]+$/.test(e.message)?e.message:'native-dispatch:observation-unavailable';
 
@@ -69,11 +71,26 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
   return claim;
  }
  async function tick(){
-  if((await nativeActivationStatus(core,{root})).status!=='ready')return;
+  const ready=(await nativeActivationStatus(core,{root})).status==='ready';
+  if(!ready){const host=await openFileHostStore(core,{directory:join(root,'state')});try{
+   const {work}=await host.read();if(!work.restrictionsChecked||work.paused||work.hold||!work.unknownWrite)return;
+  }finally{await host.close();}}
   await readNativeMember(core,{root,memberId:owner.memberId});const pool=await coordinator.status();need(pool.host==='running','pool-unavailable');
-  await rescue?.refresh();
+  if(ready)await rescue?.refresh();
   const previous=[];for(const claim of await claims()){
    try{previous.push(await advance(claim));}catch(e){previous.push(claim);report(claim.id,{status:'blocked',issue:claim.issue,stage:claim.stage,reason:code(e)});}
+  }
+  if(!ready){
+   // A generic failed PR owner marks writes uncertain. Reconcile its exact
+   // branch/PR readback before clearing that marker; never submit new work here.
+   for(const claim of previous.filter(c=>c.phase==='completed'))try{
+    const issue=await get({repositoryId:claim.repositoryId},'/repos/'+claim.repository+'/issues/'+claim.issue);
+    const store=await openNativeCycle(core,{root,target:{repository:claim.repository,repositoryId:claim.repositoryId,issueId:issue.node_id,databaseId:issue.id,number:claim.issue}});
+    const s=await store.read();if(s.dispatch?.id!==claim.id&&s.baseRevision?.source?.id!==claim.id)continue;
+    const result=await prepareNativeBaseRevision(core,{root,store,claim,provider,signal,transport});
+    if(result.outcome==='revision-prepared'){report(claim.id,{status:'queued',issue:claim.issue,stage:'deliver',reason:'default-branch-advanced-original-writer-rebase'});wake();}
+   }catch(e){report(claim.id,{status:'blocked',issue:claim.issue,reason:code(e)});}
+   return;
   }
   let available=Math.max(0,configuration.capacity-previous.filter(c=>!['completed','dispatch-prepared'].includes(c.phase)).length);
   for(const target of configuration.targets){
@@ -85,6 +102,12 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      let store;
      try{store=await openNativeCycle(core,{root,target:selected});}catch(e){if(e.code!=='ENOENT')throw e;if(issue.state==='closed')continue;}
      let state=store?await store.read():null;
+     const baseClaim=state?.baseRevision?.phase==='prepared'?state.baseRevision.source:previous.find(c=>c.id===state?.dispatch?.id&&c.phase==='completed');
+     if(state&&baseClaim){
+      const revision=await prepareNativeBaseRevision(core,{root,store,claim:baseClaim,provider,signal,transport});
+      if(revision.outcome==='revision-prepared'){report(key,{status:'queued',issue:number,stage:'deliver',reason:'default-branch-advanced-original-writer-rebase'});wake();continue;}
+      if(revision.outcome==='waiting'){report(key,{status:'waiting',issue:number,reason:'base-revision-runner-drain'});continue;}
+     }
      if(state?.shapeRevision?.phase==='prepared'){
       const feedback=await nativeShapeFeedback(core,{root,store,claim:{},provider});
       if(feedback.outcome==='revision-prepared'){wake();continue;}
