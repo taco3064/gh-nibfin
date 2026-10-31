@@ -141,7 +141,10 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
       if(result.outcome==='submitted')submitted=await save({...activeWrite.claim,phase:'dispatch-submitted'});
      }
      finally{activeWrite=null;}
-     available--;await advance(submitted??await readPrivate(join(directory,id+'.json')));report(key,{status:'queued',issue:number,stage,reason:'native-owner-dispatch-retained'});
+     available--;const observed=await advance(submitted??await readPrivate(join(directory,id+'.json')));
+     if(observed.phase==='dispatch-prepared')report(key,{status:'waiting',issue:number,stage,reason:'native-dispatch:original-submission-not-sent'});
+     else if(observed.phase==='dispatch-sending')report(key,{status:'blocked',issue:number,stage,reason:'native-dispatch:original-submission-unknown'});
+     else report(key,{status:'queued',issue:number,stage,reason:'native-owner-dispatch-retained'});
     }catch(e){report(key,{status:'blocked',issue:number,reason:code(e)});}
    }
   }
