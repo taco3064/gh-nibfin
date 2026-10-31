@@ -30,6 +30,11 @@ import { initializeFileHostStore } from './host-store.mjs';
 import { nativeActivationStatus, activateNativeHost } from './native-activation.mjs';
 import { nativePoolStore } from './native-pool-store.mjs';
 import { transitionStagedNativeHost } from './native-staged-transition.mjs';
+import {
+  prepareUnusedActivationUpgrade,
+  verifyNativeProjectUpgrade,
+} from './native-unused-activation.mjs';
+import { importNativeMergedWork } from './native-merged-handover.mjs';
 
 const need = (ok, code) => {
   if (!ok) throw Error('native-host:' + code);
@@ -276,6 +281,12 @@ export function nativeControlHost({
         core.canonicalJSON(selected.executionPool) === core.canonicalJSON(pool),
         'preserve-existing-installation',
       );
+      await prepareUnusedActivationUpgrade(core, {
+        root,
+        previous: selected,
+        next: record,
+        memberId,
+      });
       await stageUnactivatedNativeUpgrade(core, {
         root,
         previous: selected,
@@ -403,6 +414,35 @@ export function nativeControlHost({
   return Object.freeze({
     check,
     prepare: prepareHost,
+    handover({
+      core,
+      context,
+      repository,
+      executionPool,
+      directory,
+      provider,
+      checkOnly = false,
+    }) {
+      return importNativeMergedWork(core, {
+        root,
+        context,
+        repository,
+        configuration: executionPool,
+        directory,
+        provider,
+        checkOnly,
+      });
+    },
+    async projectTransition({ core, context, previous }) {
+      const installation = await readPrivate(join(root, 'native-installation.json'));
+      await verifyRuntime(join(root, 'runtime'), await nativeRuntimeInputs(context));
+      return verifyNativeProjectUpgrade(core, {
+        root,
+        previous,
+        context,
+        installation,
+      });
+    },
     async install(options) {
       const activation = await activateNativeHost(options.core, {
         root,

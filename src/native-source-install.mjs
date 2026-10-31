@@ -1,5 +1,6 @@
 import { refreshNativeSource } from './native-source-refresh.mjs';
 import { recoverManagedSourceBaseline } from './native-source-baseline.mjs';
+import { retireInstalledSourceProposal } from './native-source-history.mjs';
 import {
   nativeSourceBody,
   sourceInstallationIdentity,
@@ -13,8 +14,7 @@ const need = (ok, code) => {
   if (!ok) throw Error('native-source-install:' + code);
 };
 const managedPath = new RegExp(
-  '^(?:\\.github/workflows/nibfin-[a-z-]+\\.yml|' +
-    '\\.nibfin/[A-Za-z0-9_./-]+)$',
+  '^(?:\\.github/workflows/nibfin-[a-z-]+\\.yml|' + '\\.nibfin/[A-Za-z0-9_./-]+)$',
 );
 
 // Owner init is an administrative source installation, not an Issue delivery.
@@ -76,6 +76,18 @@ export async function installNativeSource(
   });
   const path = join(root, 'managed-source-pr.json');
   let proposal = await readPrivate(path, { missing: true });
+  if (proposal && proposal.identity !== identity) {
+    await retireInstalledSourceProposal(core, {
+      root,
+      proposal,
+      previous,
+      repository,
+      repositoryId,
+      member: member.data,
+      get,
+    });
+    proposal = null;
+  }
   if (proposal) need(proposal.identity === identity, 'preserve-original-proposal');
   const differs = [...desired.files].some(
     ([name, body]) =>

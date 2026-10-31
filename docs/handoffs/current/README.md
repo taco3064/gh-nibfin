@@ -1,8 +1,8 @@
 # Current reviewed public runtime
 
-The CLI selects merged public Core `@nibfin/core@0.1.1` from
-`277057f3997461b868cd7fe604dc52954476b591`. Its component identity is
-`ccd81d38461def983f8c2f6165257921588750725bbf0653b7f6449ee89ca338`.
+The CLI selects merged public Core `@nibfin/core@0.1.3` from
+`5ec1bccec47bf249c4116c060bdfcf828e44e969`. Its component identity is
+`f9db1d706f8e516ec9d75a1e692bd8fa4231b1df5a139c108ee192a88cd97578`.
 
 The exact archive, manifest and compatibility inputs are retained here. The
 authoritative asset hashes are in `src/current-core.mjs`; the loader checks every

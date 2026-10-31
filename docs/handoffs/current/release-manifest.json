@@ -1,11 +1,11 @@
 {
   "format": 1,
   "package": "@nibfin/core",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "source": {
     "kind": "merged",
-    "base": "277057f3997461b868cd7fe604dc52954476b591",
-    "commit": "277057f3997461b868cd7fe604dc52954476b591",
+    "base": "5ec1bccec47bf249c4116c060bdfcf828e44e969",
+    "commit": "5ec1bccec47bf249c4116c060bdfcf828e44e969",
     "inputs": [
       {
         "path": ".github/workflows/core-release.yml",
@@ -53,7 +53,7 @@
       },
       {
         "path": "docs/core-host-consolidation.md",
-        "sha256": "ffc799521557e3e808ffe2b81fdacac93ddbc9da6c8d1b9c7b0d74a2ad9cf6d6"
+        "sha256": "7011ae9f6ad5e70a2ea0ece90809043330bc813419e99f425c265e9a042afb0c"
       },
       {
         "path": "docs/core.md",
@@ -253,15 +253,15 @@
       },
       {
         "path": "npm-shrinkwrap.json",
-        "sha256": "8dcc94c2b16b003fec545f79bfe5ee101590beec9d622f8f76aa8a9b6d2d6326"
+        "sha256": "2a512675262acb2c5c645d103bb746946f8d6b0dda6824e3d2bff38ea44eb5a5"
       },
       {
         "path": "package-lock.json",
-        "sha256": "8dcc94c2b16b003fec545f79bfe5ee101590beec9d622f8f76aa8a9b6d2d6326"
+        "sha256": "2a512675262acb2c5c645d103bb746946f8d6b0dda6824e3d2bff38ea44eb5a5"
       },
       {
         "path": "package.json",
-        "sha256": "d917a5e9a13a00fc560d5e8e2f3bc56e6bb99fb98eb4b50882f08ec5a3a4d469"
+        "sha256": "124eff4afd4353186c3852701c4869ce5c89977a0beb4aa7e6efa12516fc8d44"
       },
       {
         "path": "provenance/controller-baseline.json",
@@ -373,7 +373,7 @@
       },
       {
         "path": "src/core-contract.mjs",
-        "sha256": "2d330595d4df8740aeed18265c522767874683a0355dc8e22039a394f4100969"
+        "sha256": "951fdcfa3bd020f94c8a67e49da4011067c7264e9c5d8d1932faaaea65084080"
       },
       {
         "path": "src/core-deliver.mjs",
@@ -408,6 +408,10 @@
         "sha256": "7d19f92c422b5b5245e750db5faabc5ba099564c37e4bc90cfe13ed6eebd04f2"
       },
       {
+        "path": "src/delivery-evidence.mjs",
+        "sha256": "04cbdddba4de50b43dc3d5a134c7c538d1a9fbb3e665656167c214f3bd352fda"
+      },
+      {
         "path": "src/delivery-planner.mjs",
         "sha256": "b3a38ec6b849b5fbaa4ba239e608a17c2c8b7689184a611af49f309ecb0abff6"
       },
@@ -421,11 +425,11 @@
       },
       {
         "path": "src/distribution-contract.mjs",
-        "sha256": "bc25b7ba70c4ee7cd16b7432f5e477484204db2d8c068065cb098ee4ca922a93"
+        "sha256": "c3e48d827a90b5eda7a195bfd0f01359e9fbb8300eba2ed323fe822158d0b153"
       },
       {
         "path": "src/distribution-map.json",
-        "sha256": "a3e181050f427773814b9e615c093b2ff4c40a161e6967bc62e86559c0177d45"
+        "sha256": "d50b491fc0efca2bf13569a7bed619640889ec2ed1a599cb8e620720b045df77"
       },
       {
         "path": "src/distribution.mjs",
@@ -449,7 +453,7 @@
       },
       {
         "path": "src/evidence.mjs",
-        "sha256": "99e9f2216c5b16d8a46e0b40654c33152b22d2e2768fe0a23a901f6209e7d971"
+        "sha256": "a900930011b3266f44b4ba43e26fafb64c8649c034ab8033afa93f7a42d28d6d"
       },
       {
         "path": "src/execution-pool.mjs",
@@ -517,7 +521,7 @@
       },
       {
         "path": "src/index.mjs",
-        "sha256": "615114bc9e3c48b9e2e498ea89e1658d3dbec336cfede9f5c19ed3de66818df9"
+        "sha256": "ff771ffba4fc4e8e825d283df93b43bff13ca734d5e262e26c888e1d60f42b36"
       },
       {
         "path": "src/installation.mjs",
@@ -534,6 +538,10 @@
       {
         "path": "src/lifecycle.mjs",
         "sha256": "980aeddc12c6a4cd9e49bdbc50d44d17cb1d1a71fa71b34880c2bd0f2c30afd4"
+      },
+      {
+        "path": "src/merged-continuation.mjs",
+        "sha256": "151a72e1b4779fd79cf742f9804a8c34fb1e675dfa999e5af60f54e16927e4a8"
       },
       {
         "path": "src/native-role-bindings.mjs",
@@ -968,6 +976,10 @@
         "sha256": "4523952314b8bf5d4c96e3f5f34a66c5fbda19e5c178b12585b0350bfcc6fb73"
       },
       {
+        "path": "test/merged-continuation.test.mjs",
+        "sha256": "d0d26f3e070565efbe79492945a8c65eff2e351212748c516909e7afec45b262"
+      },
+      {
         "path": "test/native-completion-records.test.mjs",
         "sha256": "c0bd11bbcad57fee07b579e3f614af8be3c38fe1c1ee7755635b2879a144fc30"
       },
@@ -1157,7 +1169,7 @@
       },
       {
         "path": "tooling/archive.mjs",
-        "sha256": "c517e635b6c19b20211548fadf0528df4987e90b313f67bbf77913a306418eb3"
+        "sha256": "915c48a1daf9f4b27b637345a70c02640f7704412cd67a6f287cc015de5405f5"
       },
       {
         "path": "tooling/candidate-publication-fixture.mjs",
@@ -1222,6 +1234,10 @@
       {
         "path": "tooling/host-routing-fixture.mjs",
         "sha256": "74dfb1808776aea2a4e2455a4f73a0a1c4e46573e786baac5aceaa1f79442536"
+      },
+      {
+        "path": "tooling/merged-continuation-fixture.mjs",
+        "sha256": "8101a8d42443765a2bb20d2944f008ca3284b0feb22534b7bff56ded8f7503a4"
       },
       {
         "path": "tooling/operations-fixture.mjs",
@@ -1304,11 +1320,11 @@
         "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
       }
     ],
-    "contentSha256": "3c4baed564a7ebc569f732f05b250c7e12dcc9db8a158c6422309f934e0060a4"
+    "contentSha256": "e20c68d9dfb2a0ba7c3eed21976cd71854691eb6acb0a711875636da8993bade"
   },
   "components": {
     "core": {
-      "version": "0.1.1",
+      "version": "0.1.3",
       "files": [
         {
           "path": "README.md",
@@ -1352,7 +1368,7 @@
         },
         {
           "path": "docs/core-host-consolidation.md",
-          "sha256": "ffc799521557e3e808ffe2b81fdacac93ddbc9da6c8d1b9c7b0d74a2ad9cf6d6"
+          "sha256": "7011ae9f6ad5e70a2ea0ece90809043330bc813419e99f425c265e9a042afb0c"
         },
         {
           "path": "docs/core.md",
@@ -1552,11 +1568,11 @@
         },
         {
           "path": "npm-shrinkwrap.json",
-          "sha256": "8dcc94c2b16b003fec545f79bfe5ee101590beec9d622f8f76aa8a9b6d2d6326"
+          "sha256": "2a512675262acb2c5c645d103bb746946f8d6b0dda6824e3d2bff38ea44eb5a5"
         },
         {
           "path": "package.json",
-          "sha256": "d917a5e9a13a00fc560d5e8e2f3bc56e6bb99fb98eb4b50882f08ec5a3a4d469"
+          "sha256": "124eff4afd4353186c3852701c4869ce5c89977a0beb4aa7e6efa12516fc8d44"
         },
         {
           "path": "provenance/controller-baseline.json",
@@ -1668,7 +1684,7 @@
         },
         {
           "path": "src/core-contract.mjs",
-          "sha256": "2d330595d4df8740aeed18265c522767874683a0355dc8e22039a394f4100969"
+          "sha256": "951fdcfa3bd020f94c8a67e49da4011067c7264e9c5d8d1932faaaea65084080"
         },
         {
           "path": "src/core-deliver.mjs",
@@ -1703,6 +1719,10 @@
           "sha256": "7d19f92c422b5b5245e750db5faabc5ba099564c37e4bc90cfe13ed6eebd04f2"
         },
         {
+          "path": "src/delivery-evidence.mjs",
+          "sha256": "04cbdddba4de50b43dc3d5a134c7c538d1a9fbb3e665656167c214f3bd352fda"
+        },
+        {
           "path": "src/delivery-planner.mjs",
           "sha256": "b3a38ec6b849b5fbaa4ba239e608a17c2c8b7689184a611af49f309ecb0abff6"
         },
@@ -1716,11 +1736,11 @@
         },
         {
           "path": "src/distribution-contract.mjs",
-          "sha256": "bc25b7ba70c4ee7cd16b7432f5e477484204db2d8c068065cb098ee4ca922a93"
+          "sha256": "c3e48d827a90b5eda7a195bfd0f01359e9fbb8300eba2ed323fe822158d0b153"
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "a3e181050f427773814b9e615c093b2ff4c40a161e6967bc62e86559c0177d45"
+          "sha256": "d50b491fc0efca2bf13569a7bed619640889ec2ed1a599cb8e620720b045df77"
         },
         {
           "path": "src/distribution.mjs",
@@ -1744,7 +1764,7 @@
         },
         {
           "path": "src/evidence.mjs",
-          "sha256": "99e9f2216c5b16d8a46e0b40654c33152b22d2e2768fe0a23a901f6209e7d971"
+          "sha256": "a900930011b3266f44b4ba43e26fafb64c8649c034ab8033afa93f7a42d28d6d"
         },
         {
           "path": "src/execution-pool.mjs",
@@ -1812,7 +1832,7 @@
         },
         {
           "path": "src/index.mjs",
-          "sha256": "615114bc9e3c48b9e2e498ea89e1658d3dbec336cfede9f5c19ed3de66818df9"
+          "sha256": "ff771ffba4fc4e8e825d283df93b43bff13ca734d5e262e26c888e1d60f42b36"
         },
         {
           "path": "src/installation.mjs",
@@ -1829,6 +1849,10 @@
         {
           "path": "src/lifecycle.mjs",
           "sha256": "980aeddc12c6a4cd9e49bdbc50d44d17cb1d1a71fa71b34880c2bd0f2c30afd4"
+        },
+        {
+          "path": "src/merged-continuation.mjs",
+          "sha256": "151a72e1b4779fd79cf742f9804a8c34fb1e675dfa999e5af60f54e16927e4a8"
         },
         {
           "path": "src/native-role-bindings.mjs",
@@ -2095,10 +2119,10 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "ccd81d38461def983f8c2f6165257921588750725bbf0653b7f6449ee89ca338"
+      "sha256": "f9db1d706f8e516ec9d75a1e692bd8fa4231b1df5a139c108ee192a88cd97578"
     },
     "skills": {
-      "version": "0.1.1",
+      "version": "0.1.3",
       "files": [
         {
           "path": "instructions/scope.md",
@@ -2124,7 +2148,7 @@
       "sha256": "e256f4f4da556f8a8c66e6764ff83f1b7dd347967de4814bc865fcf453ec1b96"
     },
     "workflow": {
-      "version": "0.1.1",
+      "version": "0.1.3",
       "files": [
         {
           "path": "docs/protected-host.md",
@@ -2218,10 +2242,10 @@
   },
   "archive": {
     "name": "nibfin-core.tgz",
-    "sha256": "4cd6288a4ebf506d35140edf43234c7ca4e0824203a165d8459f5a1cb114e157"
+    "sha256": "ea46288399feb041c9a1f7fad9c7f1d44b43accce78da4e61580f5293852d346"
   },
   "compatibility": {
     "name": "compatibility.json",
-    "sha256": "6c34e4c4f3c68ff2577b7d02d33237dcf0e04608681061b1f58200aa116c04cf"
+    "sha256": "c5178e37e0c56627c86ce8f3f52a1498708935a1850ad03b04e4d15ea24cbdbd"
   }
 }
