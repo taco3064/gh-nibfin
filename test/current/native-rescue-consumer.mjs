@@ -27,13 +27,18 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
  const blob=(path)=>createHash('sha1').update('blob '+Buffer.byteLength(files.get(path))+'\0').update(files.get(path)).digest('hex');
  const source={id:'1000',run_attempt:1,repository:f.repo,head_repository:f.repo,path:'.github/workflows/nibfin-stage.yml',event:'workflow_dispatch',head_branch:'main',head_sha:head,
   actor:{id:'7'},triggering_actor:{id:'7'},status:'completed',conclusion:'failure'};
- const dispatched=[],writes=[];let diagnoses=0;
+ const dispatched=[],writes=[];let diagnoses=0,slowGuard=false,guardsDelayed=0;
  const reply=data=>({status:200,body:JSON.stringify(data)});
  f.intercept(async r=>{
   if(r.endpoint.includes('/contents/.github/workflows/nibfin-')){const path=r.endpoint.split('/contents/')[1].split('?')[0],text=files.get(path);return reply({type:'file',path,sha:blob(path),encoding:'base64',content:Buffer.from(text).toString('base64'),size:Buffer.byteLength(text)});}
   if(r.endpoint===base+'/commits/main')return reply({sha:head});
   if(r.endpoint.includes('/actions/workflows/')&&!r.endpoint.endsWith('/dispatches')&&!r.endpoint.includes('/runs?')){const rescue=r.endpoint.includes('rescue');return reply({id:rescue?'901':'900',state:'active',path:'.github/workflows/nibfin-'+(rescue?'rescue':'stage')+'.yml'});}
-  if(r.endpoint===base+'/actions/runs/1000/attempts/1')return reply(source);
+  if(r.endpoint===base+'/actions/runs/1000/attempts/1'){
+   // A real original-source guard can outlive the provider's single-request
+   // budget. Exercise the installed operation owner, not a timer/config mock.
+   if(slowGuard&&guardsDelayed<2){guardsDelayed++;await new Promise(resolve=>setTimeout(resolve,16000));}
+   return reply(source);
+  }
   if(r.endpoint===base+'/actions/runs/1000/attempts/1/jobs?per_page=100')return reply({jobs:[{id:'5000',name:'stage / execute',status:'completed'}]});
   if(r.method==='POST'&&r.endpoint.endsWith('/dispatches')){
    const body=JSON.parse(r.body),rescue=r.endpoint.includes('/901/'),id=String(6000+dispatched.length);
@@ -44,7 +49,8 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
   if(r.endpoint.includes('/actions/workflows/')&&r.endpoint.includes('/runs?')){const workflow=r.endpoint.split('/workflows/')[1].split('/')[0];const runs=dispatched.filter(d=>d.run.workflow_id===workflow).map(d=>d.run);return reply({total_count:runs.length,workflow_runs:runs});}
   if(r.endpoint.includes('/actions/runs/')){const id=r.endpoint.split('/actions/runs/')[1].split('/')[0],run=dispatched.find(d=>d.run.id===id)?.run;if(run)return reply(run);}
  });
- const rescue=await nativeRescue(core,{root:f.root,configuration:f.configuration,provider:f.provider,transport:f.transport,
+ const executionCore={...core,createControlledOperations:options=>{if(role==='shape')slowGuard=true;return core.createControlledOperations(options);}};
+ const rescue=await nativeRescue(executionCore,{root:f.root,configuration:f.configuration,provider:f.provider,transport:f.transport,
   agent:async(_core,{target,caseId})=>({capabilities:{rescueReadOnly:true},diagnose:async()=>{diagnoses++;return{execution:'diagnosis-new',terminated:true,memberId:'7',adapter:'codex',result:{outcome:'ready',failureClass:'implementation_defect',
    body:JSON.stringify({action:'retry-original-role',steps:['Resume the original Shape conversation using the corrected completed-message decoder']}),rootCause:'The previous parser discarded the valid Shape envelope',summary:'diagnosed',evidenceReferences:[caseId],contractConflicts:[]}};},close:async()=>{}})});
  try{
@@ -52,6 +58,7 @@ for(const role of ['shape','deliver'])test('native '+role+' recovery preserves t
   const observer=await openFileHostStore(core,{directory:join(f.root,'state')});let cases;
   try{cases=(await observer.rescue('100').read()).cases;}finally{await observer.close();}
   assert.equal(writes.length,1,JSON.stringify(cases[id]));assert.equal(diagnoses,0);
+  if(role==='shape')assert.equal(guardsDelayed,2,'the notification survives serial fresh guards totaling more than thirty seconds');
   assert.equal(await rescue.observe({store,claim:{id:request,runId:'1000',stage:role,sourceCommit:head}}),id);
   assert.equal(writes.length,1,'the same stopped execution does not queue another notification');
   const notification=dispatched[0];assert.equal(notification.body.inputs.request_id,id);
