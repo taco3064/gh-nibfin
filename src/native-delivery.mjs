@@ -181,6 +181,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
      .map(name=>[name,name==='delivered'?expected:s.expectations[name]]));s.completionSource=composed.sourceEvent;}
     return s;});
   }else await store.update(s=>{s.attempts[stage].phase='unresolved';s.attempts[stage].reason=result.reason;return s;});
+  const reported=result.owner?.output?.collection?.result;
+  if(result.disposition!=='completed'&&typeof reported?.summary==='string')await progress({status:result.disposition,reason:result.reason,
+   ai_status:'role-reported',root_cause:reported.summary,repair_status:'unresolved',verified:'false'});
   completed=result.disposition==='completed';return result;
  }finally{
   let terminated=false;
