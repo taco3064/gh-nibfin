@@ -18,8 +18,10 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           node <<'NODE'
-          if (process.env.EVENT_NAME === 'pull_request' && process.env.PR_AUTHOR_ID !== process.env.OWNER_ID) {
-            console.error('Only the repository owner may submit a mergeable pull request.');
+          if (process.env.EVENT_NAME === 'pull_request' &&
+              process.env.PR_AUTHOR_ID !== process.env.OWNER_ID) {
+            console.error('Only the repository owner may submit ' +
+              'a mergeable pull request.');
             process.exit(1);
           }
           NODE
@@ -38,7 +40,9 @@ jobs:
         run: python3 tooling/check.py
       - name: Verify the immutable installed Core observation contract offline
         run: node docs/handoffs/n15/verify.mjs
-      - name: Verify the immutable installed registration response contract offline
+      - name: Verify immutable installed registration response offline
         run: node docs/handoffs/n17/verify.mjs
-      - name: Verify current public package and registration-scope admission contracts offline
+      - name: Verify current public package and registration-scope contracts offline
         run: node --test test/current/*.mjs
+      - name: Verify exact source release archive and manifest preparation
+        run: node tooling/release-prepare.mjs
