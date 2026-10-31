@@ -4,6 +4,7 @@ import{retainUnacceptedWorkspace,restoreUnacceptedWorkspace}from'./native-unacce
 import{resumeNativeSession}from'./native-session-resume.mjs';
 import{prepareNativeCleanBase}from'./native-clean-base.mjs';
 import{prepareDeferredNativeRole}from'./native-deferred-role.mjs';
+import{nativeRoleSummaries}from'./native-role-summary.mjs';
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 
@@ -78,6 +79,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   repositories:binding.configuration.targets.map(t=>t.repository),environment:{PATH:runner.path,HOME:userInfo().homedir}});
  const backend=instance=>({root:member.base,image:member.image,socket:'/run/user/'+userInfo().uid+'/docker.sock',runtimeProfile:member.runtimeProfile,
   environment,instanceId:instance.id,egress:{image:member.image,node:true},githubRead:{directory:brokerPath,repositories:binding.configuration.targets.map(t=>t.repository)}});
+ const summaries=nativeRoleSummaries(core,{retain});
  const native=core.createNativeRoleBindings({ownership:binding.ownerType==='Organization'?'organization':'personal',source,retain,
   allocate:async role=>{const s=store?await store.read():null,resume=s?.sessionResumes?.[role];
    if(!resume?.next||resume.next.request!==binding.request.id)return null;
@@ -102,7 +104,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
  }
  const prepared=new Map();
  const host=core.createProtectedRoleHost({configuration:{runner,profiles,assignments:Object.fromEntries(roles.map(role=>[role,role]))},
-  collectUntilTerminal:true,signal,checkpoint,retain,
+  collectUntilTerminal:true,signal,checkpoint,retain:summaries.retain,
   sessions:{
    prepare:async({task,memberId:actualMember})=>{
     need(actualMember===memberId,'session-member');const instance=instances[roles.indexOf(task.role)],directory=join(instance.service,'session');
@@ -121,7 +123,7 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
    }
    return {status:backendReady(report)?'verified':'blocked',...(capability==='github-identity'?{userId:memberId}:{})};
   },
-  bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return nativeAssignedRolePrompt(core,value,{sourceOnly});}
+  bind:async task=>{const value=await native.bind(task);need(core.canonicalJSON(value.input.execution.source)===core.canonicalJSON(source),'source-attribution');return nativeAssignedRolePrompt(core,summaries.bind(value),{sourceOnly});}
  });
  return Object.freeze({
   sourceDirectory,candidateDirectory,

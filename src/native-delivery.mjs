@@ -182,8 +182,9 @@ export async function executeNativeDelivery(core,{root,binding,context,provider,
     return s;});
   }else await store.update(s=>{s.attempts[stage].phase='unresolved';s.attempts[stage].reason=result.reason;return s;});
   const reported=result.owner?.output?.collection?.result;
-  if(result.disposition!=='completed'&&typeof reported?.summary==='string')await progress({status:result.disposition,reason:result.reason,
-   ai_status:'role-reported',root_cause:reported.summary,repair_status:'unresolved',verified:'false'});
+  const finding=result.owner?.output?.finding;
+  if(result.disposition!=='completed'&&(typeof reported?.summary==='string'||typeof finding==='string'))await progress({status:result.disposition,reason:finding??result.reason,
+   ai_status:reported?'role-reported':'not-run',root_cause:finding??reported.summary,repair_status:'unresolved',verified:'false'});
   completed=result.disposition==='completed';return result;
  }finally{
   let terminated=false;
