@@ -1,0 +1,43 @@
+name: CLI immutable release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gh-nibfin-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.repository == 'taco3064/gh-nibfin' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.3'
+      - name: Verify shipped CLI without networking
+        run: python3 tooling/check.py
+      - name: Verify installed current Core integration
+        run: node --test test/current/*.mjs
+      - name: Prepare exact source and pinned Core manifest
+        run: node tooling/release-prepare.mjs
+      - name: Publish and independently read back immutable release
+        run: node tooling/release-publish.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Retain publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cli-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/
+          if-no-files-found: error

@@ -1,19 +1,13 @@
 # Current reviewed public runtime
 
-This integration branch selects the reviewed public Core candidate source snapshot at
-`2befc7b4b012bf6498bbe472fdbcbbc5a5ef7db1`, package `@nibfin/core@0.1.0`.
-The exact reviewed inputs are retained here:
+The CLI selects merged public Core `@nibfin/core@0.1.1` from
+`277057f3997461b868cd7fe604dc52954476b591`. Its component identity is
+`ccd81d38461def983f8c2f6165257921588750725bbf0653b7f6449ee89ca338`.
 
-| Input | SHA-256 |
-| --- | --- |
-| nibfin-core.tgz | c842073852e7a2c5b6f0e3380944845cef736eb3373d572fe7ef6188ef141691 |
-| release-manifest.json | 0181e6b11b06104df8938965f9b9f90106f80e1edb7a1f4f22825f1b8c4777cb |
-| compatibility.json | 3de7e9ce79c2bd8a0804f5fd3ba20e2c5b7f521bcfb9777547ad3a732a2ff23a |
-
-The Core component identity is
-`57288363f0eb4bf55687ebbb006299f6393f651106ec03957695aa81b0c0e656`.
-The release manifest honestly retains the producer's candidate source identity;
-these files do not establish publication of a release. The superseded #233 input and incompatibility report remain available in Git history; they are not installation inputs.
+The exact archive, manifest and compatibility inputs are retained here. The
+authoritative asset hashes are in `src/current-core.mjs`; the loader checks every
+asset and full file inventory before executing Core. These merged source inputs
+become publication evidence only after independent official release readback.
 N01/N15/N17 remain separately pinned historical contracts.
 
 The loader verifies all three anchors, full component inventory, package metadata,

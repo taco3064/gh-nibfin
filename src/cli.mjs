@@ -1,108 +1,153 @@
-import {removeEnvironment} from './remove.mjs';
-import {unregisterInstance} from './unregister.mjs';
-import {listEnvironments, listText} from './list.mjs';
+import {
+  versionText,
+  upgradeFailureText,
+  createdText,
+  registeredText,
+  unregisteredText,
+  unregisterUsage,
+  removedText,
+  removalInstanceText,
+  retainedRemovalText,
+  removeUsage,
+  unimplementedText,
+  fatalText,
+} from './cli-output.mjs';
+import { removeEnvironment } from './remove.mjs';
+import { unregisterInstance } from './unregister.mjs';
+import { listEnvironments, listText } from './list.mjs';
 import { registerInstance } from './register.mjs';
 import { createEnvironment } from './create.mjs';
 import { pathToFileURL } from 'node:url';
-import {withCore} from './core.mjs';
-import {withCurrentCore,currentProducer,currentPin} from './current-core.mjs';
-import {initializeRepository} from './installation.mjs';
-import {upgradeManagedInstallation} from './managed-upgrade.mjs';
+import { withCore } from './core.mjs';
+import { withCurrentCore, currentProducer, currentPin } from './current-core.mjs';
+import { initializeRepository } from './installation.mjs';
+import { upgradeManagedInstallation } from './managed-upgrade.mjs';
 
-export const version = '0.1.0-baseline';
-const commands = new Map([
-  ['init', 'Initialize repository workflows/labels; optional --auto-register or pool input (--execution-repo and --pool-repos).'],
-  ['runner create', 'Create a fixed-Agent environment with N unregistered instances (default 2; positive integer total).'],
-  ['runner register', 'Register existing instances with GitHub; never implicitly create instances.'],
-  ['runner unregister', 'Unregister one instance while retaining its environment and other registrations.'],
-  ['runner list', 'List local environments, identities, registrations and service state without secrets.'],
-  ['runner remove', 'Member-controlled removal of a local environment; report remote cleanup failures.'],
-  ['upgrade', 'Check/update Nibfin versions; preserve compatibility and authorization boundaries.'],
-]);
-const usage = `Usage: gh nibfin [--help | --version | COMMAND]\n\n${
-  [...commands].map(([name, purpose]) => `  ${name}\n    ${purpose}`).join('\n')
-}\n\nCreate: runner create --name NAME --agent AGENT [--count N] (1–128 total). Register: runner register --runner NAME (--repo OWNER/REPO | --org ORG) [--group NAME] [--method auto|manual]. List: runner list [--runner NAME] [--json] (read-only; unknown remote is not offline; exit 2 for incomplete local inventory). Unregister: runner unregister --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Omit instance only for one matching registration. --org removes the shared Org registration, not a single Repo binding. Requires Linux non-root user systemd; incomplete outcomes require reconciliation before reuse. Remove: runner remove --runner NAME [--yes]. Removes the ENTIRE environment, Agent credentials and all instances; prompts unless --yes. Org removal affects its entire shared registration. Local and remote outcomes are independent; exit 2 requires private .removals reconciliation. Linux non-root user-systemd only. Init: init --repo OWNER/REPO [--check] [--auto-register]. --check observes managed sources and the existing authorized host without installing/starting services or invoking admission. Upgrade: upgrade [--check|--apply|--rollback] consumes the native installer's sealed two-Runner generation plan; checks are read-only and all transitions preserve pause and original work. Missing native onboarding or staged evidence returns exit 2.\nPublic repositories may have personal or Organization owners.\nRepo ownership, Runner registration level and auto-registration policy are separate.\nPrivate repositories are outside product scope. Validation confers no authorization.\n`;
+import { version } from './version.mjs';
+export { version };
+import { commands, usage } from './cli-help.mjs';
 
 // Maintained consumer API: real producer exports, without an eighth CLI command.
 export { withCore };
 export async function main(args, dependencies) {
-  if (process.versions.node.split('.')[0] !== '22') throw new Error('Install Node.js 22.x and retry.');
+  if (process.versions.node.split('.')[0] !== '22')
+    throw new Error('Install Node.js 22.x and retry.');
   if (!args.length || (args.length === 1 && args[0] === '--help')) {
     process.stdout.write(usage);
     return 0;
   }
   if (args.length === 1 && args[0] === '--version') {
-    await withCurrentCore(core => {
+    await withCurrentCore((core) => {
       // Exercise the public producer entry, without replicating identity logic.
       core.githubId('42');
-      process.stdout.write(`gh-nibfin ${version}; @nibfin/core@0.1.0; producer ${currentProducer}\nLocal baseline only; platform installation and complete runtime unverified.\n`);
+      process.stdout.write(
+        versionText(version, currentPin.packageVersion, currentProducer),
+      );
     });
     return 0;
   }
   if (args[0] === 'init') {
     try {
-      const result=await initializeRepository(args.slice(1),dependencies);
-      process.stdout.write(JSON.stringify(result)+'\n');
-      return result.status==='ready'?0:2;
-    } catch(error){process.stderr.write('init: '+error.message+'\n');return 2;}
+      const result = await initializeRepository(args.slice(1), dependencies);
+      process.stdout.write(JSON.stringify(result) + '\n');
+      return result.status === 'ready' ? 0 : 2;
+    } catch (error) {
+      process.stderr.write('init: ' + error.message + '\n');
+      return 2;
+    }
   }
-  if(args[0]==='upgrade'){
-    try{
-      const result=await upgradeManagedInstallation(args.slice(1),dependencies);
-      process.stdout.write(JSON.stringify(result)+'\n');
-      return ['checked','unchanged','switched','rolled-back'].includes(result.status)?0:2;
-    }catch(error){process.stderr.write('upgrade: '+error.message+'; preserve the original native installation, staged generations and maintenance journal for reconciliation.\n');return 2;}
+  if (args[0] === 'upgrade') {
+    try {
+      const result = await upgradeManagedInstallation(args.slice(1), dependencies);
+      process.stdout.write(JSON.stringify(result) + '\n');
+      return ['checked', 'unchanged', 'switched', 'rolled-back'].includes(
+        result.status,
+      )
+        ? 0
+        : 2;
+    } catch (error) {
+      process.stderr.write(upgradeFailureText(error));
+      return 2;
+    }
   }
   if (args[0] === 'runner' && args[1] === 'create') {
     try {
       const record = await createEnvironment(args.slice(2), dependencies);
-      process.stdout.write(`Created ${record.name}: ${record.instances.length} unregistered ${record.agent} instances.\n`);
+      process.stdout.write(createdText(record));
       return 0;
-    } catch (error) { process.stderr.write(`runner create: ${error.message}\n`); return 2; }
+    } catch (error) {
+      process.stderr.write(`runner create: ${error.message}\n`);
+      return 2;
+    }
   }
   if (args[0] === 'runner' && args[1] === 'register') {
     try {
       const result = await registerInstance(args.slice(2), dependencies);
-      if (result.cancelled) {process.stdout.write('Registration cancelled; no request submitted.\n');return 2;}
-      process.stdout.write(`Registered instance ${result.instanceId}: Runner ${result.runnerId}, ${result.label}; ${result.method === 'auto' ? 'configuration completed; remote unknown (eligibility unproven)' : result.status+', busy='+result.busy}; service ${result.service.status}.\n`);
+      if (result.cancelled) {
+        process.stdout.write('Registration cancelled; no request submitted.\n');
+        return 2;
+      }
+      process.stdout.write(registeredText(result));
       return 0;
-    } catch (error) { process.stderr.write(`runner register: ${error.message}\n`); return 2; }
+    } catch (error) {
+      process.stderr.write(`runner register: ${error.message}\n`);
+      return 2;
+    }
   }
   if (args[0] === 'runner' && args[1] === 'unregister') {
     try {
-      const r=await unregisterInstance(args.slice(2),dependencies);
-      process.stdout.write(`Unregister ${r.instanceId}: local=${r.local}; service=${r.service}; remote=${r.remote}; ${r.complete ? (r.already ? 'already unregistered' : 'complete') : 'incomplete; reconcile private unregister.json, active work and remote identity before retry/reuse'}.\n`);
+      const r = await unregisterInstance(args.slice(2), dependencies);
+      process.stdout.write(unregisteredText(r));
       return r.complete ? 0 : 2;
-    } catch {process.stderr.write('runner unregister: Use --runner NAME (--repo OWNER/REPO | --org ORG) [--instance ID]. Verify private records, Linux user-systemd/account prerequisites; reconcile uncertain work/removal before retry.\n');return 2;}
+    } catch {
+      process.stderr.write(unregisterUsage);
+      return 2;
+    }
   }
   if (args[0] === 'runner' && args[1] === 'remove') {
     try {
-      const r=await removeEnvironment(args.slice(2),dependencies);
-      if(r.cancelled) {process.stdout.write('Removal cancelled; no resources changed.\n');return 2;}
-      process.stdout.write(`Remove ${r.name}: local=${r.local}; ${r.complete?'complete':'incomplete; reconcile remote/effect/service residue'}.\n`);
-      for(const i of r.instances) process.stdout.write(`${i.id}: service=${i.service}; local=${i.local}; remote=${i.remote}; effects=${i.effects}.\n`);
-      for(const i of r.instances) if(i.retainedSources?.length) process.stdout.write(`${i.id}: original operation evidence retained in service/${i.retainedSources.join(', service/')}; owning runtime must reconcile the unrecognized record before deletion.\n`);
-      if(!r.complete) process.stdout.write(`Private reconciliation record: ${r.residue}\n`);
-      return r.complete?0:2;
-    } catch {process.stderr.write('runner remove: Use --runner NAME [--yes]. Verify owned paths/account and user-systemd; inspect retained resources and private .removals records before retrying.\n');return 2;}
+      const r = await removeEnvironment(args.slice(2), dependencies);
+      if (r.cancelled) {
+        process.stdout.write('Removal cancelled; no resources changed.\n');
+        return 2;
+      }
+      process.stdout.write(removedText(r));
+      for (const i of r.instances) process.stdout.write(removalInstanceText(i));
+      for (const i of r.instances)
+        if (i.retainedSources?.length) process.stdout.write(retainedRemovalText(i));
+      if (!r.complete)
+        process.stdout.write(`Private reconciliation record: ${r.residue}\n`);
+      return r.complete ? 0 : 2;
+    } catch {
+      process.stderr.write(removeUsage);
+      return 2;
+    }
   }
   if (args[0] === 'runner' && args[1] === 'list') {
     const result = await listEnvironments(args.slice(2), dependencies);
-    process.stdout.write(args.includes('--json') ? JSON.stringify(result)+'\n' : listText(result));
+    process.stdout.write(
+      args.includes('--json') ? JSON.stringify(result) + '\n' : listText(result),
+    );
     return result.complete ? 0 : 2;
   }
   const command = args.join(' ');
-  if (commands.has(command) && JSON.stringify(args) === JSON.stringify(command.split(' '))) {
-    process.stderr.write(`${command}: not implemented; this baseline exposes responsibilities only. See --help and the later command implementation Issues.\n`);
+  if (
+    commands.has(command) &&
+    JSON.stringify(args) === JSON.stringify(command.split(' '))
+  ) {
+    process.stderr.write(unimplementedText(command));
     return 2;
   }
-  process.stderr.write(`Invalid command or options: ${JSON.stringify(args)}. Use gh nibfin --help.\n`);
+  process.stderr.write(
+    `Invalid command or options: ${JSON.stringify(args)}. Use gh nibfin --help.\n`,
+  );
   return 2;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { process.exitCode = await main(process.argv.slice(2)); }
-  catch (error) {
-    process.stderr.write(`gh-nibfin: ${error.code === 'ENOENT' ? 'Required Core handoff missing; restore the reviewed handoff.' : error.message} Retry with Node 22.x and the intact reviewed package.\n`);
+  try {
+    process.exitCode = await main(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(fatalText(error));
     process.exitCode = 1;
   }
 }
