@@ -17,7 +17,12 @@ import {
 } from './release-contract.mjs';
 
 export async function prepareRelease({ source, root = process.cwd() }) {
-  const git = (...args) => execFileSync('git', ['-C', root, ...args]);
+  const git = (...args) =>
+    execFileSync(
+      'git',
+      ['-C', root, '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', ...args],
+      { maxBuffer: 64 * 1024 * 1024 },
+    );
   need(commit(source), 'source');
   need(git('rev-parse', 'HEAD').toString().trim() === source, 'checkout');
   need(!git('status', '--porcelain', '--untracked-files=no').length, 'dirty-source');
