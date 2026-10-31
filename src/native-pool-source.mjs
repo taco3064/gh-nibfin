@@ -74,11 +74,11 @@ export function nativePoolSource(core,{configuration,memberId,provider,dispatche
    need(job.id===request.jobId&&job.run_id===request.runId&&(job.run_attempt===undefined||String(job.run_attempt)===request.attempt)
     &&job.head_sha===retained.sourceCommit&&job.name===retained.jobName&&['queued','in_progress','completed'].includes(job.status)
     &&Array.isArray(job.labels)&&job.labels.includes('nibfin-request-'+selector)
-    &&job.labels.includes(core.memberRunnerLabel(memberId)),'job');
+    &&(rescue||job.labels.includes(core.memberRunnerLabel(memberId))),'job');
    const issue=await get(root+'/issues/'+retained.issue);
    need(!issue.pull_request&&String(issue.number)===retained.issue&&['open','closed'].includes(issue.state)
     &&typeof issue.body==='string','issue-ssot');
-   const closed=issue.state==='closed'&&['delivered','fanout'].includes(retained.stage)&&closedContinuation
+   const closed=issue.state==='closed'&&(rescue||['delivered','fanout'].includes(retained.stage))&&closedContinuation
     ?await closedContinuation({issue,target,retained}):false;
    const launchAuthorized=(issue.state==='open'||closed===true)&&sha(issue.body)===retained.issueBodySha256
     &&issue.assignees?.some(a=>a.id===memberId)===true&&(!launchAllowed||await launchAllowed()===true);

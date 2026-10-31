@@ -6,15 +6,15 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {parseArchive,verifyRegistrationCore} from './core.mjs';
 
-export const currentProducer='1c9d8b9f08331eb4088c6dd304e24372ab5b0e1a';
-export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'4a4887201334c42422f2d3b836f307a7c6ca71ac77168c92636aca4e3b967163'});
+export const currentProducer='2befc7b4b012bf6498bbe472fdbcbbc5a5ef7db1';
+export const currentPin=Object.freeze({packageVersion:'0.1.0',coreSha256:'57288363f0eb4bf55687ebbb006299f6393f651106ec03957695aa81b0c0e656'});
 const handoff=new URL('../docs/handoffs/current/',import.meta.url);
-const hashes=Object.freeze({'nibfin-core.tgz':'3602682b755294ea0bb82ecc1bad824ff9701fa36240ba742af5d69555d991b5',
-  'release-manifest.json':'91e93f3627137a12fbd76cb0da6c262e36b9b5de03c50a2d308a786f8ba4e9e7',
-  'compatibility.json':'7cc4b6b98db1254824a3b0cf11d34853b452789fdf9b4d0c004df9009bc4a7cc'});
+const hashes=Object.freeze({'nibfin-core.tgz':'c842073852e7a2c5b6f0e3380944845cef736eb3373d572fe7ef6188ef141691',
+  'release-manifest.json':'0181e6b11b06104df8938965f9b9f90106f80e1edb7a1f4f22825f1b8c4777cb',
+  'compatibility.json':'3de7e9ce79c2bd8a0804f5fd3ba20e2c5b7f521bcfb9777547ad3a732a2ff23a'});
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const need=(ok,message)=>{if(!ok)throw Error('Current Core verification: '+message);};
-const exportsRequired=['createCore','createNativeRoleBindings','nextDeliveryStage','createProtectedRoleHost','createShapeFlow','createCompletionFlow','observeFinalReview','createPublicationGit','captureRescueSession','observeRequirementAuthority','observeIssueAuthority','runnerJobPolicy','protectedWorkRestriction','createRescueRecords','initialRescueRecords','contentIdentity','canonicalJSON','releaseHash','validateExecutionPool','projectExecutionContext','createHostRouting','createHostIdentityAdapters','loadProtectedHost','loadProtectedDeployment','createInstallation','distributionIdentity','runnerConfiguration','preflightRunner','createAgentEnvironments',
+const exportsRequired=['createRescueController','createRescueAgentAdapter','createRescueDispatch','createRescueContinuation','validateRescueTarget','eligibleRescueRecheck','rescueActionReport','createCore','createNativeRoleBindings','nextDeliveryStage','createProtectedRoleHost','createShapeFlow','createCompletionFlow','observeFinalReview','createPublicationGit','captureRescueSession','observeRequirementAuthority','observeIssueAuthority','runnerJobPolicy','protectedWorkRestriction','createRescueRecords','initialRescueRecords','contentIdentity','canonicalJSON','releaseHash','validateExecutionPool','projectExecutionContext','createHostRouting','createHostIdentityAdapters','loadProtectedHost','loadProtectedDeployment','createInstallation','distributionIdentity','runnerConfiguration','preflightRunner','createAgentEnvironments',
   'createLinuxCodexBackend','createLinuxClaudeBackend','createLinuxGeminiBackend','createWindowsWslBackend',
   'runnerJobPolicies','verifyRunnerJobAdmission','workflowInstallation','rescueInstallation','planInstallationTransition','applyInstallationTransition',
   'codexProcess','observeRunnerLocal','createRescueHost','validateRescuePolicy','loadRescueCompletionSecret','createGithubProvider','localGhTransport','createRegistrationHost','openRegistrationResponse','verifyRelease'];

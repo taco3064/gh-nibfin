@@ -1,0 +1,78 @@
+import test from'node:test';import assert from'node:assert/strict';import fs from'node:fs/promises';import{join}from'node:path';import{createHash}from'node:crypto';
+import{withCurrentCore}from'../../src/current-core.mjs';import{nativeCycleFixture}from'./native-cycle-fixture.mjs';
+import{prepareNativeCycle}from'../../src/native-cycle-policy.mjs';import{initializeFileHostStore,openFileHostStore}from'../../src/host-store.mjs';
+import{writePrivate,ensurePrivateDirectory}from'../../src/local-state.mjs';import{managedWorkflowPlan}from'../../src/workflow-inputs.mjs';
+import{nativePoolStore}from'../../src/native-pool-store.mjs';import{nativeRescue}from'../../src/native-rescue.mjs';
+import{restoreUnacceptedWorkspace}from'../../src/native-unaccepted-work.mjs';
+
+test('native recovery uses the installed Core controller to diagnose a stopped role and dispatch only its reserved original-session continuation',async()=>withCurrentCore(async(core,context)=>{
+ const f=await nativeCycleFixture(core,context),store=await prepareNativeCycle(core,f.options),s=await store.read();
+ const request='native-11111111-1111-4111-8111-111111111111',execution='role-original',sessionId='11111111-1111-4111-8111-111111111111';
+ const original=join(context.root,'original-session');await fs.mkdir(original,{mode:0o700});
+ await fs.writeFile(join(original,sessionId+'.jsonl'),JSON.stringify({type:'session_meta',payload:{id:sessionId}})+'\n',{mode:0o600});
+ const metadata={id:sessionId,memberId:'7',role:'shape',execution,adapter:'codex'},snapshot=core.captureRescueSession({directory:original,memberId:'7',role:'shape',session:sessionId,execution});
+ const sessionReference=await store.retain({kind:'native-role-session',metadata,snapshot});
+ await store.retain({kind:'native-role-request',input:{execution:{id:execution,role:'shape',source:{runId:'1000',attempt:'1'}}}});
+ await store.update(v=>{v.attempts.shape={request,phase:'unresolved',reason:'owner-result'};v.dispatch={id:request,stage:'shape'};return v;});
+ const installation={executionPool:f.configuration};await writePrivate(join(f.root,'native-installation.json'),installation);
+ const activation={version:1,phase:'active',installation:core.contentIdentity(installation)};await writePrivate(join(f.root,'activation.json'),{...activation,identity:core.contentIdentity(activation)});
+ const host=await initializeFileHostStore(core,{directory:join(f.root,'state'),installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},repositories:[{repository:'example/project',repositoryId:'100'}]});
+ try{const before=await host.read();await host.updateWork({expected:before.identity,work:{...before.work,paused:false,reconciled:false,
+  pending:[{kind:'native-stage',cycle:s.cycle,request,stage:'shape',status:'UNACCEPTED'}],conversations:[{reference:sessionReference,session:sessionId}]}});}finally{await host.close();}
+ const pool=nativePoolStore(core,{root:f.root,configuration:f.configuration});await pool.initialize();
+ const released={request:{id:request},phase:'released',runnerId:'21'};
+ await pool.jobs.write({id:request,expected:null,value:{...released,identity:core.contentIdentity(released)}});
+ const base='/repos/example/project',head='b'.repeat(40),files=managedWorkflowPlan(core,{executionPool:f.configuration,repository:'example/project'}).files;
+ const blob=(path)=>createHash('sha1').update('blob '+Buffer.byteLength(files.get(path))+'\0').update(files.get(path)).digest('hex');
+ const source={id:'1000',run_attempt:1,repository:f.repo,head_repository:f.repo,path:'.github/workflows/nibfin-stage.yml',event:'workflow_dispatch',head_branch:'main',head_sha:head,
+  actor:{id:'7'},triggering_actor:{id:'7'},status:'completed',conclusion:'failure'};
+ const dispatched=[],writes=[];let diagnoses=0;
+ const reply=data=>({status:200,body:JSON.stringify(data)});
+ f.intercept(async r=>{
+  if(r.endpoint.includes('/contents/.github/workflows/nibfin-')){const path=r.endpoint.split('/contents/')[1].split('?')[0],text=files.get(path);return reply({type:'file',path,sha:blob(path),encoding:'base64',content:Buffer.from(text).toString('base64'),size:Buffer.byteLength(text)});}
+  if(r.endpoint===base+'/commits/main')return reply({sha:head});
+  if(r.endpoint.includes('/actions/workflows/')&&!r.endpoint.endsWith('/dispatches')&&!r.endpoint.includes('/runs?')){const rescue=r.endpoint.includes('rescue');return reply({id:rescue?'901':'900',state:'active',path:'.github/workflows/nibfin-'+(rescue?'rescue':'stage')+'.yml'});}
+  if(r.endpoint===base+'/actions/runs/1000/attempts/1')return reply(source);
+  if(r.endpoint===base+'/actions/runs/1000/attempts/1/jobs?per_page=100')return reply({jobs:[{id:'5000',name:'stage / execute',status:'completed'}]});
+  if(r.method==='POST'&&r.endpoint.endsWith('/dispatches')){
+   const body=JSON.parse(r.body),rescue=r.endpoint.includes('/901/'),id=String(6000+dispatched.length);
+   const run={...source,id,workflow_id:rescue?'901':'900',path:'.github/workflows/nibfin-'+(rescue?'rescue':'stage')+'.yml',status:'queued',conclusion:null,
+    display_title:core.actionRunName({issue:'55',stage:'shape',correlation:body.inputs.nibfin_correlation,...(rescue?{rescue:true,mode:body.inputs.mode}:{})})};
+   dispatched.push({run,body});writes.push(r);return{status:204,body:''};
+  }
+  if(r.endpoint.includes('/actions/workflows/')&&r.endpoint.includes('/runs?')){const workflow=r.endpoint.split('/workflows/')[1].split('/')[0];const runs=dispatched.filter(d=>d.run.workflow_id===workflow).map(d=>d.run);return reply({total_count:runs.length,workflow_runs:runs});}
+  if(r.endpoint.includes('/actions/runs/')){const id=r.endpoint.split('/actions/runs/')[1].split('/')[0],run=dispatched.find(d=>d.run.id===id)?.run;if(run)return reply(run);}
+ });
+ const rescue=await nativeRescue(core,{root:f.root,configuration:f.configuration,provider:f.provider,transport:f.transport,
+  agent:async(_core,{target,caseId})=>({capabilities:{rescueReadOnly:true},diagnose:async()=>{diagnoses++;return{execution:'diagnosis-new',terminated:true,memberId:'7',adapter:'codex',result:{outcome:'ready',failureClass:'implementation_defect',
+   body:JSON.stringify({action:'retry-original-role',steps:['Resume the original Shape conversation using the corrected completed-message decoder']}),rootCause:'The previous parser discarded the valid Shape envelope',summary:'diagnosed',evidenceReferences:[caseId],contractConflicts:[]}};},close:async()=>{}})});
+ try{
+  const id=await rescue.observe({store,claim:{id:request,runId:'1000',stage:'shape',sourceCommit:head}});
+  const observer=await openFileHostStore(core,{directory:join(f.root,'state')});let cases;
+  try{cases=(await observer.rescue('100').read()).cases;}finally{await observer.close();}
+  assert.equal(writes.length,1,JSON.stringify(cases[id]));assert.equal(diagnoses,0);
+  assert.equal(await rescue.observe({store,claim:{id:request,runId:'1000',stage:'shape',sourceCommit:head}}),id);
+  assert.equal(writes.length,1,'the same stopped execution does not queue another notification');
+  const notification=dispatched[0];assert.equal(notification.body.inputs.request_id,id);
+  await assert.rejects(rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:'9999'},correlation:notification.body.inputs.nibfin_correlation,
+   issue:'55',stage:'shape',jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}}),/actual-rescue-invocation/);
+  assert.equal(diagnoses,0,'a different Run cannot borrow the retained notification');
+  const result=await rescue.execute({request:{id:notification.body.inputs.nibfin_correlation,repository:'example/project',runId:notification.run.id},correlation:notification.body.inputs.nibfin_correlation,
+   issue:'55',stage:'shape',jobName:'rescue',mode:'repair',jobRecord:{lease:{identity:'a'.repeat(64)}}});
+  assert.equal(result.rescue.outcome,'PENDING_VERIFICATION',JSON.stringify(result));assert.equal(diagnoses,1);assert.equal(writes.length,2);
+  const after=await store.read(),resume=after.sessionResumes.shape;
+  assert.equal(resume.reference,sessionReference);assert.equal(resume.next.session,sessionId);assert.notEqual(resume.next.execution,execution);
+  assert.equal(dispatched[1].body.inputs.nibfin_member,'7');assert.equal(dispatched[1].body.inputs.nibfin_request,resume.next.request);
+  assert.equal(after.attempts.shape,undefined);assert.equal(after.receipts.shape,undefined);assert.equal(after.recoveries[0].attempt.request,request);
+ }finally{await rescue.close();}
+}));
+
+test('unaccepted Writer restore validates the complete snapshot before copying and preserves executable files',async()=>withCurrentCore(async(core,context)=>{
+ const directory=join(context.root,'writer-restore');await fs.mkdir(directory,{mode:0o700});
+ const bytes=Buffer.from('unfinished original edits');const entry={path:'draft.txt',kind:'file',mode:0o700,data:bytes.toString('base64'),sha256:createHash('sha256').update(bytes).digest('hex')};
+ const snapshot={kind:'native-unaccepted-workspace',status:'UNACCEPTED',execution:{id:'original'},bytes:bytes.length,entries:[entry]};
+ await assert.rejects(restoreUnacceptedWorkspace({directory,snapshot:{...snapshot,entries:[entry,{...entry,path:'../escape'}]},execution:'original'}),/restore-path/);
+ assert.deepEqual(await fs.readdir(directory),[]);
+ await restoreUnacceptedWorkspace({directory,snapshot,execution:'original'});assert.equal(await fs.readFile(join(directory,'draft.txt'),'utf8'),bytes.toString());assert.equal((await fs.stat(join(directory,'draft.txt'))).mode&0o777,0o700);
+ await assert.rejects(restoreUnacceptedWorkspace({directory,snapshot,execution:'original'}),/restore-not-empty/);
+}));

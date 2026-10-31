@@ -12,7 +12,7 @@ const code=e=>typeof e?.message==='string'&&/^native-[a-z-]+:[a-z-]+$/.test(e.me
  * selection can dispatch. A native completion/file event wakes it immediately;
  * bounded remote observation also notices Issue and CI changes behind NAT.
  */
-export async function nativeDispatchMonitor(core,{root,record,coordinator,context,provider,signal,transport,onProgress=()=>{},intervalMs=30000}={}){
+export async function nativeDispatchMonitor(core,{root,record,coordinator,context,provider,signal,transport,rescue,onProgress=()=>{},intervalMs=30000}={}){
  need(Number.isInteger(intervalMs)&&intervalMs>=1000&&intervalMs<=300000,'interval');
  const configuration=core.validateExecutionPool(record.executionPool),owner=await readNativeOwnerPolicy(core,{root});
  const directory=join(root,'dispatches');await ensurePrivateDirectory(directory);let closed=false,pending=false,running=null,timer,activeWrite=null;
@@ -20,7 +20,7 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
  function report(key,value){const identity=core.contentIdentity(value);if(findings.get(key)===identity)return;findings.set(key,identity);onProgress(value);}
  const save=async body=>{await writePrivate(join(directory,body.id+'.json'),{...body,identity:core.contentIdentity(body)});return body;};
  async function claims(){const values=[];for(const name of await fs.readdir(directory)){
-  need(/^native-[a-f0-9-]{36}\.json$/.test(name),'claim-inventory');const value=await readPrivate(join(directory,name));
+  need(/^(?:native-[a-f0-9-]{36}|rescue-[a-f0-9]{64})\.json$/.test(name),'claim-inventory');const value=await readPrivate(join(directory,name));
   const{identity,...body}=value;need(identity===core.contentIdentity(body)&&name===body.id+'.json','claim-integrity');values.push(body);
  }return values;}
  const get=async(target,endpoint)=>{const r=await provider.request({endpoint,target:target.repositoryId,operation:'native-dispatch-observation',correlation:'native-monitor',signal});
@@ -48,12 +48,12 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
   }
   const run=await get(target,base+'/actions/runs/'+claim.runId);
   need(run.id===claim.runId&&run.run_attempt===1&&run.repository?.id===target.repositoryId&&run.head_repository?.id===target.repositoryId
-   &&run.display_title===claim.title&&run.head_sha===claim.sourceCommit&&run.path==='.github/workflows/nibfin-stage.yml'
+   &&run.display_title===claim.title&&run.head_sha===claim.sourceCommit&&run.path===(claim.workflowPath??'.github/workflows/nibfin-stage.yml')
    &&run.actor?.id===owner.memberId&&run.triggering_actor?.id===owner.memberId,'run-binding');
   if(run.status==='completed')return save({...claim,phase:'completed',conclusion:run.conclusion});
   if(claim.phase!=='enqueued'){
    const jobs=await list(target,base+'/actions/runs/'+run.id+'/attempts/1/jobs?per_page=100','jobs');
-   const matching=jobs.filter(j=>j.status==='queued'&&j.name==='stage / execute'&&j.labels?.includes('nibfin-request-'+claim.id));
+   const matching=jobs.filter(j=>j.status==='queued'&&j.name===(claim.jobName??'stage / execute')&&j.labels?.includes('nibfin-request-'+claim.id));
    need(matching.length<=1,'ambiguous-original-job');
    if(matching.length){await coordinator.enqueue({repository:target.repository,runId:run.id,jobId:matching[0].id});claim=await save({...claim,phase:'enqueued',jobId:matching[0].id});}
   }
@@ -62,6 +62,7 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
  async function tick(){
   if((await nativeActivationStatus(core,{root})).status!=='ready')return;
   await readNativeMember(core,{root,memberId:owner.memberId});const pool=await coordinator.status();need(pool.host==='running','pool-unavailable');
+  await rescue?.refresh();
   const previous=[];for(const claim of await claims()){
    try{previous.push(await advance(claim));}catch(e){previous.push(claim);report(claim.id,{status:'blocked',issue:claim.issue,stage:claim.stage,reason:code(e)});}
   }
@@ -79,7 +80,11 @@ export async function nativeDispatchMonitor(core,{root,record,coordinator,contex
      if(state?.dispatch){
       const claim=previous.find(c=>c.id===state.dispatch.id);need(claim,'original-dispatch-missing');
       if(claim.phase!=='completed')continue;
-      need(claim.conclusion==='success','original-action-failed');
+      if(claim.conclusion!=='success'){
+       if(rescue&&state.attempts[claim.stage]?.phase==='unresolved')await rescue.observe({store,claim});
+       else report(key,{status:'blocked',issue:number,stage:claim.stage,reason:'native-dispatch:original-action-failed'});
+       continue;
+      }
      }
      if(!available)continue;
      store=await prepareNativeCycle(core,{root,configuration,repository:target.repository,number,provider,context,signal});state=await store.read();

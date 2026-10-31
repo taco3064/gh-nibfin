@@ -56,6 +56,14 @@ test('a restarted service preserves an interrupted original execution and never 
  done({disposition:'blocked',reason:'original-result'});await first.close();await restarted.close();
 }));
 
+test('only an authenticated Rescue job can report pending verification as neutral; it never fabricates successful delivery',async()=>withCurrentCore(async(core,context)=>{
+ const root=join(context.root,'pending-rescue');await fs.mkdir(root,{mode:0o700});
+ const service=await nativeStageService(core,{root,source:async r=>({...await source(r),jobName:'rescue'}),execute:async()=>({disposition:'waiting',reason:'PENDING_VERIFICATION'})});
+ try{await service.submit(request);const result=await settled(service);assert.equal(result.status,'waiting');assert.equal(result.conclusion,'neutral');
+  assert.equal((await service.submit(request)).status,'waiting');assert.match(result.progress.at(-1),/"verified":"false"/);
+ }finally{await service.close();}
+}));
+
 test('unknown, rejected and waiting Core outcomes cannot produce a green stage; invalid selectors never launch',async()=>withCurrentCore(async(core,context)=>{
  for(const disposition of ['unresolved','rejected','waiting']){
   const root=join(context.root,disposition);await fs.mkdir(root,{mode:0o700});let launched=0;

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';import{join}from'node:path';import{userInfo}from'node:os';import{spawn}from'node:child_process';
 import{readNativeMember}from'./native-member.mjs';import{privatePath}from'./local-state.mjs';import{backendReady}from'./create.mjs';
-import{retainUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
+import{retainUnacceptedWorkspace,restoreUnacceptedWorkspace}from'./native-unaccepted-work.mjs';
 import{resumeNativeSession}from'./native-session-resume.mjs';
 const need=(ok,code)=>{if(!ok)throw Error('native-role-host:'+code);};
 const roles=['shape','shape-validator','shape-diagnosis','shaper-review','deliver','accept'];
@@ -52,7 +52,11 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   repositories:binding.configuration.targets.map(t=>t.repository),environment:{PATH:runner.path,HOME:userInfo().homedir}});
  const backend=instance=>({root:member.base,image:member.image,socket:'/run/user/'+userInfo().uid+'/docker.sock',runtimeProfile:member.runtimeProfile,
   environment,instanceId:instance.id,egress:{image:member.image,node:true},githubRead:{directory:brokerPath,repositories:binding.configuration.targets.map(t=>t.repository)}});
- const native=core.createNativeRoleBindings({ownership:binding.ownerType==='Organization'?'organization':'personal',source,retain});
+ const native=core.createNativeRoleBindings({ownership:binding.ownerType==='Organization'?'organization':'personal',source,retain,
+  allocate:async role=>{const s=store?await store.read():null,resume=s?.sessionResumes?.[role];
+   if(!resume?.next||resume.next.request!==binding.request.id)return null;
+   need(resume.next.role===role&&resume.next.memberId===memberId,'recovery-execution');
+   return{id:resume.next.execution,request:resume.next.request,result:resume.next.result};}});
  const profiles=roles.map((role,i)=>({id:role,agent:'codex',os:'linux',backend:backend(instances[i])}));
  let observed,probeCleanup=true;
  async function probe(){
@@ -96,7 +100,13 @@ export async function nativeRoleHost(core,{root,binding,base,repository,memberId
   workspace(role){need(roles.includes(role),'role');return instances[roles.indexOf(role)].workspace;},
   async prepareRole(task){
    const path=this.workspace(task.role);
-   if(['shape','shape-validator','shape-diagnosis','deliver'].includes(task.role))await publicCheckout(repository,base,path,signal);
+   const s=store?await store.read():null,resume=s?.sessionResumes?.[task.role];
+   if(task.role==='deliver'&&resume?.next?.request===binding.request.id&&resume.workspaceReference){
+    const original=await store.get(resume.workspaceReference),session=await store.get(resume.reference);
+    await restoreUnacceptedWorkspace({directory:path,snapshot:original,execution:session.metadata.execution});
+   }else if(['shape','shape-validator','shape-diagnosis','deliver'].includes(task.role))await publicCheckout(repository,base,path,signal);
+   if(resume?.next?.request===binding.request.id)task={...task,task:{...task.task,recovery:{caseId:resume.caseId,plan:resume.plan,
+    status:'UNACCEPTED',instruction:'Diagnosis is guidance only; all original role gates and verification still apply.'}}};
    await checkpoint();const value=await host.prepareRole(task);prepared.set(value.input.execution.id,value);
    await progress({status:'running',reason:'native-'+task.role+'-launch-prepared'});return value;
   },

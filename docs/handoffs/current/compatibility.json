@@ -182,7 +182,7 @@
         },
         {
           "path": "docs/workflows.md",
-          "sha256": "34790ef71516ffcaa279a3b612604d18b7b8beb9bfbbde4082dd5ce98fc8526b"
+          "sha256": "0761b6bcae1c647ff8f5ecf8ad08748f622bcea642a8bf3c6b02a12761a6f012"
         },
         {
           "path": "docs/workspace.md",
@@ -294,7 +294,7 @@
         },
         {
           "path": "src/agent-session.mjs",
-          "sha256": "1ce6e675d2cffe168de0394f4932def6b3abb28351de4fba3d3260141c026b0c"
+          "sha256": "3ebfbcfb7ae413e28c12e937ef2b4db49f69e4d5d018f770671833372b2180e9"
         },
         {
           "path": "src/archive.mjs",
@@ -346,7 +346,7 @@
         },
         {
           "path": "src/codex.mjs",
-          "sha256": "d983914ecb90a2120d0873c17a711c14b955a82add2ff680588294769665ca41"
+          "sha256": "b4ad4eac8741fa3d7b655884ba16999da24d8c123fe678b1bd9194c37cd8b72d"
         },
         {
           "path": "src/collaboration.mjs",
@@ -402,7 +402,7 @@
         },
         {
           "path": "src/distribution-map.json",
-          "sha256": "fa4d746be7d64e873c526e74d80fff4f1037169d12260d8cb214ac76f17e852c"
+          "sha256": "93a77d103d56f4036b217101bb76db229d0e1e09546986536162bf61708ed3a5"
         },
         {
           "path": "src/distribution.mjs",
@@ -478,7 +478,7 @@
         },
         {
           "path": "src/index.mjs",
-          "sha256": "f26d0ca9b13425de8472ce6b1acf020ac75bf1643d27ddd26be024bdaa6937a4"
+          "sha256": "f315d04ce8cd1ac36c329dedb2f71982a29b41090ab340f782671e02ea38ecaa"
         },
         {
           "path": "src/installation.mjs",
@@ -498,7 +498,7 @@
         },
         {
           "path": "src/native-role-bindings.mjs",
-          "sha256": "14752983b6f752aa6b72cffe38eb35cca6dd5921959c38af97a147e9e9be7b4e"
+          "sha256": "1dc2335d02b0f6302c1d4ed7bc9fe9b7812a3b98498fa3b2e46862afa1feee34"
         },
         {
           "path": "src/node-verification.mjs",
@@ -630,11 +630,11 @@
         },
         {
           "path": "src/rescue.mjs",
-          "sha256": "8a912f9280003dec824aa370090309985d1ab9638f03938e7a46ee7095672a1b"
+          "sha256": "1415fbef74fe4900c5ae8aeda887ebb129d4e10eeab923ce626953896799afbb"
         },
         {
           "path": "src/role-host.mjs",
-          "sha256": "00c2e2410e5e747a99a50690714fe68d8f5cb319b346693d113da9343847dcb3"
+          "sha256": "9d4f829db160048a76e0e2c244d28907ec7dca607b72ad2c9309ccb6c66ba337"
         },
         {
           "path": "src/role-session.mjs",
@@ -706,7 +706,7 @@
         },
         {
           "path": "src/workflow-install.mjs",
-          "sha256": "81fc1e964553639e1fcb2a1785be2dfe2ae52c0a3e15d409d9b2259637aa4042"
+          "sha256": "e6ee041c7e5ff65412e0f688cc1dcd48e88f8359479df3a39c48b6debb6ac698"
         },
         {
           "path": "src/workflow.mjs",
@@ -749,7 +749,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "4a4887201334c42422f2d3b836f307a7c6ca71ac77168c92636aca4e3b967163"
+      "sha256": "57288363f0eb4bf55687ebbb006299f6393f651106ec03957695aa81b0c0e656"
     },
     "skills": {
       "version": "0.1.0",
@@ -794,7 +794,7 @@
         },
         {
           "path": "docs/workflows.md",
-          "sha256": "34790ef71516ffcaa279a3b612604d18b7b8beb9bfbbde4082dd5ce98fc8526b"
+          "sha256": "0761b6bcae1c647ff8f5ecf8ad08748f622bcea642a8bf3c6b02a12761a6f012"
         },
         {
           "path": "host/configuration.example.json",
@@ -830,7 +830,7 @@
         },
         {
           "path": "src/workflow-install.mjs",
-          "sha256": "81fc1e964553639e1fcb2a1785be2dfe2ae52c0a3e15d409d9b2259637aa4042"
+          "sha256": "e6ee041c7e5ff65412e0f688cc1dcd48e88f8359479df3a39c48b6debb6ac698"
         },
         {
           "path": "src/workflow.mjs",
@@ -857,7 +857,7 @@
           "sha256": "735b002b63ea2c29bf1a4d7220c47be6ee5802a894753dff9354b904cd64625e"
         }
       ],
-      "sha256": "5fe7586433b5d2817d7c90d4676f1389ec9b7393f8d39ebe4e09ea8ae7ce99da"
+      "sha256": "e873364038b501bae1330dd149eea52b69b3da3b01ae0b4e12dfdf30000a81db"
     },
     "action": {
       "version": "unknown",
@@ -928,7 +928,7 @@
         "scope": "outside product scope"
       }
     ],
-    "sourceMapSha256": "fa4d746be7d64e873c526e74d80fff4f1037169d12260d8cb214ac76f17e852c"
+    "sourceMapSha256": "93a77d103d56f4036b217101bb76db229d0e1e09546986536162bf61708ed3a5"
   },
   "entries": [
     {

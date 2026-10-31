@@ -16,6 +16,7 @@ import {readNativeOwnerPolicy} from './native-owner-policy.mjs';
 import {verifyCurrentCore} from './current-core.mjs';
 import {nativeActivationStatus} from './native-activation.mjs';
 import {nativeDispatchMonitor} from './native-dispatch-monitor.mjs';
+import {nativeRescue} from './native-rescue.mjs';
 
 const need=(ok,code)=>{if(!ok)throw Error('native-control:'+code);};
 async function removeStaleSocket(path){
@@ -44,7 +45,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
   await privatePath(join(root,nativeServiceName));
   need(receipt.unit===sha(nativeServiceUnit(root))&&receipt.unit===sha(await fs.readFile(join(root,nativeServiceName))),'unit');
   await verifyNativeRuntime(root,record);assertLease();
-  let poolStore,installedCore,coordinator,stages,monitor;
+  let poolStore,installedCore,coordinator,stages,monitor,rescue;
   if(record.executionPool?.version===2){
    installedCore=await import(pathToFileURL(join(root,'runtime/node_modules/@nibfin/core/src/index.mjs')).href);
    poolStore=nativePoolStore(installedCore,{root,configuration:record.executionPool});await poolStore.status();
@@ -94,11 +95,12 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
      const verified=await verifyCurrentCore(pathToFileURL(join(root,'runtime/docs/handoffs/current/')));
      const context={...verified,root:join(root,'runtime'),identity:installedCore.distributionIdentity()};
      const provider=nativeGithubProvider(installedCore,{attempts:1});
+     rescue=await nativeRescue(installedCore,{root,configuration:record.executionPool,provider,signal,onDispatch:async()=>monitor?.wake()});
      stages=await nativeStageService(installedCore,{root,signal,source:async(request,options)=>{
       need((await nativeActivationStatus(installedCore,{root})).status==='ready','native-activation-required');return coordinator.stageSource(request,options);},
-      execute:async(binding,options)=>{try{return await executeNativeDelivery(installedCore,{root,binding,context,provider,...options});}
+      execute:async(binding,options)=>{try{return binding.jobName==='rescue'?await rescue.execute(binding,options):await executeNativeDelivery(installedCore,{root,binding,context,provider,...options});}
        finally{monitor?.wake();}}});
-     monitor=await nativeDispatchMonitor(installedCore,{root,record,coordinator,context,provider,signal,onProgress:value=>
+     monitor=await nativeDispatchMonitor(installedCore,{root,record,coordinator,context,provider,signal,rescue,onProgress:value=>
       process.stdout.write(installedCore.actionLogLine(value,'native-dispatch'))});
      live.stageEntry='configured';
     }
@@ -107,7 +109,7 @@ export async function runNativeControl(root,{signal,ready=async()=>{}}={}){
    await Promise.race([failed,new Promise(resolve=>{if(signal?.aborted)resolve();else signal?.addEventListener('abort',resolve,{once:true});})]);
    if(serverError)throw serverError;
   }finally{
-   await monitor?.close();await stages?.close();await coordinator?.close();
+   await monitor?.close();await stages?.close();await rescue?.close();await coordinator?.close();
    for(const socket of clients)socket.destroy();
    await new Promise(resolve=>server.close(()=>resolve()));
    // Node removes its own listening socket. If one remains, never remove a

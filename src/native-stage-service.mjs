@@ -40,9 +40,9 @@ export async function nativeStageService(core,{root,source,execute,signal}={}){
    const binding=await source(record.request,{signal});
    need(binding.issue===record.issue&&binding.stage===record.stage,'source-drift');
    const result=await execute(binding,{signal,progress});
-   const conclusion=result?.disposition==='completed'?'success':'failure';
+   const conclusion=result?.disposition==='completed'?'success':binding.jobName==='rescue'&&result?.disposition==='waiting'?'neutral':'failure';
    await progress({status:result?.disposition??'unresolved',reason:result?.reason??'native-stage-unavailable',verified:conclusion==='success'?'true':'false'});
-   value={...value,phase:conclusion==='success'?'completed':'unresolved',conclusion,result};
+   value={...value,phase:conclusion==='success'?'completed':conclusion==='neutral'?'waiting':'unresolved',conclusion,result};
   }catch(error){
    const reason=/^native-[a-z-]+:[a-z-]+$/.test(error?.message??'')?error.message:
     error?.code==='EADDRINUSE'?'native-stage:host-socket-in-use':'native-stage-reconciliation-required';

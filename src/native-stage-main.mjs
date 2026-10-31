@@ -20,7 +20,11 @@ try{
  for(;;){
   if(value.request!==request.request||!Array.isArray(value.progress)||!Number.isSafeInteger(value.offset)||value.offset<0)throw Error();
   for(const line of value.progress.slice(Math.max(0,seen-value.offset)))if(typeof line==='string'&&line.startsWith('Nibfin execution '))process.stdout.write(line);seen=value.offset+value.progress.length;
-  if(value.status!=='running'){process.exitCode=value.status==='completed'&&value.conclusion==='success'?0:1;break;}
+  if(value.status!=='running'){
+   const normal=value.status==='completed'&&value.conclusion==='success',pending=value.status==='waiting'&&value.conclusion==='neutral';
+   if(process.env.GITHUB_OUTPUT)await fs.appendFile(process.env.GITHUB_OUTPUT,'conclusion='+(normal?'success':pending?'neutral':'failure')+'\n');
+   process.exitCode=normal||pending?0:1;break;
+  }
   if(Date.now()>=deadline)throw Error();await sleep(2000);value=await call('stage-status');
  }
 }catch{process.stderr.write('Nibfin stage is unresolved; retained original state requires reconciliation.\n');process.exitCode=1;}
