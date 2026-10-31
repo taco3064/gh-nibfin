@@ -1,9 +1,10 @@
 import fs from'node:fs/promises';import{join}from'node:path';
+import{execFileSync}from'node:child_process';
 const need=(v,c)=>{if(!v)throw Error('native-clean-base:'+c);};
 
 // The upstream repair owner prepares the current base before restoring edits.
-// This narrow branch handles a retained Writer with no edits. Dirty work must
-// go through a real repair owner; it is never overwritten or called accepted.
+// Preserve Core-captured edits with the upstream owner's binary three-way
+// restoration. Conflicts and extra ignored bytes remain unaccepted, never lost.
 export async function prepareNativeCleanBase(core,{directory,sourceDirectory,base,state,snapshot,reference,retain}){
  const head=(await fs.readFile(join(directory,'.git/HEAD'),'utf8')).trim();
  need(/^[a-f0-9]{40}$/.test(head),'detached-original-required');if(head===base)return;
@@ -12,7 +13,7 @@ export async function prepareNativeCleanBase(core,{directory,sourceDirectory,bas
   binding:{repository:state.target.repository,cycle:state.cycle,policy:core.contentIdentity(state.policy),
    scopeHash:state.scopeHash,shapeHash:core.bodyDigest(state.shapeBody)}};
  const original=core.captureWorkspace({...input,root:directory,base:head});
- need(original.diff.length===0&&original.sources.length===0,'unaccepted-edits-require-repair');
+ need(original.sources.length===0,'artifact-repair-required');
  const objects=new Map(original.objects.map(o=>[o.oid,o])),tracked=new Set();
  function tree(id,prefix=''){
   const bytes=objects.get(id)?.bytes;need(bytes,'tree-object');let at=0;
@@ -27,8 +28,15 @@ export async function prepareNativeCleanBase(core,{directory,sourceDirectory,bas
  const saved=await fs.mkdtemp(directory+'-original-base-');await fs.rename(directory,saved);
  try{
   await fs.cp(sourceDirectory,directory,{recursive:true,dereference:false,verbatimSymlinks:true});
+  if(original.diff.length){
+   const git=(args,input)=>execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',...args],{
+    cwd:directory,input,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LANG:'C',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0'},
+    timeout:30000,maxBuffer:1048576,stdio:['pipe','pipe','pipe']});
+   for(const object of original.objects)need(git(['hash-object','-w','-t',object.type,'--stdin'],object.bytes).toString().trim()===object.oid,'repair-object');
+   try{git(['apply','--3way','--index','--binary','-'],original.diff);}catch{throw Error('native-clean-base:three-way-repair-required');}
+  }
   const copied=core.captureWorkspace({...input,root:directory,base});
-  need(core.canonicalJSON(copied.expected)===core.canonicalJSON(fresh.expected),'copy-changed');
+  if(!original.diff.length)need(core.canonicalJSON(copied.expected)===core.canonicalJSON(fresh.expected),'copy-changed');
   await retain({kind:'native-clean-workspace-base-transition',status:'UNACCEPTED',execution:snapshot.execution.id,
    original:reference,oldBase:head,base,previous:original.expected,current:copied.expected,accepted:false});
  }catch(error){await fs.rm(directory,{recursive:true,force:true});await fs.rename(saved,directory);throw error;}
