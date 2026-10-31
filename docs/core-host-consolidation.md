@@ -53,3 +53,20 @@ cannot turn an unknown or mutable result into publication success.
 Official installation uses GitHub CLI's source-extension path pinned to the
 immutable published tag, with an independent installed-source readback. Publication
 does not itself certify Linux/Windows/WSL or the complete autonomous lifecycle.
+
+## Fresh installation over versioned managed source
+
+A clean local host may encounter workflows/Skills/runtime policy already tracked
+in the target repository. The installer can recover a source comparison baseline
+from the original merged administrative installation PR. It pins the runtime
+file's history to an authenticated main commit, requires the same administrator,
+checks the original PR/repository/merge identity and recomputes the complete
+managed-file identity from exact historical bytes. Current bytes must still match
+that baseline or the newly desired reviewed source. Unknown reads and actual user
+changes remain blocked.
+
+The recovered baseline supplies only source hashes and public PR provenance. It
+does not import old Host state, activation, signing keys, Grants, conversations or
+Acceptance. A new protected administrative PR and exact-head CI still gate source
+updates. The existing main/worktree comparison also rejects changes arriving
+between observation and staging. No additional end-user command is required.
