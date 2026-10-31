@@ -33,7 +33,7 @@ export async function prepareNativeBaseRevision(core,{root,store,claim,provider,
   const ledger=await readPrivate(join(root,'pool-state/ledger.json'));
   if(Object.values(ledger.jobs).some(j=>j.phase!=='released'&&j.request.repository===s.target.repository&&j.issue===s.target.number))return null;
   const own=w.pending.filter(p=>p.cycle===s.cycle);
-  need(own.every(p=>p.status==='UNACCEPTED'&&p.request===(s.baseRevision?.source?.id??claim?.id)),'original-work-active');
+  need(own.every(p=>p.status==='UNACCEPTED'&&p.request===(s.baseRevision?.phase==='prepared'?s.baseRevision.source.id:claim?.id)),'original-work-active');
   // An unrelated unknown write cannot be cleared by this cycle's reconciliation.
   need(!w.unknownWrite||own.length===1&&w.pending.length===1,'unrelated-write-unknown');
   return h;

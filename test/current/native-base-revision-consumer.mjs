@@ -4,7 +4,7 @@ import{prepareNativeCycle}from'../../src/native-cycle-policy.mjs';import{initial
 import{prepareNativeBaseRevision}from'../../src/native-base-revision.mjs';import{prepareDeferredNativeRole}from'../../src/native-deferred-role.mjs';
 import{ensurePrivateDirectory,writePrivate}from'../../src/local-state.mjs';import{restoreUnacceptedWorkspace}from'../../src/native-unaccepted-work.mjs';
 
-for(const published of [false,true])test('main advancement preserves Candidate and Writer, repeats dependent gates; published PR='+published,async()=>withCurrentCore(async(core,context)=>{
+for(const previousRevision of [false,true])for(const published of [false,true])test('main advancement preserves Candidate and Writer, repeats dependent gates; published PR='+published+'; previous applied revision='+previousRevision,async()=>withCurrentCore(async(core,context)=>{
  const f=await nativeCycleFixture(core,context),source=join(f.root,'source');await fs.mkdir(source,{mode:0o700});
  const env={PATH:'/usr/bin:/bin',HOME:'/nonexistent',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'};
  const git=(cwd,args)=>execFileSync('/usr/bin/git',['-c','core.hooksPath=/dev/null',...args],{cwd,env,stdio:'pipe'}).toString().trim();
@@ -25,7 +25,7 @@ for(const published of [false,true])test('main advancement preserves Candidate a
  }
  const claim={id:'original-pr',stage:'pr',runId:'5000',conclusion:'failure'};attempts.pr={request:claim.id,phase:'unresolved'};
  const sessionReference=await store.retain({kind:'native-role-session',metadata:{id:'00000000-0000-4000-8000-000000000001',execution:execution.id,role:'deliver',memberId:'7'},snapshot:{terminated:true,digest:hash}});
- await store.update(s=>Object.assign(s,{shapeBody:shape,receipts,expectations,attempts,dispatch:{id:claim.id,stage:'pr'},workspace:JSON.parse(core.exportWorkspace(captured)),workspaceExpected:captured.expected,candidate:captured.candidate}));
+ await store.update(s=>Object.assign(s,{...(previousRevision?{baseRevision:{phase:'applied',source:{id:'previous-completed-pr'}}}:{}),shapeBody:shape,receipts,expectations,attempts,dispatch:{id:claim.id,stage:'pr'},workspace:JSON.parse(core.exportWorkspace(captured)),workspaceExpected:captured.expected,candidate:captured.candidate}));
  const host=await initializeFileHostStore(core,{directory:join(f.root,'state'),installation:{packageVersion:context.identity.packageVersion,pins:context.identity.pins},repositories:[{repository:'example/project',repositoryId:'100'}]});
  let h=await host.read();await host.updateWork({expected:h.identity,work:{...h.work,paused:false,unknownWrite:true,pending:[{kind:'native-stage',cycle:initial.cycle,request:claim.id,status:'UNACCEPTED'}]}});await host.close();
  await ensurePrivateDirectory(join(f.root,'pool-state'));await writePrivate(join(f.root,'pool-state/ledger.json'),{jobs:{writer:{phase:'released',runnerId:'9',issue:'55',request:{runId:'4000',repository:'example/project'}}}});
