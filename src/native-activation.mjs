@@ -12,6 +12,10 @@ import {
   requireRepairWork,
   retainRepairActivation,
 } from './native-runtime-repair.mjs';
+import {
+  readCompletedNativeUpgrade,
+  completeCompletedNativeUpgrade,
+} from './native-completed-upgrade.mjs';
 const need = (ok, code) => {
   if (!ok) throw Error('native-activation:' + code);
 };
@@ -185,9 +189,13 @@ export async function activateNativeHost(
     const repairing =
       ['staged', 'activated'].includes(repair?.phase) &&
       repair.next === core.contentIdentity(installation);
+    const completedUpgrade = await readCompletedNativeUpgrade(core, root);
+    const upgrading =
+      ['staged', 'completed'].includes(completedUpgrade?.phase) &&
+      completedUpgrade.next === core.contentIdentity(installation);
     if (repairing) requireRepairWork(core, work, repair);
     need(
-      !previous || work.paused === false || repairing,
+      !previous || work.paused === false || repairing || upgrading,
       'prepared-activation-reconciliation-required',
     );
     need(
@@ -198,6 +206,7 @@ export async function activateNativeHost(
         work.terminated &&
         work.reconciled &&
         (repairing ||
+          upgrading ||
           (work.pending.length === 0 &&
             work.conversations.length === 0 &&
             work.receipts.length === 0)),
@@ -220,12 +229,18 @@ export async function activateNativeHost(
       ...body,
       identity: core.contentIdentity(body),
     });
-    if (work.paused && !repairing)
+    if (work.paused && !repairing && !upgrading)
       await store.updateWork({
         expected: before.identity,
         work: { ...work, paused: false },
       });
-    if (!repairing)
+    if (upgrading)
+      await completeCompletedNativeUpgrade(core, {
+        root,
+        installation,
+        activation: body,
+      });
+    else if (!repairing)
       await completeUnusedActivationUpgrade(core, {
         root,
         installation,

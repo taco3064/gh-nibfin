@@ -19,27 +19,60 @@ export const nativeCycleDirectory = (root, target) => {
   );
   return join(root, 'delivery', target.repositoryId, target.databaseId);
 };
-export async function createNativeCycle(core, { root, target, value } = {}) {
+export async function createNativeCycle(
+  core,
+  { root, target, value, retained = [] } = {},
+) {
   const directory = nativeCycleDirectory(root, target);
-  await ensurePrivateDirectory(join(root, 'delivery', target.repositoryId));
-  await fs.mkdir(directory, { mode: 0o700 });
+  const parent = join(root, 'delivery', target.repositoryId);
+  await ensurePrivateDirectory(parent);
+  need(Array.isArray(retained) && retained.length <= 1000, 'initial-records');
+  const records = retained.map((payload) => {
+    const body = { version: 1, kind: 'retained', payload: structuredClone(payload) };
+    return { ...body, identity: core.contentIdentity(body) };
+  });
   const body = {
     ...structuredClone(value),
     version: 1,
     target: structuredClone(target),
     revision: 0,
-    records: {},
+    records: Object.fromEntries(
+      records.map((record) => [record.identity, record.payload.kind ?? 'retained']),
+    ),
     operations: {},
     operationBlobs: {},
     completions: {},
     completionBlobs: {},
     publications: {},
   };
-  await writePrivate(
-    join(directory, 'state.json'),
-    { ...body, identity: core.contentIdentity(body) },
-    { exclusive: true },
-  );
+  await maintenanceLock(parent, async () => {
+    try {
+      await fs.lstat(directory);
+      throw Object.assign(Error('EEXIST: original native cycle already exists'), {
+        code: 'EEXIST',
+      });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const pending = await fs.mkdtemp(join(parent, '.pending-'));
+    try {
+      await fs.mkdir(join(pending, 'records'), { mode: 0o700 });
+      for (const record of records)
+        await writePrivate(
+          join(pending, 'records', record.identity + '.json'),
+          record,
+          { exclusive: true },
+        );
+      await writePrivate(
+        join(pending, 'state.json'),
+        { ...body, identity: core.contentIdentity(body) },
+        { exclusive: true },
+      );
+      await fs.rename(pending, directory);
+    } finally {
+      await fs.rm(pending, { recursive: true, force: true });
+    }
+  });
   return openNativeCycle(core, { root, target });
 }
 export async function openNativeCycle(core, { root, target } = {}) {

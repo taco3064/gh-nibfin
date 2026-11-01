@@ -110,3 +110,36 @@ packaged `codex.mjs`, `egress.mjs` and `agent-session.mjs`; they do not cover ev
 provider. Listing a domain proves no availability: actual required probes must
 pass in the selected runtime. No environment bypass, new credential, executable
 binding or additional setup command is implied.
+
+The existing `init --handover` boundary can also prepare a historical unaccepted
+Writer when the selected Core provides the explicit unaccepted-handover contract.
+It reconstructs the original Git index/tree and conversation in disposable proof
+directories without executing historical configuration or hooks. The current
+Owner must independently authorize the exact donor and current Issue Scope.
+The shaped label preserves the completed Shape stage. Original Author, Validator
+and publication records remain explicit historical evidence; no new Shape or Run
+is invented. Acceptance, CI and protected completion must run on current bytes. The original Writer resumes only when normal dispatch reaches
+Deliver; three-way integration preserves current main and retained edits.
+
+The first legacy profile requires a completed Writer waiting at Accept and zero
+spent repairs. Other boundaries remain explicitly unsupported. A maintenance
+pause is owned through a durable journal and CAS; unknown writes, current work or
+a later Owner hold cannot be erased by import or crash recovery. Source-contract
+tests and donor readback are not proof of actual resumed delivery.
+
+An activated host with independently verified completed local cycles can use the
+existing sealed upgrade boundary. The host checks actual completed project Runs,
+released pool jobs and unused physical resources, retains the exact cycle bytes,
+and owns one reversible maintenance pause. Applicable completed activation and
+repair records move to private history before their fixed paths are reused.
+Owner holds, pending or unaccepted cycles and unknown effects remain blocking.
+The existing explicitly bound failed-closure repair profile remains separate.
+
+Completed continuation receipts are checked as historical evidence under the
+current independently trusted Owner key. Their original signature, source and
+receipt identities remain unchanged after activation changes or Grant expiry.
+This read-only check returns no active Grant or permission to execute again.
+Normal dispatch still requires the actual current installation and authorization.
+
+Repository development instructions in AGENTS.md apply to the continued Writer
+and reviewers, including whole-file source size limits and resource cleanup.

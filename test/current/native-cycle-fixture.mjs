@@ -83,7 +83,8 @@ export async function nativeCycleFixture(
     state_reason: null,
     closed_at: null,
     updated_at: '2026-10-30T00:00:00Z',
-    body: 'Document the native Owner and Member setup.\n' +
+    body:
+      'Document the native Owner and Member setup.\n' +
       'No additional untracked or ignored Candidate artifacts are required.\n' +
       'Deployment is not required for this source-only change.',
     url: 'https://api.github.com/repos/' + repository + '/issues/55',
@@ -123,7 +124,8 @@ export async function nativeCycleFixture(
       r.method === 'POST' &&
       r.endpoint === '/repos/' + repository + '/issues/55/labels'
     ) {
-      issue.labels.push({ id: '901', name: 'shaped' });
+      if (!issue.labels.some((label) => label.name === 'shaped'))
+        issue.labels.push({ id: '901', name: 'shaped' });
       return { status: 200, body: JSON.stringify(issue.labels) };
     }
     assert.equal(r.method, 'GET', 'unexpected fixture mutation');

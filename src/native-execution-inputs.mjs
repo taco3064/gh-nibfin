@@ -1,6 +1,7 @@
 import { readNativeOwnerPolicy } from './native-owner-policy.mjs';
 import { openNativeCycle } from './native-delivery-store.mjs';
 import { readNativeMergedContinuation } from './native-handover-context.mjs';
+import { verifyNativeLegacyHandover } from './native-legacy-handover.mjs';
 const need = (ok, code) => {
   if (!ok) throw Error('native-execution:' + code);
 };
@@ -24,6 +25,7 @@ export async function nativeExecutionInputs(
   const state = await store.read(),
     owner = await readNativeOwnerPolicy(core, { root }),
     target = state.target;
+  await verifyNativeLegacyHandover(core, { root, store, state });
   need(
     owner.memberId === state.member.id &&
       configuration.targets.some(
