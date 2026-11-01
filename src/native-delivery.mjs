@@ -10,6 +10,7 @@ import { nativeStageRetry } from './native-continuation-repair.mjs';
 import { refreshNativeDeliveryBase } from './native-delivery-base.mjs';
 import { awaitNativeRoleExit } from './native-role-wait.mjs';
 import { nativePublicationGuard } from './native-publication-guard.mjs';
+import { verifyNativeLegacyHandover } from './native-legacy-handover.mjs';
 const need = (ok, code) => {
   if (!ok) throw Error('native-delivery:' + code);
 };
@@ -68,6 +69,7 @@ export async function executeNativeDelivery(
       );
       if (store) {
         const retained = await store.read();
+        core.nextDeliveryStage(retained.receipts, null, r.data.labels);
         need(
           core.parseRequirementsDocument(r.data.body).scope === retained.scopeBody,
           'scope-drift',
@@ -75,9 +77,11 @@ export async function executeNativeDelivery(
         if (exactBody)
           need(
             r.data.body ===
-              (retained.receipts.publication
-                ? retained.shapeBody
-                : retained.scopeBody),
+              (retained.legacyHandover
+                ? retained.scopeBody
+                : retained.receipts.publication
+                  ? retained.shapeBody
+                  : retained.scopeBody),
             'requirements-document-drift',
           );
       }
@@ -222,6 +226,15 @@ export async function executeNativeDelivery(
         },
       },
       receipts: state.receipts,
+      ...(state.legacyHandover
+        ? {
+            unacceptedHandover: await verifyNativeLegacyHandover(core, {
+              root,
+              store,
+              state,
+            }),
+          }
+        : {}),
       ...(input.continuation
         ? {
             continuation: {

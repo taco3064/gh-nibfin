@@ -35,6 +35,7 @@ import {
   verifyNativeProjectUpgrade,
 } from './native-unused-activation.mjs';
 import { importNativeMergedWork } from './native-merged-handover.mjs';
+import { stageCompletedNativeUpgrade } from './native-completed-upgrade.mjs';
 import {
   stageNativeRuntimeRepair,
   nativeRuntimeRepairPending,
@@ -299,14 +300,23 @@ export function nativeControlHost({
         missing: true,
         limit: 33554432,
       });
-      if (handover && ledger && Object.keys(ledger.jobs).length > 0)
-        await stageNativeRuntimeRepair(core, {
+      let completedUpgrade = false;
+      if (ledger && Object.keys(ledger.jobs).length > 0) {
+        const options = {
           ...staging,
-          directory: handover,
           memberId,
           provider: core.createGithubProvider({ attempts: 1 }),
-        });
-      else {
+        };
+        completedUpgrade =
+          (await stageCompletedNativeUpgrade(core, options)).status === 'staged';
+        need(completedUpgrade || handover, 'pending-work-handover-required');
+        if (!completedUpgrade && handover)
+          await stageNativeRuntimeRepair(core, { ...options, directory: handover });
+      }
+      if (
+        !completedUpgrade &&
+        !(handover && ledger && Object.keys(ledger.jobs).length > 0)
+      ) {
         await prepareUnusedActivationUpgrade(core, {
           root,
           previous: selected,

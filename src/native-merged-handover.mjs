@@ -12,6 +12,8 @@ import { withUnusedNativeMaintenance } from './native-unused-maintenance.mjs';
 import { authorizeNativeContinuationRepair } from './native-continuation-repair.mjs';
 import { nativeCycleDirectory, openNativeCycle } from './native-delivery-store.mjs';
 import { verifyNativeRuntime } from './native-control-service.mjs';
+import { importNativeUnacceptedWork } from './native-legacy-import.mjs';
+import { readCompletedNativeCycle } from './native-completed-cycle.mjs';
 import {
   ensurePrivateDirectory,
   readPrivate,
@@ -61,6 +63,20 @@ async function existingContinuation(core, { root, state, archive }) {
       value.continuation.parent.archive === archive.identity,
     'original-cycle-conflict',
   );
+  if (value.completion && value.fanout?.outcome === 'discovered') {
+    const completed = await readCompletedNativeCycle(core, {
+      root,
+      store,
+      state: value,
+    });
+    return {
+      outcome: 'existing',
+      target: value.target,
+      next: null,
+      approval: completed.approval,
+      completion: completed.identity,
+    };
+  }
   const proof = await readNativeMergedContinuation(core, {
     root,
     store,
@@ -191,8 +207,24 @@ export async function importNativeMergedWork(
     directory,
     hostRoot: root,
   });
+  const unaccepted = Object.values(archive.metadata).some(
+    (value) => value.status === 'UNACCEPTED',
+  );
+  const legacy =
+    unaccepted && core.distributionAPI?.unacceptedHandover === 1
+      ? await importNativeUnacceptedWork(core, {
+          root,
+          archive,
+          repository,
+          configuration,
+          provider,
+          context,
+          checkOnly,
+        })
+      : [];
   const retained = Object.entries(archive.metadata)
     .filter(([, value]) => value.status === 'UNACCEPTED')
+    .filter(([number]) => !legacy.some((result) => result.target.number === number))
     .map(([number]) => ({ number, status: 'UNACCEPTED', reason: 'not-imported' }));
   const repaired = await authorizeNativeContinuationRepair(core, {
     root,
@@ -207,11 +239,11 @@ export async function importNativeMergedWork(
       status: retained.length ? 'partial' : 'ready',
       archive: archive.identity,
       effects: repaired.effects,
-      results: [repaired],
+      results: [...legacy, repaired],
       retained,
     };
   need(archive.candidates.length <= 128, 'cycle-limit');
-  const results = [];
+  const results = [...legacy];
   for (const path of archive.candidates) {
     const cycle = await archive.readCycle(path),
       { state } = cycle;

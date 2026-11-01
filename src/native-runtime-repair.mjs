@@ -1,9 +1,10 @@
+import { archiveCompletedActivation } from './native-activation-history.mjs';
+import { requireDrainedNativeWork } from './native-drained-work.mjs';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { maintenanceLock } from './upgrade.mjs';
 import { openFileHostStore } from './host-store.mjs';
-import { nativePoolStore } from './native-pool-store.mjs';
 import { verifyNativeRuntime } from './native-control-service.mjs';
 import { observeUnusedNativePaths } from './native-staged-transition.mjs';
 import { archiveCompletedNativeUpgrade } from './native-upgrade-history.mjs';
@@ -161,73 +162,21 @@ export async function stageNativeRuntimeRepair(
           journal.activation.identity === activation.identity,
         'original-request',
       );
-    const pool = nativePoolStore(oldCore, {
-      root,
-      configuration: previous.executionPool,
-    });
+    const drained = () =>
+      requireDrainedNativeWork(oldCore, {
+        root,
+        configuration: previous.executionPool,
+        memberId,
+        provider,
+        verifyRunner,
+        observeResources,
+      });
     const resources = [
       join(root, 'jobs'),
       ...Array.from({ length: previous.runnerCount }, (_, i) =>
         join(root, 'runner-' + (i + 1)),
       ),
     ];
-    async function drained() {
-      const status = await pool.status();
-      const ledger = await readPrivate(join(root, 'pool-state/ledger.json'), {
-        limit: 33554432,
-      });
-      need(
-        status.occupied === 0 &&
-          status.pending === 0 &&
-          Object.values(ledger.jobs).every((job) => job.phase === 'released'),
-        'original-jobs-not-released',
-      );
-      const dispatches = join(root, 'dispatches');
-      for (const name of await fs.readdir(dispatches)) {
-        need(
-          /^(?:native-[a-f0-9-]{36}|rescue-[a-f0-9]{64})\.json$/.test(name),
-          'dispatch-inventory',
-        );
-        const claim = await readPrivate(join(dispatches, name));
-        const { identity, ...body } = claim;
-        const target = previous.executionPool.targets.find(
-          (t) =>
-            t.repositoryId === claim.repositoryId &&
-            t.repository === claim.repository,
-        );
-        need(
-          identity === core.contentIdentity(body) &&
-            target &&
-            claim.phase === 'completed' &&
-            claim.runId,
-          'dispatch-not-completed',
-        );
-        const result = await provider.request({
-          endpoint: '/repos/' + target.repository + '/actions/runs/' + claim.runId,
-          target: target.repositoryId,
-          operation: 'native-repair-read',
-          correlation: claim.id,
-          signal: AbortSignal.timeout(30000),
-        });
-        const run = result.data;
-        need(
-          result.outcome === 'read' &&
-            run.id === claim.runId &&
-            run.status === 'completed' &&
-            run.conclusion === claim.conclusion &&
-            run.repository?.id === target.repositoryId &&
-            run.head_repository?.id === target.repositoryId &&
-            run.actor?.id === memberId &&
-            run.triggering_actor?.id === memberId &&
-            run.head_sha === claim.sourceCommit &&
-            run.run_attempt === 1,
-          'dispatch-official-readback',
-        );
-      }
-      for (let i = 1; i <= previous.runnerCount; i++)
-        await verifyRunner(join(root, 'runner-' + i), { unregistered: true });
-      need((await observeResources(resources)).status === 'unused', 'resources');
-    }
     await drained();
     const store = await openFileHostStore(core, { directory: join(root, 'state') });
     try {
@@ -321,24 +270,7 @@ export async function stageNativeRuntimeRepair(
           current,
           installation: previous,
         });
-      // Retain the completed unused-host activation transaction outside the
-      // next activation's fixed paths, with exact identities checked first.
-      const unused = await readPrivate(join(root, 'activation-upgrade.json'), {
-        missing: true,
-      });
-      if (unused) {
-        const { identity, ...body } = unused;
-        need(
-          identity === core.contentIdentity(body) &&
-            unused.phase === 'completed' &&
-            unused.next === journal.previous,
-          'unfinished-activation-upgrade',
-        );
-        const history = join(root, 'activation-history', identity);
-        await ensurePrivateDirectory(history);
-        for (const name of ['activation-upgrade.json', 'activation-previous.json'])
-          await fs.rename(join(root, name), join(history, name));
-      }
+      await archiveCompletedActivation(core, { root, previous });
       const plan = await publishNativeUpgradePlan(core, {
         root,
         previous,

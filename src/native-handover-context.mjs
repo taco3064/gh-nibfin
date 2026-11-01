@@ -1,3 +1,4 @@
+import { readNativeContinuationCustody } from './native-continuation-custody.mjs';
 import { join } from 'node:path';
 import { currentPin, currentProducer } from './current-core.mjs';
 import { readPrivate } from './local-state.mjs';
@@ -247,27 +248,7 @@ export async function readNativeMergedContinuation(
   core,
   { root, store, state, operation = 'verify-deployment' },
 ) {
-  const value = state.continuation;
-  need(value?.version === 1, 'original-continuation');
-  const original = await store.get(value.original);
-  need(original.kind === 'native-original-cycle', 'original-state-custody');
-  const manifest = Buffer.from(original.manifest, 'base64');
-  const bytes = Buffer.from(original.bytes, 'base64');
-  need(core.byteDigest(manifest) === value.parent.archive, 'original-manifest');
-  const entry = JSON.parse(manifest).files.find((f) => f.path === original.path);
-  need(
-    entry && core.byteDigest(bytes) === entry.sha256 && bytes.length === entry.bytes,
-    'original-state-bytes',
-  );
-  const originalState = JSON.parse(bytes);
-  const { identity, ...body } = originalState;
-  need(identity === value.parent.state, 'original-state-custody');
-  need(identity === core.contentIdentity(body), 'original-state');
-  for (const stage of Object.keys(value.parent.receipts))
-    need(
-      same(core, state.attempts[stage], originalState.attempts[stage]),
-      'historical-attempt-rewrite',
-    );
+  const value = await readNativeContinuationCustody(core, { store, state });
   const context = await nativeContinuationApprovalContext(core, {
     root,
     parent: value.parent,

@@ -10,6 +10,9 @@ import { nativeCycleFixture } from './native-cycle-fixture.mjs';
 import { executeNativeDelivery } from '../../src/native-delivery.mjs';
 import { initializeFileHostStore } from '../../src/host-store.mjs';
 import { openNativeCycle } from '../../src/native-delivery-store.mjs';
+import { readPrivate, writePrivate } from '../../src/local-state.mjs';
+import { completedUpgradeFixture } from './native-completed-upgrade-fixture.mjs';
+import { readCompletedNativeCycle } from '../../src/native-completed-cycle.mjs';
 
 // Real private records, Git objects and public Core stage owners. External
 // model/GitHub observations are explicit doubles, not live delivery evidence.
@@ -488,6 +491,57 @@ for (const handover of [false, true, 'repair'])
       if (handoverProof) {
         const repeated = await handoverProof.repeat();
         assert.equal(repeated.results[0].next, null);
+        const activePath = join(executionRoot, 'activation.json');
+        const { identity, ...activation } = await readPrivate(activePath);
+        const advanced = {
+          ...activation,
+          projects: [
+            {
+              repository: 'example/project',
+              repositoryId: '100',
+              commit: 'd'.repeat(40),
+              files: [],
+            },
+          ],
+        };
+        await writePrivate(activePath, {
+          ...advanced,
+          identity: core.contentIdentity(advanced),
+        });
+        const historical = await handoverProof.repeat();
+        assert.equal(historical.results[0].next, null);
+        assert.equal(historical.results[0].completion, state.completion.identity);
+        for (const mutate of [
+          (s) => {
+            s.closed = false;
+          },
+          (s) => {
+            s.member.id = '999';
+          },
+          (s) => {
+            s.completion.identity = 'a'.repeat(64);
+          },
+          (s) => {
+            s.receipts.shape.execution.id = 'rewritten';
+          },
+          (s) => {
+            s.continuation.execution.activation = 'a'.repeat(64);
+          },
+        ]) {
+          const changed = structuredClone(state);
+          mutate(changed);
+          await assert.rejects(
+            readCompletedNativeCycle(core, {
+              root: executionRoot,
+              store,
+              state: changed,
+            }),
+          );
+        }
+        const issuedGrant = state.continuation.approval;
+        t.mock.timers.tick(issuedGrant.payload.expiresAt - Date.now() + 1000);
+        const expiredHistory = await handoverProof.repeat();
+        assert.equal(expiredHistory.results[0].completion, state.completion.identity);
         assert(
           (
             await fs.readFile(join(handoverProof.prior.directory, 'state.json'))
@@ -495,6 +549,8 @@ for (const handover of [false, true, 'repair'])
         );
       }
       assert.equal(writerObservations, 4);
+      if (handover === true)
+        await completedUpgradeFixture(core, context, { root: executionRoot, state });
       assert.equal(
         writerStops,
         0,

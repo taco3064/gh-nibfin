@@ -9,6 +9,11 @@ import {
 } from './native-delivery-store.mjs';
 import { currentPin, currentProducer } from './current-core.mjs';
 import { readNativeMergedContinuation } from './native-handover-context.mjs';
+import {
+  prepareLegacyNativeHandover,
+  verifyNativeLegacyHandover,
+  legacyHandoverContext,
+} from './native-legacy-handover.mjs';
 const need = (ok, code) => {
   if (!ok) throw Error('native-cycle:' + code);
 };
@@ -37,7 +42,17 @@ const snapshot = (core, source, revision, body) => ({
 });
 export async function prepareNativeCycle(
   core,
-  { root, configuration, repository, number, provider, context, signal } = {},
+  {
+    root,
+    configuration,
+    repository,
+    number,
+    provider,
+    context,
+    signal,
+    handover = null,
+    checkOnly = false,
+  } = {},
 ) {
   need(core.distributionAPI?.nativeHost === 1, 'compatible-native-core-required');
   const signer = await nativeOwnerSigner(core, { root }),
@@ -113,6 +128,19 @@ export async function prepareNativeCycle(
         state.core === currentPin.coreSha256,
         'original-cycle-reconciliation-required',
       );
+    if (state.legacyHandover) {
+      const proof = await verifyNativeLegacyHandover(core, {
+        root,
+        store: existing,
+        state,
+      });
+      if (handover)
+        need(
+          core.contentIdentity(proof.original) === core.contentIdentity(handover),
+          'original-handover-drift',
+        );
+    } else need(!handover, 'original-cycle-has-no-handover');
+    core.nextDeliveryStage(state.receipts, null, issue.labels);
     need(
       issue.state === 'open' || Boolean(state.receipts.closure),
       'original-closure-required',
@@ -124,7 +152,10 @@ export async function prepareNativeCycle(
   need(
     issue.state === 'open' &&
       document.format === 'raw-scope' &&
-      !issue.labels.some((l) => l.name === 'shaped'),
+      !issue.labels.some((l) => l.name === 'delivered') &&
+      (handover !== null
+        ? issue.labels.some((l) => l.name === 'shaped')
+        : !issue.labels.some((l) => l.name === 'shaped')),
     'original-work-handover-required',
   );
   const base = (await get('/repos/' + repository + '/git/ref/heads/main')).object;
@@ -291,9 +322,26 @@ export async function prepareNativeCycle(
       ),
     },
   ];
+  const legacy = handover
+    ? prepareLegacyNativeHandover(core, {
+        state: {
+          target: selected,
+          member: { id: account.id },
+          scopeHash: core.bodyDigest(document.scope),
+          core: currentPin.coreSha256,
+          cycle,
+          handoverLabels: core.handoverLabelsIdentity(issue.labels),
+          authority: observation.authority,
+        },
+        original: handover,
+      })
+    : null;
+  // The initial implementation explicitly preserves a zero-spent donor. Used
+  // legacy repair budgets require a compatible consumption-offset adapter.
+  need(!handover || handover.repairs === 0, 'spent-legacy-budget-unsupported');
   const payload = {
     version: 1,
-    recordId: cycle,
+    recordId: legacy?.recordId ?? cycle,
     revision: '1',
     revocationId: owner.keyId,
     validFrom: Date.now() - 1000,
@@ -301,15 +349,52 @@ export async function prepareNativeCycle(
     authority: core.authoritySnapshot(observation.authority),
     work,
     permissions: [
-      { repository: repositoryIdentity, paths, operations: operations(core) },
+      {
+        repository: repositoryIdentity,
+        paths,
+        operations: operations(core).filter(
+          (operation) =>
+            !handover ||
+            ![
+              'shape',
+              'shape-validator',
+              'publication',
+              'publish-shape',
+              'issue-body',
+            ].includes(operation),
+        ),
+      },
     ],
     policy,
   };
   core.prepareGrant(payload);
+  if (checkOnly)
+    return {
+      outcome: 'verified-not-authorized',
+      target: selected,
+      next: legacy ? 'deliver' : 'shape',
+      handover: legacy?.recordId ?? null,
+    };
   const grant = signer.sign(payload);
+  const retainedShape = legacy
+    ? core.createUnacceptedHandoverEvidence({
+        original: handover,
+        current: legacy.current,
+        grant,
+        context: legacyHandoverContext(core, {
+          owner,
+          authority: observation.authority,
+          policy,
+          work,
+          target: selected,
+          paths,
+        }),
+      })
+    : null;
   return createNativeCycle(core, {
     root,
     target: selected,
+    retained: legacy?.retained ?? [],
     value: {
       cycle,
       core: currentPin.coreSha256,
@@ -318,7 +403,7 @@ export async function prepareNativeCycle(
       title: issue.title,
       scopeBody: document.scope,
       scopeHash: core.bodyDigest(document.scope),
-      shapeBody: null,
+      shapeBody: retainedShape?.shapeBody ?? null,
       authority: observation.authority,
       grant,
       policy,
@@ -331,8 +416,8 @@ export async function prepareNativeCycle(
       ownerKey: { id: owner.keyId, publicKey: owner.publicKey },
       paths,
       base: base.sha,
-      receipts: {},
-      expectations: {},
+      receipts: retainedShape?.receipts ?? {},
+      expectations: retainedShape?.expectations ?? {},
       stageInput: null,
       candidate: null,
       workspace: null,
@@ -343,6 +428,13 @@ export async function prepareNativeCycle(
       dispatch: null,
       observations: {},
       closed: false,
+      ...(legacy
+        ? {
+            legacyHandover: legacy.legacyHandover,
+            handoverLabels: core.handoverLabelsIdentity(issue.labels),
+            deferredRoles: legacy.deferredRoles,
+          }
+        : {}),
     },
   });
 }

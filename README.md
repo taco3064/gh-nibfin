@@ -26,7 +26,7 @@ execution permission or Owner authorization.
 See [Core/Host consolidation and publication](docs/core-host-consolidation.md).
 The maintained release workflow publishes exact merged source and a checksum
 manifest only after the matching immutable Core release is independently verified.
-Use `gh extension install taco3064/gh-nibfin --pin v0.1.4` after that release
+Use `gh extension install taco3064/gh-nibfin --pin v0.1.6` after that release
 is published. Fresh Linux/WSL and full lifecycle evidence remain separately
 required; source tests and publication do not establish platform support.
 
@@ -45,7 +45,8 @@ The format-1 manifest identifies every file by relative path, byte length and
 SHA-256, with `authority: historical-data-only` and `activationAuthorized: false`.
 The installer verifies ownership, inventory, original private records, actual Git
 objects and recoverable Writer session bytes. Fresh GitHub reads must confirm the
-current Owner, assigned Issue, unchanged Scope/Shape, merged PR and original Run.
+current Owner, assigned Issue and workflow labels. Merged-work import additionally
+requires unchanged Scope/Shape, the merged PR and original Run.
 
 For merged native work waiting for final verification, init creates a fresh,
 narrower Owner Grant through the normal native key owner. Original successful
@@ -54,13 +55,21 @@ and execution Core. The existing final, closure and delivery owners still perfor
 their normal independent checks. No separate key setup or signing command is
 required. The retired private signing key and old activation are never imported.
 
-`--check` signs nothing and imports nothing. Legacy UNACCEPTED work stays in the
-archive and is reported as retained, so a mixed archive can return partial status
-after its merged work is imported. Requirement changes and unaccepted-work
-recovery need their own authorized continuation; neither a label nor old
-Acceptance supplies a new pass. An unused activated pool may cross the existing
-safe upgrade boundary with a recorded installer pause; earlier execution, Owner
-holds and uncertain effects require their original reconciliation owner.
+`--check` signs nothing and imports nothing. The supported legacy UNACCEPTED
+profile preserves a completed Writer waiting at Accept with zero spent repairs.
+The shaped label keeps the original published Shape and independent validation;
+explicit historical receipts have no new Run attribution. A fresh Owner Grant
+binds the exact donor and current Scope. Normal Deliver resumes the same Writer
+to integrate current main, then repeats independent Acceptance and later gates.
+Other legacy boundaries are rejected without importing or resetting their work.
+
+Labels control workflow progress. Missing local receipts never restart Shape for
+an already shaped Issue. An actual Shape defect uses the normal Owner Scope-reset
+workflow; a handover cannot bypass the shaped guard or manufacture Acceptance.
+Unused activated pools and used pools with only independently verified completed
+cycles may cross the existing sealed upgrade boundary with a recorded pause.
+Owner holds, unaccepted work, live resources and uncertain effects remain blocking
+unless their specific authorized continuation applies.
 
 For a failed closure after successful final verification, the same Owner init
 entry can prepare a reviewed runtime upgrade only when all original jobs are

@@ -6,25 +6,31 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { parseArchive, verifyRegistrationCore } from './core.mjs';
 
-export const currentProducer = '17c8b0da15c4368cf810968c1243a67a16687e02';
+export const currentProducer = '5c9ae0833acf5fd0d29fec6618f4a3623169123e';
 export const currentPin = Object.freeze({
-  packageVersion: '0.1.4',
-  coreSha256: '788e1da9d41bf9c74d9214850863016aa4b56e1c4ab3f27ae574f82ea46105a8',
+  packageVersion: '0.1.5',
+  coreSha256: '9df89deccde8ee3e14f841b37e2167f97da9239cfef576d6aa51e10f1e26e221',
 });
 const handoff = new URL('../docs/handoffs/current/', import.meta.url);
 const hashes = Object.freeze({
   'nibfin-core.tgz':
-    '2060e10a50d4129e2f5246faab48dc7691fa8a4f304a2035da16ae69cfe9d5be',
+    '7b2d3009417f5138490431dc1c1ac098e07f6f23ddd9dcde90e51412f7fe4251',
   'release-manifest.json':
-    'b31252f14dcbde188615f67c1470444e172d1ad0c86b37a5485ed22559a0049b',
+    '1a9644e37df21a5b3b9b7abf5f596b9f14dbbd137fa4d990e9fb7c4f784a17ff',
   'compatibility.json':
-    '1e148e1ebd30b42fa1742cc260be26a5e1c8fa57b5ad877a7cd8e32089bc7032',
+    'fe275b58c260adbc46ce54dbae4b8d66fb9681991dfd5d3b950f942032f835a6',
 });
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const need = (ok, message) => {
   if (!ok) throw Error('Current Core verification: ' + message);
 };
 const exportsRequired = [
+  'unacceptedHandoverPolicy',
+  'handoverLabelsIdentity',
+  'verifyUnacceptedHandover',
+  'createUnacceptedHandoverEvidence',
+  'checkUnacceptedHandoverFrame',
+  'createUnacceptedHandoverContinuation',
   'prepareMergedContinuation',
   'prepareMergedContinuationRepair',
   'verifyMergedContinuation',
