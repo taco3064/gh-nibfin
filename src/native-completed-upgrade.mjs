@@ -7,6 +7,8 @@ import { readNativeOwnerPolicy } from './native-owner-policy.mjs';
 import { verifyNativeRuntime } from './native-control-service.mjs';
 import { nativeInstallationSelection } from './managed-upgrade.mjs';
 import { observeCompletedNativeWork } from './native-completed-work.mjs';
+import { observePreservedNativeWork } from './native-preserved-work.mjs';
+import { openNativeHandoverArchive } from './native-handover-archive.mjs';
 import { requireDrainedNativeWork } from './native-drained-work.mjs';
 import { archiveCompletedNativeUpgrade } from './native-upgrade-history.mjs';
 import { archiveCompletedActivation } from './native-activation-history.mjs';
@@ -32,15 +34,18 @@ export async function readCompletedNativeUpgrade(core, root) {
     identity === core.contentIdentity(body) &&
       record.version === 1 &&
       record.kind === 'native-completed-work-upgrade' &&
-      ['intent', 'staged', 'completed'].includes(record.phase),
+      ['intent', 'staged', 'completed'].includes(record.phase) &&
+      (record.handover === undefined ||
+        (typeof record.handover === 'string' &&
+          /^[a-f0-9]{64}$/.test(record.handover))),
     'journal',
   );
   return record;
 }
 
-// A used, idle host with only verified terminal cycles enters the existing
-// sealed upgrade owner. Unaccepted or uncertain cycles require their own bound
-// continuation; this profile never clears their history to manufacture idleness.
+// A used, idle host enters the existing sealed upgrade owner with terminal
+// cycles or explicitly supplied untouched handovers. No history is cleared to
+// manufacture idleness; started or uncertain work needs its own continuation.
 export async function stageCompletedNativeUpgrade(core, options) {
   const {
     root,
@@ -53,6 +58,7 @@ export async function stageCompletedNativeUpgrade(core, options) {
     control,
     stage,
     observeResources,
+    handover,
   } = options;
   const store = await openFileHostStore(core, { directory: join(root, 'state') });
   try {
@@ -64,6 +70,12 @@ export async function stageCompletedNativeUpgrade(core, options) {
   need(same(core, previous.executionPool, next.executionPool), 'pool-membership');
   const owner = await readNativeOwnerPolicy(core, { root });
   need(owner.memberId === memberId, 'owner');
+  const archive = handover
+    ? await openNativeHandoverArchive(core, {
+        directory: handover,
+        hostRoot: root,
+      })
+    : null;
   let journal = await readCompletedNativeUpgrade(core, root);
   const active = await readPrivate(join(root, 'activation.json'), { missing: true });
   const activation =
@@ -85,12 +97,14 @@ export async function stageCompletedNativeUpgrade(core, options) {
     next: core.contentIdentity(next),
     activation: activationId,
     owner: owner.identity,
+    ...(archive ? { handover: archive.identity } : {}),
   });
   if (journal && journal.phase !== 'completed')
     need(
       journal.previous === core.contentIdentity(previous) &&
         journal.next === core.contentIdentity(next) &&
         journal.maintenance === request &&
+        (journal.handover ?? null) === (archive?.identity ?? null) &&
         journal.owner === owner.identity,
       'original-request',
     );
@@ -134,10 +148,21 @@ export async function stageCompletedNativeUpgrade(core, options) {
           observeResources,
         });
       await drained();
-      const cycles = await observeCompletedNativeWork(oldCore, {
-        root,
-        configuration: previous.executionPool,
-      });
+      const observeCycles = () =>
+        (archive ? observePreservedNativeWork : observeCompletedNativeWork)(
+          archive ? core : oldCore,
+          {
+            root,
+            configuration: previous.executionPool,
+          },
+        );
+      const cycles = await observeCycles();
+      need(
+        cycles.every(
+          (cycle) => !cycle.unaccepted || cycle.archive === archive?.identity,
+        ),
+        'original-handover-archive',
+      );
       if (!journal || journal.phase === 'completed') {
         await archiveCompletedActivation(core, {
           root,
@@ -154,6 +179,7 @@ export async function stageCompletedNativeUpgrade(core, options) {
           maintenance: request,
           owner: owner.identity,
           cycles,
+          ...(archive ? { handover: archive.identity } : {}),
         };
         await writePrivate(journalPath(root), seal(core, body), { exclusive: true });
         journal = seal(core, body);
@@ -193,17 +219,7 @@ export async function stageCompletedNativeUpgrade(core, options) {
         stage,
         assertLease,
       });
-      need(
-        same(
-          core,
-          cycles,
-          await observeCompletedNativeWork(oldCore, {
-            root,
-            configuration: previous.executionPool,
-          }),
-        ),
-        'cycle-drift',
-      );
+      need(same(core, cycles, await observeCycles()), 'cycle-drift');
       const { identity, ...body } = journal;
       await writePrivate(journalPath(root), seal(core, { ...body, phase: 'staged' }));
       return { status: 'staged', plan };
@@ -227,7 +243,9 @@ export async function completeCompletedNativeUpgrade(
     'actual-new-installation',
   );
   await verifyNativeRuntime(root, installation);
-  const cycles = await observeCompletedNativeWork(core, {
+  const cycles = await (
+    journal.handover ? observePreservedNativeWork : observeCompletedNativeWork
+  )(core, {
     root,
     configuration: installation.executionPool,
   });

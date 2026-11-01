@@ -13,7 +13,11 @@ import {
 
 // Real completed receipts, runtime bytes, sealed filesystem/pin switch and CAS.
 // Provider, OS resource observations and services are explicit fixture doubles.
-export async function completedUpgradeFixture(core, context, { root, state }) {
+export async function completedUpgradeFixture(
+  core,
+  context,
+  { root, state, handover },
+) {
   const previous = await readPrivate(join(root, 'native-installation.json'));
   const source = join(root, 'runtime');
   const versionPath = 'client/version.mjs';
@@ -101,6 +105,7 @@ export async function completedUpgradeFixture(core, context, { root, state }) {
     context,
     memberId: '7',
     provider,
+    ...(handover ? { handover } : {}),
     observeResources: async () => ({ status: 'unused' }),
     verifyRunner: async () => {},
     control: {

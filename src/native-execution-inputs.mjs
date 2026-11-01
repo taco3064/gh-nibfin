@@ -1,5 +1,4 @@
 import { readNativeOwnerPolicy } from './native-owner-policy.mjs';
-import { openNativeCycle } from './native-delivery-store.mjs';
 import { readNativeMergedContinuation } from './native-handover-context.mjs';
 import { verifyNativeLegacyHandover } from './native-legacy-handover.mjs';
 const need = (ok, code) => {
@@ -22,6 +21,7 @@ export async function nativeExecutionInputs(
     poolReadiness,
   } = {},
 ) {
+  need(core.distributionAPI.dependencyProgress === 1, 'dependency-progress-core');
   const state = await store.read(),
     owner = await readNativeOwnerPolicy(core, { root }),
     target = state.target;
@@ -128,10 +128,11 @@ export async function nativeExecutionInputs(
   const dependencyInput = { target, issues };
   const dependencies = core.createDependencyEvaluator({
     provider,
+    progressSource: 'github-labels',
     maxNodes: 1000,
     maxReads: 3000,
     maxEdges: 10000,
-    timeoutMs: 30000,
+    timeoutMs: 120000,
     authorize: async (issue) => {
       const project = configuration.targets.find(
         (t) =>
@@ -167,22 +168,6 @@ export async function nativeExecutionInputs(
           observedAt: Date.now(),
         },
       };
-    },
-    current: async (issue) => {
-      try {
-        const prior = await openNativeCycle(core, { root, target: issue }),
-          value = await prior.read();
-        return value.completion
-          ? { identity: value.completion.identity, expected: value.completionCurrent }
-          : null;
-      } catch (e) {
-        if (e.code === 'ENOENT') return null;
-        throw e;
-      }
-    },
-    retrieve: async (issue) => {
-      const prior = await openNativeCycle(core, { root, target: issue });
-      return (await prior.read()).completion;
     },
   });
   const ownedSelector = core.createAssigneeSelector({

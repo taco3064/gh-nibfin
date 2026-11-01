@@ -6,19 +6,19 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { parseArchive, verifyRegistrationCore } from './core.mjs';
 
-export const currentProducer = '5c9ae0833acf5fd0d29fec6618f4a3623169123e';
+export const currentProducer = 'efb31d8bd3118b3050bba862440624861a4e16ce';
 export const currentPin = Object.freeze({
-  packageVersion: '0.1.5',
-  coreSha256: '9df89deccde8ee3e14f841b37e2167f97da9239cfef576d6aa51e10f1e26e221',
+  packageVersion: '0.1.6',
+  coreSha256: '794911c77cc23c3bbb645dcc05d7076dce592421fe7988efda02e18bc6458585',
 });
 const handoff = new URL('../docs/handoffs/current/', import.meta.url);
 const hashes = Object.freeze({
   'nibfin-core.tgz':
-    '7b2d3009417f5138490431dc1c1ac098e07f6f23ddd9dcde90e51412f7fe4251',
+    '488192f6e5751bdb0a531d6a174b50833a13c97f129aa5128d28cc4ad4942ada',
   'release-manifest.json':
-    '1a9644e37df21a5b3b9b7abf5f596b9f14dbbd137fa4d990e9fb7c4f784a17ff',
+    'ae5124161de2d19bae64c07a3cbc28a23881bc51bda5e813f29c618351edcf54',
   'compatibility.json':
-    'fe275b58c260adbc46ce54dbae4b8d66fb9681991dfd5d3b950f942032f835a6',
+    'eb07f82b9c21192d5f8a5938bdca375a4cd26d1ba46652f5d45ff1b0726e69e8',
 });
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const need = (ok, message) => {
@@ -30,6 +30,8 @@ const exportsRequired = [
   'verifyUnacceptedHandover',
   'createUnacceptedHandoverEvidence',
   'checkUnacceptedHandoverFrame',
+  'verifyUnacceptedHandoverPrefix',
+  'verifyUnacceptedHandoverRevision',
   'createUnacceptedHandoverContinuation',
   'prepareMergedContinuation',
   'prepareMergedContinuationRepair',
@@ -241,7 +243,9 @@ export async function withCurrentCore(
         core.distributionAPI.mergedContinuationRepair === 1 &&
         core.distributionAPI.deliveryRevision === 1 &&
         core.distributionAPI.protectedDiagnosis === 1 &&
-        core.distributionAPI.mergedContinuation === 1,
+        core.distributionAPI.mergedContinuation === 1 &&
+        core.distributionAPI.dependencyProgress === 1 &&
+        core.distributionAPI.unacceptedHandoverRevision === 1,
       'incompatible native contracts',
     );
     const identity = core.distributionIdentity();
