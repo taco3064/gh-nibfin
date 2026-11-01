@@ -349,11 +349,15 @@ export async function importNativeMergedWork(
     );
     results.push(result);
   }
-  need(results.length > 0, 'no-matching-merged-work');
+  need(results.length > 0, 'no-matching-preserved-work');
   return {
     status: retained.length ? 'partial' : 'ready',
     archive: archive.identity,
-    effects: checkOnly ? 'none' : 'merged-work-continuation-only',
+    effects: checkOnly
+      ? 'none'
+      : legacy.length
+        ? 'preserved-work-continuation-only'
+        : 'merged-work-continuation-only',
     results,
     retained,
   };

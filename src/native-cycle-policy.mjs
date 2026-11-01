@@ -1,17 +1,11 @@
-import fs from 'node:fs/promises';
-import { join } from 'node:path';
 import { nativeOwnerSigner } from './native-owner-policy.mjs';
 import { readNativeMember } from './native-member.mjs';
-import {
-  createNativeCycle,
-  openNativeCycle,
-  nativeCycleDirectory,
-} from './native-delivery-store.mjs';
+import { createNativeCycle } from './native-delivery-store.mjs';
 import { currentPin, currentProducer } from './current-core.mjs';
-import { readNativeMergedContinuation } from './native-handover-context.mjs';
+import { inspectExistingNativeCycle } from './native-cycle-existing.mjs';
+import { reapproveNativeCycle } from './native-cycle-reapproval.mjs';
 import {
   prepareLegacyNativeHandover,
-  verifyNativeLegacyHandover,
   legacyHandoverContext,
 } from './native-legacy-handover.mjs';
 const need = (ok, code) => {
@@ -108,47 +102,15 @@ export async function prepareNativeCycle(
   };
   const document = core.parseRequirementsDocument(issue.body),
     identity = core.distributionIdentity();
-  try {
-    await fs.lstat(nativeCycleDirectory(root, selected));
-    const existing = await openNativeCycle(core, { root, target: selected }),
-      state = await existing.read();
-    need(
-      state.scopeHash === core.bodyDigest(document.scope),
-      'original-cycle-reconciliation-required',
-    );
-    if (state.continuation)
-      await readNativeMergedContinuation(core, {
-        root,
-        store: existing,
-        state,
-        operation: 'readiness',
-      });
-    else
-      need(
-        state.core === currentPin.coreSha256,
-        'original-cycle-reconciliation-required',
-      );
-    if (state.legacyHandover) {
-      const proof = await verifyNativeLegacyHandover(core, {
-        root,
-        store: existing,
-        state,
-      });
-      if (handover)
-        need(
-          core.contentIdentity(proof.original) === core.contentIdentity(handover),
-          'original-handover-drift',
-        );
-    } else need(!handover, 'original-cycle-has-no-handover');
-    core.nextDeliveryStage(state.receipts, null, issue.labels);
-    need(
-      issue.state === 'open' || Boolean(state.receipts.closure),
-      'original-closure-required',
-    );
-    return existing;
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
-  }
+  const existing = await inspectExistingNativeCycle(core, {
+    root,
+    target: selected,
+    scopeHash: core.bodyDigest(document.scope),
+    issue,
+    handover,
+  });
+  if (existing && !existing.previous) return existing.store;
+  const previous = existing?.previous ?? null;
   need(
     issue.state === 'open' &&
       document.format === 'raw-scope' &&
@@ -214,14 +176,15 @@ export async function prepareNativeCycle(
   );
   need(ci.encoding === 'base64' && typeof ci.content === 'string', 'ci-source');
   const cycle =
+    previous?.state.cycle ??
     'native-' +
-    core
-      .contentIdentity({
-        target: selected,
-        scope: document.scope,
-        core: currentPin.coreSha256,
-      })
-      .slice(0, 32);
+      core
+        .contentIdentity({
+          target: selected,
+          scope: document.scope,
+          core: currentPin.coreSha256,
+        })
+        .slice(0, 32);
   const observation = await core.observeRequirementAuthority({
     source: { kind: 'github-issue', target: selected },
     provider,
@@ -332,8 +295,10 @@ export async function prepareNativeCycle(
           cycle,
           handoverLabels: core.handoverLabelsIdentity(issue.labels),
           authority: observation.authority,
+          ...(previous ? { handoverPreviousIdentity: previous.state.identity } : {}),
         },
         original: handover,
+        previous,
       })
     : null;
   // The initial implementation explicitly preserves a zero-spent donor. Used
@@ -391,50 +356,59 @@ export async function prepareNativeCycle(
         }),
       })
     : null;
+  const value = {
+    cycle,
+    core: currentPin.coreSha256,
+    installation: identity.pins,
+    createdAt: Date.now(),
+    title: issue.title,
+    scopeBody: document.scope,
+    scopeHash: core.bodyDigest(document.scope),
+    shapeBody: retainedShape?.shapeBody ?? null,
+    authority: observation.authority,
+    grant,
+    policy,
+    member: { id: account.id, login: account.login },
+    memberRuntime: {
+      image: member.image,
+      runtimeProfile: member.runtimeProfile,
+      socket: '/run/user/' + process.getuid() + '/docker.sock',
+    },
+    ownerKey: { id: owner.keyId, publicKey: owner.publicKey },
+    paths,
+    base: base.sha,
+    receipts: retainedShape?.receipts ?? {},
+    expectations: retainedShape?.expectations ?? {},
+    stageInput: null,
+    candidate: null,
+    workspace: null,
+    head: null,
+    ci: null,
+    completion: null,
+    attempts: {},
+    dispatch: null,
+    observations: {},
+    closed: false,
+    ...(legacy
+      ? {
+          legacyHandover: legacy.legacyHandover,
+          handoverLabels: core.handoverLabelsIdentity(issue.labels),
+          deferredRoles: legacy.deferredRoles,
+          ...(previous ? { handoverPreviousIdentity: previous.state.identity } : {}),
+        }
+      : {}),
+  };
+  if (previous)
+    return reapproveNativeCycle(core, {
+      store: existing.store,
+      previous,
+      value,
+      retained: legacy.retained,
+    });
   return createNativeCycle(core, {
     root,
     target: selected,
     retained: legacy?.retained ?? [],
-    value: {
-      cycle,
-      core: currentPin.coreSha256,
-      installation: identity.pins,
-      createdAt: Date.now(),
-      title: issue.title,
-      scopeBody: document.scope,
-      scopeHash: core.bodyDigest(document.scope),
-      shapeBody: retainedShape?.shapeBody ?? null,
-      authority: observation.authority,
-      grant,
-      policy,
-      member: { id: account.id, login: account.login },
-      memberRuntime: {
-        image: member.image,
-        runtimeProfile: member.runtimeProfile,
-        socket: '/run/user/' + process.getuid() + '/docker.sock',
-      },
-      ownerKey: { id: owner.keyId, publicKey: owner.publicKey },
-      paths,
-      base: base.sha,
-      receipts: retainedShape?.receipts ?? {},
-      expectations: retainedShape?.expectations ?? {},
-      stageInput: null,
-      candidate: null,
-      workspace: null,
-      head: null,
-      ci: null,
-      completion: null,
-      attempts: {},
-      dispatch: null,
-      observations: {},
-      closed: false,
-      ...(legacy
-        ? {
-            legacyHandover: legacy.legacyHandover,
-            handoverLabels: core.handoverLabelsIdentity(issue.labels),
-            deferredRoles: legacy.deferredRoles,
-          }
-        : {}),
-    },
+    value,
   });
 }

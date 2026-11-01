@@ -306,6 +306,7 @@ export function nativeControlHost({
           ...staging,
           memberId,
           provider: core.createGithubProvider({ attempts: 1 }),
+          ...(handover ? { handover } : {}),
         };
         completedUpgrade =
           (await stageCompletedNativeUpgrade(core, options)).status === 'staged';

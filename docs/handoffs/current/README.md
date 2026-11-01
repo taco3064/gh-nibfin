@@ -1,13 +1,13 @@
 # Current reviewed public runtime
 
-The CLI selects merged public Core `@nibfin/core@0.1.5` from
-`5c9ae0833acf5fd0d29fec6618f4a3623169123e`. Its component identity is
-`9df89deccde8ee3e14f841b37e2167f97da9239cfef576d6aa51e10f1e26e221`.
+The CLI selects merged public Core `@nibfin/core@0.1.6` from
+`efb31d8bd3118b3050bba862440624861a4e16ce`. Its component identity is
+`794911c77cc23c3bbb645dcc05d7076dce592421fe7988efda02e18bc6458585`.
 
 The exact archive, manifest and compatibility inputs are retained here. The
 authoritative asset hashes are in `src/current-core.mjs`; the loader checks every
 asset and full file inventory before executing Core. These immutable release
-inputs were independently read back from the official v0.1.5 release.
+inputs were independently read back from the official v0.1.6 release.
 N01/N15/N17 remain separately pinned historical contracts.
 
 The loader verifies all three anchors, full component inventory, package metadata,
@@ -47,6 +47,15 @@ read-only after activation changes and Grant expiry. A completed-work upgrade
 fixture preserves the original cycle bytes through the sealed filesystem switch;
 its provider, service and resource observations are explicit doubles. These tests
 do not establish Issue #55 delivery, independent Acceptance or live upgrade proof.
+
+The native dependency fixture selects Core's explicit GitHub-label progress mode.
+It keeps source authorization and bounded native graph traversal, without asking
+this machine to recreate historical completion receipts for delivered Issues.
+The reapproval fixture retains the old signed state, cycle, session and repair
+count through an engine-binding change. A sealed filesystem-switch fixture also
+preserves the untouched prefix before current Owner reapproval. Alternate engine
+bindings and provider/service/resource observations are explicit test doubles;
+the original deployment and actual resumed delivery require separate readback.
 
 Requirement sources use the common `observeRequirementAuthority` API. The installed
 `github-issue` adapter owns GitHub identity and API handling; Jira and Linear are

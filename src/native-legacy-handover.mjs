@@ -17,6 +17,9 @@ const currentFor = (state) => ({
   labels: state.handoverLabels,
   workflow: 'shaped',
   authority: state.authority.identity,
+  ...(state.handoverPreviousIdentity
+    ? { predecessor: state.handoverPreviousIdentity }
+    : {}),
 });
 const referenceFor = (core, payload) =>
   'native-record:' + core.contentIdentity({ version: 1, kind: 'retained', payload });
@@ -24,9 +27,15 @@ const referenceFor = (core, payload) =>
 /** Prepare only data for atomic cycle publication. A normal current Owner Grant
  * binds this proof. Actual signature checks precede import and every execution.
  */
-export function prepareLegacyNativeHandover(core, { state, original }) {
+export function prepareLegacyNativeHandover(
+  core,
+  { state, original, previous = null },
+) {
   need(core.distributionAPI?.unacceptedHandover === 1, 'compatible-core-required');
   const current = currentFor(state);
+  if (previous)
+    core.verifyUnacceptedHandoverRevision({ previous, current, original });
+  else need(!current.predecessor, 'previous-proof-required');
   const plan = core.unacceptedHandoverPolicy({ original, current });
   const { snapshot, workspaceSnapshot, ...metadata } = original;
   const session = {
@@ -43,6 +52,13 @@ export function prepareLegacyNativeHandover(core, { state, original }) {
   };
   const sessionReference = referenceFor(core, session);
   const workspaceReference = referenceFor(core, workspaceSnapshot);
+  const history = previous
+    ? {
+        kind: 'native-handover-preexecution-history',
+        version: 1,
+        state: previous.state,
+      }
+    : null;
   const proof = {
     version: 1,
     kind: 'native-owner-legacy-handover',
@@ -51,12 +67,13 @@ export function prepareLegacyNativeHandover(core, { state, original }) {
     sessionReference,
     workspaceReference,
     plan: plan.identity,
+    ...(history ? { previousReference: referenceFor(core, history) } : {}),
   };
   const proofReference = referenceFor(core, proof);
   return {
     recordId: plan.recordId,
     current,
-    retained: [session, workspaceSnapshot, proof],
+    retained: [session, workspaceSnapshot, proof, ...(history ? [history] : [])],
     legacyHandover: proofReference,
     deferredRoles: {
       deliver: {
@@ -90,9 +107,10 @@ export function prepareLegacyNativeHandover(core, { state, original }) {
 
 export async function verifyNativeLegacyHandover(
   core,
-  { root, store, state, now = Date.now() },
+  { root, store, state, now = Date.now(), depth = 0 },
 ) {
   if (!state.legacyHandover) return null;
+  need(depth <= 16, 'history-depth');
   need(core.distributionAPI?.unacceptedHandover === 1, 'compatible-core-required');
   const owner = await readNativeOwnerPolicy(core, { root });
   const proof = await store.get(state.legacyHandover);
@@ -135,6 +153,28 @@ export async function verifyNativeLegacyHandover(
     context,
   });
   need(plan.identity === proof.plan, 'bound-original-proof');
+  if (proof.previousReference) {
+    need(core.distributionAPI.unacceptedHandoverRevision === 1, 'revision-core');
+    const history = await store.get(proof.previousReference);
+    need(
+      history.kind === 'native-handover-preexecution-history' &&
+        history.version === 1 &&
+        history.state.identity === state.handoverPreviousIdentity,
+      'historical-state',
+    );
+    const previous = await verifyNativeLegacyHandover(core, {
+      root,
+      store,
+      state: history.state,
+      now: history.state.grant.payload.validFrom,
+      depth: depth + 1,
+    });
+    core.verifyUnacceptedHandoverRevision({
+      previous: { ...previous, state: history.state },
+      current,
+      original,
+    });
+  } else need(!state.handoverPreviousIdentity, 'historical-state-required');
   return { proof, original, current, plan, context, grant: state.grant };
 }
 

@@ -132,8 +132,27 @@ existing sealed upgrade boundary. The host checks actual completed project Runs,
 released pool jobs and unused physical resources, retains the exact cycle bytes,
 and owns one reversible maintenance pause. Applicable completed activation and
 repair records move to private history before their fixed paths are reused.
-Owner holds, pending or unaccepted cycles and unknown effects remain blocking.
+Owner holds, started pending work and unknown effects remain blocking.
 The existing explicitly bound failed-closure repair profile remains separate.
+
+Owner `init --handover ORIGINAL_ARCHIVE` also permits a retained, unexecuted
+legacy Shape prefix to survive an engine upgrade. The archive must match its
+original custody. Core rejects any execution attempt, write intent, changed Scope
+or changed Writer. The sealed switch preserves the old cycle bytes; after all
+project sources verify, current Owner approval binds the previous state identity.
+The old signed state is retained in the same content store and the original
+conversation/workspace records are reused. The cycle and repair count continue;
+the previous approval does not authorize the new engine. This bounded profile
+does not cover interrupted Deliver or arbitrary unfinished work.
+
+Native prerequisite progress comes from authorized, fresh GitHub dependency and
+workflow-label reads. Closed prerequisites with the delivery markers do not
+require a private completion copy on the current machine. Removing a delivery
+marker makes the dependent wait; contradictory delivery state blocks. The full
+graph has a 120-second observation budget as well as node/read/edge limits, and
+the normal authorization checkpoint still runs before dispatch or mutation.
+Local completion records remain audit evidence rather than a second workflow
+progress authority.
 
 Completed continuation receipts are checked as historical evidence under the
 current independently trusted Owner key. Their original signature, source and
