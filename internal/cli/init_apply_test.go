@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -16,6 +17,9 @@ type installingAPI struct {
 	failedLabel bool
 	branchRace  bool
 	branchReads int
+	deniedPath  string
+	lostLabel   bool
+	lostPR      bool
 }
 
 func assign(output, value any) error {
@@ -39,6 +43,9 @@ func (f *installingAPI) Call(method, path string, input, output any) error {
 		return f.fakeAPI.Call(method, path, input, output)
 	}
 	f.writes = append(f.writes, method+" "+path)
+	if path == f.deniedPath {
+		return errors.New("PERMISSION_DENIED")
+	}
 	base := "repos/example/project"
 	commit := strings.Repeat("c", 40)
 	branch := "nibfin/init-" + f.plan.Head[:12]
@@ -68,6 +75,11 @@ func (f *installingAPI) Call(method, path string, input, output any) error {
 		pull.Head.Ref, pull.Head.SHA = branch, commit
 		pull.Base.Ref = "main"
 		f.data[base+"/pulls/8"] = pull
+		if f.lostPR {
+			query := "?state=open&head=" + url.QueryEscape("example:"+branch)
+			f.data[base+"/pulls"+query] = []installPR{pull}
+			return errors.New("PROCESS_RESULT_UNAVAILABLE")
+		}
 		return assign(output, pull)
 	case base + "/labels":
 		if f.failedLabel {
@@ -75,15 +87,21 @@ func (f *installingAPI) Call(method, path string, input, output any) error {
 		}
 		body := input.(map[string]string)
 		f.data[base+"/labels/"+body["name"]] = body
+		if f.lostLabel {
+			return errors.New("PROCESS_RESULT_UNAVAILABLE")
+		}
 	default:
 		return errors.New("UNEXPECTED_WRITE")
 	}
 	return nil
 }
 
-func installFixture(t *testing.T) *installingAPI {
+func installFixture(t *testing.T, ownerType string) *installingAPI {
 	t.Helper()
 	f := initFixture()
+	repo := f.data["repos/example/project"].(Repository)
+	repo.Owner.Type = ownerType
+	f.data["repos/example/project"] = repo
 	plan, err := planInit(f, "example/project")
 	if err != nil {
 		t.Fatal(err)
@@ -94,46 +112,69 @@ func installFixture(t *testing.T) *installingAPI {
 }
 
 func TestInstallationCreatesReadBackPRNeverWritesMain(t *testing.T) {
-	for _, lostResponse := range []bool{false, true} {
-		f := installFixture(t)
-		f.lostRef = lostResponse
-		result, err := applyInit(f, f.plan)
-		if err != nil || result.Status != "pending" || result.PR == "" {
-			t.Fatalf("installation must hand off a real PR: %+v %v", result, err)
-		}
-		if f.refPosts != 1 {
-			t.Fatal("unknown writes must be read back, not repeated")
-		}
-		for _, write := range f.writes {
-			if strings.Contains(write, "heads/main") || strings.HasSuffix(write, "/merge") {
-				t.Fatal("installation must never update main or merge")
+	for _, ownerType := range []string{"User", "Organization"} {
+		for _, lostResponse := range []bool{false, true} {
+			f := installFixture(t, ownerType)
+			f.lostRef = lostResponse
+			f.lostLabel = lostResponse
+			f.lostPR = lostResponse
+			result, err := applyInit(f, f.plan)
+			if err != nil || result.Status != "pending" || result.PR == "" {
+				t.Fatalf("installation must hand off a real PR: %+v %v", result, err)
+			}
+			if f.refPosts != 1 {
+				t.Fatal("unknown writes must be read back, not repeated")
+			}
+			for _, write := range f.writes {
+				if strings.Contains(write, "heads/main") || strings.HasSuffix(write, "/merge") {
+					t.Fatal("installation must never update main or merge")
+				}
+			}
+			for _, label := range f.plan.Labels {
+				if _, ok := f.data["repos/example/project/labels/"+label]; !ok {
+					t.Fatal("each label effect must exist for native read-back")
+				}
+			}
+			ref := reference{}
+			ref.Object.SHA = strings.Repeat("c", 40)
+			f.data["repos/example/project/git/ref/heads/main"] = ref
+			plan, err := planInit(f, "example/project")
+			if err != nil || len(plan.Files) != 0 || len(plan.Labels) != 0 {
+				t.Fatal("merged installation must yield an unchanged plan")
+			}
+			writes := len(f.writes)
+			result, err = applyInit(f, plan)
+			if err != nil || result.Status != "completed" || len(f.writes) != writes {
+				t.Fatal("unchanged apply must read back without further writes")
 			}
 		}
 	}
 }
 
 func TestBadReadbackRevokedPermissionAndDuplicateBranchStayIncomplete(t *testing.T) {
-	for _, kind := range []string{"readback", "permission", "duplicate", "branch-race"} {
-		f := installFixture(t)
-		switch kind {
-		case "readback":
-			f.wrongFile = true
-		case "permission":
-			f.failedLabel = true
-		case "branch-race":
-			f.branchRace = true
-		case "duplicate":
-			f.data["repos/example/project/git/ref/heads/nibfin%2Finit-"+
-				f.plan.Head[:12]] = reference{}
-		}
-		result, err := applyInit(f, f.plan)
-		if err == nil || result.Status == "completed" || f.refPosts > 1 {
-			t.Fatalf("%s cannot succeed or retry writes: %+v %v", kind, result, err)
-		}
-		if kind == "branch-race" {
-			for _, write := range f.writes {
-				if strings.HasSuffix(write, "/pulls") {
-					t.Fatal("changed installation branch must not become a PR")
+	for _, ownerType := range []string{"User", "Organization"} {
+		for _, kind := range []string{"readback", "permission", "duplicate", "branch-race"} {
+			f := installFixture(t, ownerType)
+			switch kind {
+			case "readback":
+				f.wrongFile = true
+			case "permission":
+				f.failedLabel = true
+			case "branch-race":
+				f.branchRace = true
+			case "duplicate":
+				f.data["repos/example/project/git/ref/heads/nibfin%2Finit-"+
+					f.plan.Head[:12]] = reference{}
+			}
+			result, err := applyInit(f, f.plan)
+			if err == nil || result.Status == "completed" || f.refPosts > 1 {
+				t.Fatalf("%s cannot succeed or retry writes: %+v %v", kind, result, err)
+			}
+			if kind == "branch-race" {
+				for _, write := range f.writes {
+					if strings.HasSuffix(write, "/pulls") {
+						t.Fatal("changed installation branch must not become a PR")
+					}
 				}
 			}
 		}
