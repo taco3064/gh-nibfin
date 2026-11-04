@@ -78,12 +78,15 @@ Core's current host installer uses a directory replacement operation that return
 extracts the hash-verified archive and delegates content verification to Core.
 This does not change the privileged Core backend or prove Windows execution safety.
 
-Installed templates contain a pinned Core reusable wake caller and a pinned
-Action direct-stage caller, with a stable current-user Runner label. Both require
-separate administrator adoption and native Core authorization. The CLI does not
+Initialization reads Core's complete Issue-event and Dispatch caller recipes
+from its immutable public source and renders only the fixed commit placeholder.
+The CLI keeps no second copy of wake policy. The Action direct-stage caller uses
+the stable current-user Runner label. All entries require separate administrator
+adoption and native Core authorization. The CLI does not
 issue grants, configure secrets, start Agents, select Assignees, schedule Runners
-or advance delivery stages. Merely installing workflows does not complete Core's
-native Issue wake-up integration or first external E2E.
+or advance delivery stages. Installing workflows does not prove authenticated
+native Issue execution or the first external E2E. Unknown existing file contents
+are still refused, including installations pinned to an earlier candidate.
 
 ## Verification status
 
