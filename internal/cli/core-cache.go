@@ -100,6 +100,10 @@ func installCoreCache(api API, process Process) (directory string, err error) {
 		!(runtime.GOOS == "windows" && strings.EqualFold(resolved, parent)) {
 		return "", errors.New("UNTRUSTED_CANDIDATE_DIRECTORY")
 	}
+	parent, err = coreVisibleDirectory(process, parent)
+	if err != nil {
+		return "", err
+	}
 	root, err := os.MkdirTemp(parent, ".verify-")
 	if err != nil {
 		return "", errors.New("CANDIDATE_DIRECTORY_UNAVAILABLE")
