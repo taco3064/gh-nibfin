@@ -37,7 +37,7 @@ func inspectDocker(process Process) []capability {
 		result[0].Code = "REMOTE_OR_UNKNOWN_DOCKER_ENDPOINT_NOT_PROBED"
 		return result
 	}
-	data, err = process.Run("docker", []string{"--context", context,
+	data, err = process.Run("docker", []string{"--host", host,
 		"info", "--format", "{{json .}}"}, nil)
 	var info struct {
 		OSType          string
