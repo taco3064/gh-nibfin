@@ -117,5 +117,5 @@ jobs:
           if (Test-Path -LiteralPath $tools) {
             chmod 700 (Join-Path $tools 'node')
             Remove-Item -LiteralPath (Join-Path $tools 'node')
-            Remove-Item -LiteralPath $tools
+            Remove-Item -LiteralPath $tools -Force
           }
