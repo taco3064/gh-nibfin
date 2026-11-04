@@ -52,8 +52,20 @@ func check(path string, entry fs.DirEntry, walkErr error) error {
 }
 
 func main() {
-	if runtime.Version() != "go1.27.1" {
-		fmt.Fprintln(os.Stderr, "use pinned Go 1.27.1")
+	module, err := os.ReadFile("go.mod")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cannot read go.mod")
+		os.Exit(1)
+	}
+	version := ""
+	for _, line := range strings.Split(string(module), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "go" {
+			version = fields[1]
+		}
+	}
+	if version == "" || runtime.Version() != "go"+version {
+		fmt.Fprintln(os.Stderr, "use the Go version pinned in go.mod")
 		os.Exit(1)
 	}
 	if err := filepath.WalkDir(".", check); err != nil {
