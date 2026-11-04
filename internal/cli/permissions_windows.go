@@ -16,12 +16,24 @@ import (
 	"unsafe"
 )
 
+const windowsPermissionInput = `
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+$assembly = 'System.Runtime.Serialization, Version=4.0.0.0, Culture=neutral, '
+$assembly += 'PublicKeyToken=b77a5c561934e089'
+$null = [Reflection.Assembly]::Load($assembly)
+$bytes = [Text.Encoding]::UTF8.GetBytes([Console]::In.ReadToEnd())
+$stream = [IO.MemoryStream]::new($bytes)
+try {
+  $serializer = [Runtime.Serialization.Json.DataContractJsonSerializer]::new([string[]])
+  [string[]]$paths = $serializer.ReadObject($stream)
+} finally { $stream.Dispose() }
+`
+
 const privateRunnerACL = `
 $ErrorActionPreference = 'Stop'
+$PSModuleAutoLoadingPreference = 'None'
 try {
-[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
-[string[]]$paths = [Console]::In.ReadToEnd() | ConvertFrom-Json
+` + windowsPermissionInput + `
 $sidType = [System.Security.Principal.SecurityIdentifier]
 $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $trusted = @($current, 'S-1-5-18', 'S-1-5-32-544')
@@ -61,10 +73,9 @@ foreach ($path in $paths) {
 
 const initializePrivateRunnerACL = `
 $ErrorActionPreference = 'Stop'
+$PSModuleAutoLoadingPreference = 'None'
 try {
-  [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-  Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
-  [string[]]$paths = [Console]::In.ReadToEnd() | ConvertFrom-Json
+` + windowsPermissionInput + `
   $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
   $security = [System.Security.AccessControl.DirectorySecurity]::new()
   $security.SetOwner($current)

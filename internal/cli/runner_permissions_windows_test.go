@@ -12,9 +12,8 @@ func TestRunnerRejectsIntermediateDirectoryDeletePermission(t *testing.T) {
 	}
 	const grantUnsafeDelete = `
 $ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
-[string[]]$paths = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$PSModuleAutoLoadingPreference = 'None'
+` + windowsPermissionInput + `
 $security = [IO.Directory]::GetAccessControl($paths[0])
 $everyone = [Security.Principal.SecurityIdentifier]::new('S-1-1-0')
 $rule = [Security.AccessControl.FileSystemAccessRule]::new(
