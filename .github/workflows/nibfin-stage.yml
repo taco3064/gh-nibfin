@@ -1,0 +1,17 @@
+name: Nibfin adopted stage
+on:
+  workflow_dispatch:
+    inputs:
+      issue-number: { required: true, type: string }
+      stage: { required: true, type: string }
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  adopted-stage:
+    runs-on: [self-hosted, nibfin-user-127829492]
+    steps:
+      - uses: taco3064/nibfin-act@40bbae39a52b0d00eae2162a0e3214ff39b06e57
+        with:
+          issue-number: ${{ inputs.issue-number }}
+          stage: ${{ inputs.stage }}
