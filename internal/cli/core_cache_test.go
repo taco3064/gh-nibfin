@@ -17,12 +17,16 @@ func (failingVerifier) Run(string, []string, []byte) ([]byte, error) {
 }
 
 func testArchive(t *testing.T, names []string) []byte {
+	return testArchiveMode(t, names, 0644)
+}
+
+func testArchiveMode(t *testing.T, names []string, mode int64) []byte {
 	t.Helper()
 	var buffer bytes.Buffer
 	compressed := gzip.NewWriter(&buffer)
 	writer := tar.NewWriter(compressed)
 	for _, name := range names {
-		if err := writer.WriteHeader(&tar.Header{Name: name, Mode: 0600,
+		if err := writer.WriteHeader(&tar.Header{Name: name, Mode: mode,
 			Typeflag: tar.TypeReg, Size: 1}); err != nil {
 			t.Fatal(err)
 		}

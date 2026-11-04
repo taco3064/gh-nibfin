@@ -32,6 +32,7 @@ func unpackCore(archive []byte, destination string) error {
 		name := header.Name
 		if !regexp.MustCompile(`^[A-Za-z0-9._/-]+$`).MatchString(name) ||
 			strings.HasPrefix(name, "/") || header.Typeflag != tar.TypeReg ||
+			(header.Mode != 0644 && header.Mode != 0755) ||
 			paths[name] || len(paths) >= 1001 || header.Size < 0 ||
 			header.Size > 32*1024*1024 {
 			return errors.New("UNSAFE_CORE_ARCHIVE")
@@ -50,7 +51,8 @@ func unpackCore(archive []byte, destination string) error {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return errors.New("CORE_EXTRACTION_FAILED")
 		}
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		mode := os.FileMode(0600) | os.FileMode(header.Mode&0100)
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 		if err != nil {
 			return errors.New("CORE_EXTRACTION_FAILED")
 		}
