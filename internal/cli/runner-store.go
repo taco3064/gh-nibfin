@@ -36,7 +36,11 @@ func runnerDirectory(path string) (string, error) {
 	if err != nil {
 		return "", errors.New("RUNNER_PARENT_DIRECTORY_UNAVAILABLE")
 	}
-	return filepath.Join(parent, filepath.Base(path)), nil
+	canonical := filepath.Join(parent, filepath.Base(path))
+	if hasGitAncestor(canonical) {
+		return "", errors.New("RUNNER_DIRECTORY_INSIDE_WORKTREE")
+	}
+	return canonical, nil
 }
 
 func readJSONFile(path string, output any) error {
