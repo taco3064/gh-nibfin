@@ -58,6 +58,22 @@ jobs:
         with:
           node-version-file: .core-fixture/.node-version
           package-manager-cache: false
+      - name: Use a private non-writable Node copy on the disposable Linux VM
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $tools = Join-Path $HOME '.nibfin-ci-tools'
+          if (Test-Path -LiteralPath $tools) { throw 'Unexpected existing CI tools' }
+          New-Item -ItemType Directory -Path $tools | Out-Null
+          chmod 700 $tools
+          $original = (Get-Command node).Source
+          $copy = Join-Path $tools 'node'
+          Copy-Item -LiteralPath $original -Destination $copy
+          if ((Get-FileHash $original).Hash -ne (Get-FileHash $copy).Hash) {
+            throw 'Node copy differs'
+          }
+          chmod 500 $copy
+          $tools >> $env:GITHUB_PATH
       - name: Test actual public archive and Core verification in an isolated cache
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,4 +97,13 @@ jobs:
             gh extension remove nibfin
             if ($LASTEXITCODE -ne 0) { throw 'Extension cleanup failed' }
             Remove-Item -LiteralPath $env:GH_CONFIG_DIR -Recurse -Force
+          }
+      - name: Remove the private CI Node copy
+        if: always() && runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $tools = Join-Path $HOME '.nibfin-ci-tools'
+          if (Test-Path -LiteralPath $tools) {
+            Remove-Item -LiteralPath (Join-Path $tools 'node')
+            Remove-Item -LiteralPath $tools
           }
