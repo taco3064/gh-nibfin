@@ -15,10 +15,7 @@ func TestLiveOfficialRunnerPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := privateRunnerTestRoot(t)
 	path := filepath.Join(root, "official-runner")
 	record, err := createRunner(api, OfficialRunnerDownload, repo, user,
 		"nibfin-package-verification", path)

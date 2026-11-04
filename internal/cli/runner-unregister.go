@@ -53,6 +53,9 @@ func unregisterRunner(api API, host RunnerHost, repo Repository, user User,
 	if err := verifyRunnerFiles(directory, app); err != nil {
 		return record, err
 	}
+	if err := host.Check(directory); err != nil {
+		return record, err
+	}
 	record.State = "unregister-pending"
 	if err := writeRunnerRecord(directory, record); err != nil {
 		return record, err
@@ -99,6 +102,9 @@ func unregisterLocal(api API, host RunnerHost, repo Repository, directory string
 	}
 	if app != record.Application || verifyRunnerFiles(directory, app) != nil {
 		return record, errors.New("RUNNER_PACKAGE_CHANGED_USE_OFFICIAL_MANUAL_REMOVAL")
+	}
+	if err := host.Check(directory); err != nil {
+		return record, err
 	}
 	record.State = "unregister-pending"
 	if err := writeRunnerRecord(directory, record); err != nil {

@@ -108,6 +108,9 @@ gh nibfin runner remove --repo OWNER/REPO --directory ABSOLUTE_PATH --apply
 
 Omit `--apply` to preview mutations. The parent directory must already exist;
 the Runner directory must be a new private location outside the current worktree.
+Use a parent controlled by the current OS user (for example below the user's home
+directory). Shared-writable ancestors or Windows ACLs allowing unrelated writers
+are rejected, including temporary directories exposed to other sandbox accounts.
 Creation downloads the official platform package, verifies its native SHA-256,
 extracts it with bounded paths/types/sizes and retains the archive for provenance.
 No service or background Runner process is installed or started.
@@ -120,6 +123,8 @@ Runner's masked `ACTIONS_RUNNER_INPUT_TOKEN` environment input, never argv,
 management JSON or CLI output. GitHub administration/model credentials and runtime
 injection variables are not inherited by that child. See the
 [official Runner implementation](https://github.com/actions/runner/blob/v2.338.2/src/Runner.Listener/CommandSettings.cs).
+The official Runner also loads root `.env` at startup; that file is refused before
+token issuance and every native configuration command, without deleting it.
 
 Read-back checks the actual native Runner ID/name/member label and local `.runner`
 identity. These are management results, **not Core admission or safe delivery**.
@@ -136,8 +141,13 @@ this CLI does not install, stop or remove OS services.
 
 The private `.nibfin-runner.json` is a bounded installation/management record,
 not an Issue lifecycle store or authority grant. An exclusive local lock and
-Pending management state prevent duplicate/unknown configuration attempts. A
-timeout, partial local removal, unknown token request or unreadable native result
+Pending management state prevent duplicate/unknown configuration attempts.
+Pending intent is synchronized before external effects: Unix uses file and
+directory sync; Windows uses local NTFS write-through and FlushFileBuffers.
+Unsupported persistence fails before issuing a token or changing registration.
+These rely on the OS/storage flush contract, not a claim of power-cut testing.
+See Microsoft's [write-through contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea).
+A timeout, partial local removal, unknown token request or unreadable native result
 requires inspection; no automatic retry or stale-lock takeover is provided.
 Unknown processes/configuration must be resolved through official administrative
 inspection before manually changing that state. Do not delete active Runner files.

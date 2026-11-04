@@ -16,6 +16,28 @@ import (
 	"time"
 )
 
+func privateRunnerTestRoot(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.MkdirTemp(home, ".nibfin-runner-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Error("owned Runner test directory cleanup failed")
+		}
+	})
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
 const runnerTokenSentinel = "synthetic-runner-secret"
 
 type runnerAPI struct {
@@ -72,6 +94,8 @@ type runnerHostFixture struct {
 	keepLocal    bool
 	tokenPresent bool
 }
+
+func (*runnerHostFixture) Check(string) error { return nil }
 
 func (f *runnerHostFixture) Configure(root, command string,
 	inputs map[string]string) error {
@@ -148,7 +172,7 @@ func runnerFixture(t *testing.T) (App, *runnerAPI, *runnerHostFixture, string) {
 		Download: func(_ RunnerApplication, path string) error {
 			return os.WriteFile(path, archive.Bytes(), 0600)
 		}}
-	return app, api, host, filepath.Join(t.TempDir(), "managed-runner")
+	return app, api, host, filepath.Join(privateRunnerTestRoot(t), "managed-runner")
 }
 
 func runRunnerTest(app App, command, directory string, apply bool) (string, error) {
@@ -176,7 +200,7 @@ func TestRunnerPreviewThenRegistrationAndUnregister(t *testing.T) {
 	for _, command := range []string{"create", "register", "unregister"} {
 		output, err := runRunnerTest(app, command, directory, true)
 		if err != nil || strings.Contains(output, runnerTokenSentinel) {
-			t.Fatalf("%s failed or disclosed a token: %v", command, err)
+			t.Fatalf("%s failed or disclosed a token: %v; result=%s", command, err, output)
 		}
 		data, err := os.ReadFile(filepath.Join(directory, runnerRecordName))
 		if err != nil || bytes.Contains(data, []byte(runnerTokenSentinel)) {
@@ -189,7 +213,8 @@ func TestRunnerPreviewThenRegistrationAndUnregister(t *testing.T) {
 }
 
 func TestRunnerExpiredTokenTamperingAndMissingAdminNeverConfigure(t *testing.T) {
-	for _, kind := range []string{"expired", "tampered", "no-admin"} {
+	for _, kind := range []string{"expired", "tampered", "no-admin", "env-override",
+		"state-write"} {
 		app, api, host, directory := runnerFixture(t)
 		if _, err := runRunnerTest(app, "create", directory, true); err != nil {
 			t.Fatal(err)
@@ -206,12 +231,30 @@ func TestRunnerExpiredTokenTamperingAndMissingAdminNeverConfigure(t *testing.T) 
 			repo := api.data["repos/example/project"].(Repository)
 			repo.Permissions["admin"] = false
 			api.data["repos/example/project"] = repo
+		case "env-override":
+			path := filepath.Join(directory, ".env")
+			data := []byte("ACTIONS_RUNNER_INPUT_RUNASSERVICE=true\n")
+			if os.WriteFile(path, data, 0600) != nil {
+				t.Fatal("cannot prepare override fixture")
+			}
+		case "state-write":
+			if runtime.GOOS != "windows" && os.Geteuid() == 0 {
+				continue // A root test process bypasses ordinary file permissions.
+			}
+			path := filepath.Join(directory, runnerRecordName)
+			if os.Chmod(path, 0400) != nil {
+				t.Fatal("cannot prepare unwritable state fixture")
+			}
+			defer os.Chmod(path, 0600)
 		}
 		if _, err := runRunnerTest(app, "register", directory, true); err == nil {
 			t.Fatal("invalid registration must reject")
 		}
 		if host.calls != 0 {
 			t.Fatal("denied registration cannot touch official configuration")
+		}
+		if (kind == "env-override" || kind == "state-write") && api.tokens != 0 {
+			t.Fatal("unsafe environment or unsaved intent must reject before token request")
 		}
 	}
 }

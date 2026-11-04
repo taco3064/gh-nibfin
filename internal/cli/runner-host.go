@@ -13,10 +13,38 @@ import (
 )
 
 type RunnerHost interface {
+	Check(string) error
 	Configure(string, string, map[string]string) error
 }
 
 type NativeRunnerHost struct{}
+
+func runnerEntrypoint(directory string) string {
+	entry := "Runner.Listener"
+	if runtime.GOOS == "windows" {
+		entry += ".exe"
+	}
+	return filepath.Join(directory, "bin", entry)
+}
+
+func (NativeRunnerHost) Check(directory string) error {
+	if err := rejectRunnerOverrides(directory); err != nil {
+		return err
+	}
+	// Preserve the official config.sh non-root guard without invoking a shell.
+	if runtime.GOOS != "windows" && os.Geteuid() == 0 {
+		return errors.New("OFFICIAL_RUNNER_REQUIRES_NONROOT_CONFIGURATION")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, runnerEntrypoint(directory), "--version")
+	cmd.Dir, cmd.Env = directory, runnerEnvironment(nil)
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	if cmd.Run() != nil {
+		return errors.New("OFFICIAL_RUNNER_RUNTIME_UNAVAILABLE")
+	}
+	return nil
+}
 
 func runnerEnvironment(inputs map[string]string) []string {
 	var env []string
@@ -41,13 +69,15 @@ func runnerEnvironment(inputs map[string]string) []string {
 
 func (NativeRunnerHost) Configure(directory, command string,
 	inputs map[string]string) error {
+	if err := rejectRunnerOverrides(directory); err != nil {
+		return err
+	}
 	if command != "configure" && command != "remove" && command != "remove-local" ||
 		command != "remove-local" && inputs["TOKEN"] == "" || inputs["UNATTENDED"] != "true" {
 		return errors.New("INVALID_OFFICIAL_RUNNER_COMMAND")
 	}
-	entry := "Runner.Listener"
-	if runtime.GOOS == "windows" {
-		entry += ".exe"
+	if runtime.GOOS != "windows" && os.Geteuid() == 0 {
+		return errors.New("OFFICIAL_RUNNER_REQUIRES_NONROOT_CONFIGURATION")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -55,7 +85,7 @@ func (NativeRunnerHost) Configure(directory, command string,
 	if command == "remove-local" {
 		args = []string{"remove", "--local"}
 	}
-	cmd := exec.CommandContext(ctx, filepath.Join(directory, "bin", entry), args...)
+	cmd := exec.CommandContext(ctx, runnerEntrypoint(directory), args...)
 	cmd.Dir, cmd.Env = directory, runnerEnvironment(inputs)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Run(); err != nil {
