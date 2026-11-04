@@ -29,7 +29,7 @@ func (p *inspectionProcess) Run(name string, args []string, _ []byte) ([]byte, e
 		return []byte("default"), nil
 	case "docker context inspect default":
 		return []byte(`[{"Endpoints":{"docker":{"Host":"` + p.dockerHost + `"}}}]`), nil
-	case "docker --context default info --format {{json .}}":
+	case "docker --host unix:///var/run/docker.sock info --format {{json .}}":
 		return []byte(`{"OSType":"linux","OperatingSystem":"Docker Desktop",` +
 			`"SecurityOptions":["name=rootless","name=apparmor"]}`), nil
 	}
@@ -64,6 +64,10 @@ func TestPreflightReportsFactsWithoutProtectedReadiness(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "secret") || len(api.writes) != 0 {
 		t.Fatal("inspection must redact raw results and never write provider state")
+	}
+	last := process.calls[len(process.calls)-1]
+	if last != "docker --host unix:///var/run/docker.sock info --format {{json .}}" {
+		t.Fatal("engine query must pin the validated local endpoint, not mutable context")
 	}
 }
 
