@@ -57,8 +57,12 @@ func (f *runnerAPI) Call(method, path string, input, output any) error {
 		return assign(output, []RunnerApplication{f.app})
 	}
 	if method == "GET" && path == base+"?per_page=100&page=1" {
+		runners := f.runners
+		if runners == nil {
+			runners = []RunnerInfo{}
+		}
 		return assign(output, map[string]any{"total_count": len(f.runners),
-			"runners": f.runners})
+			"runners": runners})
 	}
 	if method == "POST" && (path == base+"/registration-token" ||
 		path == base+"/remove-token") {
