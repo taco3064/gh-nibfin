@@ -31,6 +31,15 @@ func encoded(data []byte) Content {
 		Content: base64.StdEncoding.EncodeToString(data), SHA: blobHash(data)}
 }
 
+func recipeFixture() map[string][]string {
+	// Synthetic public-source transport; live verification reads Core's actual
+	// recipes instead of treating this fixture as a compatible caller proof.
+	return map[string][]string{
+		"wake":  {"name: Fixture wake CORE_COMMIT", ""},
+		"issue": {"name: Fixture event CORE_COMMIT", ""},
+	}
+}
+
 func initFixture() *fakeAPI {
 	pins := Pins()
 	head := strings.Repeat("a", 40)
@@ -50,6 +59,9 @@ func initFixture() *fakeAPI {
 	bound, _ := json.Marshal(pins.Core)
 	f.data["repos/"+pins.Action.Repository+"/contents/core-source.json?ref="+
 		pins.Action.Commit] = encoded(bound)
+	recipes, _ := json.Marshal(recipeFixture())
+	f.data["repos/"+pins.Core.Repository+"/contents/src/caller-recipes.json?ref="+
+		pins.Core.Commit] = encoded(recipes)
 	return f
 }
 
@@ -60,7 +72,7 @@ func TestPublicPersonalAndOrganizationPreview(t *testing.T) {
 		repo.Owner.Type = ownerType
 		f.data["repos/example/project"] = repo
 		plan, err := planInit(f, repo.FullName)
-		if err != nil || len(plan.Files) != 3 || len(plan.Labels) != 3 {
+		if err != nil || len(plan.Files) != 4 || len(plan.Labels) != 3 {
 			t.Fatalf("invalid preview: %+v %v", plan, err)
 		}
 		if len(f.writes) != 0 {
@@ -102,7 +114,7 @@ func TestPrivatePermissionSourceAndExistingEditRejectBeforeWrites(t *testing.T) 
 
 func TestUnchangedInstallationHasNoFileOrLabelChanges(t *testing.T) {
 	f := initFixture()
-	for path, body := range templates(Pins(), 7) {
+	for path, body := range templates(Pins(), 7, recipeFixture()) {
 		f.data["repos/example/project/contents/"+path+"?ref="+
 			strings.Repeat("a", 40)] = encoded([]byte(body))
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,13 +19,30 @@ func TestLiveCandidateCache(t *testing.T) {
 	canonicalBase, _ := filepath.EvalSymlinks(cacheBase)
 	t.Logf("OS cache base=%q canonical=%q", cacheBase, canonicalBase)
 	process := NativeProcess{}
+	api := GitHub{Process: process}
+	if err := verifyProducers(api, Pins()); err != nil {
+		t.Fatal(err)
+	}
+	recipes, err := callerRecipes(api, Pins().Core)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := templates(Pins(), 127829492, recipes)
+	for name, kind := range map[string]string{"wake": "wake", "issue": "issue"} {
+		path := ".github/workflows/nibfin-" + name + ".yml"
+		want := strings.ReplaceAll(strings.Join(recipes[kind], "\n"),
+			"CORE_COMMIT", Pins().Core.Commit)
+		if files[path] != want {
+			t.Fatal("caller must exactly match immutable Core recipe")
+		}
+	}
 	if node, err := exec.LookPath("node"); err == nil {
 		resolved, _ := filepath.EvalSymlinks(node)
 		if stat, err := os.Stat(resolved); err == nil {
 			t.Logf("Node executable: %s mode=%v", resolved, stat.Mode())
 		}
 	}
-	path, err := installCoreCache(GitHub{Process: process}, process)
+	path, err := installCoreCache(api, process)
 	if err != nil {
 		cache, _ := os.UserCacheDir()
 		canonical, resolveErr := filepath.EvalSymlinks(cache)

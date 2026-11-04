@@ -49,7 +49,11 @@ func planInit(api API, name string) (InitPlan, error) {
 		return plan, errors.New("TARGET_HEAD_UNAVAILABLE")
 	}
 	plan.Head = ref.Object.SHA
-	files := templates(pins, user.ID)
+	recipes, err := callerRecipes(api, pins.Core)
+	if err != nil {
+		return plan, err
+	}
+	files := templates(pins, user.ID, recipes)
 	paths := make([]string, 0, len(files))
 	for path := range files {
 		paths = append(paths, path)
