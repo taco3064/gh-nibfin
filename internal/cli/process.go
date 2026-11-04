@@ -75,8 +75,15 @@ func (NativeProcess) Run(name string, args []string, input []byte) ([]byte, erro
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, args...)
-	if name == "node" {
-		for _, key := range []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"} {
+	if name != "gh" {
+		keys := []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"}
+		if name == "codex" || name == "docker" {
+			keys = append(keys, "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")
+		}
+		if name == "codex" {
+			keys = append(keys, "CODEX_HOME")
+		}
+		for _, key := range keys {
 			if value, ok := os.LookupEnv(key); ok {
 				cmd.Env = append(cmd.Env, key+"="+value)
 			}
@@ -96,5 +103,20 @@ func (NativeProcess) Run(name string, args []string, input []byte) ([]byte, erro
 		}
 		return nil, errors.New("PROCESS_RESULT_UNAVAILABLE")
 	}
+	if name == "codex" && len(args) == 2 &&
+		args[0] == "login" && args[1] == "status" {
+		return codexLoginMode(out.String() + "\n" + stderr.String())
+	}
 	return out.Bytes(), nil
+}
+
+func codexLoginMode(output string) ([]byte, error) {
+	status := strings.ToLower(output)
+	if strings.Contains(status, "logged in using chatgpt") {
+		return []byte("chatgpt"), nil
+	}
+	if strings.Contains(status, "logged in using an api key") {
+		return []byte("api_key"), nil
+	}
+	return nil, errors.New("CODEX_LOGIN_STATUS_UNRECOGNIZED")
 }

@@ -157,3 +157,31 @@ recreation from the current package. This candidate does not implement the
 deferred general upgrade feature. Installed package files are retained for reuse
 and provenance; dispose of them only after registration/service/process use is
 retired and no recovery evidence remains necessary.
+
+## Read-only environment inspection
+
+```text
+gh nibfin preflight --repo OWNER/REPO
+gh nibfin preflight --repo OWNER/REPO --directory ABSOLUTE_RUNNER_PATH
+```
+
+The JSON report separates host OS/architecture, current repository Admin rights,
+tool execution, Codex login presence, Docker engine observations and managed
+official Runner package/runtime verification. It never prints raw tool output,
+login status text, endpoint addresses or provider errors. `codex login status`
+only establishes a recognized local login mode; it does not execute an Agent role
+or prove network access, model entitlement or protected delivery.
+
+Docker inspection refuses ambient endpoint/configuration overrides and remote or
+unknown context endpoints. It queries only the selected local Unix socket or
+Windows named pipe, without mounting it or creating containers. Linux engine,
+Desktop, rootless and AppArmor reports are observations, never an isolation test.
+Tool executables from a Git worktree or temporary directory are rejected.
+
+The pinned Core candidate has no public read-only isolation-proof entry.
+Consequently this command reports that precise limitation and exits **2** with
+`protected_execution: unverified`, even when all observed prerequisites exist.
+It does not reimplement Core admission, install services, inspect credential
+files, or claim Windows/macOS/Linux protected support from a version command.
+Real Runner/job/OIDC authorization, Agent roles and isolation need the separately
+authorized protected execution and external E2E evidence before formal release.
