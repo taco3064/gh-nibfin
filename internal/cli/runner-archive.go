@@ -131,10 +131,17 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 		return errors.New("RUNNER_ARCHIVE_HASH_MISMATCH")
 	}
 	privatePaths := []string{directory, archive}
+	privateDirectories := map[string]bool{directory: true}
 	err = walkRunnerArchive(archive, strings.HasSuffix(app.Filename, ".zip"),
 		func(name string, _ os.FileMode, size int64, reader io.Reader) error {
 			path := filepath.Join(directory, filepath.FromSlash(name))
 			privatePaths = append(privatePaths, path)
+			parent := filepath.Dir(path)
+			for !privateDirectories[parent] {
+				privateDirectories[parent] = true
+				privatePaths = append(privatePaths, parent)
+				parent = filepath.Dir(parent)
+			}
 			resolved, err := filepath.EvalSymlinks(path)
 			if err != nil || resolved != path {
 				return errors.New("UNTRUSTED_RUNNER_FILE")
