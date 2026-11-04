@@ -14,6 +14,9 @@ func TestLiveCandidateCache(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("LOCALAPPDATA", root)
 	t.Setenv("XDG_CACHE_HOME", root)
+	cacheBase, _ := os.UserCacheDir()
+	canonicalBase, _ := filepath.EvalSymlinks(cacheBase)
+	t.Logf("OS cache base=%q canonical=%q", cacheBase, canonicalBase)
 	process := NativeProcess{}
 	if node, err := exec.LookPath("node"); err == nil {
 		resolved, _ := filepath.EvalSymlinks(node)
