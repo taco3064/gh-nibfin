@@ -23,3 +23,62 @@ jobs:
       - run: go vet ./...
       - run: go build -trimpath -o gh-nibfin .
       - run: ./gh-nibfin help
+  candidate-cache:
+    name: candidate-cache (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Read reviewed Core pin
+        id: core-pin
+        shell: pwsh
+        run: |
+          $pins = Get-Content -Raw internal/cli/producers.json | ConvertFrom-Json
+          "commit=$($pins.core.commit)" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: taco3064/nibfin-core
+          ref: ${{ steps.core-pin.outputs.commit }}
+          path: .core-fixture
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .core-fixture/.node-version
+          package-manager-cache: false
+      - name: Test actual public archive and Core verification in an isolated cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIBFIN_TEST_LIVE_READS: '1'
+        run: go test ./internal/cli -run TestLiveCandidateCache -v -count=1
+      - name: Build and install the actual local GitHub CLI extension
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_CONFIG_DIR: ${{ runner.temp }}/nibfin-candidate-extension
+        run: |
+          $binary = if ($IsWindows) { 'gh-nibfin.exe' } else { 'gh-nibfin' }
+          go build -buildvcs=true -trimpath -o $binary .
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          try {
+            gh extension install .
+            if ($LASTEXITCODE -ne 0) { throw 'Extension install failed' }
+            gh nibfin help
+            if ($LASTEXITCODE -ne 0) { throw 'Extension invocation failed' }
+          } finally {
+            gh extension remove nibfin
+            if ($LASTEXITCODE -ne 0) { throw 'Extension cleanup failed' }
+            Remove-Item -LiteralPath $env:GH_CONFIG_DIR -Recurse -Force
+          }
