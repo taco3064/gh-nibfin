@@ -101,6 +101,7 @@ func installFixture(t *testing.T, ownerType string) *installingAPI {
 	f := initFixture()
 	repo := f.data["repos/example/project"].(Repository)
 	repo.Owner.Type = ownerType
+	repo.Permissions = map[string]bool{"push": true}
 	f.data["repos/example/project"] = repo
 	plan, err := planInit(f, "example/project")
 	if err != nil {
