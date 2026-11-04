@@ -32,11 +32,14 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Default: preview only. --apply opens an installation PR; never merges it.\n"+
 			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
-			"Environment preflight is not implemented yet.")
+			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")
 		return err
 	}
 	if args[0] == "runner" {
 		return a.runRunner(args[1:], out)
+	}
+	if args[0] == "preflight" {
+		return a.runPreflight(args[1:], out)
 	}
 	if args[0] != "init" {
 		return errors.New("UNKNOWN_COMMAND_USE_HELP")
