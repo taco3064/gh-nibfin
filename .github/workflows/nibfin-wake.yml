@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   wake:
-    uses: taco3064/nibfin-core/.github/workflows/wake.yml@baefbaf2c4cec786b850a5a24fef257cc868b40e
+    uses: "taco3064/nibfin-core/.github/workflows/wake.yml@\
+      baefbaf2c4cec786b850a5a24fef257cc868b40e"
     with:
       core_commit: baefbaf2c4cec786b850a5a24fef257cc868b40e
     secrets:
