@@ -36,16 +36,17 @@ func toolPath(name string) (string, error) {
 	if err != nil || !filepath.IsAbs(path) {
 		return "", errors.New("UNTRUSTED_TOOL_PATH")
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", errors.New("WORK_DIRECTORY_UNAVAILABLE")
+	if hasGitAncestor(filepath.Dir(path)) {
+		return "", errors.New("UNTRUSTED_TOOL_PATH")
 	}
-	for _, directory := range []string{cwd, os.TempDir()} {
-		rel, err := filepath.Rel(directory, path)
-		if err == nil && rel != ".." &&
-			!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return "", errors.New("UNTRUSTED_TOOL_PATH")
-		}
+	temporary, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return "", errors.New("TEMP_DIRECTORY_UNAVAILABLE")
+	}
+	rel, err := filepath.Rel(temporary, path)
+	if err == nil && rel != ".." &&
+		!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", errors.New("UNTRUSTED_TOOL_PATH")
 	}
 	stat, err := os.Stat(path)
 	if err != nil || !stat.Mode().IsRegular() ||

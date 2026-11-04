@@ -112,7 +112,14 @@ func unpackRunner(archive, destination string, zipped bool) error {
 }
 
 func verifyRunnerFiles(directory string, app RunnerApplication) error {
+	if err := rejectRunnerOverrides(directory); err != nil {
+		return err
+	}
 	archive := filepath.Join(directory, ".nibfin-runner-package")
+	stat, err := os.Lstat(archive)
+	if err != nil || !stat.Mode().IsRegular() || stat.Size() > 512*1024*1024 {
+		return errors.New("UNTRUSTED_RUNNER_ARCHIVE")
+	}
 	file, err := os.Open(archive)
 	if err != nil {
 		return errors.New("RUNNER_ARCHIVE_UNAVAILABLE")
@@ -123,9 +130,11 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 	if copyErr != nil || closeErr != nil || hex.EncodeToString(hash.Sum(nil)) != app.Hash {
 		return errors.New("RUNNER_ARCHIVE_HASH_MISMATCH")
 	}
-	return walkRunnerArchive(archive, strings.HasSuffix(app.Filename, ".zip"),
+	privatePaths := []string{directory, archive}
+	err = walkRunnerArchive(archive, strings.HasSuffix(app.Filename, ".zip"),
 		func(name string, _ os.FileMode, size int64, reader io.Reader) error {
 			path := filepath.Join(directory, filepath.FromSlash(name))
+			privatePaths = append(privatePaths, path)
 			resolved, err := filepath.EvalSymlinks(path)
 			if err != nil || resolved != path {
 				return errors.New("UNTRUSTED_RUNNER_FILE")
@@ -144,4 +153,8 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 			}
 			return nil
 		})
+	if err != nil {
+		return err
+	}
+	return requirePrivateRunnerPaths(privatePaths)
 }

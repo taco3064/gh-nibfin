@@ -15,6 +15,9 @@ func createRunner(api API, download RunnerDownload, repo Repository, user User,
 	if err != nil {
 		return result, err
 	}
+	if err := requirePrivateRunnerParent(directory); err != nil {
+		return result, err
+	}
 	if err := os.Mkdir(directory, 0700); err != nil {
 		return result, errors.New("NEW_RUNNER_DIRECTORY_REQUIRED")
 	}
@@ -25,6 +28,9 @@ func createRunner(api API, download RunnerDownload, repo Repository, user User,
 			}
 		}
 	}()
+	if err := initializePrivateRunnerDirectory(directory); err != nil {
+		return result, err
+	}
 	archive := filepath.Join(directory, ".nibfin-runner-package")
 	if err := download(app, archive); err != nil {
 		return result, err
@@ -54,6 +60,9 @@ func registerRunner(api API, host RunnerHost, repo Repository, user User,
 		return record, errors.New("RUNNER_SOURCE_CHANGED_RECREATE_FROM_OFFICIAL_SOURCE")
 	}
 	if err := verifyRunnerFiles(directory, app); err != nil {
+		return record, err
+	}
+	if err := host.Check(directory); err != nil {
 		return record, err
 	}
 	runners, err := listRunners(api, repo.FullName)

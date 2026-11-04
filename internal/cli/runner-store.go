@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 const runnerRecordName = ".nibfin-runner.json"
@@ -30,12 +29,7 @@ func runnerDirectory(path string) (string, error) {
 	if path == filepath.Dir(path) {
 		return "", errors.New("UNSAFE_RUNNER_DIRECTORY")
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", errors.New("WORK_DIRECTORY_UNAVAILABLE")
-	}
-	rel, err := filepath.Rel(cwd, path)
-	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+	if hasGitAncestor(filepath.Dir(path)) {
 		return "", errors.New("RUNNER_DIRECTORY_INSIDE_WORKTREE")
 	}
 	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
@@ -70,8 +64,8 @@ func writeRunnerRecord(directory string, record RunnerInstall) error {
 	if existing, err := os.Lstat(path); err == nil && !existing.Mode().IsRegular() {
 		return errors.New("UNTRUSTED_RUNNER_LOCAL_RECORD")
 	}
-	if os.WriteFile(path, append(data, '\n'), 0600) != nil {
-		return errors.New("RUNNER_LOCAL_RECORD_WRITE_FAILED")
+	if err := writeDurableState(path, append(data, '\n')); err != nil {
+		return err
 	}
 	return nil
 }
@@ -85,7 +79,11 @@ func readRunnerRecord(directory string, repo Repository,
 		runtime.GOOS != "windows" && stat.Mode().Perm()&0077 != 0 {
 		return record, errors.New("UNTRUSTED_RUNNER_DIRECTORY")
 	}
-	err = readJSONFile(filepath.Join(directory, runnerRecordName), &record)
+	path := filepath.Join(directory, runnerRecordName)
+	if err := requirePrivateRunnerPaths([]string{directory, path}); err != nil {
+		return record, err
+	}
+	err = readJSONFile(path, &record)
 	if err != nil {
 		return record, err
 	}
@@ -94,4 +92,12 @@ func readRunnerRecord(directory string, repo Repository,
 		return record, errors.New("RUNNER_MANAGEMENT_IDENTITY_MISMATCH")
 	}
 	return record, nil
+}
+
+func rejectRunnerOverrides(directory string) error {
+	path := filepath.Join(directory, ".env")
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("UNTRUSTED_RUNNER_ENVIRONMENT_FILE")
+	}
+	return nil
 }
