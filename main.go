@@ -1,25 +1,27 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/taco3064/gh-nibfin/internal/cli"
 )
 
 func run(args []string, out io.Writer) error {
-	if len(args) == 0 || len(args) == 1 &&
-		(args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
-		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
-			"Usage: gh nibfin help\n"+
-			"Onboarding and Runner commands are not implemented yet.")
-		return err
-	}
-	return fmt.Errorf("unknown command; use gh nibfin help")
+	process := cli.NativeProcess{}
+	app := cli.App{API: cli.GitHub{Process: process}, Process: process}
+	return app.Run(args, out)
 }
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		var commandError *cli.CommandError
+		if errors.As(err, &commandError) {
+			os.Exit(commandError.Exit)
+		}
 		os.Exit(1)
 	}
 }
