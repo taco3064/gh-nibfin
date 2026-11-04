@@ -50,6 +50,14 @@ are refused; this is initialization, not the deferred upgrade feature. An existi
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
+Personal and Organization public owners share the scoped initialization API.
+Both have complete positive/negative apply contracts, including PR/label read-back
+and unchanged reruns. Real Personal candidate installation has been exercised;
+live Organization installation and specific Organization policies are **Unverified**.
+No Organization/Admin identity is required as an extra Phase 0 prerequisite.
+Initialization needs repository/workflow writes; Runner management separately
+requires the actual repository Admin rights described below.
+
 ## Sources and trust boundary
 
 `internal/cli/producers.json` is the single candidate pin set. Initialization
