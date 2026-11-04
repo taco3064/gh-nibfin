@@ -84,19 +84,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_CONFIG_DIR: ${{ runner.temp }}/nibfin-candidate-extension
+          XDG_DATA_HOME: ${{ runner.temp }}/nibfin-candidate-data
+          XDG_STATE_HOME: ${{ runner.temp }}/nibfin-candidate-state
         run: |
           $binary = if ($IsWindows) { 'gh-nibfin.exe' } else { 'gh-nibfin' }
           go build -buildvcs=true -trimpath -o $binary .
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $registered = $false
           try {
             gh extension install .
             if ($LASTEXITCODE -ne 0) { throw 'Extension install failed' }
+            $registered = $true
             gh nibfin help
             if ($LASTEXITCODE -ne 0) { throw 'Extension invocation failed' }
           } finally {
-            gh extension remove nibfin
-            if ($LASTEXITCODE -ne 0) { throw 'Extension cleanup failed' }
-            Remove-Item -LiteralPath $env:GH_CONFIG_DIR -Recurse -Force
+            if ($registered) {
+              gh extension remove nibfin
+              if ($LASTEXITCODE -ne 0) { throw 'Extension cleanup failed' }
+            }
+            foreach ($directory in @($env:GH_CONFIG_DIR, $env:XDG_DATA_HOME,
+                $env:XDG_STATE_HOME)) {
+              if (Test-Path -LiteralPath $directory) {
+                Remove-Item -LiteralPath $directory -Recurse -Force
+              }
+            }
           }
       - name: Remove the private CI Node copy
         if: always() && runner.os == 'Linux'
@@ -104,6 +115,7 @@ jobs:
         run: |
           $tools = Join-Path $HOME '.nibfin-ci-tools'
           if (Test-Path -LiteralPath $tools) {
+            chmod 700 (Join-Path $tools 'node')
             Remove-Item -LiteralPath (Join-Path $tools 'node')
             Remove-Item -LiteralPath $tools
           }
