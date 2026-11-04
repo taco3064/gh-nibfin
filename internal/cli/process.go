@@ -52,6 +52,17 @@ func toolPath(name string) (string, error) {
 		runtime.GOOS != "windows" && stat.Mode().Perm()&0002 != 0 {
 		return "", errors.New("UNTRUSTED_TOOL_PATH")
 	}
+	if runtime.GOOS != "windows" {
+		for parent := filepath.Dir(path); ; parent = filepath.Dir(parent) {
+			stat, err := os.Stat(parent)
+			if err != nil || stat.Mode().Perm()&0002 != 0 {
+				return "", errors.New("UNTRUSTED_TOOL_PATH")
+			}
+			if filepath.Dir(parent) == parent {
+				break
+			}
+		}
+	}
 	return path, nil
 }
 
