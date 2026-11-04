@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -53,7 +55,13 @@ func readJSONFile(path string, output any) error {
 		return errors.New("RUNNER_LOCAL_RECORD_UNAVAILABLE")
 	}
 	defer file.Close()
-	if json.NewDecoder(io.LimitReader(file, 64*1024+1)).Decode(output) != nil {
+	reader := bufio.NewReader(io.LimitReader(file, 64*1024+1))
+	// Official Windows Runner settings use UTF-8 with a leading BOM.
+	prefix, _ := reader.Peek(3)
+	if bytes.Equal(prefix, []byte{0xef, 0xbb, 0xbf}) {
+		_, _ = reader.Discard(3)
+	}
+	if json.NewDecoder(reader).Decode(output) != nil {
 		return errors.New("INVALID_RUNNER_LOCAL_RECORD")
 	}
 	return nil
