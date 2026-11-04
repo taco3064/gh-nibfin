@@ -82,6 +82,15 @@ func installCoreCache(api API, process Process) (directory string, err error) {
 	if err != nil {
 		return "", errors.New("USER_CACHE_UNAVAILABLE")
 	}
+	if err := os.MkdirAll(cache, 0700); err != nil {
+		return "", errors.New("USER_CACHE_UNAVAILABLE")
+	}
+	// Resolve the OS-selected cache base (which can be a Windows volume alias)
+	// before entering our private namespace. Reject aliases within that namespace.
+	cache, err = filepath.EvalSymlinks(cache)
+	if err != nil {
+		return "", errors.New("USER_CACHE_UNAVAILABLE")
+	}
 	parent := filepath.Join(cache, "Nibfin", "candidates", "core")
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		return "", errors.New("CANDIDATE_DIRECTORY_UNAVAILABLE")

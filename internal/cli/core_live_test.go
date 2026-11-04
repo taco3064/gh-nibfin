@@ -23,9 +23,16 @@ func TestLiveCandidateCache(t *testing.T) {
 	}
 	path, err := installCoreCache(GitHub{Process: process}, process)
 	if err != nil {
+		cache, _ := os.UserCacheDir()
+		canonical, resolveErr := filepath.EvalSymlinks(cache)
+		t.Logf("OS cache: %s canonical=%s error=%v", cache, canonical, resolveErr)
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "Nibfin", "candidates", "core", Pins().Core.Commit)
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(canonical, "Nibfin", "candidates", "core", Pins().Core.Commit)
 	if path != want {
 		t.Fatal("candidate must be installed inside the isolated test cache")
 	}
