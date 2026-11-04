@@ -55,6 +55,13 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 	permission := capability{"repository_admin", "unverified", "REPO_ADMIN_UNVERIFIED"}
 	if err == nil {
 		permission = capability{"repository_admin", "available", "CURRENT_ADMIN_VERIFIED"}
+	} else {
+		switch err.Error() {
+		case "PUBLIC_REPOSITORY_REQUIRED", "REPOSITORY_PERMISSION_REQUIRED",
+			"AUTHENTICATED_USER_REQUIRED", "INVALID_REPOSITORY", "PERMISSION_DENIED",
+			"NOT_FOUND":
+			permission.Code = err.Error()
+		}
 	}
 	report.Checks = append(report.Checks, permission)
 	for _, tool := range []string{"gh", "git", "node", "codex"} {
@@ -75,19 +82,10 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 		capability{"agent_execution", "unverified", "NO_AGENT_ROLE_EXECUTION_PERFORMED"})
 	report.Checks = append(report.Checks, inspectDocker(a.Process)...)
 	runner := capability{"official_runner", "unverified", "MANAGED_DIRECTORY_NOT_SUPPLIED"}
-	if *directory != "" && permission.Status == "available" {
-		runner.Code = "MANAGED_RUNNER_INSPECTION_FAILED"
-		path, pathErr := runnerDirectory(*directory)
-		if pathErr == nil {
-			record, recordErr := readRunnerRecord(path, repo, user)
-			if recordErr == nil {
-				app, appErr := runnerApplication(a.API, repo.FullName)
-				if appErr == nil && app == record.Application &&
-					verifyRunnerFiles(path, app) == nil && a.Runner.Check(path) == nil {
-					runner = capability{"official_runner", "available",
-						"OFFICIAL_PACKAGE_AND_RUNTIME_VERIFIED"}
-				}
-			}
+	if *directory != "" {
+		runner.Code = "REPOSITORY_ADMIN_REQUIRED_FOR_PACKAGE_INSPECTION"
+		if permission.Status == "available" {
+			runner = a.inspectManagedRunner(*directory, repo, user)
 		}
 	}
 	report.Checks = append(report.Checks, runner,
@@ -101,4 +99,34 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 		return errors.New("OUTPUT_UNAVAILABLE")
 	}
 	return &CommandError{Code: "PREFLIGHT_PROTECTED_EXECUTION_UNVERIFIED", Exit: 2}
+}
+
+func (a App) inspectManagedRunner(directory string,
+	repo Repository, user User) capability {
+	denied := func(code string) capability {
+		return capability{"official_runner", "unverified", code}
+	}
+	path, err := runnerDirectory(directory)
+	if err != nil {
+		return denied("RUNNER_DIRECTORY_UNTRUSTED_OR_UNAVAILABLE")
+	}
+	record, err := readRunnerRecord(path, repo, user)
+	if err != nil {
+		return denied("MANAGED_RECORD_OR_PRIVATE_PERMISSIONS_UNVERIFIED")
+	}
+	app, err := runnerApplication(a.API, repo.FullName)
+	if err != nil {
+		return denied("CURRENT_OFFICIAL_PACKAGE_UNAVAILABLE")
+	}
+	if app != record.Application {
+		return denied("OFFICIAL_PACKAGE_IDENTITY_CHANGED")
+	}
+	if verifyRunnerFiles(path, app) != nil {
+		return denied("OFFICIAL_PACKAGE_BYTES_OR_PERMISSIONS_UNVERIFIED")
+	}
+	if a.Runner.Check(path) != nil {
+		return denied("OFFICIAL_RUNNER_RUNTIME_UNAVAILABLE")
+	}
+	return capability{"official_runner", "available",
+		"OFFICIAL_PACKAGE_AND_RUNTIME_VERIFIED"}
 }

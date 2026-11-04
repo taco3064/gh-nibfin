@@ -81,7 +81,7 @@ func TestPreflightMissingAndDeniedToolsNeverExposeDiagnostics(t *testing.T) {
 	_ = (App{API: api, Process: &inspectionProcess{missing: true}}).Run(
 		[]string{"preflight", "--repo", "example/project"}, &output)
 	if strings.Contains(output.String(), "secret") ||
-		!strings.Contains(output.String(), "REPO_ADMIN_UNVERIFIED") ||
+		!strings.Contains(output.String(), "REPOSITORY_PERMISSION_REQUIRED") ||
 		!strings.Contains(output.String(), "TOOL_INSPECTION_UNAVAILABLE") {
 		t.Fatal("denied or missing tools must have bounded redacted diagnostics")
 	}

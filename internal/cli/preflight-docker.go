@@ -18,8 +18,12 @@ func inspectDocker(process Process) []capability {
 		}
 	}
 	data, err := process.Run("docker", []string{"context", "show"}, nil)
+	if err != nil {
+		result[0] = probe("docker_backend", data, err)
+		return result
+	}
 	context := strings.TrimSpace(string(data))
-	if err != nil || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`).
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`).
 		MatchString(context) {
 		return result
 	}
