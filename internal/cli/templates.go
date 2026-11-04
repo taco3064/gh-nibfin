@@ -6,7 +6,9 @@ import (
 )
 
 func templates(pins Producers, memberID int64) map[string]string {
-	core := pins.Core.Repository + "/.github/workflows/wake.yml@" + pins.Core.Commit
+	// YAML double-quoted continuation preserves the exact reference without spaces.
+	core := fmt.Sprintf("\"%s/.github/workflows/wake.yml@\\\n      %s\"",
+		pins.Core.Repository, pins.Core.Commit)
 	action := pins.Action.Repository + "@" + pins.Action.Commit
 	pinJSON, _ := json.MarshalIndent(pins, "", "  ")
 	wake := fmt.Sprintf(`name: Nibfin adopted wake
