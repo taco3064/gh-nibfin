@@ -116,6 +116,32 @@ func TestCodexLoginClassificationNeverReturnsRawSecrets(t *testing.T) {
 	}
 }
 
+func TestManagedRunnerInspectionPreservesRegistrationAndRejectsTampering(t *testing.T) {
+	app, api, host, directory := runnerFixture(t)
+	if _, err := runRunnerTest(app, "create", directory, true); err != nil {
+		t.Fatal(err)
+	}
+	repo, user, err := repository(api, "example/project", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := app.inspectManagedRunner(directory, repo, user)
+	if check.Status != "available" {
+		t.Fatal("verified package/runtime inspection should succeed")
+	}
+	path := filepath.Join(directory, "bin", "Runner.Listener")
+	if err := os.WriteFile(path, []byte("tampered fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	check = app.inspectManagedRunner(directory, repo, user)
+	if check.Code != "OFFICIAL_PACKAGE_BYTES_OR_PERMISSIONS_UNVERIFIED" {
+		t.Fatal("changed package must have a precise denial")
+	}
+	if api.tokens != 0 || host.calls != 0 {
+		t.Fatal("read-only inspection must not request tokens or configure Runner")
+	}
+}
+
 func TestToolPathRejectsProjectExecutableBeforeExecution(t *testing.T) {
 	root := privateRunnerTestRoot(t)
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
