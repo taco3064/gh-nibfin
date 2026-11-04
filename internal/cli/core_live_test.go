@@ -28,10 +28,12 @@ func TestLiveCandidateCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := templates(Pins(), 127829492, recipes)
-	for name, kind := range map[string]string{"wake": "wake", "issue": "issue"} {
+	for name, kind := range map[string]string{"wake": "action-wake", "issue": "issue"} {
 		path := ".github/workflows/nibfin-" + name + ".yml"
 		want := strings.ReplaceAll(strings.Join(recipes[kind], "\n"),
 			"CORE_COMMIT", Pins().Core.Commit)
+		want = strings.ReplaceAll(want, "ACTION_COMMIT", Pins().Action.Commit)
+		want = strings.ReplaceAll(want, "MEMBER_ID", "127829492")
 		if files[path] != want {
 			t.Fatal("caller must exactly match immutable Core recipe")
 		}

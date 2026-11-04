@@ -35,8 +35,9 @@ func recipeFixture() map[string][]string {
 	// Synthetic public-source transport; live verification reads Core's actual
 	// recipes instead of treating this fixture as a compatible caller proof.
 	return map[string][]string{
-		"wake":  {"name: Fixture wake CORE_COMMIT", ""},
-		"issue": {"name: Fixture event CORE_COMMIT", ""},
+		"wake":        {"name: Fixture wake CORE_COMMIT", ""},
+		"issue":       {"name: Fixture event CORE_COMMIT", ""},
+		"action-wake": {"name: Fixture Action ACTION_COMMIT MEMBER_ID", ""},
 	}
 }
 
