@@ -14,6 +14,8 @@ type installingAPI struct {
 	wrongFile   bool
 	refPosts    int
 	failedLabel bool
+	branchRace  bool
+	branchReads int
 }
 
 func assign(output, value any) error {
@@ -26,6 +28,14 @@ func assign(output, value any) error {
 
 func (f *installingAPI) Call(method, path string, input, output any) error {
 	if method == "GET" {
+		if strings.Contains(path, "/git/ref/heads/nibfin%2F") {
+			f.branchReads++
+			if f.branchRace && f.branchReads == 3 {
+				ref := reference{}
+				ref.Object.SHA = strings.Repeat("e", 40)
+				return assign(output, ref)
+			}
+		}
 		return f.fakeAPI.Call(method, path, input, output)
 	}
 	f.writes = append(f.writes, method+" "+path)
@@ -103,13 +113,15 @@ func TestInstallationCreatesReadBackPRNeverWritesMain(t *testing.T) {
 }
 
 func TestBadReadbackRevokedPermissionAndDuplicateBranchStayIncomplete(t *testing.T) {
-	for _, kind := range []string{"readback", "permission", "duplicate"} {
+	for _, kind := range []string{"readback", "permission", "duplicate", "branch-race"} {
 		f := installFixture(t)
 		switch kind {
 		case "readback":
 			f.wrongFile = true
 		case "permission":
 			f.failedLabel = true
+		case "branch-race":
+			f.branchRace = true
 		case "duplicate":
 			f.data["repos/example/project/git/ref/heads/nibfin%2Finit-"+
 				f.plan.Head[:12]] = reference{}
@@ -117,6 +129,13 @@ func TestBadReadbackRevokedPermissionAndDuplicateBranchStayIncomplete(t *testing
 		result, err := applyInit(f, f.plan)
 		if err == nil || result.Status == "completed" || f.refPosts > 1 {
 			t.Fatalf("%s cannot succeed or retry writes: %+v %v", kind, result, err)
+		}
+		if kind == "branch-race" {
+			for _, write := range f.writes {
+				if strings.HasSuffix(write, "/pulls") {
+					t.Fatal("changed installation branch must not become a PR")
+				}
+			}
 		}
 	}
 }
