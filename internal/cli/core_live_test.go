@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -14,6 +15,12 @@ func TestLiveCandidateCache(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", root)
 	t.Setenv("XDG_CACHE_HOME", root)
 	process := NativeProcess{}
+	if node, err := exec.LookPath("node"); err == nil {
+		resolved, _ := filepath.EvalSymlinks(node)
+		if stat, err := os.Stat(resolved); err == nil {
+			t.Logf("Node executable: %s mode=%v", resolved, stat.Mode())
+		}
+	}
 	path, err := installCoreCache(GitHub{Process: process}, process)
 	if err != nil {
 		t.Fatal(err)
