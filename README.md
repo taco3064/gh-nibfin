@@ -6,7 +6,7 @@ repository-level Runner management and environment inspection.
 Manual [Bootstrap #1](https://github.com/taco3064/gh-nibfin/issues/1) is in progress.
 The candidate implements previewed, PR-based initialization; no formal release
 or protected delivery is claimed. Runner lifecycle commands are implemented as
-candidate management; environment preflight is still pending.
+candidate management; read-only preflight reports observed capabilities and gaps.
 Core remains the sole owner of delivery policy, authorization and isolation.
 
 Reviewed immutable candidates support the first authorized external E2E.
