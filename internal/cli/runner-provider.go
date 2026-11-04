@@ -20,21 +20,24 @@ type RunnerInfo struct {
 func memberLabel(id int64) string { return fmt.Sprintf("nibfin-user-%d", id) }
 
 func listRunners(api API, repo string) ([]RunnerInfo, error) {
-	var runners []RunnerInfo
+	runners := []RunnerInfo{}
 	for page := 1; page <= 100; page++ {
 		var result struct {
-			Total   int          `json:"total_count"`
+			Total   *int         `json:"total_count"`
 			Runners []RunnerInfo `json:"runners"`
 		}
 		path := fmt.Sprintf("repos/%s/actions/runners?per_page=100&page=%d", repo, page)
 		if err := api.Call("GET", path, nil, &result); err != nil {
 			return nil, err
 		}
+		if result.Total == nil || *result.Total < 0 || result.Runners == nil {
+			return nil, errors.New("INVALID_RUNNER_LIST_RESULT")
+		}
 		runners = append(runners, result.Runners...)
-		if len(runners) == result.Total {
+		if len(runners) == *result.Total {
 			return runners, nil
 		}
-		if len(result.Runners) == 0 || len(runners) > result.Total {
+		if len(result.Runners) == 0 || len(runners) > *result.Total {
 			return nil, errors.New("RUNNER_LIST_CHANGED_OR_INCOMPLETE")
 		}
 	}
