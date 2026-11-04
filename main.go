@@ -11,7 +11,8 @@ import (
 
 func run(args []string, out io.Writer) error {
 	process := cli.NativeProcess{}
-	app := cli.App{API: cli.GitHub{Process: process}, Process: process}
+	app := cli.App{API: cli.GitHub{Process: process}, Process: process,
+		Runner: cli.NativeRunnerHost{}, Download: cli.OfficialRunnerDownload}
 	return app.Run(args, out)
 }
 

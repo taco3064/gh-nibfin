@@ -6,11 +6,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"time"
 )
 
 type App struct {
-	API     API
-	Process Process
+	API      API
+	Process  Process
+	Runner   RunnerHost
+	Download RunnerDownload
+	Clock    func() time.Time
 }
 
 type CommandError struct {
@@ -26,8 +30,13 @@ func (a App) Run(args []string, out io.Writer) error {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
 			"Default: preview only. --apply opens an installation PR; never merges it.\n"+
-			"Runner and environment commands are not implemented yet.")
+			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+
+			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
+			"Environment preflight is not implemented yet.")
 		return err
+	}
+	if args[0] == "runner" {
+		return a.runRunner(args[1:], out)
 	}
 	if args[0] != "init" {
 		return errors.New("UNKNOWN_COMMAND_USE_HELP")

@@ -5,7 +5,8 @@ repository-level Runner management and environment inspection.
 
 Manual [Bootstrap #1](https://github.com/taco3064/gh-nibfin/issues/1) is in progress.
 The candidate implements previewed, PR-based initialization; no formal release
-or protected delivery is claimed. Runner/preflight commands are still pending.
+or protected delivery is claimed. Runner lifecycle commands are implemented as
+candidate management; environment preflight is still pending.
 Core remains the sole owner of delivery policy, authorization and isolation.
 
 Reviewed immutable candidates support the first authorized external E2E.
@@ -88,3 +89,61 @@ CI distinguishes source-cache checks from protected host/Agent/E2E evidence.
 Formal G07 publication follows the independently owned first external protected
 E2E, compatible formal Core/Action Releases and separate Owner authorization.
 The manual tracker remains open and has no Nibfin lifecycle labels.
+
+## Manual Repository Runner management
+
+These commands require the authenticated user's actual repository Admin rights,
+including the applicable official Runner API permission. Ordinary members receive
+a denial; there is no hidden administrator-token handoff or quick-registration flag.
+Personal and Organization public repositories use the same repository-level API.
+
+```text
+gh nibfin runner create --repo OWNER/REPO --directory ABSOLUTE_PATH --name NAME
+gh nibfin runner create --repo OWNER/REPO --directory ABSOLUTE_PATH --name NAME --apply
+gh nibfin runner register --repo OWNER/REPO --directory ABSOLUTE_PATH --apply
+gh nibfin runner list --repo OWNER/REPO
+gh nibfin runner unregister --repo OWNER/REPO --directory ABSOLUTE_PATH --apply
+gh nibfin runner remove --repo OWNER/REPO --directory ABSOLUTE_PATH --apply
+```
+
+Omit `--apply` to preview mutations. The parent directory must already exist;
+the Runner directory must be a new private location outside the current worktree.
+Creation downloads the official platform package, verifies its native SHA-256,
+extracts it with bounded paths/types/sizes and retains the archive for provenance.
+No service or background Runner process is installed or started.
+
+Registration rechecks the current official package identity and all packaged
+files, requests one short-lived repository registration token and invokes only
+the verified official `Runner.Listener configure`. The stable label derives from
+the authenticated current GitHub User ID. Tokens are passed through the official
+Runner's masked `ACTIONS_RUNNER_INPUT_TOKEN` environment input, never argv,
+management JSON or CLI output. GitHub administration/model credentials and runtime
+injection variables are not inherited by that child. See the
+[official Runner implementation](https://github.com/actions/runner/blob/v2.338.2/src/Runner.Listener/CommandSettings.cs).
+
+Read-back checks the actual native Runner ID/name/member label and local `.runner`
+identity. These are management results, **not Core admission or safe delivery**.
+Core must independently verify Runner/job/member/workflow/OIDC and isolation.
+
+`remove` deletes only the scoped, managed remote registration. It refuses busy or
+online Runners; stop the official Runner locally first. It reads back both the
+selected ID and current-repository listing, and retains local configuration/files.
+`unregister` uses the official removal token and verifies remote absence plus
+removal of known local configuration. After a confirmed remote-only removal, it
+uses the official local-only removal command without requesting another token.
+Existing `.service` configurations require official manual service management;
+this CLI does not install, stop or remove OS services.
+
+The private `.nibfin-runner.json` is a bounded installation/management record,
+not an Issue lifecycle store or authority grant. An exclusive local lock and
+Pending management state prevent duplicate/unknown configuration attempts. A
+timeout, partial local removal, unknown token request or unreadable native result
+requires inspection; no automatic retry or stale-lock takeover is provided.
+Unknown processes/configuration must be resolved through official administrative
+inspection before manually changing that state. Do not delete active Runner files.
+
+Package changes or official auto-updates may require official manual removal or
+recreation from the current package. This candidate does not implement the
+deferred general upgrade feature. Installed package files are retained for reuse
+and provenance; dispose of them only after registration/service/process use is
+retired and no recovery evidence remains necessary.
