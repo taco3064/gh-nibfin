@@ -196,3 +196,9 @@ It does not reimplement Core admission, install services, inspect credential
 files, or claim Windows/macOS/Linux protected support from a version command.
 Real Runner/job/OIDC authorization, Agent roles and isolation need the separately
 authorized protected execution and external E2E evidence before formal release.
+
+The maintained [snapshot provider contract](docs/snapshot.md) exposes bounded,
+read-only native GitHub facts to future Dashboard consumers through
+`internal/snapshot`. Core verification remains explicitly Unknown because no
+supported evidence reader is available. This provider adds no Dashboard command,
+HTTP service or control permission.
