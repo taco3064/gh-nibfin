@@ -15,10 +15,17 @@ func callerRecipes(api API, pin SourcePin) (map[string][]string, error) {
 		return nil, err
 	}
 	var recipes map[string][]string
-	if json.Unmarshal(data, &recipes) != nil || len(recipes) != 3 {
+	if json.Unmarshal(data, &recipes) != nil {
 		return nil, errors.New("INVALID_CORE_CALLER_RECIPES")
 	}
-	for _, name := range []string{"wake", "issue", "action-wake"} {
+	names := []string{"wake", "issue", "action-wake"}
+	if _, unified := recipes["action-dispatch"]; unified {
+		names = append(names, "action-dispatch")
+	}
+	if len(recipes) != len(names) {
+		return nil, errors.New("INVALID_CORE_CALLER_RECIPES")
+	}
+	for _, name := range names {
 		lines := recipes[name]
 		if len(lines) < 2 || len(lines) > 1000 || lines[len(lines)-1] != "" {
 			return nil, errors.New("INVALID_CORE_CALLER_RECIPES")

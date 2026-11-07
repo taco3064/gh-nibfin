@@ -17,7 +17,16 @@ func templates(
 		text = strings.ReplaceAll(text, "ACTION_COMMIT", pins.Action.Commit)
 		return strings.ReplaceAll(text, "MEMBER_ID", fmt.Sprint(memberID))
 	}
-	stage := fmt.Sprintf(`name: Nibfin adopted stage
+	files := map[string]string{
+		".github/workflows/nibfin-issue.yml": render("issue"),
+		".nibfin/producer-pins.json":         string(pinJSON) + "\n",
+	}
+	if _, unified := recipes["action-dispatch"]; unified {
+		files[".github/workflows/nibfin-wake.yml"] = render("action-dispatch")
+		return files
+	}
+	files[".github/workflows/nibfin-wake.yml"] = render("action-wake")
+	files[".github/workflows/nibfin-stage.yml"] = fmt.Sprintf(`name: Nibfin adopted stage
 on:
   workflow_dispatch:
     inputs:
@@ -35,10 +44,5 @@ jobs:
           issue-number: ${{ inputs.issue-number }}
           stage: ${{ inputs.stage }}
 `, memberID, action)
-	return map[string]string{
-		".github/workflows/nibfin-wake.yml":  render("action-wake"),
-		".github/workflows/nibfin-issue.yml": render("issue"),
-		".github/workflows/nibfin-stage.yml": stage,
-		".nibfin/producer-pins.json":         string(pinJSON) + "\n",
-	}
+	return files
 }

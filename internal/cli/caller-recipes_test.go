@@ -31,3 +31,31 @@ func TestCoreCallerRecipesRejectBeforeWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestUnifiedCallerInstallsOneDispatchWorkflow(t *testing.T) {
+	f := initFixture()
+	recipes := recipeFixture()
+	recipes["action-dispatch"] = []string{
+		"name: Unified ACTION_COMMIT", "# Core source: CORE_COMMIT", "",
+	}
+	data, err := json.Marshal(recipes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins := Pins()
+	path := "repos/" + pins.Core.Repository + "/contents/src/caller-recipes.json?ref="
+	f.data[path+pins.Core.Commit] = encoded(data)
+	loaded, err := callerRecipes(f, pins.Core)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := templates(pins, 123, loaded)
+	if len(files) != 3 || files[".github/workflows/nibfin-stage.yml"] != "" {
+		t.Fatalf("unexpected install files: %v", files)
+	}
+	want := "name: Unified " + pins.Action.Commit + "\n# Core source: " +
+		pins.Core.Commit + "\n"
+	if got := files[".github/workflows/nibfin-wake.yml"]; got != want {
+		t.Fatalf("unified caller = %q, want %q", got, want)
+	}
+}
