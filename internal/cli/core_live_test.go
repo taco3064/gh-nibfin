@@ -28,7 +28,7 @@ func TestLiveCandidateCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := templates(Pins(), 127829492, recipes)
-	for name, kind := range map[string]string{"wake": "action-wake", "issue": "issue"} {
+	for name, kind := range map[string]string{"wake": "action-dispatch", "issue": "issue"} {
 		path := ".github/workflows/nibfin-" + name + ".yml"
 		want := strings.ReplaceAll(strings.Join(recipes[kind], "\n"),
 			"CORE_COMMIT", Pins().Core.Commit)
@@ -37,6 +37,10 @@ func TestLiveCandidateCache(t *testing.T) {
 		if files[path] != want {
 			t.Fatal("caller must exactly match immutable Core recipe")
 		}
+	}
+	wake := files[".github/workflows/nibfin-wake.yml"]
+	if !strings.Contains(wake, "\n    timeout-minutes: 180\n") {
+		t.Fatal("installed delivery job must have a three-hour timeout")
 	}
 	if node, err := exec.LookPath("node"); err == nil {
 		resolved, _ := filepath.EvalSymlinks(node)
