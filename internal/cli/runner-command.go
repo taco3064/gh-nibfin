@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+var runnerNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
 func (a App) runRunner(args []string, out io.Writer) (err error) {
 	if len(args) == 0 {
 		return errors.New("RUNNER_COMMAND_REQUIRED")
@@ -52,7 +54,7 @@ func (a App) runRunner(args []string, out io.Writer) (err error) {
 	}
 	var record RunnerInstall
 	if command == "create" {
-		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`).MatchString(*runnerName) {
+		if !runnerNamePattern.MatchString(*runnerName) {
 			return errors.New("INVALID_RUNNER_NAME")
 		}
 		app, err := runnerApplication(a.API, repo.FullName)
