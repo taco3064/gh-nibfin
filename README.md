@@ -50,6 +50,21 @@ are refused; this is initialization, not the deferred upgrade feature. An existi
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
+To download, verify and register the official Runner as part of onboarding, add
+`--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.
+Preview remains read-only. Apply waits for the installation PR to be merged:
+rerun the same command after that merge to register the Runner. Existing
+registrations are checked against the repository and local Runner settings.
+An uncertain registration requires reconciliation before another attempt.
+
+Registration is one step in host adoption. The result reports that adoption is
+still required. Use the [Core host instructions][core-host] for the supported
+Linux backend, including the administrator-owned service, Docker isolation and
+approved credential setup, then run `gh nibfin preflight`. An actual authorized
+delivery is required to establish end-to-end readiness.
+
+[core-host]: https://github.com/taco3064/nibfin-core/blob/main/docs/host-launcher.md
+
 Personal and Organization public owners share the scoped initialization API.
 Both have complete positive/negative apply contracts, including PR/label read-back
 and unchanged reruns. Real Personal candidate installation has been exercised;

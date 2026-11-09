@@ -30,6 +30,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
 			"Default: preview only. --apply opens an installation PR; never merges it.\n"+
+			"Optional Runner setup: --runner-directory PATH --runner-name NAME.\n"+
 			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
 			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")
@@ -48,6 +49,8 @@ func (a App) Run(args []string, out io.Writer) error {
 	flags.SetOutput(io.Discard)
 	name := flags.String("repo", "", "Public OWNER/REPO")
 	apply := flags.Bool("apply", false, "Create reviewed installation PR and labels")
+	runnerPath := flags.String("runner-directory", "", "Private Runner directory")
+	runnerName := flags.String("runner-name", "", "Name of the repository Runner")
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_INIT_ARGUMENTS")
 	}
@@ -55,10 +58,21 @@ func (a App) Run(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var runner *initRunner
+	if *runnerPath != "" || *runnerName != "" {
+		runner, err = a.planInitRunner(plan, *runnerPath, *runnerName)
+		if err != nil {
+			return err
+		}
+	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(map[string]any{"status": "preview", "plan": plan,
-		"protected_execution": "unverified"}); err != nil {
+	preview := map[string]any{"status": "preview", "plan": plan,
+		"protected_execution": "unverified"}
+	if runner != nil {
+		preview["runner_setup"] = runner
+	}
+	if err := encoder.Encode(preview); err != nil {
 		return errors.New("OUTPUT_UNAVAILABLE")
 	}
 	if !*apply {
@@ -83,6 +97,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	if result.Status == "pending" {
 		return &CommandError{Code: result.Code, Exit: 2}
+	}
+	if runner != nil {
+		return a.applyInitRunner(plan, *runner, out)
 	}
 	return nil
 }
