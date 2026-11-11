@@ -18,19 +18,10 @@ import (
 
 func privateRunnerTestRoot(t *testing.T) string {
 	t.Helper()
-	home, err := os.UserHomeDir()
+	root, err := os.MkdirTemp(t.TempDir(), ".nibfin-runner-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := os.MkdirTemp(home, ".nibfin-runner-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(root); err != nil {
-			t.Error("owned Runner test directory cleanup failed")
-		}
-	})
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		t.Fatal(err)
