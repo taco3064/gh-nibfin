@@ -28,6 +28,11 @@ func runnerApplication(api API, repo string) (RunnerApplication, error) {
 	if err := api.Call("GET", path, nil, &applications); err != nil {
 		return RunnerApplication{}, err
 	}
+	return selectRunnerApplication(applications)
+}
+
+func selectRunnerApplication(applications []RunnerApplication) (
+	RunnerApplication, error) {
 	osName := map[string]string{"windows": "win", "darwin": "osx", "linux": "linux"}
 	arch := map[string]string{"amd64": "x64", "arm64": "arm64", "arm": "arm"}
 	var found []RunnerApplication

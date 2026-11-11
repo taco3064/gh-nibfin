@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,8 @@ func (a App) Run(args []string, out io.Writer) error {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
 			"Default: preview only. --apply opens an installation PR; never merges it.\n"+
+			"Team handoff: init --quick-runner request|issue|receive|confirm|finish|abort\n"+
+			"See README for private handoff and independent approval requirements.\n"+
 			"Optional Runner setup: --runner-directory PATH --runner-name NAME.\n"+
 			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
@@ -44,6 +47,11 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	if args[0] != "init" {
 		return errors.New("UNKNOWN_COMMAND_USE_HELP")
+	}
+	for _, arg := range args[1:] {
+		if arg == "--quick-runner" || strings.HasPrefix(arg, "--quick-runner=") {
+			return a.runQuickRunner(args[1:], out)
+		}
 	}
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

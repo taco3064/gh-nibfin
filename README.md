@@ -220,3 +220,145 @@ read-only native GitHub facts to future Dashboard consumers through
 `internal/snapshot`. Core verification remains explicitly Unknown because no
 supported evidence reader is available. This provider adds no Dashboard command,
 HTTP service or control permission.
+
+### Optional team-member quick registration
+
+After the installation PR is merged, `init --quick-runner` can hand a short-lived
+GitHub repository registration capability from a Repository Admin to a member
+with Write/Maintain permission. Existing `init --runner-directory ...
+--runner-name ... --apply` Admin onboarding and GitHub's manual Runner registration
+remain available. Quick registration is opt-in and does not install a service,
+adopt a host, admit a Core stage, or grant Merge permission.
+
+This version supports independently authenticated **human GitHub users** managing
+Personal- or Organization-owned public repositories. GitHub Apps and cross-OS or
+cross-architecture handoffs are explicitly unsupported. Manager and recipient
+must run the same CLI version on the same OS/architecture. The Admin needs Runner
+management authority (`Administration: write` for fine-grained tokens); GitHub's
+response to the token request remains decisive. Ordinary members never use the
+Admin-only package or Runner-list endpoints. The management side selects and
+hashes the official package; the recipient uses that authenticated selection and
+verifies the package and extracted official Runner before configuration.
+
+Use separate authenticated management and member contexts. Keep management
+credentials and the management attempt directory outside all member and Agent
+workspaces. Each command below previews without mutations unless `--apply` is
+present. These operations concern Runner registration only, and do not open an
+installation PR. All paths must be absolute, outside a Git worktree, with private
+parents. Use fresh attempt and Runner directory names. Files must be private
+(Unix 0600, directories 0700; equivalent native Windows ACLs).
+
+1. On the member host, authenticate `gh` as the intended repository member, then
+   create the locally bound request:
+
+   ```sh
+   gh nibfin init --repo OWNER/REPO --quick-runner request \
+     --quick-directory /private/member-attempt \
+     --runner-directory /private/new-runner --runner-name UNIQUE_NAME --apply
+   ```
+
+   Transfer `/private/member-attempt/request.json` to a private management-side
+   directory. This contains no token. It includes the stable repository/member
+   identities, random attempt identity, Runner name and host platform. A request
+   is untrusted input; the Admin operation independently checks the recipient's
+   current GitHub identity and repository eligibility.
+
+2. In the management context, authenticate `gh` as a Repository Admin:
+
+   ```sh
+   gh nibfin init --repo OWNER/REPO --quick-runner issue \
+     --quick-directory /private/management-attempt \
+     --request /private/incoming/request.json --apply
+   ```
+
+   This requests one GitHub token and writes `handoff.json` inside the private
+   management attempt directory. Deliver that bounded file to a private directory
+   on the member host, preserving the name `handoff.json`. Never put it in an
+   Issue, workflow input, repository, artifact or ordinary log. Only the short-lived
+   capability and nonsecret attempt/package context cross this boundary. No
+   management credential crosses it.
+
+   The command outputs a SHA-256 `approval` digest, **not the token**. Deliver this
+   digest separately over an independently authenticated channel from the known
+   Repository Admin to the intended member, after checking the attempt. The
+   recipient must know which Admin supplied it and that the Admin approved this
+   repository/member/attempt. A digest supplied beside an untrusted handoff file
+   does not establish management origin. Do not use a digest from an unknown
+   sender or calculate your own approval from a received file. This is a bounded
+   operator-mediated trust step, not automatic remote management authentication.
+
+3. On the member host, still authenticated as that member:
+
+   ```sh
+   gh nibfin init --repo OWNER/REPO --quick-runner receive \
+     --quick-directory /private/member-attempt \
+     --handoff /private/incoming/handoff.json --approval ADMIN_DIGEST --apply
+   ```
+
+   `ADMIN_DIGEST` is nonsecret. The token itself is never a command argument or
+   ordinary output. On application, the private handoff file is consumed and
+   removed after use or rejection, including malformed input. The official Runner
+   receives the token through its supported environment input. The token normally
+   expires in about one hour; Nibfin never extends provider expiry and requires
+   more than three minutes remaining immediately before configuration. A slow
+   download can exhaust this window.
+
+   Successful configuration still returns **Pending** (exit 2). It cannot establish
+   management confirmation or protected execution. Preserve the member attempt,
+   Runner directory, and official local settings for reconciliation. Do not repeat
+   registration with another directory or delete the recovery journals.
+
+4. Back in the management context, read the actual GitHub registration:
+
+   ```sh
+   gh nibfin init --repo OWNER/REPO --quick-runner confirm \
+     --quick-directory /private/management-attempt --apply
+   ```
+
+   This rechecks recipient eligibility and observes the uniquely named Runner and
+   intended member label using management-authorized GitHub reads. It never trusts
+   a recipient-supplied Runner ID. Missing, duplicate, wrong-member or unavailable
+   results remain Pending. Online/Busy status does not choose a different member.
+   The command writes nonsecret `confirmation.json` and outputs its approval digest;
+   transfer the file privately and communicate the digest via the independently
+   authenticated Admin channel again. This observation expires after five minutes and alone is still Pending; repeat
+   `confirm` for a fresh observation if needed.
+   Confirmation retires any remaining management-side `handoff.json` copy.
+
+5. On the actual member host, compare management observation to official settings:
+
+   ```sh
+   gh nibfin init --repo OWNER/REPO --quick-runner finish \
+     --quick-directory /private/member-attempt \
+     --confirmation /private/incoming/confirmation.json \
+     --approval CONFIRMATION_ADMIN_DIGEST --apply
+   ```
+
+   Only agreement with the actual `.runner` repository URL, Runner ID and name
+   reports `runner_registered`. Current member authentication and Write permission
+   are checked again. The output always keeps `core_binding` and
+   `protected_execution` unverified and `host_adoption` required. Labels and local
+   records are management observations; trusted Core remains the only execution
+   authority and must independently reject unverified or revoked bindings.
+
+For lost command results, inspect the existing attempt and use `confirm` followed
+by `finish`. Those read-back operations are repeatable; issuance and configuration
+are not automatically retried. A timeout, failed configuration, interrupted handoff
+or persistence failure may have left a real registration. Keep unresolved Runner
+files and the minimum nonsecret attempt records. A stale lock means inspect the
+interrupted process and its effects before removing that lock; it is not permission
+to register a replacement. No negative read-back automatically clears uncertainty.
+
+To stop an attempt, use `init --quick-runner abort --repo OWNER/REPO
+--quick-directory /private/attempt --apply` in the context that owns that attempt.
+Management abort removes its remaining private handoff copy. On the member side,
+add `--handoff /private/incoming/handoff.json` to abort to retire the designated
+unused input too; retire any other transferred secret copies as well. Aborting does **not** revoke a disclosed
+GitHub token or delete a possibly registered Runner. Retain nonsecret recovery
+state and reconcile. Use GitHub's lawful management route for any necessary remote
+removal; do not assume that an arbitrary registration token can be revoked.
+
+These behaviors are covered by synthetic provider/clock/Runner-host contracts.
+They do not assert live Personal/Organization registration, installed-host support
+certification, or successful trusted host adoption. Native Windows ACL/Runner
+checks and required PR-head CI remain separate verification.

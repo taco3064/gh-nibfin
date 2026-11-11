@@ -45,8 +45,13 @@ func listRunners(api API, repo string) ([]RunnerInfo, error) {
 }
 
 func registrationToken(api API, repo, kind string, now time.Time) (string, error) {
+	token, _, err := runnerToken(api, repo, kind, now)
+	return token, err
+}
+
+func runnerToken(api API, repo, kind string, now time.Time) (string, time.Time, error) {
 	if kind != "registration-token" && kind != "remove-token" {
-		return "", errors.New("INVALID_RUNNER_TOKEN_REQUEST")
+		return "", time.Time{}, errors.New("INVALID_RUNNER_TOKEN_REQUEST")
 	}
 	var token struct {
 		Value   string `json:"token"`
@@ -54,14 +59,14 @@ func registrationToken(api API, repo, kind string, now time.Time) (string, error
 	}
 	if err := api.Call("POST", "repos/"+repo+"/actions/runners/"+kind,
 		nil, &token); err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	expires, err := time.Parse(time.RFC3339, token.Expires)
 	if err != nil || token.Value == "" || len(token.Value) > 16384 ||
 		!expires.After(now.Add(30*time.Second)) {
-		return "", errors.New("RUNNER_TOKEN_MISSING_OR_EXPIRED")
+		return "", time.Time{}, errors.New("RUNNER_TOKEN_MISSING_OR_EXPIRED")
 	}
-	return token.Value, nil
+	return token.Value, expires, nil
 }
 
 func ownedRunner(api API, repo Repository, user User,

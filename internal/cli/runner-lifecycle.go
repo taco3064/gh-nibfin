@@ -15,6 +15,11 @@ func createRunner(api API, download RunnerDownload, repo Repository, user User,
 	if err != nil {
 		return result, err
 	}
+	return createRunnerPackage(download, repo, user, name, directory, app)
+}
+
+func createRunnerPackage(download RunnerDownload, repo Repository, user User,
+	name, directory string, app RunnerApplication) (result RunnerInstall, err error) {
 	if err := requirePrivateRunnerParent(directory); err != nil {
 		return result, err
 	}
