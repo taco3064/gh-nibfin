@@ -28,11 +28,16 @@ func runnerApplication(api API, repo string) (RunnerApplication, error) {
 	if err := api.Call("GET", path, nil, &applications); err != nil {
 		return RunnerApplication{}, err
 	}
+	return selectRunnerApplication(applications, runtime.GOOS, runtime.GOARCH)
+}
+
+func selectRunnerApplication(applications []RunnerApplication,
+	platform, architecture string) (RunnerApplication, error) {
 	osName := map[string]string{"windows": "win", "darwin": "osx", "linux": "linux"}
 	arch := map[string]string{"amd64": "x64", "arm64": "arm64", "arm": "arm"}
 	var found []RunnerApplication
 	for _, app := range applications {
-		if app.OS == osName[runtime.GOOS] && app.Arch == arch[runtime.GOARCH] {
+		if app.OS == osName[platform] && app.Arch == arch[architecture] {
 			found = append(found, app)
 		}
 	}

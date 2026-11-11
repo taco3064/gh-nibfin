@@ -19,6 +19,8 @@ type RunnerHost interface {
 
 type NativeRunnerHost struct{}
 
+const runnerConfigurationTimeout = 2 * time.Minute
+
 func runnerEntrypoint(directory string) string {
 	entry := "Runner.Listener"
 	if runtime.GOOS == "windows" {
@@ -79,7 +81,7 @@ func (NativeRunnerHost) Configure(directory, command string,
 	if runtime.GOOS != "windows" && os.Geteuid() == 0 {
 		return errors.New("OFFICIAL_RUNNER_REQUIRES_NONROOT_CONFIGURATION")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), runnerConfigurationTimeout)
 	defer cancel()
 	args := []string{command}
 	if command == "remove-local" {
@@ -99,10 +101,13 @@ func (NativeRunnerHost) Configure(directory, command string,
 
 func hasMemberLabel(runner RunnerInfo, member int64) bool {
 	want := memberLabel(member)
+	found := false
 	for _, label := range runner.Labels {
 		if strings.EqualFold(label.Name, want) {
-			return true
+			found = true
+		} else if strings.HasPrefix(strings.ToLower(label.Name), "nibfin-user-") {
+			return false
 		}
 	}
-	return false
+	return found
 }
