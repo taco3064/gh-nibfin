@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -132,7 +133,11 @@ func affectedPackages(paths []string) ([]string, bool, error) {
 }
 
 func run() error {
-	paths, err := changes()
+	paths := os.Args[1:]
+	var err error
+	if len(paths) == 0 || slices.Contains(paths, "--cache") {
+		paths, err = changes()
+	}
 	if err != nil {
 		return err
 	}
@@ -155,6 +160,22 @@ func run() error {
 		return nil
 	}
 	fmt.Printf("Selected %d packages for %d changed paths.\n", len(packages), len(paths))
+	frontend := slices.ContainsFunc(paths, func(path string) bool {
+		return strings.HasPrefix(path, "internal/dashboard/") ||
+			strings.HasPrefix(path, "tests/dashboard/") ||
+			strings.HasPrefix(path, "scripts/staged/") ||
+			path == "package.json" || path == "package-lock.json"
+	})
+	if frontend {
+		command := exec.Command("npm", "run", "test:dashboard")
+		if runtime.GOOS == "windows" {
+			command = exec.Command("cmd", "/c", "npm", "run", "test:dashboard")
+		}
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			return err
+		}
+	}
 	if len(packages) == 0 {
 		return nil
 	}

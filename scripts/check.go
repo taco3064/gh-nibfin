@@ -16,12 +16,14 @@ func check(path string, entry fs.DirEntry, walkErr error) error {
 		return walkErr
 	}
 	if entry.IsDir() {
-		if entry.Name() == ".git" || entry.Name() == "dist" {
+		if entry.Name() == ".git" || entry.Name() == "dist" ||
+			entry.Name() == "node_modules" {
 			return filepath.SkipDir
 		}
 		return nil
 	}
-	if !strings.HasSuffix(path, ".go") {
+	extension := filepath.Ext(path)
+	if !strings.Contains("|.go|.js|.mjs|.css|.html|.ts|.sh|", "|"+extension+"|") {
 		return nil
 	}
 	if entry.Type()&os.ModeSymlink != 0 {
@@ -39,6 +41,9 @@ func check(path string, entry fs.DirEntry, walkErr error) error {
 		if utf8.RuneCountInString(strings.TrimSuffix(line, "\r")) > 90 {
 			return fmt.Errorf("source exceeds 90 characters: %s:%d", path, i+1)
 		}
+	}
+	if extension != ".go" {
+		return nil
 	}
 	formatted, err := format.Source(data)
 	if err != nil {

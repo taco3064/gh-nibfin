@@ -6,6 +6,7 @@
   const button = document.getElementById('connect');
   button.disabled = !/^[a-f0-9]{64}$/.test(proof);
   if (!button.disabled) output.textContent = 'Ready. Select Read snapshot to connect.';
+  const app = import('./app.js').catch(() => null);
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
@@ -16,10 +17,14 @@
         redirect: 'error'
       });
       if (!response.ok) throw new Error('Snapshot request unavailable.');
-      const snapshot = await response.json();
-      output.textContent = JSON.stringify(snapshot, null, 2);
+      const ui = await app;
+      if (!ui) throw new Error('Frontend unavailable');
+      ui.display(await response.json());
+      output.textContent = 'Snapshot loaded. Read-only facts.';
     } catch {
-      output.textContent = 'Snapshot unavailable. Reopen a current local session link.';
+      (await app)?.failed();
+      output.textContent = 'Snapshot unavailable or unusable. ' +
+        'Reopen a current local session link or retry.';
     } finally {
       button.disabled = false;
     }

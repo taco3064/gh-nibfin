@@ -3,9 +3,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Nibfin local snapshot</title>
+<link rel="stylesheet" href="/style.css">
 <h1>Nibfin local snapshot</h1>
 <p>Read-only GitHub facts. Unknown evidence does not establish completion.</p>
-<button id="connect" type="button">Read snapshot</button>
-<pre id="snapshot" aria-live="polite">Open the local session link to connect.</pre>
-<script src="/session.js" defer></script>
+<button id="connect" type="button" disabled>Read snapshot</button>
+<p id="snapshot" role="status">Open the local session link to connect.</p>
+<p id="freshness" role="status"></p>
+<main>
+<section id="repository" aria-label="Repository"><h2>Repository</h2></section>
+<section aria-labelledby="graph-title">
+<h2 id="graph-title">Native dependency graph</h2>
+<p>Directed edges: dependent → blocker. Scroll the node list to explore all Issues.</p>
+<p>Every node and dependency is available as keyboard accessible text.</p>
+<div class="filters">
+<label>Search <input id="query" type="search"></label>
+<label>GitHub state <select id="state">
+<option value="">All states</option><option>open</option><option>closed</option>
+</select></label>
+<label>Native progress <select id="progress">
+<option value="">All labels</option><option>scope</option><option>shaped</option>
+<option>delivered</option></select></label>
+<button id="reset" type="button">Clear filters</button>
+</div>
+<p id="graph-status" role="status"></p>
+<p>Graph overview: scroll horizontally or vertically. Arrows point to blockers.
+All full facts and keyboard actions are in the equivalent node list below.</p>
+<div id="visual-graph" tabindex="0" role="region"
+  aria-label="Scrollable dependency graph overview"></div>
+<div class="graph-scroll" tabindex="0" role="region" aria-label="Scrollable Issue nodes">
+<ul id="nodes"></ul>
+</div>
+<div id="details" tabindex="-1" aria-label="Selected Issue details"></div>
+</section>
+</main>
+<script src="/session.js"></script>
 </html>

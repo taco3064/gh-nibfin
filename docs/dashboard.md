@@ -6,7 +6,7 @@ starts an optional, read-only service. Construct `provider` as
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
 configuration. There is no browser repository selector or management operation.
-The dashboard CLI and full graph UI remain G14 and G13 responsibilities.
+The dashboard CLI launch/integration remains G14 responsibility.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
@@ -31,7 +31,7 @@ credentialed API requests. Session URLs must be opened directly, avoiding redire
 services and browser URL synchronization. A foreign website cannot discover the
 random fragment or complete the authenticated bootstrap automatically.
 
-G13 may replace the shell using `Config.Assets`, an explicit map of URL paths to
+Tests or trusted callers may use `Config.Assets`, an explicit map of URL paths to
 packaged bytes and content types, copied at startup. It must preserve the fragment
 handoff, in-memory proof, deliberate user action, and contextual text escaping.
 The service permits HTML, JavaScript and CSS content types only. It serves no
@@ -123,3 +123,82 @@ They require no credentials. The existing affected-package CI selector discovers
 `internal/dashboard` on Linux and Windows; no native dependency is added. Actual
 Windows, real-provider and browser validation must be reported separately when
 observed. This service is a consumer seam, not a release/support claim.
+
+## Packaged frontend (G13)
+
+G12 now serves the maintained Repository view and native dependency graph by
+its default embedded assets. The graph has a directed SVG overview and equivalent
+keyboard accessible textual node/edge list:
+`dependent → blocker`. All nodes have native buttons; all edges have equivalent
+text and blocker navigation in the selected node's details. The bounded node
+region scrolls with keyboard or touch. Filters affect visibility only; dependency
+text explicitly marks hidden nodes/references. Selection survives filtering.
+External and unresolved endpoints stay references, with independent resolution
+warnings. Repository PRs, head checks and runs stay repository activity.
+
+The session script owns only memory-only bootstrap and deliberate collection.
+`model.js` owns interpretation, identity, safe links and status downgrade rules;
+`view.js` owns inert DOM presentation; `graph.js` owns deterministic visual layout;
+`app.js` owns selection and filter state.
+Retained observations are checked every 250 ms without a new request. Invalid
+windows and expiry downgrade every displayed collection and resolution, including
+PR checks; Denied remains Denied/incomplete. A failed refresh keeps the old facts
+explicitly marked Previous data. The current provider has no supported Core
+reader: completion, pause, execution, controls, requested/applied outcomes and
+eligibility remain Unknown/unavailable regardless of native activity.
+
+G14 should construct the existing service, deliberately open `BootstrapURL()`
+without logging it, retain ownership of `Close()`, and use the default assets.
+No new route, authorization mechanism or browser repository selection is needed.
+
+### Rendered-browser verification
+
+Use Go 1.27.1, Node.js 24 and the locked development dependency:
+
+```sh
+npm run test:dashboard
+```
+
+This command installs the locked development dependencies and Chromium headless
+shell into one disposable temporary directory, runs the suite, and removes the
+entire environment on success or failure. No tree-local dependency installation
+is needed. Downloads use the permitted npm/browser registries. Native browser
+system libraries must already be installed; the runner never installs OS packages.
+For an existing local development installation, the equivalent explicit commands
+are:
+
+```sh
+npm ci --ignore-scripts
+PLAYWRIGHT_BROWSERS_PATH=/tmp/nibfin-browsers npx playwright install chromium --only-shell
+PLAYWRIGHT_BROWSERS_PATH=/tmp/nibfin-browsers npm run test:dashboard:installed
+```
+
+The suite starts the actual service with default packaged assets and a synthetic
+collector via `TestBrowserService`. Bootstrap passes through a private subprocess
+pipe, not an artifact. Exceptional malformed snapshots/HTTP responses use browser
+interception explicitly. The fixture and browser context use a deterministic
+clock; 150 Issues include cycles, shared blockers and qualified external
+references. Network assertions cover same-origin assets and the sole snapshot
+read, header-only proof, deliberate loading, no interaction collections, no
+storage and no executable provider markup. Bounded tests own and close the
+browser/service and remove temporary snapshot files.
+
+The existing affected-test entry selects the browser suite for Dashboard,
+browser-test, manifest/lockfile and selector changes. Without a Git index, supply
+changed paths directly, for example:
+
+```sh
+go run ./scripts/staged internal/dashboard/assets/app.js
+```
+
+That entry provisions the same disposable environment; browser failures propagate.
+Native PR-head CI still owns Git-dependent selection
+and platform checks. `go run ./scripts/check.go` checks complete Go, JS, MJS,
+TS, HTML, CSS and shell source files against the source limits, excluding dependency
+and distribution directories. JSON/YAML data remain exempt.
+
+Local synthetic coverage establishes rendered Chromium on Linux only. Native
+Windows, other browser engines, real GitHub comparison, CLI integration/release
+and supported-product verification remain Unverified here and belong to their
+existing authorized boundaries. Remove disposable browser downloads and
+`node_modules` after verification; neither is a Candidate artifact.
