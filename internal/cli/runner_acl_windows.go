@@ -114,6 +114,10 @@ func privateWindowsPath(path string, mask uint32, trusted map[string]bool) (bool
 }
 
 func requirePrivateRunnerPaths(paths []string) error {
+	return requireWindowsPathACL(paths, runnerWriteMask)
+}
+
+func requireWindowsPathACL(paths []string, targetMask uint32) error {
 	if len(paths) == 0 {
 		return errors.New("WINDOWS_ACL_PATH_REQUIRED")
 	}
@@ -142,7 +146,7 @@ func requirePrivateRunnerPaths(paths []string) error {
 		path = parent
 	}
 	for _, path := range paths {
-		if err := check(path, runnerWriteMask, 44); err != nil {
+		if err := check(path, targetMask, 44); err != nil {
 			return err
 		}
 	}
