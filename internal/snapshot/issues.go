@@ -102,7 +102,7 @@ func (c *collector) dependencies(from Identity) Section[Edge] {
 			return 0, invalid
 		}
 		name := strings.TrimPrefix(raw.RepositoryURL, prefix)
-		if !validRepository(name) {
+		if !ValidRepository(name) {
 			return 0, invalid
 		}
 		unresolved := Repository{0, name, "https://github.com/" + name}
