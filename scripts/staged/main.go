@@ -30,6 +30,12 @@ func output(program string, args ...string) ([]byte, error) {
 }
 
 func changes() ([]string, error) {
+	if index := slices.Index(os.Args, "--paths"); index >= 0 {
+		if index+1 == len(os.Args) {
+			return nil, fmt.Errorf("--paths requires known changed paths")
+		}
+		return os.Args[index+1:], nil
+	}
 	args := []string{"diff", "--cached"}
 	if path := os.Getenv("GITHUB_EVENT_PATH"); path != "" {
 		bytes, err := os.ReadFile(path)
@@ -131,6 +137,18 @@ func affectedPackages(paths []string) ([]string, bool, error) {
 	return selected, cache, nil
 }
 
+func frontendAffected(paths []string) bool {
+	return slices.ContainsFunc(paths, func(path string) bool {
+		return strings.HasPrefix(path, "internal/dashboard/") ||
+			strings.HasPrefix(path, "internal/snapshot/") ||
+			strings.HasPrefix(path, "tests/browser/") ||
+			strings.HasPrefix(path, "scripts/staged/") ||
+			path == "scripts/check.go" || path == "docs/dashboard.md" ||
+			path == "go.mod" || path == "go.sum" ||
+			path == ".github/workflows/ci.yml"
+	})
+}
+
 func run() error {
 	paths, err := changes()
 	if err != nil {
@@ -155,13 +173,20 @@ func run() error {
 		return nil
 	}
 	fmt.Printf("Selected %d packages for %d changed paths.\n", len(packages), len(paths))
-	if len(packages) == 0 {
-		return nil
+	if len(packages) > 0 {
+		args := append([]string{"test", "-timeout=4m"}, packages...)
+		command := exec.Command("go", args...)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			return err
+		}
 	}
-	args := append([]string{"test", "-timeout=4m"}, packages...)
-	command := exec.Command("go", args...)
-	command.Stdout, command.Stderr = os.Stdout, os.Stderr
-	return command.Run()
+	if frontendAffected(paths) {
+		command := exec.Command("node", "tests/browser/run.mjs")
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		return command.Run()
+	}
+	return nil
 }
 
 func main() {

@@ -1,11 +1,50 @@
 <!doctype html>
 <html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nibfin local snapshot</title>
-<h1>Nibfin local snapshot</h1>
-<p>Read-only GitHub facts. Unknown evidence does not establish completion.</p>
-<button id="connect" type="button">Read snapshot</button>
-<pre id="snapshot" aria-live="polite">Open the local session link to connect.</pre>
+<title>Nibfin repository dependencies</title>
+<link rel="stylesheet" href="/style.css">
 <script src="/session.js" defer></script>
+</head>
+<body>
+<header>
+<h1>Nibfin repository dependencies</h1>
+<p>Read-only GitHub facts. Unknown evidence does not establish completion.</p>
+<button id="connect" type="button" disabled>Read snapshot</button>
+<p id="message" role="status">Open the local session link to connect.</p>
+</header>
+<main id="display" hidden>
+<section aria-labelledby="repository-heading">
+<h2 id="repository-heading">Repository</h2>
+<div id="repository"></div>
+</section>
+<section aria-labelledby="graph-heading">
+<h2 id="graph-heading">Native dependency graph</h2>
+<p>Arrows point from dependent Issue to blocker. External endpoints are references.</p>
+<p id="issue-status"></p>
+<form id="filters" role="search" aria-label="Filter Issues">
+<label>Text <input id="query" type="search"></label>
+<label>GitHub state <select id="state">
+<option value="">All states</option><option>open</option><option>closed</option>
+</select></label>
+<label>Native label <select id="progress">
+<option value="">All labels</option><option>scope</option><option>shaped</option>
+<option>delivered</option>
+</select></label>
+<button id="reset" type="reset">Clear filters</button>
+</form>
+<p id="count" role="status"></p>
+<p>Scroll the graph region in both directions. The node list below provides
+keyboard selection and the same dependency information.</p>
+<div id="map" role="region" aria-label="Scrollable dependency overview"
+ tabindex="0"></div>
+<div id="nodes" aria-label="Issue nodes"></div>
+<article id="details" aria-labelledby="detail-heading" tabindex="-1">
+<h3 id="detail-heading">Issue details</h3>
+<div id="detail-content">Select an Issue.</div>
+</article>
+</section>
+</main>
+</body>
 </html>

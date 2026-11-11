@@ -6,7 +6,7 @@ starts an optional, read-only service. Construct `provider` as
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
 configuration. There is no browser repository selector or management operation.
-The dashboard CLI and full graph UI remain G14 and G13 responsibilities.
+The dashboard CLI remains G14 work; the packaged G13 frontend is described below.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
@@ -31,13 +31,13 @@ credentialed API requests. Session URLs must be opened directly, avoiding redire
 services and browser URL synchronization. A foreign website cannot discover the
 random fragment or complete the authenticated bootstrap automatically.
 
-G13 may replace the shell using `Config.Assets`, an explicit map of URL paths to
+Trusted callers may replace the frontend using `Config.Assets`, a map of URL paths to
 packaged bytes and content types, copied at startup. It must preserve the fragment
 handoff, in-memory proof, deliberate user action, and contextual text escaping.
 The service permits HTML, JavaScript and CSS content types only. It serves no
 filesystem, directory listing, source files, fallback page or external dependency.
 Use external packaged scripts; inline scripts and eval are blocked by CSP. Render
-provider strings as text (the minimal shell uses `textContent`), never as HTML or
+provider strings as text (the frontend uses `textContent`), never as HTML or
 commands. Asset authors are trusted application code, not browser-supplied input.
 
 Sessions expire 30 minutes after startup, without renewal. Expiry is checked before
@@ -123,3 +123,93 @@ They require no credentials. The existing affected-package CI selector discovers
 `internal/dashboard` on Linux and Windows; no native dependency is added. Actual
 Windows, real-provider and browser validation must be reported separately when
 observed. This service is a consumer seam, not a release/support claim.
+
+## Packaged frontend (G13)
+
+The default packaged resources now provide two read-only views: a Repository panel
+and a native dependency graph with filters and selection details. G12 serves the
+explicit allowlist in `assets.go`; embedding a new file alone does not serve it.
+The service, authorization, provider and schema are unchanged. G14 can compose
+`Start`, open `BootstrapURL()` deliberately, and own `Close()` using the service
+handoff above. CLI integration and release remain G14 work.
+
+Graph arrows run from dependent to blocker. The scrollable overview complements
+an equivalent keyboard node list. Each dependency button opens a collected Issue
+or an explicit reference warning without fetching anything. Filtered blockers stay
+in the dependency list with a hidden-target notice. Text, native label and GitHub
+state filters only change visibility; Clear filters retains useful selection.
+External references never become collected nodes. Identity matching includes the
+repository name, repository database ID, Issue database ID and number.
+
+`model.js` owns schema interpretation, freshness, safe text and original-link
+validation. `graph.js` owns filtering and deterministic graph layout. `view.js`
+provides presentation and navigation. `session.js` alone holds the session proof.
+Provider strings are rendered using text nodes with visible escapes for control
+and directional formatting characters. Links must exactly match validated official
+HTTPS GitHub resource paths, with no credentials, fragments or extra query fields.
+New tabs use `noopener noreferrer`. Unsafe links remain inert facts.
+
+Availability, list nullability, completeness, safe reason codes, observation times,
+expiry and source are displayed independently for collections and endpoints.
+Retained partial facts are not complete lists. Unknown is not known empty. Every
+half-second (and at expiry or visibility changes) the display re-evaluates age,
+including nested dependency
+resolution and PR check collections. Invalid, future or contradictory observation
+windows never establish currentness. Denied remains Denied and incomplete after
+expiry. Core completion, pause and execution remain Unknown/unverified because
+this schema has no supported evidence reader. Requested/applied control outcomes
+and eligibility are unavailable; repository activity does not imply Issue activity.
+A failed refresh retains the old display explicitly as previous data, including
+its ongoing freshness treatment. Unusable initial responses leave the views hidden.
+
+### Reproducible rendered-browser checks
+
+Prerequisites: the Go version pinned in `go.mod`, Node.js 24 with npm, and Chromium
+runtime libraries/fonts installed on the host. No GitHub login is used. The locked
+Playwright development dependency is only for tests. Production serves no npm or
+third-party resources. Run from the repository root:
+
+```sh
+node tests/browser/run.mjs
+```
+
+The runner copies only the development manifest/lock to a private disposable OS
+temporary directory, runs `npm ci`, downloads the pinned Chromium headless shell,
+builds the fixture host there and exercises the actual Dashboard service with its
+default packaged assets. It closes browsers, contexts and services and deletes the
+installation, browser downloads, binary and npm cache in `finally`. A browser
+failure propagates a nonzero exit. Unsupported host libraries or network downloads
+are failures/unavailable evidence, never a browser pass. Normal npm and Playwright
+registry access is required during setup; this adds no production API dependency.
+
+The existing affected-test entry runs Go tests and then this suite when Dashboard,
+snapshot, browser tooling/manifests, relevant check tooling or dashboard documentation
+changes. CI retains its Git-based selection. Without a Git index, provide known
+changed paths explicitly, for example:
+
+```sh
+go run ./scripts/staged --paths internal/dashboard/assets/index.html
+```
+
+In source-only snapshots, automatic Go VCS stamping is unavailable. Include
+`-buildvcs=false` in `GOFLAGS`, preserving existing capacity flags such as
+`-p=1`. This disables stamping only. Git-based selection and stamped builds
+remain Unverified until checks run in their native checkout.
+
+
+The suite covers synthetic shared blockers, cycles, qualified external identities,
+Denied and partial observations, null and known-empty lists, expiry using the
+browser clock, failed refreshes, additive fields, inert hostile text and unsafe
+links. It verifies the bootstrap, fixed same-origin GET/header boundary, deliberate
+collection and no extra collection during interactions. It also loads 150 Issues,
+selects and follows dependencies with the keyboard, filters/resets, checks focus
+and operates at a 375 CSS-pixel viewport. All locator waits are bounded. Malformed
+response cases use browser interception explicitly, not a new production route.
+Service denial/Host/Origin/session negative cases remain in the Go tests.
+
+Local coverage is Chromium headless 140.0.7339.186 (Playwright 1.55.1) on
+Linux/amd64 with synthetic collectors. It makes
+no real-provider performance, native Windows, CLI integration, release or supported
+product claim. Native platform CI, Git-dependent PR-head checks, real GitHub
+comparison (G16) and downstream integration must be observed through their own
+existing verification paths.
