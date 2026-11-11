@@ -45,7 +45,8 @@ var repositoryPattern = regexp.MustCompile(
 	`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}$`)
 var revisionPattern = regexp.MustCompile(`^[a-fA-F0-9]{40}$`)
 
-func validRepository(name string) bool {
+// ValidRepository validates the shared bounded GitHub owner/repository syntax.
+func ValidRepository(name string) bool {
 	return repositoryPattern.MatchString(name) &&
 		!strings.HasSuffix(name, "/.") && !strings.HasSuffix(name, "/..")
 }
@@ -138,7 +139,7 @@ func (c *collector) repository(name string) repoResult {
 		return r
 	}
 	r := repoResult{status: c.status("")}
-	if !validRepository(name) {
+	if !ValidRepository(name) {
 		r.status = failed(r.status, InvalidRepository)
 		return r
 	}
@@ -148,7 +149,7 @@ func (c *collector) repository(name string) repoResult {
 		Name string `json:"full_name"`
 	}
 	reason := c.call(r.status.Source, &raw)
-	if reason == None && (raw.ID <= 0 || !validRepository(raw.Name) ||
+	if reason == None && (raw.ID <= 0 || !ValidRepository(raw.Name) ||
 		!strings.EqualFold(raw.Name, name)) {
 		reason = Invalid
 	}
