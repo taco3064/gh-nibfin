@@ -119,11 +119,22 @@ Formal G07 publication follows the independently owned first external protected
 E2E, compatible formal Core/Action Releases and separate Owner authorization.
 The manual tracker remains open and has no Nibfin lifecycle labels.
 
+## Optional member registration
+
+Use `gh nibfin init --quick request/issue/register/confirm/reconcile` for an
+opt-in, one-attempt handoff between an authenticated Repository Admin and member.
+Only the short-lived repository registration capability crosses that boundary;
+management credentials stay with the Admin. Independent management-origin
+confirmation, GitHub member eligibility and native Runner read-back are required.
+Host adoption and protected execution remain unverified. See the complete
+[management/member sequence, expiry and recovery guide](docs/quick-registration.md).
+Existing Admin onboarding and GitHub manual registration remain available.
+
 ## Manual Repository Runner management
 
 These commands require the authenticated user's actual repository Admin rights,
 including the applicable official Runner API permission. Ordinary members receive
-a denial; there is no hidden administrator-token handoff or quick-registration flag.
+a denial. The optional member handoff uses separate management operations.
 Personal and Organization public repositories use the same repository-level API.
 
 ```text
