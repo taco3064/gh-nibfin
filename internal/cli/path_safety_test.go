@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+func TestGitAncestorChecksRegularFileParents(t *testing.T) {
+	root := privateRunnerTestRoot(t)
+	file := filepath.Join(root, "signing.pem")
+	if err := os.WriteFile(file, []byte("synthetic key fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if hasGitAncestor(file) {
+		t.Fatal("a regular file outside a checkout must remain usable")
+	}
+	if _, err := runnerDirectory(file); err == nil {
+		t.Fatal("a regular file must not become a Runner directory")
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !hasGitAncestor(file) {
+		t.Fatal("a worktree .git file must block paths under that checkout")
+	}
+}
+
 func TestRunnerPathsRejectGitWorktreesButAllowOrdinaryHomeDirectories(t *testing.T) {
 	root := privateRunnerTestRoot(t)
 	if _, err := runnerDirectory(filepath.Join(root, "managed")); err != nil {

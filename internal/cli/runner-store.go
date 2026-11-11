@@ -42,6 +42,9 @@ func runnerDirectory(path string) (string, error) {
 	if hasGitAncestor(canonical) {
 		return "", errors.New("RUNNER_DIRECTORY_INSIDE_WORKTREE")
 	}
+	if info, err := os.Lstat(canonical); err == nil && info.Mode().IsRegular() {
+		return "", errors.New("UNSAFE_RUNNER_DIRECTORY")
+	}
 	return canonical, nil
 }
 
