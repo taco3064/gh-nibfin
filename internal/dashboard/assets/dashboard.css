@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #090b18;
+  color: #f9f8fd;
+  line-height: 1.5;
+}
+* { box-sizing: border-box; }
+body { max-width: 100rem; margin: auto; padding: 1.25rem; }
+h1, h2, h3, h4 { line-height: 1.25; }
+a { color: #d1bcff; }
+p, button, a, summary { overflow-wrap: anywhere; }
+.brand { color: #b49aff; letter-spacing: .08em; }
+section { background: #15172b; padding: 1rem; border: 1px solid #6c6583; }
+main {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(0, 3fr);
+  gap: 1rem;
+}
+[hidden] { display: none; }
+input, select, button, summary { font: inherit; }
+input, select, button {
+  background: #25243f;
+  color: #f9f8fd;
+  border: 1px solid #a99abe;
+  border-radius: .25rem;
+  padding: .5rem;
+  max-width: 100%;
+}
+button, summary { cursor: pointer; }
+button:disabled { cursor: default; opacity: .65; }
+:focus-visible, h3:focus { outline: 3px solid #e5c2ff; outline-offset: 3px; }
+button[aria-pressed="true"] { border: 3px solid #d1bcff; }
+.filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.filter, label { display: grid; gap: .25rem; }
+.nodes { list-style: none; padding: 0; display: grid; gap: 1rem; }
+.node, .details, .dependency { border: 1px solid #6c6583; padding: .75rem; }
+.details { margin: 1rem 0; }
+.node > button { text-align: left; width: 100%; }
+.diagram { overflow: auto; max-height: 24rem; border: 1px solid #a99abe; }
+svg rect { fill: #25243f; stroke: #d1bcff; }
+svg text { fill: #f9f8fd; }
+svg .edge { fill: none; stroke: #b49aff; stroke-width: 2; }
+svg marker path { fill: #b49aff; }
+@media (max-width: 760px) {
+  body { padding: .5rem; }
+  main { display: block; }
+  section { margin-bottom: 1rem; }
+  .filters, label { width: 100%; }
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -132,7 +133,16 @@ func affectedPackages(paths []string) ([]string, bool, error) {
 }
 
 func run() error {
-	paths, err := changes()
+	paths := os.Args[1:]
+	if len(paths) > 0 && paths[0] == "--paths" {
+		paths = paths[1:]
+	} else {
+		paths = nil
+	}
+	var err error
+	if paths == nil {
+		paths, err = changes()
+	}
 	if err != nil {
 		return err
 	}
@@ -156,12 +166,45 @@ func run() error {
 	}
 	fmt.Printf("Selected %d packages for %d changed paths.\n", len(packages), len(paths))
 	if len(packages) == 0 {
-		return nil
+		return frontend(paths)
 	}
 	args := append([]string{"test", "-timeout=4m"}, packages...)
 	command := exec.Command("go", args...)
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
+	if err := command.Run(); err != nil {
+		return err
+	}
+	return frontend(paths)
+}
+
+// Frontend failures propagate through the same affected-test entry as Go failures.
+func frontend(paths []string) error {
+	selected := slices.ContainsFunc(paths, func(path string) bool {
+		return strings.HasPrefix(path, "internal/dashboard/") ||
+			strings.HasPrefix(path, "internal/snapshot/") ||
+			strings.HasPrefix(path, "scripts/staged/") || path == "package.json" ||
+			path == "package-lock.json" || path == "scripts/check.go" ||
+			path == "go.mod" || path == "go.sum"
+	})
+	if !selected {
+		return nil
+	}
+	install := npmCommand("ci", "--ignore-scripts", "--no-audit", "--no-fund")
+	install.Stdout, install.Stderr = os.Stdout, os.Stderr
+	if err := install.Run(); err != nil {
+		return err
+	}
+	command := npmCommand("run", "test:dashboard")
+	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	return command.Run()
+}
+
+// All npm arguments here are fixed application tooling, never provider input.
+func npmCommand(args ...string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd.exe", append([]string{"/d", "/c", "npm"}, args...)...)
+	}
+	return exec.Command("npm", args...)
 }
 
 func main() {

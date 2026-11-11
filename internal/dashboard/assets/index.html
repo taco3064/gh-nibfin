@@ -1,11 +1,48 @@
 <!doctype html>
 <html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nibfin local snapshot</title>
-<h1>Nibfin local snapshot</h1>
-<p>Read-only GitHub facts. Unknown evidence does not establish completion.</p>
-<button id="connect" type="button">Read snapshot</button>
-<pre id="snapshot" aria-live="polite">Open the local session link to connect.</pre>
-<script src="/session.js" defer></script>
+<title>Nibfin · Repository dependencies</title>
+<script src="/session.js"></script>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<header>
+<p class="brand">Nibfin / local dashboard</p>
+<h1>Repository dependencies</h1>
+<p>Read-only native GitHub facts. Unknown evidence does not establish completion.</p>
+<button id="connect" type="button" disabled>Read snapshot</button>
+<p id="snapshot" role="status">Open the local session link to connect.</p>
+<p id="freshness" role="status"></p>
+</header>
+<main id="views" hidden>
+<section id="repository" aria-label="Repository"></section>
+<section aria-labelledby="graph-title">
+<h2 id="graph-title">Native dependency graph</h2>
+<div class="filters">
+<label>Find Issue <input id="search" type="search" autocomplete="off"></label>
+<div class="filter"><label for="state">GitHub state</label><select id="state">
+<option value="">All states</option><option>open</option><option>closed</option>
+</select></div>
+<div class="filter">
+<label for="progress">Native progress</label><select id="progress">
+<option value="">All labels</option><option>scope</option><option>shaped</option>
+<option>delivered</option>
+</select></div>
+<button id="reset" type="button">Clear filters</button>
+</div>
+<p id="issue-status"></p>
+<p id="count" role="status"></p>
+<details>
+<summary>Visual overview (full relationships and navigation below)</summary>
+<p>Scroll horizontally or vertically; focus the diagram and use arrow keys.</p>
+<div id="diagram" class="diagram" tabindex="0" role="region"
+  aria-label="Scrollable dependency diagram"></div>
+</details>
+<div id="details" class="details" aria-label="Selected Issue"></div>
+<ul id="nodes" class="nodes" aria-label="Issues and directed dependencies"></ul>
+</section>
+</main>
+</body>
 </html>

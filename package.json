@@ -1,0 +1,11 @@
+{
+  "name": "gh-nibfin-dashboard-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:dashboard": "node internal/dashboard/browsertest/run.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

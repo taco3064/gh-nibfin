@@ -6,7 +6,7 @@ starts an optional, read-only service. Construct `provider` as
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
 configuration. There is no browser repository selector or management operation.
-The dashboard CLI and full graph UI remain G14 and G13 responsibilities.
+The dashboard CLI remains G14; the packaged frontend is described below.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
@@ -31,7 +31,7 @@ credentialed API requests. Session URLs must be opened directly, avoiding redire
 services and browser URL synchronization. A foreign website cannot discover the
 random fragment or complete the authenticated bootstrap automatically.
 
-G13 may replace the shell using `Config.Assets`, an explicit map of URL paths to
+Tests or trusted callers may use `Config.Assets`, an explicit map of URL paths to
 packaged bytes and content types, copied at startup. It must preserve the fragment
 handoff, in-memory proof, deliberate user action, and contextual text escaping.
 The service permits HTML, JavaScript and CSS content types only. It serves no
@@ -123,3 +123,99 @@ They require no credentials. The existing affected-package CI selector discovers
 `internal/dashboard` on Linux and Windows; no native dependency is added. Actual
 Windows, real-provider and browser validation must be reported separately when
 observed. This service is a consumer seam, not a release/support claim.
+
+## Packaged dependency frontend (G13)
+
+The default embedded assets now provide two views: Repository and Native dependency
+graph. Filters and selected Issue details live inside the graph view. Select
+**Read snapshot** to collect; the same button deliberately refreshes. A failed
+refresh retains explicitly marked previous data. Neither filtering nor following a
+dependency performs another request. The diagram is an optional scrollable overview;
+the adjacent Issue cards expose the full directed relationships and keyboard
+navigation, including dependencies hidden by filters and external references.
+
+The frontend consumes schema version 1 only. Unknown additive fields are ignored.
+Repository-qualified identities include provider IDs; external or unresolved
+references never become collected nodes. Facts, independent collection status,
+observation/expiry times and safe provenance remain visible. Empty, null, partial,
+Denied and stale have distinct meanings. The browser re-evaluates expiry while the
+page stays open, downgrading retained collection, dependency resolution and check
+statuses. Invalid or contradictory timestamps cannot establish current data.
+GitHub state, progress labels and repository activity establish no Core state.
+Version 1 has no supported Core evidence reader or control eligibility/outcome
+information, so the UI explicitly shows that limitation without offering controls.
+
+Production resources are local packaged HTML, JavaScript modules and CSS. They
+load under the existing CSP with no inline script or eval exception. Text uses DOM
+text nodes with visible control-character notation. Links must match exact official
+HTTPS GitHub resource identities and isolate new tabs from the opener. No cookie,
+persistent browser storage, external assets or direct GitHub browser fetch is used.
+
+G12's `Start` embeds and allowlists the maintained frontend by default; callers do
+not need to supply `Config.Assets`. G14 owns CLI composition: construct the native
+provider and service, deliberately open `BootstrapURL()` through its authorized
+local handoff, keep that secret out of logs, and call `Close()` when finished.
+`URL()` is the non-secret origin. This work adds no CLI command or control API.
+
+### Reproducible rendered browser checks
+
+Prerequisites: the Go version pinned in `go.mod`, Node.js 24 with npm, a supported
+Chromium host with its system libraries, and access to the npm and Playwright browser
+registries. No GitHub login, credential or administrator account is needed.
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run test:dashboard
+```
+
+The locked Playwright development dependency is never served to the browser. The
+runner downloads Chromium into a unique temporary directory, builds the synthetic
+collector host there, starts the actual Dashboard service with default assets, runs
+one browser worker, and closes hosts and deletes downloads, results and binaries
+on completion. Browser tests use the existing service clock seam with fixed
+synthetic observations, plus Playwright's browser clock for expiry. Malformed
+response cases use explicitly intercepted snapshot responses. These are fixture
+results, not real-provider performance or live GitHub comparisons.
+
+Before browser setup, the runner executes child-process regression checks with
+`node --test internal/dashboard/browsertest/child.test.mjs`. Only an explicit
+successful child exit passes; signal termination and spawn errors fail the runner.
+The regression suite exercises a real signal-terminated child and a missing
+executable through the same exit-status interpretation used by browser tests.
+
+The existing affected-test entry installs the locked npm dependencies and invokes
+the suite when Dashboard, snapshot, browser fixture/tooling, manifest/lockfile or
+selector changes require it. A browser/setup failure fails that entry. In a native
+checkout, run `go run ./scripts/staged`. In an isolated snapshot without Git metadata,
+supply known paths instead, for example:
+
+```sh
+GOFLAGS=-buildvcs=false go run ./scripts/staged --paths \
+  internal/dashboard/assets/index.html package.json
+```
+
+`--cache` retains the existing native cache selector behavior. Full Git-dependent
+selection and VCS stamping require the native PR checkout. `scripts/check.go`
+enforces complete-file size/line limits for Go, frontend and other program source
+extensions, excludes dependency directories, and still enforces Go formatting and
+the pinned toolchain. JSON/YAML data remain exempt.
+
+The required local checks are the affected-test entry above,
+`go run ./scripts/check.go`, `go vet ./...`, and an application build. Where no Git
+metadata exists, use `GOFLAGS=-buildvcs=false` for Go package discovery/builds;
+that does not establish native VCS-dependent verification. Browser coverage here
+is Chromium on Linux with synthetic collectors, including 150 Issues, cycles,
+qualified external references, keyboard/mobile interactions, hostile text/links,
+independent statuses, expiry and safe errors. Native Windows, other browsers,
+real GitHub comparison (G16), CLI launch/release integration (G14), PR-head CI and
+supported-product verification remain separate and must be reported independently.
+After local checks, remove the disposable `node_modules` directory when no longer
+needed; retain the maintained manifests, fixtures and source.
+
+Local execution observed on 2026-11-11: all 37 rendered tests passed with Playwright
+1.56.1 and Chromium Headless Shell 141.0.7390.37 on Linux amd64, using Go 1.27.1
+and Node.js 24.22.1. The affected selector also passed the four selected Go test
+packages. This isolated snapshot has no usable Git metadata: automatic Git diff
+selection and VCS stamping are Unverified here, with known changed paths and
+`-buildvcs=false` used for local verification. Native PR-head CI must run its
+normal Git-dependent checks in its own checkout.
