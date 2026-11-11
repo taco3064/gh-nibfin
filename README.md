@@ -20,12 +20,15 @@ building; never silently follow `main` during an installed candidate execution.
 
 ```sh
 go run ./scripts/check.go
-go test ./...
+go run ./scripts/staged
 go vet ./...
 go build -buildvcs=true -trimpath -o gh-nibfin .
 gh extension install .
 gh nibfin help
 ```
+
+The staged test command selects packages affected by changes in the Git index.
+CI uses the same selection with the pull request or push diff.
 
 On Windows, build `gh-nibfin.exe` instead of `gh-nibfin`. GitHub CLI's native
 [local-extension convention](https://docs.github.com/en/github-cli/github-cli/creating-github-cli-extensions)
