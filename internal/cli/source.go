@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
 	"strings"
@@ -106,8 +107,13 @@ func verifyProducers(api API, pins Producers) error {
 	if err != nil {
 		return err
 	}
-	var bound SourcePin
-	if json.Unmarshal(data, &bound) != nil || bound != pins.Core {
+	// Match JSON field names exactly: the Action reads this object with JavaScript,
+	// whereas Go struct decoding also accepts case-insensitive field aliases.
+	var bound map[string]string
+	expectedJSON, _ := json.Marshal(pins.Core)
+	var expected map[string]string
+	_ = json.Unmarshal(expectedJSON, &expected)
+	if json.Unmarshal(data, &bound) != nil || !maps.Equal(bound, expected) {
 		return errors.New("INCOMPATIBLE_PRODUCER_PINS")
 	}
 	return nil
