@@ -6,7 +6,7 @@ starts an optional, read-only service. Construct `provider` as
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
 configuration. There is no browser repository selector or management operation.
-The optional dashboard CLI launch integration remains separate work. The default
+The CLI entry point is `gh nibfin dashboard [--repo OWNER/REPO]`. The default
 packaged UI renders the repository summary and native Issue dependency graph.
 
 `URL()` returns the actual origin without credentials. Default binding is
@@ -14,6 +14,25 @@ packaged UI renders the repository summary and native Issue dependency graph.
 literal loopback IP and canonical numeric port, including `[::1]:0`; it never
 resolves hostnames. Startup failures return generic errors and own no resources.
 Configuration is instance-local. No process-global session or snapshot cache exists.
+
+## Foreground CLI lifetime
+
+Run `gh nibfin dashboard --repo OWNER/REPO` with your existing GitHub CLI login.
+Without `--repo`, the command resolves the current repository using `gh repo view`;
+if discovery fails, supply `--repo` explicitly. Startup requires a valid current
+user and matching repository identity with read permission, without push/admin.
+Help performs no login, service or browser operation.
+
+The command starts one service and deliberately hands its fragment bootstrap URL
+to the native browser opener. It prints only the credential-free origin and stop
+instructions. Opening does not certify page rendering or snapshot availability.
+Keep the command in the foreground; press Ctrl+C to stop. Closing a browser tab
+does not stop the service. Interrupt and termination signals invalidate the session
+and wait for the existing bounded shutdown, including active snapshot collection.
+Browser handoff failure also closes the service. Startup, browser, serving and
+shutdown errors are reported without raw process diagnostics or the secret URL.
+Native browser/platform and logged-in provider support require actual external
+verification; synthetic local tests do not establish released Dashboard support.
 
 ## Local session handoff
 
