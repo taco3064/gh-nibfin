@@ -231,3 +231,16 @@ read-only native GitHub facts to future Dashboard consumers through
 `internal/snapshot`. Core verification remains explicitly Unknown because no
 supported evidence reader is available. This provider adds no Dashboard command,
 HTTP service or control permission.
+
+## Optional local dashboard (source candidate)
+
+Run `gh nibfin dashboard [--repo OWNER/REPO]` with your existing GitHub login.
+Omitting `--repo` selects the current repository using GitHub CLI context; failed
+resolution asks for an explicit repository. Only read permission is required.
+The command opens a session-protected loopback dashboard and stays in the
+foreground. Press Ctrl+C to stop and wait for bounded in-flight reads to finish;
+closing the browser tab does not stop it. Help performs no external operations.
+The current shell requires selecting **Read snapshot** and does not implement the
+full graph UI or Pause/Resume. See [the dashboard contract](docs/dashboard.md).
+Local source checks do not certify a release, native browser rendering or live
+GitHub support.

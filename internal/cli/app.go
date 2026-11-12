@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -10,11 +11,12 @@ import (
 )
 
 type App struct {
-	API      API
-	Process  Process
-	Runner   RunnerHost
-	Download RunnerDownload
-	Clock    func() time.Time
+	Dashboard *DashboardRuntime
+	API       API
+	Process   Process
+	Runner    RunnerHost
+	Download  RunnerDownload
+	Clock     func() time.Time
 }
 
 type CommandError struct {
@@ -25,6 +27,10 @@ type CommandError struct {
 func (e *CommandError) Error() string { return e.Code }
 
 func (a App) Run(args []string, out io.Writer) error {
+	return a.RunContext(context.Background(), args, out)
+}
+
+func (a App) RunContext(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 || len(args) == 1 &&
 		(args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
@@ -37,8 +43,12 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Management issues/confirms; members use their own GitHub login.\n"+
 			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
+			dashboardHelp+"\n"+
 			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")
 		return err
+	}
+	if args[0] == "dashboard" {
+		return a.runDashboard(ctx, args[1:], out)
 	}
 	if args[0] == "runner" {
 		return a.runRunner(args[1:], out)

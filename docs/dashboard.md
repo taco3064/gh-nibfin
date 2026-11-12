@@ -1,4 +1,4 @@
-# Local dashboard service (G12)
+# Local dashboard
 
 `internal/dashboard.Start(ctx, Config{Repository: "owner/repo", Provider: provider})`
 starts an optional, read-only service. Construct `provider` as
@@ -6,7 +6,29 @@ starts an optional, read-only service. Construct `provider` as
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
 configuration. There is no browser repository selector or management operation.
-The dashboard CLI and full graph UI remain G14 and G13 responsibilities.
+The source CLI entry point is:
+
+```sh
+gh nibfin dashboard [--repo OWNER/REPO]
+```
+
+It checks the current GitHub user and selected repository's read permission before
+starting one service. Push/admin permission is not required, including for private
+repositories the user can read. Without `--repo`, a fixed `gh repo view --json
+nameWithOwner` call resolves the current repository. Failed discovery directs the
+user to `--repo`; it never prompts or selects an arbitrary repository.
+
+The command deliberately opens the local bootstrap URL once using the platform's
+browser helper (xdg-open, open, or explorer.exe), then stays in the foreground.
+Ordinary output contains only the credential-free origin and stop instructions.
+Press Ctrl+C to stop; closing the browser tab does not stop the service. Shutdown
+invalidates proof, closes the listener and waits for bounded in-flight reads.
+Startup, browser and shutdown failures return safe errors. Browser handoff does
+not certify page rendering or provider availability. `dashboard --help` performs
+no login, browser or service operations. No bind-address or remote-URL CLI option
+is exposed. The full graph UI remains separate work.
+
+This is source implementation, not a release or installed-platform support claim.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
