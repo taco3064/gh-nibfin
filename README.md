@@ -248,7 +248,18 @@ Real Runner/job/OIDC authorization, Agent roles and isolation need the separatel
 authorized protected execution and external E2E evidence before formal release.
 
 The maintained [snapshot provider contract](docs/snapshot.md) exposes bounded,
-read-only native GitHub facts to future Dashboard consumers through
+read-only native GitHub facts to Dashboard consumers through
 `internal/snapshot`. Core verification remains explicitly Unknown because no
-supported evidence reader is available. This provider adds no Dashboard command,
-HTTP service or control permission.
+supported evidence reader is available. The provider adds no control permission.
+
+## Local dashboard
+
+Run `gh nibfin dashboard [--repo OWNER/REPO]` with your existing GitHub login.
+Omitting `--repo` selects the current repository through GitHub CLI context; use
+`--repo` when discovery is unavailable. Actual repository read access is required,
+without push/admin rights. The command opens the local session in your browser
+and stays in the foreground. Press Ctrl+C to stop; closing a tab does not stop it.
+Shutdown waits within the existing collection and transport bounds. The printed
+origin contains no session proof. See [the dashboard contract](docs/dashboard.md)
+for session protection, snapshot limitations and shutdown bounds. Local source
+tests do not certify native browsers, logged-in providers or released support.

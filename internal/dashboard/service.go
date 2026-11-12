@@ -179,3 +179,6 @@ func (s *Service) Close() error {
 	<-s.done
 	return s.closeErr
 }
+
+// Done closes after bounded shutdown. Call Close for the result.
+func (s *Service) Done() <-chan struct{} { return s.done }

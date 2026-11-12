@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -10,11 +11,14 @@ import (
 )
 
 type App struct {
-	API      API
-	Process  Process
-	Runner   RunnerHost
-	Download RunnerDownload
-	Clock    func() time.Time
+	Context        context.Context
+	StartDashboard DashboardStart
+	OpenDashboard  func(context.Context, string) error
+	API            API
+	Process        Process
+	Runner         RunnerHost
+	Download       RunnerDownload
+	Clock          func() time.Time
 }
 
 type CommandError struct {
@@ -28,6 +32,7 @@ func (a App) Run(args []string, out io.Writer) error {
 	if len(args) == 0 || len(args) == 1 &&
 		(args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
+			dashboardUsage+"\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
@@ -40,6 +45,9 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
 			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")
 		return err
+	}
+	if args[0] == "dashboard" {
+		return a.runDashboard(args[1:], out)
 	}
 	if args[0] == "upgrade" {
 		return a.runUpgrade(args[1:], out)
