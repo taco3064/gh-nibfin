@@ -1,3 +1,5 @@
+import {labelObservation} from './model.js';
+import {issueControls} from './controls.js';
 import {items, status, identity, key, state, progress, githubURL} from './model.js';
 import {node, line, link, claims} from './dom.js';
 
@@ -48,7 +50,8 @@ export function graph(parent, alternative, issues, context) {
     const source = node('div', undefined, 'dependent');
     source.append(issueButton(issue, context.selected, context.choose));
     const labels = progress(issue).join(', ') || 'No progress';
-    line(source, `${state(issue.state)} · ${labels}`);
+    line(source, `${state(issue.state)} · ${labels} · ` +
+      `pause label ${labelObservation(issue)}`);
     row.append(source, node('span', '→', 'direction'));
     const targets = node('div');
     blockers(targets, issue, context);
@@ -71,6 +74,7 @@ export function details(parent, issue, context) {
   line(parent, `Native progress: ${progress(issue).join(', ') || 'None observed'}`);
   line(parent, `Assignees: ${(issue.assignees ?? [])
     .map(person => person.login).join(', ') || 'None observed'}`);
+  issueControls(parent, issue);
   claims(parent, issue.core);
   blockers(parent, issue, context);
 }

@@ -1,4 +1,4 @@
-// Package dashboard hosts a session-scoped, read-only loopback snapshot service.
+// Package dashboard hosts a session-scoped loopback dashboard service.
 package dashboard
 
 import (
@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/taco3064/gh-nibfin/internal/pause"
 	"github.com/taco3064/gh-nibfin/internal/snapshot"
 )
 
@@ -37,6 +38,7 @@ type Collector interface {
 // selects the embedded shell. Now and Random are injectable test seams; production
 // should leave them nil to use time.Now and crypto/rand.Reader.
 type Config struct {
+	Controller pause.Controller
 	Repository string
 	Bind       string
 	Provider   Collector
@@ -46,22 +48,26 @@ type Config struct {
 }
 
 type Service struct {
-	server     *http.Server
-	listener   net.Listener
-	origin     string
-	repository string
-	provider   Collector
-	assets     map[string]Asset
-	now        func() time.Time
-	expires    time.Time
-	secret     string
-	mu         sync.Mutex
-	closed     bool
-	busy       bool
-	stop       chan struct{}
-	done       chan struct{}
-	stopOnce   sync.Once
-	closeErr   error
+	controller      pause.Controller
+	reviews         map[string]*reviewed
+	mutationContext context.Context
+	cancelMutations context.CancelFunc
+	server          *http.Server
+	listener        net.Listener
+	origin          string
+	repository      string
+	provider        Collector
+	assets          map[string]Asset
+	now             func() time.Time
+	expires         time.Time
+	secret          string
+	mu              sync.Mutex
+	closed          bool
+	busy            bool
+	stop            chan struct{}
+	done            chan struct{}
+	stopOnce        sync.Once
+	closeErr        error
 }
 
 // Start binds a literal loopback address, selecting an available port by default.
@@ -100,7 +106,11 @@ func start(ctx context.Context, c Config,
 	if err != nil {
 		return nil, errors.New("dashboard listener unavailable")
 	}
-	s := &Service{listener: listener, origin: "http://" + listener.Addr().String(),
+	mutationContext, cancelMutations := context.WithCancel(ctx)
+	s := &Service{controller: c.Controller, reviews: make(map[string]*reviewed),
+		mutationContext: mutationContext, cancelMutations: cancelMutations,
+		listener:   listener,
+		origin:     "http://" + listener.Addr().String(),
 		repository: c.Repository, provider: c.Provider, assets: assets, now: c.Now,
 		expires: c.Now().Add(SessionLifetime), secret: hex.EncodeToString(random[:]),
 		stop: make(chan struct{}), done: make(chan struct{})}
@@ -139,6 +149,7 @@ func (s *Service) lifecycle(ctx context.Context, served <-chan error) {
 	}
 	s.mu.Lock()
 	s.closed, s.secret = true, ""
+	s.cancelMutations()
 	s.mu.Unlock()
 	shutdown, cancel := context.WithTimeout(context.Background(), ShutdownBound)
 	defer cancel()
@@ -174,6 +185,7 @@ func (s *Service) BootstrapURL() string {
 func (s *Service) Close() error {
 	s.mu.Lock()
 	s.closed, s.secret = true, ""
+	s.cancelMutations()
 	s.mu.Unlock()
 	s.stopOnce.Do(func() { close(s.stop) })
 	<-s.done

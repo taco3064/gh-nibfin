@@ -1,3 +1,4 @@
+import {configure, freshness as controlFreshness} from './controls.js';
 import {items, status, identity, key, progress, stale, validate, githubURL}
   from './model.js';
 import {progressLabels, issueStates} from './model.js';
@@ -23,6 +24,7 @@ filters.addEventListener('reset', event => {
 });
 function freshness() {
   const expired = stale(snapshot);
+  controlFreshness(failed || expired);
   const message = failed ? 'Refresh failed; retained observations are not current.' :
     expired ? 'Stale observations — reopen or Read snapshot to refresh.' :
       'Current observation window; collection limitations still apply.';
@@ -57,10 +59,11 @@ function renderGraph() {
   graph(get('graph'), get('relations'), filtered, context);
   details(get('details'), all.get(selected), context);
 }
-export function display(value) {
+export function display(value, post) {
   const next = validate(value);
   clearInterval(timer);
   snapshot = next;
+  configure(snapshot, post);
   failed = false;
   const parent = get('repository');
   parent.replaceChildren();

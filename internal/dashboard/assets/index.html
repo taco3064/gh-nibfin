@@ -10,8 +10,8 @@
 <body>
 <header>
 <h1>Nibfin repository dashboard</h1>
-<p>Read-only native facts. Labels, closed Issues and green checks do not
-establish verified completion or permission. Missing pause evidence is Unknown.</p>
+<p>Native facts and fixed pause-label requests. Labels, closed Issues and green checks
+do not establish verified completion or permission. Missing pause evidence is Unknown.</p>
 <button id="connect" type="button" disabled>Read snapshot</button>
 <p id="snapshot" role="status">Open a current local session link to connect.</p>
 </header>
@@ -19,6 +19,8 @@ establish verified completion or permission. Missing pause evidence is Unknown.<
 <section aria-labelledby="repository-heading">
 <h2 id="repository-heading">Repository summary</h2>
 <div id="repository"></div>
+<div id="label-controls"></div>
+<div id="label-results" role="status" aria-live="polite"></div>
 <p id="freshness" role="status"></p>
 <details><summary>Repository activity (not Issue associations)</summary>
 <div id="activity"></div></details>

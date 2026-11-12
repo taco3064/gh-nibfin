@@ -16,7 +16,7 @@ try {
   if (build.status !== 0) throw new Error('Browser fixture build failed');
   const result = spawnSync(process.execPath,
     ['--test', '--test-concurrency=1', '--test-timeout=60000',
-      'tests/browser/dashboard.test.mjs'], {
+      'tests/browser/dashboard.test.mjs', 'tests/browser/labels.test.mjs'], {
       stdio: 'inherit', env: {...process.env, NIBFIN_BROWSER_HOST: binary}
     });
   if (result.error) throw result.error;
