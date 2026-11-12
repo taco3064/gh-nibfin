@@ -1,11 +1,54 @@
 <!doctype html>
 <html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nibfin local snapshot</title>
-<h1>Nibfin local snapshot</h1>
-<p>Read-only GitHub facts. Unknown evidence does not establish completion.</p>
-<button id="connect" type="button">Read snapshot</button>
-<pre id="snapshot" aria-live="polite">Open the local session link to connect.</pre>
+<title>Nibfin repository dashboard</title>
+<link rel="stylesheet" href="/dashboard.css">
 <script src="/session.js" defer></script>
+</head>
+<body>
+<header>
+<h1>Nibfin repository dashboard</h1>
+<p>Read-only native facts. Labels, closed Issues and green checks do not
+establish verified completion or permission. Missing pause evidence is Unknown.</p>
+<button id="connect" type="button" disabled>Read snapshot</button>
+<p id="snapshot" role="status">Open a current local session link to connect.</p>
+</header>
+<main id="dashboard" hidden>
+<section aria-labelledby="repository-heading">
+<h2 id="repository-heading">Repository summary</h2>
+<div id="repository"></div>
+<p id="freshness" role="status"></p>
+<details><summary>Repository activity (not Issue associations)</summary>
+<div id="activity"></div></details>
+</section>
+<section aria-labelledby="graph-heading">
+<h2 id="graph-heading">Issue dependency graph</h2>
+<p>Direction: dependent → blocker. A reference is not a collected Issue node.
+Filtering retains hidden and unresolved blocker context.</p>
+<form id="filters" role="search">
+<label>Find identity or title <input id="search" type="search"></label>
+<div class="filter-field"><label for="state">State</label><select id="state">
+<option value="">All states</option>
+</select></div>
+<div class="filter-field"><label for="progress">Native progress</label>
+<select id="progress">
+<option value="">All progress</option>
+</select></div>
+<button type="reset">Clear filters</button>
+</form>
+<p id="issue-status" role="status"></p>
+<div class="workspace">
+<div>
+<div id="graph" role="region" aria-label="Directed Issue graph"></div>
+<details><summary>Textual blocker view</summary><ul id="relations"></ul></details>
+</div>
+<aside id="details" aria-label="Selected Issue details" tabindex="-1">
+<p>Select an Issue to inspect its native facts and separate evidence claims.</p>
+</aside>
+</div>
+</section>
+</main>
+</body>
 </html>

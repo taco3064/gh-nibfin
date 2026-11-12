@@ -6,7 +6,8 @@ starts an optional, read-only service. Construct `provider` as
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
 configuration. There is no browser repository selector or management operation.
-The dashboard CLI and full graph UI remain G14 and G13 responsibilities.
+The optional dashboard CLI launch integration remains separate work. The default
+packaged UI renders the repository summary and native Issue dependency graph.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
@@ -31,13 +32,13 @@ credentialed API requests. Session URLs must be opened directly, avoiding redire
 services and browser URL synchronization. A foreign website cannot discover the
 random fragment or complete the authenticated bootstrap automatically.
 
-G13 may replace the shell using `Config.Assets`, an explicit map of URL paths to
+Trusted callers may replace the UI using `Config.Assets`, a map of URL paths to
 packaged bytes and content types, copied at startup. It must preserve the fragment
 handoff, in-memory proof, deliberate user action, and contextual text escaping.
 The service permits HTML, JavaScript and CSS content types only. It serves no
 filesystem, directory listing, source files, fallback page or external dependency.
 Use external packaged scripts; inline scripts and eval are blocked by CSP. Render
-provider strings as text (the minimal shell uses `textContent`), never as HTML or
+provider strings with `textContent`, never as HTML or
 commands. Asset authors are trusted application code, not browser-supplied input.
 
 Sessions expire 30 minutes after startup, without renewal. Expiry is checked before
@@ -115,11 +116,79 @@ forcibly terminated by Go. `Close()` reports serving/shutdown failures safely.
 No persistent resources, credentials, registrations or workers survive ordinary
 shutdown. Callers should preserve shutdown errors rather than claim clean exit.
 
+## Repository and dependency views
+
+The repository summary shows collected Issue counts and independent Core claims.
+Its activity disclosure contains PRs, checks and Actions runs with native PR
+references. These are repository activity, not inferred Issue associations.
+Completion, pause and execution evidence remain separate from GitHub state and
+native progress labels. Missing evidence stays Unknown/unverified.
+
+The directed graph uses readable dependent → blocker rows. Buttons select collected
+Issues; external and unresolved endpoints remain explicitly labeled references.
+The textual blocker disclosure conveys the same qualified identities, direction
+and resolution limits. Search matches qualified identity or title. State and native
+progress filters retain hidden blocker context, and hidden collected blockers can
+still be inspected. Selection survives filtering until a refreshed snapshot removes
+the Issue. Known-empty, unavailable and partial collections have different messages.
+
+The freshness banner shows observation and expiry times. A memory-only timer marks
+retained facts stale at expiry, without silently fetching more data. A failed refresh
+marks retained observations as not current. Unsupported schema versions and service
+failures show a fixed actionable error, never provider diagnostics.
+
+Only exact official GitHub resource URLs matching the represented repository and
+resource identity become links. Links use no-referrer and noopener/noreferrer.
+Provider text is inert; control and bidirectional formatting characters are replaced
+with a visible replacement character. No third-party runtime scripts or styles load.
+The layout wraps at narrow widths; native controls and Issue buttons are keyboard
+operable with visible focus. Selection moves focus to the details region.
+
 ## Verification boundary
 
 Local tests use real loopback listeners and official-API-shaped synthetic fixtures,
 including failures, isolation, expiry, concurrent collection and in-flight stop.
 They require no credentials. The existing affected-package CI selector discovers
 `internal/dashboard` on Linux and Windows; no native dependency is added. Actual
-Windows, real-provider and browser validation must be reported separately when
+Windows and real-provider validation must be reported separately when
 observed. This service is a consumer seam, not a release/support claim.
+
+### Packaged browser regression suite
+
+Use the Go version in go.mod and Node 22 or newer:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npx --no-install playwright install chromium
+npm run test:browser
+```
+
+The suite builds a disposable synthetic Collector host using the existing service
+and default embedded assets. It uses real Chromium and loopback HTTP. It covers
+session handoff, directed and cross-repository edges, unresolved references, filters,
+independent status failures, expiry, unsupported schema, hostile text/URLs and
+keyboard/mobile navigation over 130 Issues. An intercepted HTTP failure and an
+extended response check client error handling and additive-field compatibility;
+these are not provider results. Every test closes its
+browser and service and removes fixture directories; the build is removed on exit.
+No browser reports, profiles or snapshots are maintained artifacts.
+
+The affected-test entry installs locked JavaScript dependencies only when selected.
+Hosted CI uses preinstalled official Chrome through Playwright's chrome channel;
+it never installs browsers or OS packages. Dashboard source,
+browser fixtures/tooling, dependency manifests and shared verification changes select
+the suite. Unrelated changes keep targeted checks. A selected suite fails if Node,
+dependencies, browser or assertions are unavailable. Both verify and Windows
+affected checks use the same entry point.
+Local runs use separately provisioned Playwright Chromium. Run the selector without
+Git metadata by passing known changed paths, for example:
+
+```sh
+GOFLAGS=-buildvcs=false go run ./scripts/staged --paths internal/dashboard/assets/view.js
+```
+
+--browser reports browser selection; --cache reports the existing cache selection.
+Both support --paths. Native CI still uses the actual Git comparison. The source
+checker enforces the 90-character/1,000-line limits for Go, JS/MJS, CSS and HTML.
+Synthetic browser results establish neither live GitHub acceptance nor release or
+platform support. Keep those evidence boundaries explicit.

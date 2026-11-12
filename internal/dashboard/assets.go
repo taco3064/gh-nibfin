@@ -20,10 +20,16 @@ func copyAssets(input map[string]Asset) (map[string]Asset, error) {
 	if input == nil {
 		input = make(map[string]Asset)
 		for path, kind := range map[string]string{
-			"/":           "text/html; charset=utf-8",
-			"/session.js": "text/javascript; charset=utf-8",
+			"/":              "text/html; charset=utf-8",
+			"/session.js":    "text/javascript; charset=utf-8",
+			"/model.js":      "text/javascript; charset=utf-8",
+			"/dom.js":        "text/javascript; charset=utf-8",
+			"/activity.js":   "text/javascript; charset=utf-8",
+			"/graph.js":      "text/javascript; charset=utf-8",
+			"/view.js":       "text/javascript; charset=utf-8",
+			"/dashboard.css": "text/css; charset=utf-8",
 		} {
-			file := "session.js"
+			file := strings.TrimPrefix(path, "/")
 			if path == "/" {
 				file = "index.html"
 			}
