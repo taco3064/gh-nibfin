@@ -82,14 +82,20 @@ type Core struct {
 	Execution  Claim `json:"execution"`
 }
 
+type PauseLabel struct {
+	Present bool   `json:"present"`
+	Actor   string `json:"actor"`
+}
+
 type Issue struct {
-	Identity  Identity      `json:"identity"`
-	Title     string        `json:"title"`
-	State     string        `json:"state"`
-	Progress  []string      `json:"progress"`
-	Assignees []Assignee    `json:"assignees"`
-	Core      Core          `json:"core"`
-	BlockedBy Section[Edge] `json:"blocked_by"`
+	PauseLabel *PauseLabel   `json:"pause_label,omitempty"`
+	Identity   Identity      `json:"identity"`
+	Title      string        `json:"title"`
+	State      string        `json:"state"`
+	Progress   []string      `json:"progress"`
+	Assignees  []Assignee    `json:"assignees"`
+	Core       Core          `json:"core"`
+	BlockedBy  Section[Edge] `json:"blocked_by"`
 }
 
 // Reference retains an unresolved native endpoint without fabricating a node.

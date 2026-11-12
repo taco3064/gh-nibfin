@@ -21,6 +21,7 @@ export function identity(number, repo = repository, resource = 'issues') {
 export function issue(number, repo = repository) {
   return {identity: identity(number, repo), title: `Issue ${number}`,
     state: 'open', progress: ['scope'], assignees: [{id: 7, login: 'reader'}],
+    pause_label: {present: false, actor: 'Unknown'},
     core: core(), blocked_by: section([])};
 }
 export function edge(from, to, resolution = status()) {

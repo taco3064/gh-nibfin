@@ -101,3 +101,8 @@ export function checkURL(raw, repository, id, pullNumber) {
     repository, 'actions/runs', run);
   return base && job === id ? `${base}/job/${id}` : null;
 }
+
+export function labelObservation(issue) {
+  const value = issue.pause_label?.present;
+  return typeof value === 'boolean' ? (value ? 'present' : 'absent') : 'unreadable';
+}

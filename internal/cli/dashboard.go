@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/taco3064/gh-nibfin/internal/dashboard"
+	"github.com/taco3064/gh-nibfin/internal/pause"
 	"github.com/taco3064/gh-nibfin/internal/snapshot"
 )
 
@@ -70,7 +71,8 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 		}
 	}
 	service, err := start(ctx, dashboard.Config{Repository: *name,
-		Provider: snapshot.Provider{API: a.API}})
+		Provider:   snapshot.Provider{API: a.API},
+		Controller: pause.Controller{Provider: NativePause{API: a.API, Process: a.Process}}})
 	if err != nil {
 		return errors.New("DASHBOARD_START_FAILED")
 	}

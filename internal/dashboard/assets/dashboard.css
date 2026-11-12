@@ -32,3 +32,6 @@ dd { margin-left: 1rem; }
   body { padding: .5rem; }
   section { padding: .5rem; }
 }
+dialog { max-width: min(42rem, 90vw); max-height: 85vh; overflow: auto; }
+dialog::backdrop { background: #0009; }
+#label-results { overflow-wrap: anywhere; }

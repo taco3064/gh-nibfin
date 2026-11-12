@@ -68,12 +68,17 @@ func toolPath(name string) (string, error) {
 }
 
 func (NativeProcess) Run(name string, args []string, input []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return (NativeProcess{}).RunContext(ctx, name, args, input)
+}
+
+func (NativeProcess) RunContext(ctx context.Context, name string,
+	args []string, input []byte) ([]byte, error) {
 	path, err := toolPath(name)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, path, args...)
 	if name != "gh" {
 		keys := []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"}

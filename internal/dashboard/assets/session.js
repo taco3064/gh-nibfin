@@ -21,7 +21,15 @@
       if (!response.ok) throw new Error('Unavailable');
       const snapshot = await response.json();
       view ??= await import('/view.js');
-      view.display(snapshot);
+      view.display(snapshot, async intent => {
+        const response = await fetch('/api/labels', {
+          method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error',
+          headers: {'X-Nibfin-Session': proof, 'Content-Type': 'application/json'},
+          body: JSON.stringify(intent)
+        });
+        if (!response.ok) throw new Error('Unavailable');
+        return response.json();
+      });
       output.textContent = 'Snapshot loaded. Read again to refresh observations.';
     } catch {
       view?.invalidate();

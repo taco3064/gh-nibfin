@@ -1,11 +1,12 @@
 # Local dashboard service (G12)
 
 `internal/dashboard.Start(ctx, Config{Repository: "owner/repo", Provider: provider})`
-starts an optional, read-only service. Construct `provider` as
+starts an optional local service. Construct `provider` as
 `snapshot.Provider{API: cli.GitHub{Process: cli.NativeProcess{}}}`. This reuses
 `gh api --hostname github.com` with the current user's read access; it never calls
 the installation push/admin gate. Repository selection is trusted startup
-configuration. There is no browser repository selector or management operation.
+configuration. There is no browser repository selector. Pause/Resume uses a trusted injected
+`pause.Controller`, assembled by the CLI with `cli.NativePause` and the current gh login.
 The CLI entry point is `gh nibfin dashboard [--repo OWNER/REPO]`. The default
 packaged UI renders the repository summary and native Issue dependency graph.
 
@@ -75,10 +76,11 @@ are ignored. No CORS permission or preflight grant exists. Requests without Orig
 or browser metadata still need the full session proof on every snapshot read.
 The service does not protect against a compromised local caller or browser.
 
-Only exact `GET /api/snapshot` collects facts. All routes reject queries (even an
-empty `?`), bodies, transfer encodings, encoded/ambiguous paths and absolute-form
-request targets. Only exact allowlisted asset paths are served. There are no
-writes, controls, shell requests or redirects. Session headers on assets are
+Exact `GET /api/snapshot` collects facts. Exact `POST /api/labels` accepts
+bounded JSON review/apply intents. GET routes reject bodies. All routes reject
+queries (even an empty `?`), transfer encodings, encoded/ambiguous paths and
+absolute-form request targets. Only exact allowlisted asset paths are served.
+There are no shell requests or redirects. Session headers on assets are
 rejected. Application errors have JSON shape `{"error":"<safe_code>"}`:
 
 | Status | Safe code | Meaning |
@@ -88,7 +90,8 @@ rejected. Application errors have JSON shape `{"error":"<safe_code>"}`:
 | 401 | unauthorized | Missing, malformed, wrong or expired session proof. |
 | 403 | forbidden | Host, Origin or Fetch Metadata rejection. |
 | 404 | not_found | Unknown exact path; no filesystem fallback. |
-| 405 | method_not_allowed | Only GET is allowed; no OPTIONS/CORS grant. |
+| 405 | method_not_allowed | Unsupported route method; no OPTIONS/CORS grant. |
+| 409 | review_unavailable | Unknown, consumed or expired review; never retry edits. |
 | 503 | unavailable | Collection slot occupied or service stopping. |
 | 500 | unavailable | Snapshot serialization failed; no diagnostic disclosure. |
 
@@ -112,7 +115,7 @@ bodies, provider errors and private host paths are not added to the projection.
 
 ## Resource bounds and lifecycle
 
-One collection per instance runs synchronously; concurrent authenticated requests
+One collection or mutation per instance runs synchronously; concurrent authenticated requests
 receive 503, rather than queueing additional collectors. A disconnected browser
 does not free that slot until collection actually returns. No collection is
 abandoned in a background goroutine. The native provider has a two-minute
@@ -211,3 +214,46 @@ Both support --paths. Native CI still uses the actual Git comparison. The source
 checker enforces the 90-character/1,000-line limits for Go, JS/MJS, CSS and HTML.
 Synthetic browser results establish neither live GitHub acceptance nor release or
 platform support. Keep those evidence boundaries explicit.
+
+## Fixed Pause/Resume requests
+
+Existing Issue details offer Pause and Resume. Repository controls review Pause All
+(open scoped candidates) and Resume All (observed paused scoped candidates).
+The batch shows collected candidates and the eligible affected set before a separate
+confirmation. Partial collections are labeled; batches over 50 candidates are disabled.
+Later-created Issues and other repositories are never added. These are per-Issue
+requests, without rollback or a persistent hold. After submitting, refresh observations
+before another review. Cancellation performs no edits.
+
+The single fixed mutation route accepts `application/json` up to 32 KiB, rejects
+unknown/duplicate fields and validates positive native repository/Issue identities.
+A review intent supplies `phase: "review"`, `repository`, `action` (pause/resume),
+`batch` and `targets` (repository_id, issue_id, number). An apply intent supplies
+only `phase: "apply"` and the opaque `review` token. Reviews belong to one service
+session, expire after two minutes and are consumed before external effects. At most
+16 unexpired reviews are retained. Snapshot responses advertise the authoritative
+`label_action_limit` used by the packaged controls. Replayed or in-flight submissions cannot duplicate
+an edit. Ambiguous external effects cause no automatic retry.
+
+Native reads recheck the logged-in user, repository identity and permissions, Issue
+identity/type, assignment, state and labels before each edit. Personal owners and
+organization Admins do not require assignment or an online Runner. Other callers need
+native label-edit permission and current assignment. Pause rejects closed Issues;
+batch targets also require scope. A changed identity or unavailable evidence prevents
+an edit. Resume does not depend on the original pause actor. Unverified actor evidence
+is displayed as Unknown. These preflight checks do not replace Core event authority.
+
+The only edit arguments are `gh issue edit NUMBER --repo OWNER/REPO --add-label pause`
+or `--remove-label pause`. Native operations share a two-minute context deadline,
+shortened by remaining session life and cancelled by shutdown. Already-matching labels
+produce Not needed without editing. API/process diagnostics are never returned to the
+browser. Native HTTP 403/404 rejections are definite request failures; other process
+failures remain ambiguous. Provider text is rendered inertly.
+
+Per-Issue and summary results separate submission (Requested, Request failed, Unknown,
+Not needed), observed label (present, absent, unreadable), and final Core verdict.
+Read-back failure does not erase a successful submission. Final Core verdict is always
+Unknown because this implementation has no supported verdict reader. Removing a label
+requests existing wake/recovery; it proves neither resumed delivery nor Writer termination.
+Controlled Go and packaged browser fixtures cover these requests through the real local
+handler. They establish no live GitHub/Core, multi-account or installed-platform result.

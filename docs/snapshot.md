@@ -140,3 +140,9 @@ edges, freshness and hostile input. No fixture establishes real-provider access
 or Core verification. G12/G13 can consume these types without provider credentials.
 Live installed-provider comparison belongs to G16. CI and platform checks must
 run on the actual candidate head; local fixture passes do not establish them.
+
+Issue projections include an optional additive `pause_label` object with native
+`present` (boolean) and `actor` (Unknown until verifiable evidence is available).
+It is a label observation, independent of `core.pause`, which remains Unknown with
+no_supported_reader. Missing fields in older consumers/fixtures mean unreadable,
+not an absent label. Collection freshness applies to these observations too.

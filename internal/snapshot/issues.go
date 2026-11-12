@@ -79,6 +79,7 @@ func (c *collector) issues(repo Repository) Section[Issue] {
 				issue.Progress = append(issue.Progress, label)
 			}
 		}
+		issue.PauseLabel = &PauseLabel{Present: labels["pause"], Actor: "Unknown"}
 		issue.BlockedBy = c.dependencies(id)
 		out.Items = append(out.Items, issue)
 		return raw.ID, nil

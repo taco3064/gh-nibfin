@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/taco3064/gh-nibfin/internal/dashboard"
+	"github.com/taco3064/gh-nibfin/internal/pause"
 	"github.com/taco3064/gh-nibfin/internal/snapshot"
 )
 
@@ -39,8 +40,14 @@ func run() error {
 		}
 		return instant
 	}
+	var provider dashboard.Collector = fixture{value}
+	var controller pause.Controller
+	if len(os.Args) == 3 && os.Args[2] == "labels" {
+		native := labelFixture(value)
+		provider, controller = native, pause.Controller{Provider: native}
+	}
 	service, err := dashboard.Start(context.Background(), dashboard.Config{
-		Repository: "example/project", Provider: fixture{value}, Now: now,
+		Repository: "example/project", Provider: provider, Controller: controller, Now: now,
 	})
 	if err != nil {
 		return err

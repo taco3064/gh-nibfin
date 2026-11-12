@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/taco3064/gh-nibfin/internal/pause"
+	"github.com/taco3064/gh-nibfin/internal/snapshot"
 )
 
 func protectiveHeaders(h http.Header) {
@@ -57,6 +60,21 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	if closed {
 		failure(w, 503, "unavailable")
+		return
+	}
+	if r.URL.Path == "/api/labels" {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			failure(w, 405, "method_not_allowed")
+			return
+		}
+		if r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" ||
+			r.RequestURI != r.URL.Path || len(r.TransferEncoding) != 0 ||
+			r.ContentLength > mutationBodyLimit {
+			failure(w, 400, "invalid_request")
+			return
+		}
+		s.mutation(w, r)
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -121,7 +139,10 @@ func (s *Service) snapshot(w http.ResponseWriter, r *http.Request) {
 	// Collection is synchronous. Client disconnects cannot release the single
 	// collection slot while a non-context-aware transport is still working.
 	result := s.provider.Collect(s.repository).At(s.now())
-	data, err := json.Marshal(result)
+	data, err := json.Marshal(struct {
+		snapshot.Snapshot
+		MaxTargets int `json:"label_action_limit"`
+	}{result, pause.MaxTargets})
 	if err != nil {
 		failure(w, 500, "unavailable")
 		return

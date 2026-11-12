@@ -26,6 +26,7 @@ func copyAssets(input map[string]Asset) (map[string]Asset, error) {
 			"/dom.js":        "text/javascript; charset=utf-8",
 			"/activity.js":   "text/javascript; charset=utf-8",
 			"/graph.js":      "text/javascript; charset=utf-8",
+			"/controls.js":   "text/javascript; charset=utf-8",
 			"/view.js":       "text/javascript; charset=utf-8",
 			"/dashboard.css": "text/css; charset=utf-8",
 		} {
