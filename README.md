@@ -1,7 +1,7 @@
 # gh nibfin
 
 GitHub CLI extension for Nibfin public-repository onboarding, manual
-repository-level Runner management and environment inspection.
+repository-level Runner management, safe upgrade proposals and environment inspection.
 
 Manual [Bootstrap #1](https://github.com/taco3064/gh-nibfin/issues/1) is in progress.
 The candidate implements previewed, PR-based initialization; no formal release
@@ -49,7 +49,7 @@ Exit 2 means installation still needs review/merge or its effect is unknown;
 inspect the provider result before retrying.
 
 Existing identical files and label names are preserved. Changed workflows/pins
-are refused; this is initialization, not the deferred upgrade feature. An existing
+are refused by init; use the verified upgrade command below. An existing
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
@@ -75,6 +75,27 @@ live Organization installation and specific Organization policies are **Unverifi
 No Organization/Admin identity is required as an extra Phase 0 prerequisite.
 Initialization needs repository/workflow writes; Runner management separately
 requires the actual repository Admin rights described below.
+
+## Preview and propose an upgrade
+
+```sh
+gh nibfin upgrade --repo OWNER/REPO
+gh nibfin upgrade --repo OWNER/REPO --version v1.2.3
+gh nibfin upgrade --repo OWNER/REPO --version v1.2.3 --apply
+```
+
+Upgrade previews by default. It resolves an official stable release to a full CLI
+source commit and verifies its producer tuple, archives and Core-owned recipes.
+It recognizes the installed managed files at one exact base, preserves the
+original member binding, and lists ordered additions, modifications and deletions.
+The version above illustrates the syntax; it does not assert a published release.
+Missing or inconsistent official metadata fails closed without writes.
+
+Only explicit `--apply` can create a separate upgrade branch and PR. Native
+review, CI, protections and merge still apply. This neither installs a CLI binary
+nor updates a running Core host or Runner. Host adoption is a separate trusted
+operation. See [upgrade usage and recovery](docs/upgrade.md) for supported layouts,
+source verification, pending effects and the limits of local fixture evidence.
 
 ## Sources and trust boundary
 

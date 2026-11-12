@@ -14,6 +14,10 @@ func callerRecipes(api API, pin SourcePin) (map[string][]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeCallerRecipes(data, pin)
+}
+
+func decodeCallerRecipes(data []byte, pin SourcePin) (map[string][]string, error) {
 	var recipes map[string][]string
 	if json.Unmarshal(data, &recipes) != nil {
 		return nil, errors.New("INVALID_CORE_CALLER_RECIPES")

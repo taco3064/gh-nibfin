@@ -29,6 +29,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		(args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
+			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
 			"Optional Runner setup: --runner-directory PATH --runner-name NAME.\n"+
 			"Member handoff: init --quick request/issue/register/confirm/reconcile\n"+
@@ -39,6 +40,9 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
 			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")
 		return err
+	}
+	if args[0] == "upgrade" {
+		return a.runUpgrade(args[1:], out)
 	}
 	if args[0] == "runner" {
 		return a.runRunner(args[1:], out)
