@@ -1,12 +1,9 @@
 package cli
 
 import (
-	"crypto/sha1"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -52,10 +49,7 @@ type Content struct {
 }
 
 func blobHash(data []byte) string {
-	h := sha1.New()
-	fmt.Fprintf(h, "blob %d\x00", len(data))
-	h.Write(data)
-	return hex.EncodeToString(h.Sum(nil))
+	return gitObjectHash("blob", data)
 }
 
 func content(api API, repo, path, ref string) ([]byte, string, error) {

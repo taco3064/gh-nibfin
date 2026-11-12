@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const producerPath = ".nibfin/producer-pins.json"
+const wakeWorkflowPath = ".github/workflows/nibfin-wake.yml"
+const stageWorkflowPath = ".github/workflows/nibfin-stage.yml"
+const issueWorkflowPath = ".github/workflows/nibfin-issue.yml"
+
 func templates(
 	pins Producers, memberID int64, recipes map[string][]string,
 ) map[string]string {
@@ -18,15 +23,15 @@ func templates(
 		return strings.ReplaceAll(text, "MEMBER_ID", fmt.Sprint(memberID))
 	}
 	files := map[string]string{
-		".github/workflows/nibfin-issue.yml": render("issue"),
-		".nibfin/producer-pins.json":         string(pinJSON) + "\n",
+		issueWorkflowPath: render("issue"),
+		producerPath:      string(pinJSON) + "\n",
 	}
 	if _, unified := recipes["action-dispatch"]; unified {
-		files[".github/workflows/nibfin-wake.yml"] = render("action-dispatch")
+		files[wakeWorkflowPath] = render("action-dispatch")
 		return files
 	}
-	files[".github/workflows/nibfin-wake.yml"] = render("action-wake")
-	files[".github/workflows/nibfin-stage.yml"] = fmt.Sprintf(`name: Nibfin adopted stage
+	files[wakeWorkflowPath] = render("action-wake")
+	files[stageWorkflowPath] = fmt.Sprintf(`name: Nibfin adopted stage
 on:
   workflow_dispatch:
     inputs:

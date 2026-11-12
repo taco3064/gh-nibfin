@@ -73,7 +73,12 @@ func candidateArchive(api API, pins Producers) ([]byte, error) {
 }
 
 func installCoreCache(api API, process Process) (directory string, err error) {
-	pins := Pins()
+	return installPinnedCoreCache(api, process, Pins())
+}
+
+func installPinnedCoreCache(
+	api API, process Process, pins Producers,
+) (directory string, err error) {
 	archive, err := candidateArchive(api, pins)
 	if err != nil {
 		return "", err

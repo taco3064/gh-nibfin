@@ -1,7 +1,8 @@
 # gh nibfin
 
 GitHub CLI extension for Nibfin public-repository onboarding, manual
-repository-level Runner management and environment inspection.
+repository-level Runner management, verified reference upgrades and environment
+inspection.
 
 Manual [Bootstrap #1](https://github.com/taco3064/gh-nibfin/issues/1) is in progress.
 The candidate implements previewed, PR-based initialization; no formal release
@@ -49,7 +50,7 @@ Exit 2 means installation still needs review/merge or its effect is unknown;
 inspect the provider result before retrying.
 
 Existing identical files and label names are preserved. Changed workflows/pins
-are refused; this is initialization, not the deferred upgrade feature. An existing
+are refused by initialization; use the verified upgrade command below. An existing
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
@@ -104,7 +105,81 @@ adoption and native Core authorization. The CLI does not
 issue grants, configure secrets, start Agents, select Assignees, schedule Runners
 or advance delivery stages. Installing workflows does not prove authenticated
 native Issue execution or the first external E2E. Unknown existing file contents
-are still refused, including installations pinned to an earlier candidate.
+are still refused. Upgrade separately recognizes verified older installations.
+
+## Upgrade managed repository references
+
+```sh
+gh nibfin upgrade --repo OWNER/REPO --version v1.2.3
+gh nibfin upgrade --repo OWNER/REPO --version v1.2.3 --apply
+# Before publication, exercise the same mechanics with an exact official CLI commit:
+gh nibfin upgrade --repo OWNER/REPO --candidate FULL_40_CHARACTER_CLI_COMMIT
+gh nibfin upgrade --repo OWNER/REPO --candidate FULL_40_CHARACTER_CLI_COMMIT --apply
+```
+
+Preview is the default. Select exactly one source. Official versions currently
+mean non-draft, non-prerelease `vMAJOR.MINOR.PATCH` releases in
+`taco3064/gh-nibfin`. Authenticated production GitHub reads check the release
+identity, resolve its exact tag (including annotated tags) to an immutable commit,
+and read `internal/cli/producers.json` at that commit. Branches named like versions
+are never used in place of tags. The pinned official Core and Action must exist,
+and the Action's immutable `core-source.json` must exactly match Core. The fixed
+Core CI artifact must remain available, unexpired and digest-correct. No public
+release is assumed to exist; missing metadata or packages fail closed, with no
+floating-main, arbitrary-repository or local-source fallback.
+
+The deterministic JSON plan includes repository ID and base commit, installed and
+target immutable sources, compatibility, and exact before/after contents for every
+managed change. Inspection reads installed pins and workflows at one immutable
+default-branch revision, verifies their producer identities and Core-owned recipes,
+and requires exact managed template contents. Missing installations, malformed
+pins, edited templates and unknown recipe layouts are refused. The installed
+member identity and routing are preserved even when another maintainer upgrades.
+Verified legacy and unified recipe layouts can be reconciled, including removing
+the obsolete managed stage workflow. Unknown files at new managed paths are never
+adopted. Unrelated repository files remain unchanged.
+
+Preview makes only provider reads: it verifies package identities/digests without
+extracting a cache, running host commands or modifying the repository. Apply
+revalidates the exact plan, installs the target in the user-owned verified cache
+using the archive's Core verifier and pinned Node, and revalidates again before
+remote reference changes. It creates content-addressed objects, a separate
+deterministic `nibfin/upgrade-*` branch and a PR. It verifies the complete target
+tree, managed content read-back, branch SHA, and PR repository/head/base identities.
+It never writes the default branch or automatically merges. A successfully read
+back PR is reported as `awaiting_review_merge`, not repository completion.
+
+After review, applicable CI and authorized merge, rerun the same command. Only
+read-back of target pins and exact managed templates at the current default-branch
+revision establishes `REPOSITORY_TARGET_READ_BACK`. An already installed target
+requires no cache installation or remote writes. This command updates repository
+references, not the installed CLI executable or Runner package.
+
+Repeating an outstanding update reconciles the same branch and PR without new
+writes. Lost write responses are resolved through authoritative reads of the
+computed object, reference and PR identities. Interruption or unavailable,
+conflicting or ambiguous read-back yields `pending` with exit 2 and an inspection
+route. Rerun the same source selection to reconcile after restoring access.
+Inspect the reported branch/PR and default-branch contents; never delete or
+overwrite unknown branches, blindly retry writes, or automatically roll back.
+A moved base or changed target can require authorized manual resolution of an
+existing update; the command will not rebase or replace an unknown update branch.
+Closed PRs and duplicate matches also require inspection.
+
+Host adoption remains a separate authorized operation in every result. Upgrade
+does not replace `/opt/nibfin/core`, manage services, touch credentials, rewrite
+approvals or existing work/source bindings, or remove old caches. Active work must
+retain its original approved Core, Skills and Workflow context; incompatible work
+must stop for the existing authorized recovery procedure and is never rebound by
+upgrade. Preserve caches still needed by active work.
+
+Exact-commit candidate package evidence and official release metadata are labeled
+separately in the plan. Neither proves a released CLI was installed or a live
+public-release upgrade succeeded. Controlled-provider regression tests exercise
+production lookup and actual disposable package/cache mechanics with synthetic
+manifest-verifying sources. The official Core archive verifier and native cache
+CI remain separate checks; synthetic evidence does not replace them. Public
+release/installation read-back remains the later release exercise.
 
 ## Verification status
 
@@ -193,8 +268,8 @@ Unknown processes/configuration must be resolved through official administrative
 inspection before manually changing that state. Do not delete active Runner files.
 
 Package changes or official auto-updates may require official manual removal or
-recreation from the current package. This candidate does not implement the
-deferred general upgrade feature. Installed package files are retained for reuse
+recreation from the current package. Repository reference upgrade does not update
+Runner packages. Installed package files are retained for reuse
 and provenance; dispose of them only after registration/service/process use is
 retired and no recovery evidence remains necessary.
 
