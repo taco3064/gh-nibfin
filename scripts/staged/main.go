@@ -132,7 +132,13 @@ func affectedPackages(paths []string) ([]string, bool, error) {
 }
 
 func run() error {
-	paths, err := changes()
+	var paths []string
+	var err error
+	if index := slices.Index(os.Args, "--paths"); index >= 0 {
+		paths = os.Args[index+1:]
+	} else {
+		paths, err = changes()
+	}
 	if err != nil {
 		return err
 	}
@@ -140,8 +146,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if slices.Contains(os.Args[1:], "--cache") {
+	if slices.Contains(os.Args[1:], "--cache") ||
+		slices.Contains(os.Args[1:], "--browser") {
 		line := fmt.Sprintf("cache=%t\n", cache)
+		if slices.Contains(os.Args[1:], "--browser") {
+			line = fmt.Sprintf("browser=%t\n", browserAffected(paths))
+		}
 		if path := os.Getenv("GITHUB_OUTPUT"); path != "" {
 			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {
@@ -155,13 +165,18 @@ func run() error {
 		return nil
 	}
 	fmt.Printf("Selected %d packages for %d changed paths.\n", len(packages), len(paths))
-	if len(packages) == 0 {
-		return nil
+	if len(packages) != 0 {
+		args := append([]string{"test", "-timeout=4m"}, packages...)
+		command := exec.Command("go", args...)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			return err
+		}
 	}
-	args := append([]string{"test", "-timeout=4m"}, packages...)
-	command := exec.Command("go", args...)
-	command.Stdout, command.Stderr = os.Stdout, os.Stderr
-	return command.Run()
+	if browserAffected(paths) {
+		return runBrowser()
+	}
+	return nil
 }
 
 func main() {
