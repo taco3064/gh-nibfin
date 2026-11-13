@@ -100,6 +100,9 @@ func (NativeProcess) RunContext(ctx context.Context, name string,
 	err = cmd.Run()
 	if err != nil {
 		// Only the official gh HTTP diagnostic is classified; never disclose it.
+		if name == "gh" && githubRateLimited(stderr.String()) {
+			return nil, errors.New("RATE_LIMITED")
+		}
 		if name == "gh" && strings.Contains(stderr.String(), "(HTTP 404)") {
 			return nil, errors.New("NOT_FOUND")
 		}
@@ -113,6 +116,13 @@ func (NativeProcess) RunContext(ctx context.Context, name string,
 		return codexLoginMode(out.String() + "\n" + stderr.String())
 	}
 	return out.Bytes(), nil
+}
+
+func githubRateLimited(output string) bool {
+	message := strings.ToLower(output)
+	return strings.Contains(message, "(http 429)") ||
+		strings.Contains(message, "(http 403)") &&
+			strings.Contains(message, "rate limit")
 }
 
 func codexLoginMode(output string) ([]byte, error) {

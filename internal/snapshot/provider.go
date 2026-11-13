@@ -32,6 +32,7 @@ type collector struct {
 	now      func() time.Time
 	limits   Limits
 	requests int
+	limited  bool
 	deadline time.Time
 	repos    map[string]repoResult
 }
@@ -67,12 +68,12 @@ func (p Provider) Collect(name string) Snapshot {
 	limits := p.Limits
 	limits.Pages = bounded(limits.Pages, 20)
 	limits.Issues = bounded(limits.Issues, 1000)
-	limits.Requests = bounded(limits.Requests, 5000)
+	limits.Requests = bounded(limits.Requests, 300)
 	if limits.Duration <= 0 || limits.Duration > 2*time.Minute {
 		limits.Duration = 2 * time.Minute
 	}
-	c := &collector{p.API, now, limits, 0, start.Add(limits.Duration),
-		map[string]repoResult{}}
+	c := &collector{api: p.API, now: now, limits: limits,
+		deadline: start.Add(limits.Duration), repos: map[string]repoResult{}}
 	s := Snapshot{SchemaVersion: 1, StartedAt: start,
 		ExpiresAt: start.Add(5 * time.Minute), Core: unknownCore()}
 	r := c.repository(name)
@@ -104,6 +105,9 @@ func failed(s Status, reason Reason) Status {
 }
 
 func (c *collector) call(path string, output any) Reason {
+	if c.limited {
+		return RateLimited
+	}
 	if c.requests >= c.limits.Requests || !c.now().Before(c.deadline) {
 		return Limit
 	}
@@ -125,6 +129,7 @@ func (c *collector) call(path string, output any) Reason {
 	case "NOT_FOUND":
 		return NotFound
 	case "RATE_LIMITED":
+		c.limited = true
 		return RateLimited
 	case "INVALID_PROVIDER_RESULT":
 		return Invalid

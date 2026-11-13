@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+func TestSnapshotStopsRequestsAfterRateLimit(t *testing.T) {
+	f, _ := fixture(t)
+	target := page(dependencyList, 1)
+	f.errors[target] = errors.New("RATE_LIMITED")
+	result := collect(f, Limits{})
+	if f.calls[len(f.calls)-1] != "GET "+target {
+		t.Fatalf("unexpected requests after rate limit: %v", f.calls)
+	}
+	if result.PullRequests.Status.Reason != RateLimited {
+		t.Fatalf("unexpected pull request status: %+v", result.PullRequests.Status)
+	}
+}
+
 func TestSafeFailuresAndNoInventedHistory(t *testing.T) {
 	cases := []struct {
 		err          string
