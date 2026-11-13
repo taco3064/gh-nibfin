@@ -263,3 +263,53 @@ Shutdown waits within the existing collection and transport bounds. The printed
 origin contains no session proof. See [the dashboard contract](docs/dashboard.md)
 for session protection, snapshot limitations and shutdown bounds. Local source
 tests do not certify native browsers, logged-in providers or released support.
+
+## Local release artifacts
+
+From the repository root, using the Go toolchain pinned in `go.mod`:
+
+```sh
+go run ./scripts/release --version v1.2.3
+./dist/gh-nibfin_linux_amd64 version
+```
+
+The version is required and follows SemVer 2.0.0: `MAJOR.MINOR.PATCH`, optionally
+followed by `-prerelease` and `+build` dot-separated identifiers. Numeric core and
+numeric prerelease identifiers cannot have leading zeroes. One optional lowercase
+`v` is removed. The normalized version is embedded and recorded in the manifest.
+`gh nibfin version` and `gh nibfin --version` report the same value when invoked
+as a local extension. Ordinary source builds report `gh-nibfin development`.
+Version reporting does not authenticate or read providers.
+
+The producer cross-builds this checkout with CGO disabled, `-trimpath`, and linker
+flags `-s -w`. It creates only the following persistent output in `dist/`:
+
+- `gh-nibfin_linux_amd64` and `gh-nibfin_linux_arm64`
+- `gh-nibfin_darwin_amd64` and `gh-nibfin_darwin_arm64`
+- `gh-nibfin_windows_amd64.exe` and `gh-nibfin_windows_arm64.exe`
+- `manifest.json` and `SHA256SUMS`
+
+`manifest.json` is an object with `version` (normalized string) and `targets`
+(an array of exactly six objects). Each target contains `filename` (relative
+basename), `os` (`linux`, `darwin`, or `windows`), `arch` (`amd64` or `arm64`),
+`size` (bytes), and `sha256` (lowercase hexadecimal digest of executable bytes).
+`SHA256SUMS` uses standard `digest`, two spaces, `filename` lines for each of the
+six executables and then the manifest. On systems with sha256sum, verify using
+`cd dist && sha256sum -c SHA256SUMS`.
+
+Every invocation requires `dist` to be absent, including symlinks and empty
+folders. Explicitly move or remove the previous output before another run; the
+producer never overwrites unrelated files or mixes versions. There is no custom
+output path. Builds and format validation occur in a temporary sibling directory;
+it is removed on success and ordinary errors. Only a complete validated set is
+renamed to `dist`. A terminated process may leave `.release-*` scratch directories;
+remove these after confirming no producer is using them. Do not run simultaneous
+producers in the same checkout.
+
+For local installation, copy the executable for your host into a separate local
+extension directory named `gh-nibfin` and name the executable `gh-nibfin`
+(`gh-nibfin.exe` on Windows), then use `gh extension install .` there as described
+above. Artifact production itself
+never installs extensions, publishes releases, creates tags, or manages services.
+Cross-compilation validates file formats and architectures; native macOS/Windows
+execution and public availability require their own release verification.
