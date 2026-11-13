@@ -28,11 +28,19 @@ type CommandError struct {
 
 func (e *CommandError) Error() string { return e.Code }
 
+// Version is set by the local release producer. Source builds remain development.
+var Version = "development"
+
 func (a App) Run(args []string, out io.Writer) error {
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
+		_, err := fmt.Fprintln(out, "gh-nibfin "+Version)
+		return err
+	}
 	if len(args) == 0 || len(args) == 1 &&
 		(args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
 			dashboardUsage+"\n"+
+			"Version: gh nibfin version (or --version)\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
