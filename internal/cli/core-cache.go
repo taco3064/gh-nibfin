@@ -74,10 +74,6 @@ func candidateArchive(api API, pins Producers) ([]byte, error) {
 
 func installCoreCache(api API, process Process) (directory string, err error) {
 	pins := Pins()
-	archive, err := candidateArchive(api, pins)
-	if err != nil {
-		return "", err
-	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		return "", errors.New("USER_CACHE_UNAVAILABLE")
@@ -101,6 +97,13 @@ func installCoreCache(api API, process Process) (directory string, err error) {
 		return "", errors.New("UNTRUSTED_CANDIDATE_DIRECTORY")
 	}
 	parent, err = coreVisibleDirectory(process, parent)
+	if err != nil {
+		return "", err
+	}
+	if err := sweepEmptyVerifierDirectories(parent); err != nil {
+		return "", err
+	}
+	archive, err := candidateArchive(api, pins)
 	if err != nil {
 		return "", err
 	}
