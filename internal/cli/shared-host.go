@@ -27,6 +27,16 @@ func (host sharedHost) adoptionStatus(id int64) string {
 	return "required"
 }
 
+func (host sharedHost) verifyInit(api API, executionRepo, runnerPath, runnerName string) error {
+	if runnerPath != "" || runnerName != "" {
+		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
+	}
+	if executionRepo != "" && executionRepo != host.Repository {
+		return errors.New("SHARED_EXECUTION_HOST_CONFLICT")
+	}
+	return verifySharedHost(api, host)
+}
+
 func recheckSharedHost(process Process, api API, planned sharedHost) error {
 	host, err := discoverSharedHost(process)
 	if err != nil {
