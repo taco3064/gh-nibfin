@@ -8,6 +8,10 @@ import (
 )
 
 const sharedRunnerArchive = "actions-runner-linux-x64-2.338.2.tar.gz"
+const (
+	sharedRunnerDownload = "https://github.com/actions/runner/releases/download/v2.338.2/"
+	sharedRunnerHash     = "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
+)
 
 // Cache official packages under the installing user. The protected service
 // installer must verify them again before copying them to the Runner identities.
@@ -23,12 +27,9 @@ func (a App) stageSharedRunnerPackages(plan InitPlan) ([]string, error) {
 }
 
 func (a App) sharedSlotsCache(plan InitPlan) (RunnerApplication, string, error) {
-	app, err := runnerApplication(a.API, plan.Repository.FullName)
+	app, err := sharedRunnerApplication(a.API)
 	if err != nil {
 		return app, "", err
-	}
-	if app.Filename != sharedRunnerArchive {
-		return app, "", errors.New("UNSUPPORTED_SHARED_RUNNER_PACKAGE")
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
@@ -46,6 +47,35 @@ func (a App) sharedSlotsCache(plan InitPlan) (RunnerApplication, string, error) 
 		return app, "", err
 	}
 	return app, parent, nil
+}
+
+func sharedRunnerApplication(api API) (RunnerApplication, error) {
+	const endpoint = "repos/actions/runner/releases/tags/v2.338.2"
+	var release struct {
+		Tag    string `json:"tag_name"`
+		Draft  bool   `json:"draft"`
+		Assets []struct {
+			Name   string `json:"name"`
+			Digest string `json:"digest"`
+			URL    string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := api.Call("GET", endpoint, nil, &release); err != nil {
+		return RunnerApplication{}, err
+	}
+	if release.Tag == "v2.338.2" && !release.Draft {
+		for _, asset := range release.Assets {
+			if asset.Name == sharedRunnerArchive &&
+				asset.Digest == "sha256:"+sharedRunnerHash &&
+				asset.URL == sharedRunnerDownload+sharedRunnerArchive {
+				return RunnerApplication{
+					OS: "linux", Arch: "x64", Filename: asset.Name, Hash: sharedRunnerHash,
+					URL: asset.URL,
+				}, nil
+			}
+		}
+	}
+	return RunnerApplication{}, errors.New("OFFICIAL_SHARED_RUNNER_SOURCE_UNAVAILABLE")
 }
 
 // The privileged Core operation independently verifies archive bytes and slot

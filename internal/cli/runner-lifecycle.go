@@ -63,7 +63,7 @@ func registerRunnerWithLabel(api API, host RunnerHost, repo Repository, user Use
 	if record.State != "created" || record.RunnerID != 0 {
 		return record, errors.New("RUNNER_ALREADY_REGISTERED_OR_PENDING_INSPECT_FIRST")
 	}
-	app, err := runnerApplication(api, repo.FullName)
+	app, err := runnerApplicationForRegistration(api, repo.FullName, additionalLabel)
 	if err != nil {
 		return record, err
 	}
@@ -135,6 +135,19 @@ func registerRunnerWithLabel(api API, host RunnerHost, repo Repository, user Use
 		return record, errors.Join(commandErr, errors.New("RUNNER_LOCAL_RESULT_INCOMPLETE"))
 	}
 	return record, nil
+}
+
+func runnerApplicationForRegistration(api API, repo, label string) (
+	RunnerApplication, error,
+) {
+	app, err := runnerApplication(api, repo)
+	if label != sharedRunnerLabel || err == nil || err.Error() !=
+		"OFFICIAL_RUNNER_SOURCE_UNAVAILABLE" {
+		return app, err
+	}
+	// GitHub may return no per-repository downloads before the first
+	// registration. The shared Worker supports this exact public release.
+	return sharedRunnerApplication(api)
 }
 
 func localRunnerMatches(directory string, record RunnerInstall) error {
