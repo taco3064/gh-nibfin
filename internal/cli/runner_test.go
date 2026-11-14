@@ -96,11 +96,12 @@ func (f *runnerAPI) Call(method, path string, input, output any) error {
 }
 
 type runnerHostFixture struct {
-	api          *runnerAPI
-	calls        int
-	lost         bool
-	keepLocal    bool
-	tokenPresent bool
+	api           *runnerAPI
+	calls         int
+	lost          bool
+	keepLocal     bool
+	tokenPresent  bool
+	disableUpdate bool
 }
 
 func (*runnerHostFixture) Check(string) error { return nil }
@@ -109,15 +110,17 @@ func (f *runnerHostFixture) Configure(root, command string,
 	inputs map[string]string) error {
 	f.calls++
 	f.tokenPresent = inputs["TOKEN"] == runnerTokenSentinel
+	f.disableUpdate = inputs["DISABLEUPDATE"] == "true"
 	if command == "configure" {
 		runner := RunnerInfo{ID: 42, Name: inputs["NAME"], Status: "offline"}
-		runner.Labels = append(runner.Labels, struct {
-			Name string `json:"name"`
-		}{
-			Name: inputs["LABELS"]})
+		for _, label := range strings.Split(inputs["LABELS"], ",") {
+			runner.Labels = append(runner.Labels, struct {
+				Name string `json:"name"`
+			}{Name: label})
+		}
 		f.api.runners = []RunnerInfo{runner}
 		settings := map[string]any{"agentId": 42, "agentName": runner.Name,
-			"gitHubUrl": inputs["URL"]}
+			"gitHubUrl": inputs["URL"], "disableUpdate": f.disableUpdate}
 		data, _ := json.Marshal(settings)
 		if err := os.WriteFile(filepath.Join(root, ".runner"), data, 0600); err != nil {
 			return err

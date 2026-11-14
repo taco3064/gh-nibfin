@@ -54,10 +54,16 @@ func createRunnerPackage(download RunnerDownload, repo Repository, user User,
 
 func registerRunner(api API, host RunnerHost, repo Repository, user User,
 	directory string, record RunnerInstall, now time.Time) (RunnerInstall, error) {
+	return registerRunnerWithLabel(api, host, repo, user, directory, record, now, "")
+}
+
+func registerRunnerWithLabel(api API, host RunnerHost, repo Repository, user User,
+	directory string, record RunnerInstall, now time.Time,
+	additionalLabel string) (RunnerInstall, error) {
 	if record.State != "created" || record.RunnerID != 0 {
 		return record, errors.New("RUNNER_ALREADY_REGISTERED_OR_PENDING_INSPECT_FIRST")
 	}
-	app, err := runnerApplication(api, repo.FullName)
+	app, err := runnerApplicationForRegistration(api, repo.FullName, additionalLabel)
 	if err != nil {
 		return record, err
 	}
@@ -92,17 +98,26 @@ func registerRunner(api API, host RunnerHost, repo Repository, user User,
 		}
 		return record, err
 	}
-	commandErr := host.Configure(directory, "configure", map[string]string{
+	labels := memberLabel(user.ID)
+	if additionalLabel != "" {
+		labels += "," + additionalLabel
+	}
+	inputs := map[string]string{
 		"TOKEN": token, "URL": "https://github.com/" + repo.FullName,
-		"NAME": record.Name, "LABELS": memberLabel(user.ID), "WORK": "_work",
-		"UNATTENDED": "true"})
+		"NAME": record.Name, "LABELS": labels, "WORK": "_work",
+		"UNATTENDED": "true"}
+	if additionalLabel == sharedRunnerLabel {
+		inputs["DISABLEUPDATE"] = "true"
+	}
+	commandErr := host.Configure(directory, "configure", inputs)
 	runners, err = listRunners(api, repo.FullName)
 	if err != nil {
 		return record, errors.Join(commandErr, errors.New("RUNNER_RESULT_READBACK_UNAVAILABLE"))
 	}
 	var matches []RunnerInfo
 	for _, runner := range runners {
-		if runner.Name == record.Name && hasMemberLabel(runner, user.ID) {
+		if runner.Name == record.Name && hasMemberLabel(runner, user.ID) &&
+			(additionalLabel == "" || hasRunnerLabel(runner, additionalLabel)) {
 			matches = append(matches, runner)
 		}
 	}
@@ -120,6 +135,19 @@ func registerRunner(api API, host RunnerHost, repo Repository, user User,
 		return record, errors.Join(commandErr, errors.New("RUNNER_LOCAL_RESULT_INCOMPLETE"))
 	}
 	return record, nil
+}
+
+func runnerApplicationForRegistration(api API, repo, label string) (
+	RunnerApplication, error,
+) {
+	app, err := runnerApplication(api, repo)
+	if label != sharedRunnerLabel || err == nil || err.Error() !=
+		"OFFICIAL_RUNNER_SOURCE_UNAVAILABLE" {
+		return app, err
+	}
+	// GitHub may return no per-repository downloads before the first
+	// registration. The shared Worker supports this exact public release.
+	return sharedRunnerApplication(api)
 }
 
 func localRunnerMatches(directory string, record RunnerInstall) error {

@@ -53,6 +53,35 @@ are refused by init; use the verified upgrade command below. An existing
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
+With a compatible Core pin on Linux x64, plain init plans two shared Runner
+slots. The first repository supplies the execution workflow. On the same
+adopted host, init for a second repository verifies and reuses those slots.
+Each repository keeps its own Issue, CI and project environment.
+`preflight` reports observed registrations and their online state. This
+candidate still requires administrator-managed host adoption and service
+startup before it can execute protected jobs.
+After the execution workflow has merged, run `init --apply` on Linux x64 as
+the repository administrator without root privileges. It stages both
+official Runner packages and registers them offline. A rerun reads back the
+original slots before attempting a missing registration. To inspect or resume
+an individual staged registration, use
+`gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
+while the service is stopped. Keep the administrator's GitHub login store
+outside the service accounts.
+After Core host adoption, run `init --apply --install-shared-service` for the
+execution repository from the original installing account. Run `sudo -v`
+first if that account requires an interactive administrator confirmation.
+Core verifies the cached Runner 2.338.2 archive and original offline Runner
+IDs before preparing the fixed service slots and installing the unit.
+Review the installation result before enabling the two services.
+After enrolling a peer repository on the host, run
+`init --apply --prepare-shared-wake` for that repository to create the
+verified destination variable while shared dispatch is disabled. Existing
+different destinations require inspection. Manage the Wake secret and
+activation separately after validating the host.
+When adding a peer, run `sudo -v` before `init --apply` if the current
+account needs an interactive administrator confirmation for host adoption.
+
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.
 Preview remains read-only. Apply waits for the installation PR to be merged:

@@ -6,8 +6,9 @@ import (
 )
 
 type installBranch struct {
-	Name string
-	SHA  string
+	Name     string
+	SHA      string
+	Existing bool
 }
 
 func createInstallBranch(api API, base string, plan InitPlan) (installBranch, error) {
@@ -15,7 +16,7 @@ func createInstallBranch(api API, base string, plan InitPlan) (installBranch, er
 	var existing reference
 	err := api.Call("GET", base+"/git/ref/heads/"+url.PathEscape(branch), nil, &existing)
 	if err == nil {
-		return installBranch{}, errors.New("INSTALL_BRANCH_EXISTS_INSPECT_BEFORE_RETRY")
+		return readInstallBranch(api, base, plan, branch, existing)
 	}
 	if err.Error() != "NOT_FOUND" {
 		return installBranch{}, err
@@ -73,4 +74,42 @@ func createInstallBranch(api API, base string, plan InitPlan) (installBranch, er
 		}
 	}
 	return installBranch{Name: branch, SHA: created.SHA}, nil
+}
+
+func readInstallBranch(api API, base string, plan InitPlan,
+	branch string, ref reference) (installBranch, error) {
+	invalid := errors.New("INSTALL_BRANCH_EXISTS_INSPECT_BEFORE_RETRY")
+	sha := ref.Object.SHA
+	if ref.Ref != "refs/heads/"+branch || !commitPattern.MatchString(sha) {
+		return installBranch{}, invalid
+	}
+	var compared struct {
+		Ahead  int    `json:"ahead_by"`
+		Status string `json:"status"`
+		Files  []struct {
+			Name   string `json:"filename"`
+			Status string `json:"status"`
+		} `json:"files"`
+	}
+	path := base + "/compare/" + plan.Head + "..." + sha
+	if err := api.Call("GET", path, nil, &compared); err != nil {
+		return installBranch{}, err
+	}
+	if compared.Status != "ahead" || compared.Ahead != 1 ||
+		len(compared.Files) != len(plan.Files) {
+		return installBranch{}, invalid
+	}
+	added := make(map[string]bool, len(compared.Files))
+	for _, file := range compared.Files {
+		if file.Status == "added" {
+			added[file.Name] = true
+		}
+	}
+	for _, file := range plan.Files {
+		data, _, err := content(api, plan.Repository.FullName, file.Path, sha)
+		if err != nil || !added[file.Path] || string(data) != file.Content {
+			return installBranch{}, invalid
+		}
+	}
+	return installBranch{Name: branch, SHA: sha, Existing: true}, nil
 }

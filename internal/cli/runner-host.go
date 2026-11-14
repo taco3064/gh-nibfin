@@ -61,7 +61,8 @@ func runnerEnvironment(inputs map[string]string) []string {
 		path = filepath.Join(os.Getenv("SystemRoot"), "System32")
 	}
 	env = append(env, "PATH="+path)
-	for _, key := range []string{"TOKEN", "URL", "NAME", "LABELS", "WORK", "UNATTENDED"} {
+	keys := []string{"TOKEN", "URL", "NAME", "LABELS", "WORK", "UNATTENDED", "DISABLEUPDATE"}
+	for _, key := range keys {
 		if value, ok := inputs[key]; ok {
 			env = append(env, "ACTIONS_RUNNER_INPUT_"+key+"="+value)
 		}
@@ -90,11 +91,31 @@ func (NativeRunnerHost) Configure(directory, command string,
 	cmd := exec.CommandContext(ctx, runnerEntrypoint(directory), args...)
 	cmd.Dir, cmd.Env = directory, runnerEnvironment(inputs)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if command == "configure" && inputs["DISABLEUPDATE"] == "true" {
+		if readbackErr := protectSharedRegistrationFiles(directory); readbackErr != nil {
+			return readbackErr
+		}
+	}
+	if err != nil {
 		if ctx.Err() != nil {
 			return errors.New("RUNNER_TIMEOUT_RESULT_UNKNOWN")
 		}
 		return errors.New("RUNNER_CONFIGURATION_FAILED_READ_BACK_REQUIRED")
+	}
+	return nil
+}
+
+func protectSharedRegistrationFiles(directory string) error {
+	for _, name := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
+		path := filepath.Join(directory, name)
+		stat, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !stat.Mode().IsRegular() || os.Chmod(path, 0600) != nil {
+			return errors.New("SHARED_RUNNER_REGISTRATION_PERMISSIONS_UNVERIFIED")
+		}
 	}
 	return nil
 }

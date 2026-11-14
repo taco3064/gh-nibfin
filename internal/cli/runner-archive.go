@@ -14,19 +14,39 @@ import (
 	"strings"
 )
 
-type archiveFile func(string, os.FileMode, int64, io.Reader) error
+type archiveFile func(string, os.FileMode, int64, io.Reader, string) error
+
+var runnerNodeCommand = regexp.MustCompile(
+	`^externals/node[0-9]+/bin/(corepack|npm|npx)$`)
+
+func runnerLinkAllowed(name, target string) bool {
+	if !runnerNodeCommand.MatchString(name) {
+		return false
+	}
+	switch filepath.Base(name) {
+	case "corepack":
+		return target == "../lib/node_modules/corepack/dist/corepack.js"
+	case "npm", "npx":
+		return target == "../lib/node_modules/npm/bin/"+filepath.Base(name)+"-cli.js"
+	default:
+		return false
+	}
+}
 
 func walkRunnerArchive(path string, zipped bool, handle archiveFile) error {
 	seen := map[string]bool{}
 	var total int64
-	visit := func(name string, mode os.FileMode, size int64, reader io.Reader) error {
+	visit := func(name string, mode os.FileMode, size int64, reader io.Reader,
+		link string) error {
 		name = strings.TrimPrefix(name, "./")
 		if mode.IsDir() && (name == "" || name == ".") {
 			return nil
 		}
 		name = strings.TrimSuffix(name, "/")
 		if !regexp.MustCompile(`^[A-Za-z0-9._/+@-]+$`).MatchString(name) ||
-			strings.HasPrefix(name, "/") || !mode.IsRegular() && !mode.IsDir() ||
+			strings.HasPrefix(name, "/") ||
+			(!mode.IsRegular() && !mode.IsDir() &&
+				!(mode&os.ModeSymlink != 0 && runnerLinkAllowed(name, link))) ||
 			seen[name] || len(seen) >= 30000 || size < 0 || size > 512*1024*1024 {
 			return errors.New("UNSAFE_RUNNER_ARCHIVE")
 		}
@@ -43,7 +63,7 @@ func walkRunnerArchive(path string, zipped bool, handle archiveFile) error {
 		if mode.IsDir() {
 			return nil
 		}
-		return handle(name, mode, size, reader)
+		return handle(name, mode, size, reader, link)
 	}
 	if zipped {
 		archive, err := zip.OpenReader(path)
@@ -56,7 +76,8 @@ func walkRunnerArchive(path string, zipped bool, handle archiveFile) error {
 			if err != nil {
 				return errors.New("RUNNER_ARCHIVE_READ_FAILED")
 			}
-			visitErr := visit(file.Name, file.Mode(), int64(file.UncompressedSize64), reader)
+			visitErr := visit(file.Name, file.Mode(), int64(file.UncompressedSize64),
+				reader, "")
 			closeErr := reader.Close()
 			if visitErr != nil || closeErr != nil {
 				return errors.Join(visitErr, closeErr)
@@ -84,7 +105,11 @@ func walkRunnerArchive(path string, zipped bool, handle archiveFile) error {
 			return errors.New("INVALID_RUNNER_ARCHIVE")
 		}
 		mode := header.FileInfo().Mode()
-		if err := visit(header.Name, mode, header.Size, reader); err != nil {
+		link := ""
+		if mode&os.ModeSymlink != 0 {
+			link = header.Linkname
+		}
+		if err := visit(header.Name, mode, header.Size, reader, link); err != nil {
 			return err
 		}
 	}
@@ -92,10 +117,16 @@ func walkRunnerArchive(path string, zipped bool, handle archiveFile) error {
 
 func unpackRunner(archive, destination string, zipped bool) error {
 	return walkRunnerArchive(archive, zipped,
-		func(name string, mode os.FileMode, size int64, reader io.Reader) error {
+		func(name string, mode os.FileMode, size int64, reader io.Reader, link string) error {
 			path := filepath.Join(destination, filepath.FromSlash(name))
 			if os.MkdirAll(filepath.Dir(path), 0700) != nil {
 				return errors.New("RUNNER_EXTRACTION_FAILED")
+			}
+			if link != "" {
+				if err := os.Symlink(filepath.FromSlash(link), path); err != nil {
+					return errors.New("RUNNER_EXTRACTION_FAILED")
+				}
+				return nil
 			}
 			file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY,
 				0600|mode&0100)
@@ -112,6 +143,11 @@ func unpackRunner(archive, destination string, zipped bool) error {
 }
 
 func verifyRunnerFiles(directory string, app RunnerApplication) error {
+	return verifyRunnerPackage(directory, app, false)
+}
+
+func verifyRunnerPackage(directory string, app RunnerApplication, staged bool,
+	transientFiles ...string) error {
 	if err := rejectRunnerOverrides(directory); err != nil {
 		return err
 	}
@@ -132,16 +168,34 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 	}
 	privatePaths := []string{directory, archive}
 	privateDirectories := map[string]bool{directory: true}
+	files := map[string]bool{archive: true, filepath.Join(directory, runnerRecordName): true}
+	for _, name := range transientFiles {
+		files[filepath.Join(directory, name)] = true
+	}
 	err = walkRunnerArchive(archive, strings.HasSuffix(app.Filename, ".zip"),
-		func(name string, _ os.FileMode, size int64, reader io.Reader) error {
+		func(name string, _ os.FileMode, size int64, reader io.Reader, link string) error {
 			path := filepath.Join(directory, filepath.FromSlash(name))
-			privatePaths = append(privatePaths, path)
+			files[path] = true
 			parent := filepath.Dir(path)
 			for !privateDirectories[parent] {
 				privateDirectories[parent] = true
 				privatePaths = append(privatePaths, parent)
 				parent = filepath.Dir(parent)
 			}
+			if link != "" {
+				target, err := os.Readlink(path)
+				if err != nil || target != filepath.FromSlash(link) {
+					return errors.New("RUNNER_PACKAGE_CHANGED")
+				}
+				expected := filepath.Join(filepath.Dir(path), filepath.FromSlash(link))
+				resolved, err := filepath.EvalSymlinks(path)
+				if err != nil || resolved != expected {
+					return errors.New("UNTRUSTED_RUNNER_FILE")
+				}
+				privatePaths = append(privatePaths, expected)
+				return nil
+			}
+			privatePaths = append(privatePaths, path)
 			resolved, err := filepath.EvalSymlinks(path)
 			if err != nil || resolved != path {
 				return errors.New("UNTRUSTED_RUNNER_FILE")
@@ -162,6 +216,18 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 		})
 	if err != nil {
 		return err
+	}
+	if staged {
+		err := filepath.WalkDir(directory, func(path string, entry os.DirEntry,
+			err error) error {
+			if err != nil || !(files[path] || entry.IsDir() && privateDirectories[path]) {
+				return errors.New("UNEXPECTED_STAGED_RUNNER_FILE")
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return requirePrivateRunnerPaths(privatePaths)
 }

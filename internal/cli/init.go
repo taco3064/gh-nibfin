@@ -13,11 +13,12 @@ type Change struct {
 }
 
 type InitPlan struct {
-	Repository Repository `json:"repository"`
-	Member     User       `json:"member"`
-	Head       string     `json:"head"`
-	Files      []Change   `json:"files"`
-	Labels     []string   `json:"labels"`
+	Repository Repository       `json:"repository"`
+	Member     User             `json:"member"`
+	Head       string           `json:"head"`
+	Files      []Change         `json:"files"`
+	Labels     []string         `json:"labels"`
+	Execution  *SharedExecution `json:"shared_execution,omitempty"`
 }
 
 type reference struct {
@@ -28,6 +29,10 @@ type reference struct {
 }
 
 func planInit(api API, name string) (InitPlan, error) {
+	return planInitWithExecution(api, name, "")
+}
+
+func planInitWithExecution(api API, name, execution string) (InitPlan, error) {
 	repo, user, err := repository(api, name, false)
 	plan := InitPlan{Repository: repo, Member: user, Files: []Change{}, Labels: []string{}}
 	if err != nil {
@@ -54,6 +59,11 @@ func planInit(api API, name string) (InitPlan, error) {
 		return plan, err
 	}
 	files := templates(pins, user.ID, recipes)
+	if execution != "" {
+		if err := planSharedExecution(api, &plan, files, pins.Core, execution); err != nil {
+			return plan, err
+		}
+	}
 	paths := make([]string, 0, len(files))
 	for path := range files {
 		paths = append(paths, path)
@@ -90,20 +100,36 @@ func planInit(api API, name string) (InitPlan, error) {
 }
 
 type InitResult struct {
-	Status string `json:"status"`
-	Code   string `json:"code"`
-	PR     string `json:"pull_request,omitempty"`
+	Status          string               `json:"status"`
+	Code            string               `json:"code"`
+	PR              string               `json:"pull_request,omitempty"`
+	Wake            string               `json:"shared_wake,omitempty"`
+	HostAdoption    string               `json:"shared_host_adoption,omitempty"`
+	RunnerPackages  []string             `json:"shared_runner_packages,omitempty"`
+	RunnerSlots     []sharedRegistration `json:"shared_runners,omitempty"`
+	ServiceTemplate string               `json:"shared_service_template,omitempty"`
+	WakeDestination string               `json:"shared_wake_destination,omitempty"`
 }
 
 func applyInit(api API, plan InitPlan) (InitResult, error) {
 	result := InitResult{Status: "pending", Code: "INSTALLATION_INCOMPLETE"}
-	current, err := planInit(api, plan.Repository.FullName)
+	execution := ""
+	if plan.Execution != nil {
+		execution = plan.Execution.Repository
+	}
+	current, err := planInitWithExecution(api, plan.Repository.FullName, execution)
 	if err != nil {
 		return result, err
 	}
 	if current.Head != plan.Head || len(current.Files) != len(plan.Files) ||
-		current.Member.ID != plan.Member.ID {
+		current.Member.ID != plan.Member.ID ||
+		!sameSharedExecution(current.Execution, plan.Execution) {
 		return result, errors.New("INSTALLATION_PLAN_CHANGED")
+	}
+	for index, file := range current.Files {
+		if file != plan.Files[index] {
+			return result, errors.New("INSTALLATION_PLAN_CHANGED")
+		}
 	}
 	base := "repos/" + plan.Repository.FullName
 	if len(plan.Files) > 0 {
@@ -131,7 +157,12 @@ func applyInit(api API, plan InitPlan) (InitResult, error) {
 		_ = writeErr // Read-back, not the initial response, establishes the effect.
 	}
 	if len(plan.Files) == 0 {
-		result.Status, result.Code = "completed", "INITIALIZATION_READ_BACK"
+		if plan.Execution != nil {
+			result.Code = "SHARED_HOST_ADOPTION_REQUIRED"
+			result.Wake = sharedWakeConfiguration(api, plan.Repository.FullName, *plan.Execution)
+		} else {
+			result.Status, result.Code = "completed", "INITIALIZATION_READ_BACK"
+		}
 	} else {
 		result.Code = "INSTALLATION_PR_REQUIRES_REVIEW_AND_MERGE"
 	}
