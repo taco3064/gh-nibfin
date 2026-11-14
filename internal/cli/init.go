@@ -100,11 +100,12 @@ func planInitWithExecution(api API, name, execution string) (InitPlan, error) {
 }
 
 type InitResult struct {
-	Status       string `json:"status"`
-	Code         string `json:"code"`
-	PR           string `json:"pull_request,omitempty"`
-	Wake         string `json:"shared_wake,omitempty"`
-	HostAdoption string `json:"shared_host_adoption,omitempty"`
+	Status         string   `json:"status"`
+	Code           string   `json:"code"`
+	PR             string   `json:"pull_request,omitempty"`
+	Wake           string   `json:"shared_wake,omitempty"`
+	HostAdoption   string   `json:"shared_host_adoption,omitempty"`
+	RunnerPackages []string `json:"shared_runner_packages,omitempty"`
 }
 
 func applyInit(api API, plan InitPlan) (InitResult, error) {
