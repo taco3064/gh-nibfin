@@ -16,7 +16,13 @@ var runnerNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 const runnerManagementLock = ".nibfin-management.lock"
 
-func (a App) runRunner(args []string, out io.Writer) (err error) {
+func (a App) runRunner(args []string, out io.Writer) error {
+	return a.runRunnerForInstall(args, out, nil)
+}
+
+func (a App) runRunnerForInstall(
+	args []string, out io.Writer, plan *InitPlan,
+) (err error) {
 	if len(args) == 0 {
 		return errors.New("RUNNER_COMMAND_REQUIRED")
 	}
@@ -41,6 +47,9 @@ func (a App) runRunner(args []string, out io.Writer) (err error) {
 	repo, user, err := repository(a.API, *name, true)
 	if err != nil {
 		return err
+	}
+	if plan != nil && (user.ID != plan.Member.ID || repo.ID != plan.Repository.ID) {
+		return errors.New("INSTALLATION_PLAN_CHANGED")
 	}
 	encoder := json.NewEncoder(out)
 	if command == "list" {

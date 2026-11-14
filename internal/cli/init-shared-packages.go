@@ -91,6 +91,12 @@ func (a App) stageRunnerSlots(plan InitPlan, parent string,
 			if err := verifyRunnerPackage(path, app, true); err != nil {
 				return nil, err
 			}
+		case record.State == "registration-pending" && record.RunnerID >= 0:
+			// Registration owns reconciliation under the management lock.
+			// A partial native write must never look like a fresh package.
+			if err := verifyRunnerFiles(path, app); err != nil {
+				return nil, err
+			}
 		case record.State == "registered" && record.RunnerID > 0:
 			if _, err := readRegisteredSharedSlot(a.API, plan.Repository,
 				plan.Member, path, record); err != nil {

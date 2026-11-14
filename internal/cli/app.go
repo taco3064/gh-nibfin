@@ -188,6 +188,9 @@ func (a App) Run(args []string, out io.Writer) error {
 		plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID &&
 		result.Code == "SHARED_HOST_ADOPTION_REQUIRED" {
 		result.RunnerPackages, err = a.stageSharedRunnerPackages(plan)
+		if err == nil {
+			result.RunnerSlots, err = a.registerInitSharedSlots(plan, result.RunnerPackages)
+		}
 	}
 	if err == nil && host != nil {
 		result.HostAdoption = host.adoptionStatus(plan.Repository.ID)

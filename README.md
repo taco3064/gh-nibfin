@@ -60,13 +60,14 @@ Each repository keeps its own Issue, CI and project environment.
 `preflight` reports observed registrations and their online state. This
 candidate still requires administrator-managed host adoption and service
 startup before it can execute protected jobs.
-After the execution workflow has merged, Linux x64 init stages both official
-Runner packages. The administrator can register a staged slot using
+After the execution workflow has merged, run `init --apply` on Linux x64 as
+the repository administrator without root privileges. It stages both
+official Runner packages and registers them offline. A rerun reads back the
+original slots before attempting a missing registration. To inspect or resume
+an individual staged registration, use
 `gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
-under the intended Runner account, while the service is stopped. Supply its
-authorized GitHub session for this invocation only. Keep the administrator's
-GitHub login store outside the Runner account and clear the temporary credential
-before starting the service.
+while the service is stopped. Keep the administrator's GitHub login store
+outside the service accounts.
 With the packaged systemd template, prepare the first package in
 `/var/lib/nibfin/runners/slot-1` and the second in
 `/var/lib/nibfin/runners/slot-2` before registering. Those fixed directories

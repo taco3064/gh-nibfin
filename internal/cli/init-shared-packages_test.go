@@ -49,6 +49,18 @@ func TestInitSharedRunnerPackagesResumeMissingSlotWithoutRegistration(t *testing
 	if err := os.Remove(credentials); err != nil {
 		t.Fatal(err)
 	}
+	record, err := readRunnerRecord(first, plan.Repository, plan.Member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.State = "registration-pending"
+	if err := writeRunnerRecord(first, record); err != nil {
+		t.Fatal(err)
+	}
+	if paths, err := a.stageRunnerSlots(plan, parent, api.app); err != nil ||
+		len(paths) != 2 || api.tokens != 0 || attempts != 3 {
+		t.Fatal("pending registration must reach reconciliation without replacement")
+	}
 	if err := os.WriteFile(filepath.Join(first, ".nibfin-runner-package"),
 		[]byte("changed"), 0600); err != nil {
 		t.Fatal(err)
