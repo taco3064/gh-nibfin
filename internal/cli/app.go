@@ -77,12 +77,14 @@ func (a App) Run(args []string, out io.Writer) error {
 	runnerPath := flags.String("runner-directory", "", "Private Runner directory")
 	runnerName := flags.String("runner-name", "", "Name of the repository Runner")
 	executionRepo := flags.String("execution-repo", "", "Shared execution repository")
+	installService := flags.Bool("install-shared-service", false,
+		"Install the verified shared Runner unit without starting it")
 	quick := addQuickFlags(flags)
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_INIT_ARGUMENTS")
 	}
 	if quick.used() {
-		if *executionRepo != "" {
+		if *executionRepo != "" || *installService {
 			return errors.New("SHARED_EXECUTION_QUICK_OPTIONS_CONFLICT")
 		}
 		return a.runQuick(*name, *runnerPath, *runnerName, *apply, quick, out)
@@ -93,6 +95,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	host, err := discoverSharedHost(a.Process)
 	if err != nil {
 		return err
+	}
+	if *installService && (host == nil || *runnerPath != "" || *runnerName != "") {
+		return errors.New("SHARED_SERVICE_REQUIRES_ADOPTED_HOST")
 	}
 	defaultShared := false
 	var registrations []sharedRegistration
@@ -115,6 +120,10 @@ func (a App) Run(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if *installService && (plan.Execution == nil ||
+		plan.Repository.ID != plan.Execution.RepositoryID) {
+		return errors.New("SHARED_SERVICE_REQUIRES_EXECUTION_REPOSITORY")
+	}
 	var runner *initRunner
 	if *runnerPath != "" || *runnerName != "" {
 		runner, err = a.planInitRunner(plan, *runnerPath, *runnerName)
@@ -132,6 +141,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	if host != nil {
 		preview["shared_runners"] = registrations
 		preview["shared_host_adoption"] = host.adoptionStatus(plan.Repository.ID)
+		if *installService {
+			preview["shared_service_template"] = "planned"
+		}
 	} else if plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID {
 		preview["planned_shared_runner_count"] = 2
 	}
@@ -165,6 +177,9 @@ func (a App) Run(args []string, out io.Writer) error {
 		if result.Code == "SHARED_HOST_ADOPTION_REQUIRED" &&
 			result.HostAdoption == "observed" {
 			result.Code = "SHARED_PROTECTED_EXECUTION_UNVERIFIED"
+		}
+		if *installService && result.Code == "SHARED_PROTECTED_EXECUTION_UNVERIFIED" {
+			result.ServiceTemplate, err = installSharedService(a.Process)
 		}
 	}
 	if err != nil {

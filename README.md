@@ -68,7 +68,10 @@ authorized GitHub session for this invocation only. Keep the administrator's
 GitHub login store outside the Runner account and clear the temporary credential
 before starting the service.
 A repeated registration checks the original offline Runner ID.
-Service startup and Core adoption remain separate.
+After Core host adoption, run `init --apply --install-shared-service` for the
+execution repository to install the verified unit. This uses the host
+administrator's existing permission. Review the unit installation result
+before enabling the two services.
 
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.
