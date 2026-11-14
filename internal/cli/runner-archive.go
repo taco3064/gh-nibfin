@@ -146,7 +146,8 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 	return verifyRunnerPackage(directory, app, false)
 }
 
-func verifyRunnerPackage(directory string, app RunnerApplication, staged bool) error {
+func verifyRunnerPackage(directory string, app RunnerApplication, staged bool,
+	transientFiles ...string) error {
 	if err := rejectRunnerOverrides(directory); err != nil {
 		return err
 	}
@@ -168,6 +169,9 @@ func verifyRunnerPackage(directory string, app RunnerApplication, staged bool) e
 	privatePaths := []string{directory, archive}
 	privateDirectories := map[string]bool{directory: true}
 	files := map[string]bool{archive: true, filepath.Join(directory, runnerRecordName): true}
+	for _, name := range transientFiles {
+		files[filepath.Join(directory, name)] = true
+	}
 	err = walkRunnerArchive(archive, strings.HasSuffix(app.Filename, ".zip"),
 		func(name string, _ os.FileMode, size int64, reader io.Reader, link string) error {
 			path := filepath.Join(directory, filepath.FromSlash(name))

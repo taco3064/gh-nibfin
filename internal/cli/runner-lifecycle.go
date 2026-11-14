@@ -54,6 +54,12 @@ func createRunnerPackage(download RunnerDownload, repo Repository, user User,
 
 func registerRunner(api API, host RunnerHost, repo Repository, user User,
 	directory string, record RunnerInstall, now time.Time) (RunnerInstall, error) {
+	return registerRunnerWithLabel(api, host, repo, user, directory, record, now, "")
+}
+
+func registerRunnerWithLabel(api API, host RunnerHost, repo Repository, user User,
+	directory string, record RunnerInstall, now time.Time,
+	additionalLabel string) (RunnerInstall, error) {
 	if record.State != "created" || record.RunnerID != 0 {
 		return record, errors.New("RUNNER_ALREADY_REGISTERED_OR_PENDING_INSPECT_FIRST")
 	}
@@ -92,9 +98,13 @@ func registerRunner(api API, host RunnerHost, repo Repository, user User,
 		}
 		return record, err
 	}
+	labels := memberLabel(user.ID)
+	if additionalLabel != "" {
+		labels += "," + additionalLabel
+	}
 	commandErr := host.Configure(directory, "configure", map[string]string{
 		"TOKEN": token, "URL": "https://github.com/" + repo.FullName,
-		"NAME": record.Name, "LABELS": memberLabel(user.ID), "WORK": "_work",
+		"NAME": record.Name, "LABELS": labels, "WORK": "_work",
 		"UNATTENDED": "true"})
 	runners, err = listRunners(api, repo.FullName)
 	if err != nil {
@@ -102,7 +112,8 @@ func registerRunner(api API, host RunnerHost, repo Repository, user User,
 	}
 	var matches []RunnerInfo
 	for _, runner := range runners {
-		if runner.Name == record.Name && hasMemberLabel(runner, user.ID) {
+		if runner.Name == record.Name && hasMemberLabel(runner, user.ID) &&
+			(additionalLabel == "" || hasRunnerLabel(runner, additionalLabel)) {
 			matches = append(matches, runner)
 		}
 	}

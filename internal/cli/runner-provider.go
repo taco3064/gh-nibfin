@@ -19,6 +19,15 @@ type RunnerInfo struct {
 
 func memberLabel(id int64) string { return fmt.Sprintf("nibfin-user-%d", id) }
 
+func hasRunnerLabel(runner RunnerInfo, label string) bool {
+	for _, current := range runner.Labels {
+		if current.Name == label {
+			return true
+		}
+	}
+	return false
+}
+
 func listRunners(api API, repo string) ([]RunnerInfo, error) {
 	runners := []RunnerInfo{}
 	for page := 1; page <= 100; page++ {

@@ -60,6 +60,12 @@ Each repository keeps its own Issue, CI and project environment.
 `preflight` reports observed registrations and their online state. This
 candidate still requires administrator-managed host adoption and service
 startup before it can execute protected jobs.
+After the execution workflow has merged, Linux x64 init stages both official
+Runner packages. The administrator can register a staged slot using
+`gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
+under the intended Runner account with an authorized GitHub session.
+A repeated registration checks the original offline Runner ID.
+Service startup and Core adoption remain separate.
 
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.

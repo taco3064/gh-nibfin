@@ -62,7 +62,7 @@ func (a App) stageRunnerSlots(plan InitPlan, parent string,
 	app RunnerApplication) ([]string, error) {
 	var paths []string
 	for slot := 1; slot <= 2; slot++ {
-		name := fmt.Sprintf("nibfin-%d-%d-%d", plan.Repository.ID, plan.Member.ID, slot)
+		name := sharedRunnerSlotName(plan.Repository.ID, plan.Member.ID, slot)
 		path, err := runnerDirectory(filepath.Join(parent, name))
 		if err != nil {
 			return nil, err
@@ -93,4 +93,8 @@ func (a App) stageRunnerSlots(plan InitPlan, parent string,
 		paths = append(paths, path)
 	}
 	return paths, nil
+}
+
+func sharedRunnerSlotName(repositoryID, memberID int64, slot int) string {
+	return fmt.Sprintf("nibfin-%d-%d-%d", repositoryID, memberID, slot)
 }
