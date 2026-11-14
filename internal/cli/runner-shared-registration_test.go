@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+func TestSharedSlotPathMatchesServiceInstance(t *testing.T) {
+	first, second := sharedRunnerSlotName(10, 7, 1), sharedRunnerSlotName(10, 7, 2)
+	for _, test := range []struct {
+		path, name string
+		valid      bool
+	}{
+		{"/var/lib/nibfin/runners/slot-1", first, true},
+		{"/var/lib/nibfin/runners/slot-2", second, true},
+		{"/var/lib/nibfin/runners/slot-2", first, false},
+		{"/var/lib/nibfin/runners/slot-1", "unrelated", false},
+		{filepath.Join("cache", first), first, true},
+	} {
+		if sharedSlotPathMatches(test.path, test.name, first, second) != test.valid {
+			t.Fatalf("unexpected slot path decision for %q and %q", test.path, test.name)
+		}
+	}
+}
+
 func TestSharedRegistrationRecoversOnlyAnObservedOfflineSlot(t *testing.T) {
 	a, api, host, path := runnerFixture(t)
 	repo := api.data["repos/example/project"].(Repository)

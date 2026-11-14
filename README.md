@@ -67,6 +67,10 @@ under the intended Runner account, while the service is stopped. Supply its
 authorized GitHub session for this invocation only. Keep the administrator's
 GitHub login store outside the Runner account and clear the temporary credential
 before starting the service.
+With the packaged systemd template, prepare the first package in
+`/var/lib/nibfin/runners/slot-1` and the second in
+`/var/lib/nibfin/runners/slot-2` before registering. Those fixed directories
+are bound to the corresponding slot names in the local registration record.
 A repeated registration checks the original offline Runner ID.
 After Core host adoption, run `init --apply --install-shared-service` for the
 execution repository to install the verified unit. This uses the host

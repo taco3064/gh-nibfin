@@ -13,8 +13,7 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 	record RunnerInstall, now time.Time) (RunnerInstall, error) {
 	first := sharedRunnerSlotName(repo.ID, user.ID, 1)
 	second := sharedRunnerSlotName(repo.ID, user.ID, 2)
-	if record.Name != first && record.Name != second ||
-		filepath.Base(path) != record.Name {
+	if !sharedSlotPathMatches(path, record.Name, first, second) {
 		return record, errors.New("SHARED_RUNNER_SLOT_IDENTITY_MISMATCH")
 	}
 	host, err := discoverSharedHost(a.Process)
@@ -59,6 +58,17 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 		return record, err
 	}
 	return readRegisteredSharedSlot(a.API, repo, user, path, record)
+}
+
+func sharedSlotPathMatches(path, name, first, second string) bool {
+	switch name {
+	case first:
+		return filepath.Base(path) == name || path == "/var/lib/nibfin/runners/slot-1"
+	case second:
+		return filepath.Base(path) == name || path == "/var/lib/nibfin/runners/slot-2"
+	default:
+		return false
+	}
 }
 
 func reconcileSharedRegistration(api API, repo Repository, user User, path string,
