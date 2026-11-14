@@ -120,7 +120,7 @@ func (f *runnerHostFixture) Configure(root, command string,
 		}
 		f.api.runners = []RunnerInfo{runner}
 		settings := map[string]any{"agentId": 42, "agentName": runner.Name,
-			"gitHubUrl": inputs["URL"]}
+			"gitHubUrl": inputs["URL"], "disableUpdate": f.disableUpdate}
 		data, _ := json.Marshal(settings)
 		if err := os.WriteFile(filepath.Join(root, ".runner"), data, 0600); err != nil {
 			return err
