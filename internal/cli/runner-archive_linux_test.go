@@ -3,6 +3,7 @@ package cli
 import (
 	"archive/tar"
 	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,26 +59,36 @@ func TestLiveOfficialRunnerArchive(t *testing.T) {
 	if source == "" || !digestPattern.MatchString(hash) {
 		t.Skip("verified official Runner archive is not supplied")
 	}
-	root := t.TempDir()
-	if err := initializePrivateRunnerDirectory(root); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	archive := filepath.Join(root, ".nibfin-runner-package")
-	if err := os.WriteFile(archive, data, 0600); err != nil {
-		t.Fatal(err)
+	a, api, _, directory := runnerFixture(t)
+	plan := InitPlan{
+		Repository: api.data["repos/example/project"].(Repository),
+		Member:     api.data["user"].(User),
 	}
 	app := RunnerApplication{Filename: "runner.tar.gz", Hash: hash}
-	if err := unpackRunner(archive, root, false); err != nil {
-		t.Fatal(err)
+	a.Download = func(_ RunnerApplication, destination string) error {
+		file, err := os.Open(source)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(out, file)
+		closeErr := out.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
 	}
-	if err := verifyRunnerFiles(root, app); err != nil {
-		t.Fatal(err)
+	paths, err := a.stageRunnerSlots(plan, filepath.Dir(directory), app)
+	if err != nil || len(paths) != 2 {
+		t.Fatalf("expected both official Runner packages, got %v: %v", paths, err)
 	}
-	if err := (NativeRunnerHost{}).Check(root); err != nil {
-		t.Fatal(err)
+	for _, root := range paths {
+		if err := (NativeRunnerHost{}).Check(root); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
