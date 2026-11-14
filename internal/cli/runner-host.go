@@ -61,7 +61,8 @@ func runnerEnvironment(inputs map[string]string) []string {
 		path = filepath.Join(os.Getenv("SystemRoot"), "System32")
 	}
 	env = append(env, "PATH="+path)
-	for _, key := range []string{"TOKEN", "URL", "NAME", "LABELS", "WORK", "UNATTENDED"} {
+	keys := []string{"TOKEN", "URL", "NAME", "LABELS", "WORK", "UNATTENDED", "DISABLEUPDATE"}
+	for _, key := range keys {
 		if value, ok := inputs[key]; ok {
 			env = append(env, "ACTIONS_RUNNER_INPUT_"+key+"="+value)
 		}
