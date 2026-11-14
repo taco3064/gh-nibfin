@@ -213,6 +213,9 @@ func (a App) Run(args []string, out io.Writer) error {
 			if err == nil {
 				result.ServiceTemplate, err = installSharedService(a.Process, sources)
 			}
+			if err == nil {
+				err = retireStagedRegistration(sources)
+			}
 		}
 		if err == nil && (*prepareWake || peer) &&
 			result.Code == "SHARED_PROTECTED_EXECUTION_UNVERIFIED" {
