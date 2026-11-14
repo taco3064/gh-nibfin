@@ -6,6 +6,30 @@ import (
 	"slices"
 )
 
+var errLegacySharedHost = errors.New("INSTALLED_CORE_LACKS_SHARED_HOST_INSPECTION")
+
+func readInstalledSharedHost(process Process, node, entry string) (*sharedHost, error) {
+	const inspect = "inspect-shared-host"
+	if process == nil {
+		return nil, errors.New("SHARED_HOST_INSPECTION_UNAVAILABLE")
+	}
+	output, err := process.Run(node, []string{entry, inspect}, nil)
+	if err == nil {
+		return decodeSharedHost(output)
+	}
+	// A supported inspection that failed must never look like a fresh host.
+	var help struct {
+		Commands []string `json:"commands"`
+	}
+	output, err = process.Run(node, []string{entry, "help"}, nil)
+	if err == nil && json.Unmarshal(output, &help) == nil &&
+		slices.Contains(help.Commands, "contract") &&
+		!slices.Contains(help.Commands, inspect) {
+		return nil, errLegacySharedHost
+	}
+	return nil, errors.New("SHARED_HOST_INSPECTION_UNAVAILABLE")
+}
+
 type sharedHost struct {
 	SharedExecution
 	SchemaVersion        int     `json:"schemaVersion"`

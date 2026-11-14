@@ -95,7 +95,9 @@ func (a App) Run(args []string, out io.Writer) error {
 		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
 	}
 	host, err := discoverSharedHost(a.Process)
-	if err != nil {
+	legacyHost := errors.Is(err, errLegacySharedHost)
+	if err != nil && (!legacyHost || *executionRepo != "" || *installService ||
+		*prepareWake || *runnerPath != "" || *runnerName != "") {
 		return err
 	}
 	if *installService && (host == nil || *runnerPath != "" || *runnerName != "") {
@@ -113,7 +115,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		}
 		*executionRepo = host.Repository
 	} else if *executionRepo == "" && *runnerPath == "" && *runnerName == "" &&
-		nativeSharedHostSupported() {
+		!legacyHost && nativeSharedHostSupported() {
 		*executionRepo = *name
 		defaultShared = true
 	}
@@ -143,6 +145,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	encoder.SetIndent("", "  ")
 	preview := map[string]any{"status": "preview", "plan": plan,
 		"protected_execution": "unverified"}
+	if legacyHost {
+		preview["shared_host_adoption"] = "installed_core_upgrade_required"
+	}
 	if runner != nil {
 		preview["runner_setup"] = runner
 	}

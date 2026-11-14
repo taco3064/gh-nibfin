@@ -27,14 +27,7 @@ func discoverSharedHost(process Process) (*sharedHost, error) {
 	if err != nil {
 		return nil, err
 	}
-	if process == nil {
-		return nil, errors.New("SHARED_HOST_INSPECTION_UNAVAILABLE")
-	}
-	output, err := process.Run(node, []string{entry, "inspect-shared-host"}, nil)
-	if err != nil {
-		return nil, errors.New("SHARED_HOST_INSPECTION_UNAVAILABLE")
-	}
-	return decodeSharedHost(output)
+	return readInstalledSharedHost(process, node, entry)
 }
 
 func trustedSharedCore() (string, string, error) {
