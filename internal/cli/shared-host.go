@@ -8,12 +8,23 @@ import (
 
 type sharedHost struct {
 	SharedExecution
-	SchemaVersion int   `json:"schemaVersion"`
-	MemberID      int64 `json:"memberId"`
-	Runners       []struct {
+	SchemaVersion        int     `json:"schemaVersion"`
+	MemberID             int64   `json:"memberId"`
+	AdoptedRepositoryIDs []int64 `json:"adoptedRepositoryIds"`
+	Runners              []struct {
 		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	} `json:"runners"`
+}
+
+func (host sharedHost) adoptionStatus(id int64) string {
+	if host.AdoptedRepositoryIDs == nil {
+		return "unverified"
+	}
+	if slices.Contains(host.AdoptedRepositoryIDs, id) {
+		return "observed"
+	}
+	return "required"
 }
 
 func recheckSharedHost(process Process, api API, planned sharedHost) error {
@@ -22,7 +33,8 @@ func recheckSharedHost(process Process, api API, planned sharedHost) error {
 		return err
 	}
 	if host == nil || host.SharedExecution != planned.SharedExecution ||
-		host.MemberID != planned.MemberID || !slices.Equal(host.Runners, planned.Runners) {
+		host.MemberID != planned.MemberID || !slices.Equal(host.Runners, planned.Runners) ||
+		!slices.Equal(host.AdoptedRepositoryIDs, planned.AdoptedRepositoryIDs) {
 		return errors.New("SHARED_EXECUTION_HOST_CHANGED")
 	}
 	return verifySharedHost(api, *host)

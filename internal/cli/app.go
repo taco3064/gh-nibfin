@@ -135,6 +135,7 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	if host != nil {
 		preview["shared_runners"] = host.Runners
+		preview["shared_host_adoption"] = host.adoptionStatus(plan.Repository.ID)
 	} else if plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID {
 		preview["planned_shared_runner_count"] = 2
 	}
@@ -158,6 +159,13 @@ func (a App) Run(args []string, out io.Writer) error {
 		}
 	}
 	result, err := applyInit(a.API, plan)
+	if err == nil && host != nil {
+		result.HostAdoption = host.adoptionStatus(plan.Repository.ID)
+		if result.Code == "SHARED_HOST_ADOPTION_REQUIRED" &&
+			result.HostAdoption == "observed" {
+			result.Code = "SHARED_PROTECTED_EXECUTION_UNVERIFIED"
+		}
+	}
 	if err != nil {
 		result.Code = err.Error()
 		_ = encoder.Encode(result)
