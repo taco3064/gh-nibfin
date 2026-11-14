@@ -90,26 +90,20 @@ func (a App) Run(args []string, out io.Writer) error {
 	if *executionRepo != "" && (*runnerPath != "" || *runnerName != "") {
 		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
 	}
-	var host *sharedHost
+	host, err := discoverSharedHost(a.Process)
+	if err != nil {
+		return err
+	}
 	defaultShared := false
-	if *runnerPath == "" && *runnerName == "" {
-		var err error
-		host, err = discoverSharedHost(a.Process)
-		if err != nil {
+	if host != nil {
+		if err := host.verifyInit(a.API, *executionRepo, *runnerPath, *runnerName); err != nil {
 			return err
 		}
-		if host != nil {
-			if *executionRepo != "" && *executionRepo != host.Repository {
-				return errors.New("SHARED_EXECUTION_HOST_CONFLICT")
-			}
-			if err := verifySharedHost(a.API, *host); err != nil {
-				return err
-			}
-			*executionRepo = host.Repository
-		} else if *executionRepo == "" && nativeSharedHostSupported() {
-			*executionRepo = *name
-			defaultShared = true
-		}
+		*executionRepo = host.Repository
+	} else if *executionRepo == "" && *runnerPath == "" && *runnerName == "" &&
+		nativeSharedHostSupported() {
+		*executionRepo = *name
+		defaultShared = true
 	}
 	plan, err := planInitWithExecution(a.API, *name, *executionRepo)
 	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {

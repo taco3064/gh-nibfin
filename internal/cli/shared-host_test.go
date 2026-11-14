@@ -26,9 +26,19 @@ func TestSharedHostRequiresBothOriginalRegistrations(t *testing.T) {
 		"total_count": 2, "runners": []any{runner(25, "slot-1"), runner(26, "slot-2")},
 	}
 	for range 2 {
-		if err := verifySharedHost(api, *host); err != nil {
+		if err := host.verifyInit(api, "", "", ""); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, options := range [][2]string{{"/runner", ""}, {"", "third-slot"}} {
+		err := host.verifyInit(api, "", options[0], options[1])
+		if err == nil || err.Error() != "SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT" {
+			t.Fatalf("shared host must refuse a legacy Runner request, got %v", err)
+		}
+	}
+	if err := host.verifyInit(api, "example/other", "", ""); err == nil ||
+		err.Error() != "SHARED_EXECUTION_HOST_CONFLICT" {
+		t.Fatalf("shared host must refuse a different execution repository, got %v", err)
 	}
 	api.data[path] = map[string]any{
 		"total_count": 2, "runners": []any{runner(25, "slot-1"), runner(27, "slot-2")},
