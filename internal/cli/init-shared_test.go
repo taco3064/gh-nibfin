@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"net/url"
+	"strings"
+	"testing"
+)
 
 func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	api := initFixture()
@@ -42,5 +46,43 @@ func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	}
 	if len(api.writes) != 0 {
 		t.Fatal("planning must not write to GitHub")
+	}
+}
+
+func TestSharedInitReusesExactOpenPR(t *testing.T) {
+	api := initFixture()
+	base := "repos/example/project"
+	head := strings.Repeat("a", 40)
+	sha := strings.Repeat("c", 40)
+	branch := "nibfin/init-" + head[:12]
+	repo := api.data[base].(Repository)
+	plan := InitPlan{Repository: repo, Head: head,
+		Execution: &SharedExecution{Repository: repo.FullName, RepositoryID: repo.ID},
+		Files:     []Change{{Path: sharedRunnerWorkflow, Content: "name: Shared\n"}}}
+	ref := reference{Ref: "refs/heads/" + branch}
+	ref.Object.SHA = sha
+	api.data[base+"/git/ref/heads/"+url.PathEscape(branch)] = ref
+	compare := base + "/compare/" + head + "..." + sha
+	api.data[compare] = map[string]any{"ahead_by": 1, "status": "ahead",
+		"files": []map[string]string{{"filename": sharedRunnerWorkflow, "status": "added"}}}
+	file := base + "/contents/" + sharedRunnerWorkflow + "?ref=" + sha
+	api.data[file] = encoded([]byte(plan.Files[0].Content))
+	pull := installPR{Number: 8, State: "open",
+		URL: "https://github.com/example/project/pull/8"}
+	pull.Head.Ref, pull.Head.SHA, pull.Base.Ref = branch, sha, "main"
+	query := "?state=open&head=" + url.QueryEscape("example:"+branch)
+	api.data[base+"/pulls"+query] = []installPR{pull}
+	api.data[base+"/pulls/8"] = pull
+	resumed, err := createInstallBranch(api, base, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := createInstallPR(api, plan, resumed)
+	if err != nil || got != pull.URL || len(api.writes) != 0 {
+		t.Fatalf("expected existing PR without writes, got %q, %v", got, err)
+	}
+	api.data[file] = encoded([]byte("name: Replaced\n"))
+	if _, err := createInstallBranch(api, base, plan); err == nil {
+		t.Fatal("modified installation branch must be refused")
 	}
 }

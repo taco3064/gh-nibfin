@@ -103,6 +103,7 @@ type InitResult struct {
 	Status string `json:"status"`
 	Code   string `json:"code"`
 	PR     string `json:"pull_request,omitempty"`
+	Wake   string `json:"shared_wake,omitempty"`
 }
 
 func applyInit(api API, plan InitPlan) (InitResult, error) {
@@ -153,6 +154,7 @@ func applyInit(api API, plan InitPlan) (InitResult, error) {
 	if len(plan.Files) == 0 {
 		if plan.Execution != nil {
 			result.Code = "SHARED_HOST_ADOPTION_REQUIRED"
+			result.Wake = sharedWakeConfiguration(api, plan.Repository.FullName, *plan.Execution)
 		} else {
 			result.Status, result.Code = "completed", "INITIALIZATION_READ_BACK"
 		}
