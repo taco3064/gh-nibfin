@@ -49,8 +49,12 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 		runnerManagementLock); err != nil {
 		return record, err
 	}
-	return registerRunnerWithLabel(a.API, a.Runner, repo, user, path, record, now,
+	record, err = registerRunnerWithLabel(a.API, a.Runner, repo, user, path, record, now,
 		sharedRunnerLabel)
+	if err != nil {
+		return record, err
+	}
+	return readRegisteredSharedSlot(a.API, repo, user, path, record)
 }
 
 func readRegisteredSharedSlot(api API, repo Repository, user User, path string,

@@ -135,6 +135,12 @@ func (a App) runRunner(args []string, out io.Writer) (err error) {
 		return &CommandError{Code: "RUNNER_OPERATION_INCOMPLETE_INSPECT_BEFORE_RETRY",
 			Exit: exit}
 	}
-	return encoder.Encode(map[string]any{"status": "completed", "command": command,
-		"record": record, "core_binding": "unverified", "service_changes": "none"})
+	result := map[string]any{"status": "completed", "command": command,
+		"record": record, "core_binding": "unverified", "service_changes": "none"}
+	if *shared {
+		result["runner_status"] = "offline"
+		result["host_adoption"] = "required"
+		result["protected_execution"] = "unverified"
+	}
+	return encoder.Encode(result)
 }
