@@ -143,6 +143,10 @@ func unpackRunner(archive, destination string, zipped bool) error {
 }
 
 func verifyRunnerFiles(directory string, app RunnerApplication) error {
+	return verifyRunnerPackage(directory, app, false)
+}
+
+func verifyRunnerPackage(directory string, app RunnerApplication, staged bool) error {
 	if err := rejectRunnerOverrides(directory); err != nil {
 		return err
 	}
@@ -163,9 +167,11 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 	}
 	privatePaths := []string{directory, archive}
 	privateDirectories := map[string]bool{directory: true}
+	files := map[string]bool{archive: true, filepath.Join(directory, runnerRecordName): true}
 	err = walkRunnerArchive(archive, strings.HasSuffix(app.Filename, ".zip"),
 		func(name string, _ os.FileMode, size int64, reader io.Reader, link string) error {
 			path := filepath.Join(directory, filepath.FromSlash(name))
+			files[path] = true
 			parent := filepath.Dir(path)
 			for !privateDirectories[parent] {
 				privateDirectories[parent] = true
@@ -206,6 +212,18 @@ func verifyRunnerFiles(directory string, app RunnerApplication) error {
 		})
 	if err != nil {
 		return err
+	}
+	if staged {
+		err := filepath.WalkDir(directory, func(path string, entry os.DirEntry,
+			err error) error {
+			if err != nil || !(files[path] || entry.IsDir() && privateDirectories[path]) {
+				return errors.New("UNEXPECTED_STAGED_RUNNER_FILE")
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return requirePrivateRunnerPaths(privatePaths)
 }

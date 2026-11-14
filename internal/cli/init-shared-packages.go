@@ -87,19 +87,10 @@ func (a App) stageRunnerSlots(plan InitPlan, parent string,
 			record.Application != app {
 			return nil, errors.New("SHARED_RUNNER_PACKAGE_CONFLICT_INSPECT_BEFORE_RETRY")
 		}
-		if err := verifyStagedRunnerSlot(path, app); err != nil {
+		if err := verifyRunnerPackage(path, app, true); err != nil {
 			return nil, err
 		}
 		paths = append(paths, path)
 	}
 	return paths, nil
-}
-
-func verifyStagedRunnerSlot(path string, app RunnerApplication) error {
-	for _, file := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
-		if _, err := os.Lstat(filepath.Join(path, file)); !errors.Is(err, os.ErrNotExist) {
-			return errors.New("SHARED_RUNNER_PACKAGE_CONFLICT_INSPECT_BEFORE_RETRY")
-		}
-	}
-	return verifyRunnerFiles(path, app)
 }
