@@ -31,14 +31,16 @@ func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	execution.ID, execution.FullName = 20, "example/execution"
 	api.data["repos/"+execution.FullName] = execution
 	base := "repos/" + execution.FullName
-	ref := reference{Ref: "refs/heads/main"}
-	ref.Object.SHA = strings.Repeat("d", 40)
-	api.data[base+"/git/ref/heads/main"] = ref
+	head := strings.Repeat("d", 40)
+	branch := map[string]any{
+		"name": "main", "protected": true, "commit": map[string]string{"sha": head},
+	}
+	api.data[base+"/branches/main"] = branch
 	workflowPath := base + "/actions/workflows/shared-runner.yml"
 	api.data[workflowPath] = map[string]any{
 		"id": 42, "path": sharedRunnerWorkflow, "state": "active",
 	}
-	path := base + "/contents/" + sharedRunnerWorkflow + "?ref=" + ref.Object.SHA
+	path := base + "/contents/" + sharedRunnerWorkflow + "?ref=" + head
 	api.data[path] = encoded(workflow)
 	plan, err = planInitWithExecution(api, project.FullName, execution.FullName)
 	if err != nil {
@@ -47,6 +49,12 @@ func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	if len(plan.Files) != 4 || plan.Execution.RepositoryID != execution.ID {
 		t.Fatalf("peer must reuse the execution workflow: %+v", plan)
 	}
+	branch["protected"] = false
+	_, err = planInitWithExecution(api, project.FullName, execution.FullName)
+	if err == nil || err.Error() != "SHARED_EXECUTION_BRANCH_UNPROTECTED" {
+		t.Fatalf("unprotected execution branch must be rejected, got %v", err)
+	}
+	branch["protected"] = true
 	api.data[path] = encoded([]byte("name: Replaced workflow\n"))
 	_, err = planInitWithExecution(api, project.FullName, execution.FullName)
 	if err == nil || err.Error() != "SHARED_EXECUTION_WORKFLOW_MISMATCH" {

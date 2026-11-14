@@ -107,14 +107,22 @@ func planSharedExecution(api API, plan *InitPlan, files map[string]string,
 
 func verifySharedExecutionWorkflow(api API, repo Repository, expected []byte) error {
 	base := "repos/" + repo.FullName
-	var ref reference
-	refPath := base + "/git/ref/heads/" + url.PathEscape(repo.DefaultBranch)
-	if err := api.Call("GET", refPath, nil, &ref); err != nil {
+	var branch struct {
+		Name      string `json:"name"`
+		Protected bool   `json:"protected"`
+		Commit    struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	branchPath := base + "/branches/" + url.PathEscape(repo.DefaultBranch)
+	if err := api.Call("GET", branchPath, nil, &branch); err != nil {
 		return err
 	}
-	wantRef := "refs/heads/" + repo.DefaultBranch
-	if ref.Ref != wantRef || !commitPattern.MatchString(ref.Object.SHA) {
+	if branch.Name != repo.DefaultBranch || !commitPattern.MatchString(branch.Commit.SHA) {
 		return errors.New("SHARED_EXECUTION_DEFAULT_BRANCH_UNAVAILABLE")
+	}
+	if !branch.Protected {
+		return errors.New("SHARED_EXECUTION_BRANCH_UNPROTECTED")
 	}
 	var workflow struct {
 		ID    int64  `json:"id"`
@@ -129,7 +137,7 @@ func verifySharedExecutionWorkflow(api API, repo Repository, expected []byte) er
 		workflow.State != "active" {
 		return errors.New("SHARED_EXECUTION_WORKFLOW_UNAVAILABLE")
 	}
-	current, _, err := content(api, repo.FullName, sharedRunnerWorkflow, ref.Object.SHA)
+	current, _, err := content(api, repo.FullName, sharedRunnerWorkflow, branch.Commit.SHA)
 	if err != nil {
 		return err
 	}
