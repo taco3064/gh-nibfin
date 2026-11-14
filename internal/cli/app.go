@@ -95,8 +95,10 @@ func (a App) Run(args []string, out io.Writer) error {
 		return err
 	}
 	defaultShared := false
+	var registrations []sharedRegistration
 	if host != nil {
-		if err := host.verifyInit(a.API, *executionRepo, *runnerPath, *runnerName); err != nil {
+		registrations, err = host.verifyInit(a.API, *executionRepo, *runnerPath, *runnerName)
+		if err != nil {
 			return err
 		}
 		*executionRepo = host.Repository
@@ -128,7 +130,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		preview["runner_setup"] = runner
 	}
 	if host != nil {
-		preview["shared_runners"] = host.Runners
+		preview["shared_runners"] = registrations
 		preview["shared_host_adoption"] = host.adoptionStatus(plan.Repository.ID)
 	} else if plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID {
 		preview["planned_shared_runner_count"] = 2

@@ -17,33 +17,43 @@ func TestSharedHostRequiresBothOriginalRegistrations(t *testing.T) {
 	}
 	path := "repos/example/project/actions/runners?per_page=100&page=1"
 	runner := func(id int, name string) map[string]any {
-		return map[string]any{"id": id, "name": name, "os": "Linux", "labels": []any{
-			map[string]string{"name": "nibfin-user-7"},
-			map[string]string{"name": "nibfin-shared"},
-		}}
+		status := "online"
+		if id == 26 {
+			status = "offline"
+		}
+		return map[string]any{"id": id, "name": name, "os": "Linux",
+			"status": status, "busy": id == 25, "labels": []any{
+				map[string]string{"name": "nibfin-user-7"},
+				map[string]string{"name": "nibfin-shared"},
+			}}
 	}
 	api.data[path] = map[string]any{
 		"total_count": 2, "runners": []any{runner(25, "slot-1"), runner(26, "slot-2")},
 	}
 	for range 2 {
-		if err := host.verifyInit(api, "", "", ""); err != nil {
+		runners, err := host.verifyInit(api, "", "", "")
+		if err != nil {
 			t.Fatal(err)
+		}
+		if len(runners) != 2 || !runners[0].Busy || runners[0].Status != "online" ||
+			runners[1].Status != "offline" {
+			t.Fatalf("expected online busy and offline registrations, got %+v", runners)
 		}
 	}
 	for _, options := range [][2]string{{"/runner", ""}, {"", "third-slot"}} {
-		err := host.verifyInit(api, "", options[0], options[1])
+		_, err := host.verifyInit(api, "", options[0], options[1])
 		if err == nil || err.Error() != "SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT" {
 			t.Fatalf("shared host must refuse a legacy Runner request, got %v", err)
 		}
 	}
-	if err := host.verifyInit(api, "example/other", "", ""); err == nil ||
+	if _, err := host.verifyInit(api, "example/other", "", ""); err == nil ||
 		err.Error() != "SHARED_EXECUTION_HOST_CONFLICT" {
 		t.Fatalf("shared host must refuse a different execution repository, got %v", err)
 	}
 	api.data[path] = map[string]any{
 		"total_count": 2, "runners": []any{runner(25, "slot-1"), runner(27, "slot-2")},
 	}
-	if err := verifySharedHost(api, *host); err == nil ||
+	if _, err := verifySharedHost(api, *host); err == nil ||
 		err.Error() != "SHARED_RUNNER_REGISTRATION_CHANGED" {
 		t.Fatalf("replacement registration must be rejected, got %v", err)
 	}

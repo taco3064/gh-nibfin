@@ -17,6 +17,13 @@ type sharedHost struct {
 	} `json:"runners"`
 }
 
+type sharedRegistration struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Busy   bool   `json:"busy"`
+}
+
 func (host sharedHost) adoptionStatus(id int64) string {
 	if host.AdoptedRepositoryIDs == nil {
 		return "unverified"
@@ -28,12 +35,12 @@ func (host sharedHost) adoptionStatus(id int64) string {
 }
 
 func (host sharedHost) verifyInit(api API, executionRepo, runnerPath,
-	runnerName string) error {
+	runnerName string) ([]sharedRegistration, error) {
 	if runnerPath != "" || runnerName != "" {
-		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
+		return nil, errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
 	}
 	if executionRepo != "" && executionRepo != host.Repository {
-		return errors.New("SHARED_EXECUTION_HOST_CONFLICT")
+		return nil, errors.New("SHARED_EXECUTION_HOST_CONFLICT")
 	}
 	return verifySharedHost(api, host)
 }
@@ -48,7 +55,8 @@ func recheckSharedHost(process Process, api API, planned sharedHost) error {
 		!slices.Equal(host.AdoptedRepositoryIDs, planned.AdoptedRepositoryIDs) {
 		return errors.New("SHARED_EXECUTION_HOST_CHANGED")
 	}
-	return verifySharedHost(api, *host)
+	_, err = verifySharedHost(api, *host)
+	return err
 }
 
 func decodeSharedHost(bytes []byte) (*sharedHost, error) {
@@ -66,19 +74,20 @@ func decodeSharedHost(bytes []byte) (*sharedHost, error) {
 	return &host, nil
 }
 
-func verifySharedHost(api API, host sharedHost) error {
+func verifySharedHost(api API, host sharedHost) ([]sharedRegistration, error) {
 	repo, user, err := repository(api, host.Repository, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if repo.ID != host.RepositoryID || repo.FullName != host.Repository ||
 		user.ID != host.MemberID {
-		return errors.New("SHARED_EXECUTION_HOST_CONFLICT")
+		return nil, errors.New("SHARED_EXECUTION_HOST_CONFLICT")
 	}
 	runners, err := listRunners(api, repo.FullName)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	registrations := make([]sharedRegistration, 0, len(host.Runners))
 	for _, binding := range host.Runners {
 		matches := 0
 		for _, runner := range runners {
@@ -87,13 +96,17 @@ func verifySharedHost(api API, host sharedHost) error {
 				for _, label := range runner.Labels {
 					if label.Name == "nibfin-shared" {
 						matches++
+						registrations = append(registrations, sharedRegistration{
+							ID: runner.ID, Name: runner.Name,
+							Status: runner.Status, Busy: runner.Busy,
+						})
 					}
 				}
 			}
 		}
 		if matches != 1 {
-			return errors.New("SHARED_RUNNER_REGISTRATION_CHANGED")
+			return nil, errors.New("SHARED_RUNNER_REGISTRATION_CHANGED")
 		}
 	}
-	return nil
+	return registrations, nil
 }
