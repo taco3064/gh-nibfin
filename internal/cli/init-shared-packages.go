@@ -87,6 +87,44 @@ func (a App) readStagedSharedSlots(plan InitPlan,
 	return paths, nil
 }
 
+var stagedSecrets = []string{".credentials", ".credentials_rsaparams"}
+
+func retireStagedRegistration(paths []string) error {
+	for _, path := range paths {
+		lockPath := filepath.Join(path, runnerManagementLock)
+		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return errors.New("RUNNER_MANAGEMENT_IN_PROGRESS_INSPECT_BEFORE_RETRY")
+		}
+		if err := lock.Close(); err != nil {
+			return errors.New("RUNNER_MANAGEMENT_LOCK_UNRESOLVED")
+		}
+		err = removeStagedRegistrationSecrets(path)
+		if release := os.Remove(lockPath); err != nil || release != nil {
+			return errors.New("STAGED_RUNNER_CREDENTIAL_CLEANUP_REQUIRED")
+		}
+	}
+	return nil
+}
+
+func removeStagedRegistrationSecrets(path string) error {
+	for _, name := range stagedSecrets {
+		file := filepath.Join(path, name)
+		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if _, err := os.Lstat(file); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("STAGED_RUNNER_CREDENTIAL_CLEANUP_REQUIRED")
+		}
+	}
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
+}
+
 func sharedRunnerPackageDirectory(cache string, plan InitPlan,
 	hash string) (string, error) {
 	if !digestPattern.MatchString(hash) {
