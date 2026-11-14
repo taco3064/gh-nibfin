@@ -107,6 +107,7 @@ type InitResult struct {
 	HostAdoption    string   `json:"shared_host_adoption,omitempty"`
 	RunnerPackages  []string `json:"shared_runner_packages,omitempty"`
 	ServiceTemplate string   `json:"shared_service_template,omitempty"`
+	WakeDestination string   `json:"shared_wake_destination,omitempty"`
 }
 
 func applyInit(api API, plan InitPlan) (InitResult, error) {
