@@ -6,10 +6,14 @@ func TestSharedHostRequiresBothOriginalRegistrations(t *testing.T) {
 	api := initFixture()
 	host, err := decodeSharedHost([]byte(`{
 		"schemaVersion": 1, "repository": "example/project", "repositoryId": 10,
-		"memberId": 7, "runners": [{"id":25,"name":"slot-1"},{"id":26,"name":"slot-2"}]
+		"memberId": 7, "adoptedRepositoryIds": [10, 20],
+		"runners": [{"id":25,"name":"slot-1"},{"id":26,"name":"slot-2"}]
 	}`))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if host.adoptionStatus(20) != "observed" || host.adoptionStatus(21) != "required" {
+		t.Fatal("Runner reuse must distinguish adopted and new repositories")
 	}
 	path := "repos/example/project/actions/runners?per_page=100&page=1"
 	runner := func(id int, name string) map[string]any {
