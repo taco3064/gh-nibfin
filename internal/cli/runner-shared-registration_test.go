@@ -74,6 +74,9 @@ func TestSharedOfflineRegistrationRequiresBothNativeLabels(t *testing.T) {
 	if err != nil || record.State != "registered" {
 		t.Fatalf("shared registration result: %+v, %v", record, err)
 	}
+	if !host.disableUpdate {
+		t.Fatal("shared slots must disable automatic replacement of the Worker gate")
+	}
 	if len(api.runners) != 1 || api.runners[0].Status != "offline" ||
 		!hasMemberLabel(api.runners[0], member.ID) ||
 		!hasRunnerLabel(api.runners[0], sharedRunnerLabel) {

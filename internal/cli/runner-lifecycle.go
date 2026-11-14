@@ -102,10 +102,14 @@ func registerRunnerWithLabel(api API, host RunnerHost, repo Repository, user Use
 	if additionalLabel != "" {
 		labels += "," + additionalLabel
 	}
-	commandErr := host.Configure(directory, "configure", map[string]string{
+	inputs := map[string]string{
 		"TOKEN": token, "URL": "https://github.com/" + repo.FullName,
 		"NAME": record.Name, "LABELS": labels, "WORK": "_work",
-		"UNATTENDED": "true"})
+		"UNATTENDED": "true"}
+	if additionalLabel == sharedRunnerLabel {
+		inputs["DISABLEUPDATE"] = "true"
+	}
+	commandErr := host.Configure(directory, "configure", inputs)
 	runners, err = listRunners(api, repo.FullName)
 	if err != nil {
 		return record, errors.Join(commandErr, errors.New("RUNNER_RESULT_READBACK_UNAVAILABLE"))
