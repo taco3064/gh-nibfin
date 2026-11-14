@@ -21,19 +21,41 @@ func (a App) stageSharedRunnerPackages(plan InitPlan) ([]string, error) {
 	if err != nil {
 		return nil, errors.New("USER_CACHE_UNAVAILABLE")
 	}
-	parent := filepath.Join(cache, "Nibfin", "shared-runners",
-		fmt.Sprintf("%d-%d", plan.Repository.ID, plan.Member.ID), app.Hash)
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return nil, errors.New("SHARED_RUNNER_PACKAGE_DIRECTORY_UNAVAILABLE")
+	if err := os.MkdirAll(cache, 0700); err != nil {
+		return nil, errors.New("USER_CACHE_UNAVAILABLE")
 	}
-	canonical, err := filepath.EvalSymlinks(parent)
-	if err != nil || canonical != parent {
-		return nil, errors.New("UNTRUSTED_SHARED_RUNNER_PACKAGE_DIRECTORY")
+	cache, err = filepath.EvalSymlinks(cache)
+	if err != nil {
+		return nil, errors.New("USER_CACHE_UNAVAILABLE")
 	}
-	if err := requirePrivateRunnerPaths([]string{parent}); err != nil {
+	parent, err := sharedRunnerPackageDirectory(cache, plan, app.Hash)
+	if err != nil {
 		return nil, err
 	}
 	return a.stageRunnerSlots(plan, parent, app)
+}
+
+func sharedRunnerPackageDirectory(cache string, plan InitPlan,
+	hash string) (string, error) {
+	if !digestPattern.MatchString(hash) {
+		return "", errors.New("SHARED_RUNNER_PACKAGE_DIRECTORY_UNAVAILABLE")
+	}
+	member := fmt.Sprintf("%d-%d", plan.Repository.ID, plan.Member.ID)
+	parent := cache
+	for _, segment := range []string{"Nibfin", "shared-runners", member, hash} {
+		parent = filepath.Join(parent, segment)
+		if err := os.Mkdir(parent, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", errors.New("SHARED_RUNNER_PACKAGE_DIRECTORY_UNAVAILABLE")
+		}
+		info, err := os.Lstat(parent)
+		if err != nil || !info.IsDir() {
+			return "", errors.New("UNTRUSTED_SHARED_RUNNER_PACKAGE_DIRECTORY")
+		}
+		if err := requirePrivateRunnerPaths([]string{parent}); err != nil {
+			return "", err
+		}
+	}
+	return parent, nil
 }
 
 func (a App) stageRunnerSlots(plan InitPlan, parent string,
