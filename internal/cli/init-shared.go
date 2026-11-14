@@ -56,6 +56,22 @@ type actionsVariable struct {
 	Value string `json:"value"`
 }
 
+func requireInactiveSharedWake(api API, repo string) error {
+	path := "repos/" + repo + "/actions/variables/" + sharedPoolVariable
+	var pool actionsVariable
+	err := api.Call("GET", path, nil, &pool)
+	if err != nil {
+		if err.Error() == "NOT_FOUND" {
+			return nil
+		}
+		return err
+	}
+	if pool.Name != sharedPoolVariable || pool.Value != "false" {
+		return errors.New("SHARED_WAKE_MUST_BE_DISABLED_DURING_INSTALLATION")
+	}
+	return nil
+}
+
 // Prepare a new destination while dispatch is disabled. Never repoint an
 // existing route or set the activation variable as part of installation.
 func prepareSharedWakeDestination(api API, repo string,
@@ -75,13 +91,8 @@ func prepareSharedWakeDestination(api API, repo string,
 	if err.Error() != "NOT_FOUND" {
 		return "", err
 	}
-	var pool actionsVariable
-	err = api.Call("GET", base+"/"+sharedPoolVariable, nil, &pool)
-	if err != nil && err.Error() != "NOT_FOUND" {
+	if err := requireInactiveSharedWake(api, repo); err != nil {
 		return "", err
-	}
-	if err == nil && (pool.Name != sharedPoolVariable || pool.Value != "false") {
-		return "", errors.New("SHARED_WAKE_MUST_BE_DISABLED_DURING_INSTALLATION")
 	}
 	value, err := json.Marshal(execution)
 	if err != nil {
