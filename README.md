@@ -63,7 +63,10 @@ startup before it can execute protected jobs.
 After the execution workflow has merged, Linux x64 init stages both official
 Runner packages. The administrator can register a staged slot using
 `gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
-under the intended Runner account with an authorized GitHub session.
+under the intended Runner account, while the service is stopped. Supply its
+authorized GitHub session for this invocation only. Keep the administrator's
+GitHub login store outside the Runner account and clear the temporary credential
+before starting the service.
 A repeated registration checks the original offline Runner ID.
 Service startup and Core adoption remain separate.
 
