@@ -16,11 +16,12 @@ type capability struct {
 }
 
 type preflightReport struct {
-	HostOS    string       `json:"host_os"`
-	HostArch  string       `json:"host_arch"`
-	Core      SourcePin    `json:"core_candidate"`
-	Checks    []capability `json:"checks"`
-	Readiness string       `json:"protected_execution"`
+	HostOS        string               `json:"host_os"`
+	HostArch      string               `json:"host_arch"`
+	Core          SourcePin            `json:"core_candidate"`
+	Checks        []capability         `json:"checks"`
+	Readiness     string               `json:"protected_execution"`
+	SharedRunners []sharedRegistration `json:"shared_runners,omitempty"`
 }
 
 func probe(name string, data []byte, err error) capability {
@@ -64,6 +65,12 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 		}
 	}
 	report.Checks = append(report.Checks, permission)
+	if permission.Status == "available" && nativeSharedHostSupported() {
+		host, sharedErr := discoverSharedHost(a.Process)
+		check, runners := inspectSharedRegistrations(a.API, repo, host, sharedErr)
+		report.Checks = append(report.Checks, check)
+		report.SharedRunners = runners
+	}
 	for _, tool := range []string{"gh", "git", "node", "codex"} {
 		data, err := a.Process.Run(tool, []string{"--version"}, nil)
 		report.Checks = append(report.Checks, probe(tool, data, err))
@@ -99,6 +106,35 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 		return errors.New("OUTPUT_UNAVAILABLE")
 	}
 	return &CommandError{Code: "PREFLIGHT_PROTECTED_EXECUTION_UNVERIFIED", Exit: 2}
+}
+
+func inspectSharedRegistrations(api API, repo Repository, host *sharedHost,
+	discoveryErr error) (capability, []sharedRegistration) {
+	check := capability{"shared_runner_pool", "unverified", "SHARED_HOST_NOT_CONFIGURED"}
+	if discoveryErr != nil {
+		check.Code = "SHARED_HOST_INSPECTION_UNAVAILABLE"
+		return check, nil
+	}
+	if host == nil {
+		return check, nil
+	}
+	runners, err := verifySharedHost(api, *host)
+	if err != nil {
+		check.Code = "SHARED_RUNNER_REGISTRATIONS_UNVERIFIED"
+		return check, nil
+	}
+	if host.adoptionStatus(repo.ID) != "observed" {
+		check.Code = "SHARED_TARGET_ADOPTION_UNVERIFIED"
+		return check, runners
+	}
+	for _, runner := range runners {
+		if runner.Status != "online" {
+			check.Code = "SHARED_RUNNER_NOT_ONLINE"
+			return check, runners
+		}
+	}
+	return capability{"shared_runner_pool", "observed", "SHARED_RUNNER_SLOTS_ONLINE"},
+		runners
 }
 
 func (a App) inspectManagedRunner(directory string,

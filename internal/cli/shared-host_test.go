@@ -50,6 +50,14 @@ func TestSharedHostRequiresBothOriginalRegistrations(t *testing.T) {
 		err.Error() != "SHARED_EXECUTION_HOST_CONFLICT" {
 		t.Fatalf("shared host must refuse a different execution repository, got %v", err)
 	}
+	check, observed := inspectSharedRegistrations(api, Repository{ID: 20}, host, nil)
+	if check.Code != "SHARED_RUNNER_NOT_ONLINE" || len(observed) != 2 {
+		t.Fatalf("preflight must expose the offline slot, got %+v", check)
+	}
+	check, _ = inspectSharedRegistrations(api, Repository{ID: 21}, host, nil)
+	if check.Code != "SHARED_TARGET_ADOPTION_UNVERIFIED" {
+		t.Fatalf("preflight must distinguish an unadopted Repo, got %+v", check)
+	}
 	api.data[path] = map[string]any{
 		"total_count": 2, "runners": []any{runner(25, "slot-1"), runner(27, "slot-2")},
 	}
