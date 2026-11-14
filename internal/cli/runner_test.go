@@ -111,10 +111,11 @@ func (f *runnerHostFixture) Configure(root, command string,
 	f.tokenPresent = inputs["TOKEN"] == runnerTokenSentinel
 	if command == "configure" {
 		runner := RunnerInfo{ID: 42, Name: inputs["NAME"], Status: "offline"}
-		runner.Labels = append(runner.Labels, struct {
-			Name string `json:"name"`
-		}{
-			Name: inputs["LABELS"]})
+		for _, label := range strings.Split(inputs["LABELS"], ",") {
+			runner.Labels = append(runner.Labels, struct {
+				Name string `json:"name"`
+			}{Name: label})
+		}
 		f.api.runners = []RunnerInfo{runner}
 		settings := map[string]any{"agentId": 42, "agentName": runner.Name,
 			"gitHubUrl": inputs["URL"]}

@@ -94,7 +94,7 @@ func verifySharedHost(api API, host sharedHost) ([]sharedRegistration, error) {
 			if runner.ID == binding.ID && runner.Name == binding.Name &&
 				runner.OS == "Linux" && hasMemberLabel(runner, user.ID) {
 				for _, label := range runner.Labels {
-					if label.Name == "nibfin-shared" {
+					if label.Name == sharedRunnerLabel {
 						matches++
 						registrations = append(registrations, sharedRegistration{
 							ID: runner.ID, Name: runner.Name,

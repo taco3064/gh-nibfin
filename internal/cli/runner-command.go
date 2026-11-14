@@ -14,6 +14,8 @@ import (
 
 var runnerNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
+const runnerManagementLock = ".nibfin-management.lock"
+
 func (a App) runRunner(args []string, out io.Writer) (err error) {
 	if len(args) == 0 {
 		return errors.New("RUNNER_COMMAND_REQUIRED")
@@ -29,8 +31,12 @@ func (a App) runRunner(args []string, out io.Writer) (err error) {
 	directory := flags.String("directory", "", "Absolute private Runner directory")
 	runnerName := flags.String("name", "", "Runner name for creation")
 	apply := flags.Bool("apply", false, "Perform the specified management operation")
+	shared := flags.Bool("shared", false, "Register an offline shared Runner slot")
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_RUNNER_ARGUMENTS")
+	}
+	if *shared && (command != "register" || !nativeSharedHostSupported()) {
+		return errors.New("SHARED_RUNNER_REGISTRATION_REQUIRES_LINUX_X64")
 	}
 	repo, user, err := repository(a.API, *name, true)
 	if err != nil {
@@ -81,7 +87,7 @@ func (a App) runRunner(args []string, out io.Writer) (err error) {
 		return nil
 	}
 	if command != "create" {
-		lockPath := filepath.Join(path, ".nibfin-management.lock")
+		lockPath := filepath.Join(path, runnerManagementLock)
 		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
 			return errors.New("RUNNER_MANAGEMENT_IN_PROGRESS_INSPECT_BEFORE_RETRY")
@@ -108,7 +114,11 @@ func (a App) runRunner(args []string, out io.Writer) (err error) {
 	case "create":
 		record, err = createRunner(a.API, a.Download, repo, user, *runnerName, path)
 	case "register":
-		record, err = registerRunner(a.API, a.Runner, repo, user, path, record, clock())
+		if *shared {
+			record, err = a.registerSharedSlot(repo, user, path, record, clock())
+		} else {
+			record, err = registerRunner(a.API, a.Runner, repo, user, path, record, clock())
+		}
 	case "unregister":
 		record, err = unregisterRunner(a.API, a.Runner, repo, user, path, record, clock())
 	case "remove":
