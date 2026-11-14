@@ -83,12 +83,24 @@ func (a App) stageRunnerSlots(plan InitPlan, parent string,
 		if err != nil {
 			return nil, err
 		}
-		if record.State != "created" || record.RunnerID != 0 || record.Name != name ||
-			record.Application != app {
+		if record.Name != name || record.Application != app {
 			return nil, errors.New("SHARED_RUNNER_PACKAGE_CONFLICT_INSPECT_BEFORE_RETRY")
 		}
-		if err := verifyRunnerPackage(path, app, true); err != nil {
-			return nil, err
+		switch {
+		case record.State == "created" && record.RunnerID == 0:
+			if err := verifyRunnerPackage(path, app, true); err != nil {
+				return nil, err
+			}
+		case record.State == "registered" && record.RunnerID > 0:
+			if _, err := readRegisteredSharedSlot(a.API, plan.Repository,
+				plan.Member, path, record); err != nil {
+				return nil, err
+			}
+			if err := verifyRunnerFiles(path, app); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, errors.New("SHARED_RUNNER_PACKAGE_CONFLICT_INSPECT_BEFORE_RETRY")
 		}
 		paths = append(paths, path)
 	}

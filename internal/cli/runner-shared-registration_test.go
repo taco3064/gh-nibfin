@@ -34,6 +34,11 @@ func TestSharedOfflineRegistrationRequiresBothNativeLabels(t *testing.T) {
 		t.Fatalf("offline resume must verify the original registration: %+v, %v",
 			observed, err)
 	}
+	plan := InitPlan{Repository: repo, Member: member}
+	paths, err := a.stageRunnerSlots(plan, filepath.Dir(directory), api.app)
+	if err != nil || len(paths) != 2 || paths[0] != path || api.tokens != 1 {
+		t.Fatalf("init after partial registration must reuse slot one: %v, %v", paths, err)
+	}
 	api.runners[0].Status = "online"
 	if _, err := readRegisteredSharedSlot(api, repo, member, path, record); err == nil {
 		t.Fatal("an online Runner cannot be treated as an offline installation")
