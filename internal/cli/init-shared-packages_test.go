@@ -39,6 +39,16 @@ func TestInitSharedRunnerPackagesResumeMissingSlotWithoutRegistration(t *testing
 		t.Fatal("resuming preparation must preserve verified slots and avoid registration")
 	}
 	first := filepath.Join(parent, "nibfin-10-7-1")
+	credentials := filepath.Join(first, ".credentials")
+	if err := os.WriteFile(credentials, []byte("synthetic"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.stageRunnerSlots(plan, parent, api.app); err == nil || attempts != 3 {
+		t.Fatal("a slot containing registration credentials must not be staged")
+	}
+	if err := os.Remove(credentials); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(first, ".nibfin-runner-package"),
 		[]byte("changed"), 0600); err != nil {
 		t.Fatal(err)
