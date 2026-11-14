@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 )
 
 const sharedRunnerWorkflow = ".github/workflows/shared-runner.yml"
@@ -70,11 +71,7 @@ func planSharedExecution(api API, plan *InitPlan, files map[string]string,
 		return errors.New("SHARED_EXECUTION_MEMBER_CHANGED")
 	}
 	// A peer install must not create or replace the execution repository's workflow.
-	ref := repo.DefaultBranch
-	if repo.ID == plan.Repository.ID {
-		ref = plan.Head
-	}
-	if ref == "" {
+	if repo.DefaultBranch == "" {
 		return errors.New("SHARED_EXECUTION_DEFAULT_BRANCH_UNAVAILABLE")
 	}
 	const contractPath = "src/shared-runner-contract.json"
@@ -101,15 +98,43 @@ func planSharedExecution(api API, plan *InitPlan, files map[string]string,
 	}
 	if repo.ID == plan.Repository.ID {
 		files[sharedRunnerWorkflow] = string(workflow)
-	} else {
-		current, _, err := content(api, repo.FullName, sharedRunnerWorkflow, ref)
-		if err != nil {
-			return err
-		}
-		if string(current) != string(workflow) {
-			return errors.New("SHARED_EXECUTION_WORKFLOW_MISMATCH")
-		}
+	} else if err := verifySharedExecutionWorkflow(api, repo, workflow); err != nil {
+		return err
 	}
 	plan.Execution = &SharedExecution{Repository: repo.FullName, RepositoryID: repo.ID}
+	return nil
+}
+
+func verifySharedExecutionWorkflow(api API, repo Repository, expected []byte) error {
+	base := "repos/" + repo.FullName
+	var ref reference
+	refPath := base + "/git/ref/heads/" + url.PathEscape(repo.DefaultBranch)
+	if err := api.Call("GET", refPath, nil, &ref); err != nil {
+		return err
+	}
+	wantRef := "refs/heads/" + repo.DefaultBranch
+	if ref.Ref != wantRef || !commitPattern.MatchString(ref.Object.SHA) {
+		return errors.New("SHARED_EXECUTION_DEFAULT_BRANCH_UNAVAILABLE")
+	}
+	var workflow struct {
+		ID    int64  `json:"id"`
+		Path  string `json:"path"`
+		State string `json:"state"`
+	}
+	endpoint := base + "/actions/workflows/shared-runner.yml"
+	if err := api.Call("GET", endpoint, nil, &workflow); err != nil {
+		return err
+	}
+	if workflow.ID <= 0 || workflow.Path != sharedRunnerWorkflow ||
+		workflow.State != "active" {
+		return errors.New("SHARED_EXECUTION_WORKFLOW_UNAVAILABLE")
+	}
+	current, _, err := content(api, repo.FullName, sharedRunnerWorkflow, ref.Object.SHA)
+	if err != nil {
+		return err
+	}
+	if string(current) != string(expected) {
+		return errors.New("SHARED_EXECUTION_WORKFLOW_MISMATCH")
+	}
 	return nil
 }

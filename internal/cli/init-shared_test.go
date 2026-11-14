@@ -30,7 +30,15 @@ func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	execution := project
 	execution.ID, execution.FullName = 20, "example/execution"
 	api.data["repos/"+execution.FullName] = execution
-	path := "repos/" + execution.FullName + "/contents/" + sharedRunnerWorkflow + "?ref=main"
+	base := "repos/" + execution.FullName
+	ref := reference{Ref: "refs/heads/main"}
+	ref.Object.SHA = strings.Repeat("d", 40)
+	api.data[base+"/git/ref/heads/main"] = ref
+	workflowPath := base + "/actions/workflows/shared-runner.yml"
+	api.data[workflowPath] = map[string]any{
+		"id": 42, "path": sharedRunnerWorkflow, "state": "active",
+	}
+	path := base + "/contents/" + sharedRunnerWorkflow + "?ref=" + ref.Object.SHA
 	api.data[path] = encoded(workflow)
 	plan, err = planInitWithExecution(api, project.FullName, execution.FullName)
 	if err != nil {
@@ -43,6 +51,14 @@ func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	_, err = planInitWithExecution(api, project.FullName, execution.FullName)
 	if err == nil || err.Error() != "SHARED_EXECUTION_WORKFLOW_MISMATCH" {
 		t.Fatalf("changed workflow must be rejected, got %v", err)
+	}
+	api.data[path] = encoded(workflow)
+	api.data[workflowPath] = map[string]any{
+		"id": 42, "path": sharedRunnerWorkflow, "state": "disabled_manually",
+	}
+	_, err = planInitWithExecution(api, project.FullName, execution.FullName)
+	if err == nil || err.Error() != "SHARED_EXECUTION_WORKFLOW_UNAVAILABLE" {
+		t.Fatalf("disabled workflow must be rejected, got %v", err)
 	}
 	if len(api.writes) != 0 {
 		t.Fatal("planning must not write to GitHub")
