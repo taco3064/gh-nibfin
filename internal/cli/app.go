@@ -194,7 +194,10 @@ func (a App) Run(args []string, out io.Writer) error {
 		result.HostAdoption = host.adoptionStatus(plan.Repository.ID)
 		if result.Code == "SHARED_HOST_ADOPTION_REQUIRED" &&
 			result.HostAdoption == "required" && peer {
-			err = adoptSharedPeer(a.Process, *host, plan)
+			err = requireInactiveSharedWake(a.API, plan.Repository.FullName)
+			if err == nil {
+				err = adoptSharedPeer(a.Process, *host, plan)
+			}
 			if err == nil {
 				result.HostAdoption = "observed"
 			}
