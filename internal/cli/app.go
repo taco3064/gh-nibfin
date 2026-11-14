@@ -132,9 +132,6 @@ func (a App) Run(args []string, out io.Writer) error {
 		plan.Repository.ID != plan.Execution.RepositoryID) {
 		return errors.New("SHARED_SERVICE_REQUIRES_EXECUTION_REPOSITORY")
 	}
-	if *prepareWake && host.adoptionStatus(plan.Repository.ID) != "observed" {
-		return errors.New("SHARED_WAKE_REQUIRES_ADOPTED_REPOSITORY")
-	}
 	var runner *initRunner
 	if *runnerPath != "" || *runnerName != "" {
 		runner, err = a.planInitRunner(plan, *runnerPath, *runnerName)
@@ -193,15 +190,24 @@ func (a App) Run(args []string, out io.Writer) error {
 		}
 	}
 	if err == nil && host != nil {
+		peer := plan.Execution != nil && plan.Repository.ID != plan.Execution.RepositoryID
 		result.HostAdoption = host.adoptionStatus(plan.Repository.ID)
+		if result.Code == "SHARED_HOST_ADOPTION_REQUIRED" &&
+			result.HostAdoption == "required" && peer {
+			err = adoptSharedPeer(a.Process, *host, plan)
+			if err == nil {
+				result.HostAdoption = "observed"
+			}
+		}
 		if result.Code == "SHARED_HOST_ADOPTION_REQUIRED" &&
 			result.HostAdoption == "observed" {
 			result.Code = "SHARED_PROTECTED_EXECUTION_UNVERIFIED"
 		}
-		if *installService && result.Code == "SHARED_PROTECTED_EXECUTION_UNVERIFIED" {
+		if err == nil && *installService &&
+			result.Code == "SHARED_PROTECTED_EXECUTION_UNVERIFIED" {
 			result.ServiceTemplate, err = installSharedService(a.Process)
 		}
-		if err == nil && *prepareWake &&
+		if err == nil && (*prepareWake || peer) &&
 			result.Code == "SHARED_PROTECTED_EXECUTION_UNVERIFIED" {
 			result.WakeDestination, err = prepareSharedWakeDestination(a.API,
 				plan.Repository.FullName, *plan.Execution)

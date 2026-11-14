@@ -52,36 +52,43 @@ func trustedSharedCore() (string, string, error) {
 }
 
 func installSharedService(process Process) (string, error) {
-	node, entry, err := trustedSharedCore()
+	output, err := runSharedHostAdmin(process, "install-shared-service-template")
 	if err != nil {
 		return "", err
 	}
+	return decodeSharedServiceInstall(output)
+}
+
+func runSharedHostAdmin(
+	process Process, operation string, values ...string,
+) ([]byte, error) {
+	node, entry, err := trustedSharedCore()
+	if err != nil {
+		return nil, err
+	}
 	if process == nil {
-		return "", errors.New("SHARED_SERVICE_INSTALLATION_UNAVAILABLE")
+		return nil, errors.New("SHARED_HOST_ADMINISTRATION_UNAVAILABLE")
 	}
 	// Imported modules run before Core can validate its own installation pin.
 	if err := verifyPrivilegedCoreTree("/opt/nibfin/core"); err != nil {
-		return "", err
+		return nil, err
 	}
 	const env = "/usr/bin/env"
 	if err := requireRootOwnedHostPath(env); err != nil {
-		return "", err
+		return nil, err
 	}
 	program := env
 	args := []string{"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8",
-		node, entry, "install-shared-service-template"}
+		node, entry, operation}
+	args = append(args, values...)
 	if os.Geteuid() != 0 {
 		program = "/usr/bin/sudo"
 		if err := requireRootOwnedHostPath(program); err != nil {
-			return "", err
+			return nil, err
 		}
 		args = append([]string{"-n", "--", env}, args...)
 	}
-	output, err := process.Run(program, args, nil)
-	if err != nil {
-		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
-	}
-	return decodeSharedServiceInstall(output)
+	return process.Run(program, args, nil)
 }
 
 func verifyPrivilegedCoreTree(root string) error {
