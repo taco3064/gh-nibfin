@@ -37,13 +37,32 @@ func createInstallPR(api API, plan InitPlan, branch installBranch) (string, erro
 			"merging. Host adoption, credentials, isolation and delivery authority " +
 			"are separate; these workflows do not establish readiness or E2E."}
 	var writeErr error
+	owner := strings.Split(plan.Repository.FullName, "/")[0]
+	headQuery := "&head=" + url.QueryEscape(owner+":"+branch.Name)
+	if branch.Existing {
+		// An interrupted installation can leave the verified branch without a PR.
+		// A previously closed PR is an explicit stop for this branch.
+		var history []installPR
+		query := "?state=all&per_page=2" + headQuery
+		if err := api.Call("GET", base+"/pulls"+query, nil, &history); err != nil ||
+			history == nil {
+			return "", errors.New("PR_HISTORY_UNAVAILABLE_INSPECT_BEFORE_RETRY")
+		}
+		switch {
+		case len(history) == 0:
+			branch.Existing = false
+		case len(history) == 1 && history[0].State == "open":
+			pull = history[0]
+		default:
+			return "", errors.New("PR_HISTORY_CONFLICT_INSPECT_BEFORE_RETRY")
+		}
+	}
 	if !branch.Existing {
 		writeErr = api.Call("POST", base+"/pulls", body, &pull)
 	}
 	if pull.Number <= 0 {
 		var observed []installPR
-		owner := strings.Split(plan.Repository.FullName, "/")[0]
-		query := "?state=open&head=" + url.QueryEscape(owner+":"+branch.Name)
+		query := "?state=open" + headQuery
 		if err := api.Call("GET", base+"/pulls"+query, nil, &observed); err != nil ||
 			len(observed) != 1 {
 			return "", errors.New("PR_RESULT_UNKNOWN_READ_BACK_BEFORE_RETRY")
