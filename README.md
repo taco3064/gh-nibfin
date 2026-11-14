@@ -68,20 +68,19 @@ an individual staged registration, use
 `gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
 while the service is stopped. Keep the administrator's GitHub login store
 outside the service accounts.
-With the packaged systemd template, prepare the first package in
-`/var/lib/nibfin/runners/slot-1` and the second in
-`/var/lib/nibfin/runners/slot-2` before registering. Those fixed directories
-are bound to the corresponding slot names in the local registration record.
-A repeated registration checks the original offline Runner ID.
 After Core host adoption, run `init --apply --install-shared-service` for the
-execution repository to install the verified unit. This uses the host
-administrator's existing permission. Review the unit installation result
-before enabling the two services.
+execution repository from the original installing account. Run `sudo -v`
+first if that account requires an interactive administrator confirmation.
+Core verifies the cached Runner 2.338.2 archive and original offline Runner
+IDs before preparing the fixed service slots and installing the unit.
+Review the installation result before enabling the two services.
 After enrolling a peer repository on the host, run
 `init --apply --prepare-shared-wake` for that repository to create the
 verified destination variable while shared dispatch is disabled. Existing
 different destinations require inspection. Manage the Wake secret and
 activation separately after validating the host.
+When adding a peer, run `sudo -v` before `init --apply` if the current
+account needs an interactive administrator confirmation for host adoption.
 
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.

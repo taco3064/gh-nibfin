@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -51,10 +52,14 @@ func trustedSharedCore() (string, string, error) {
 	return node, entry, nil
 }
 
-func installSharedService(process Process) (string, error) {
-	output, err := runSharedHostAdmin(process, "install-shared-service-template")
+func installSharedService(process Process, sources []string) (string, error) {
+	var args []string
+	if len(sources) != 0 {
+		args = append([]string{strconv.Itoa(os.Getuid())}, sources...)
+	}
+	output, err := runSharedHostAdmin(process, "install-shared-service-template", args...)
 	if err != nil {
-		return "", err
+		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
 	}
 	return decodeSharedServiceInstall(output)
 }
