@@ -86,3 +86,32 @@ func TestSharedInitReusesExactOpenPR(t *testing.T) {
 		t.Fatal("modified installation branch must be refused")
 	}
 }
+
+func TestSharedWakeReadbackDistinguishesMissingAndConfigured(t *testing.T) {
+	api := initFixture()
+	execution := SharedExecution{Repository: "example/execution", RepositoryID: 20}
+	const repo = "example/project"
+	const base = "repos/" + repo + "/actions/"
+	wantStatus := func(want string) {
+		t.Helper()
+		if got := sharedWakeConfiguration(api, repo, execution); got != want {
+			t.Fatalf("shared Wake status: got %s, want %s", got, want)
+		}
+	}
+	wantStatus("configuration_required")
+	pool := map[string]string{"name": "NIBFIN_SHARED_RUNNER_POOL", "value": "true"}
+	api.data[base+"variables/NIBFIN_SHARED_RUNNER_POOL"] = pool
+	destination := map[string]string{
+		"name":  "NIBFIN_SHARED_RUNNER_DESTINATION",
+		"value": `{"repository":"example/execution","repositoryId":21}`,
+	}
+	secretName := "NIBFIN_WAKE_TOKEN"
+	api.data[base+"secrets/"+secretName] = map[string]string{"name": secretName}
+	api.data[base+"variables/NIBFIN_SHARED_RUNNER_DESTINATION"] = destination
+	wantStatus("configuration_required")
+	destination["value"] = `{"repository":"example/execution","repositoryId":20}`
+	wantStatus("configured_unverified")
+	if len(api.writes) != 0 {
+		t.Fatal("Wake readback must not activate shared dispatch")
+	}
+}
