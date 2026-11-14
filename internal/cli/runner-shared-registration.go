@@ -114,6 +114,13 @@ func readRegisteredSharedSlot(api API, repo Repository, user User, path string,
 	if err := localRunnerMatches(path, record); err != nil {
 		return record, err
 	}
+	var local struct {
+		DisableUpdate bool `json:"disableUpdate"`
+	}
+	if err := readJSONFile(filepath.Join(path, ".runner"), &local); err != nil ||
+		!local.DisableUpdate {
+		return record, errors.New("SHARED_RUNNER_AUTOMATIC_UPDATE_MUST_BE_DISABLED")
+	}
 	runner, err := ownedRunner(api, repo, user, record)
 	if err != nil {
 		return record, err
