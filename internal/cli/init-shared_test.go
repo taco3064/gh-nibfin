@@ -86,7 +86,7 @@ func TestSharedInitReusesExactOpenPR(t *testing.T) {
 	pull := installPR{Number: 8, State: "open",
 		URL: "https://github.com/example/project/pull/8"}
 	pull.Head.Ref, pull.Head.SHA, pull.Base.Ref = branch, sha, "main"
-	query := "?state=open&head=" + url.QueryEscape("example:"+branch)
+	query := "?state=all&per_page=2&head=" + url.QueryEscape("example:"+branch)
 	api.data[base+"/pulls"+query] = []installPR{pull}
 	api.data[base+"/pulls/8"] = pull
 	resumed, err := createInstallBranch(api, base, plan)
@@ -96,6 +96,19 @@ func TestSharedInitReusesExactOpenPR(t *testing.T) {
 	got, err := createInstallPR(api, plan, resumed)
 	if err != nil || got != pull.URL || len(api.writes) != 0 {
 		t.Fatalf("expected existing PR without writes, got %q, %v", got, err)
+	}
+	closed := pull
+	closed.State = "closed"
+	api.data[base+"/pulls"+query] = []installPR{closed}
+	if _, err := createInstallPR(api, plan, resumed); err == nil || len(api.writes) != 0 {
+		t.Fatal("a closed installation PR must stop reuse before writing")
+	}
+	api.data[base+"/pulls"+query] = []installPR{}
+	openQuery := "?state=open&head=" + url.QueryEscape("example:"+branch)
+	api.data[base+"/pulls"+openQuery] = []installPR{pull}
+	got, err = createInstallPR(api, plan, resumed)
+	if err != nil || got != pull.URL || len(api.writes) != 1 {
+		t.Fatalf("a verified branch without a PR must resume once, got %q, %v", got, err)
 	}
 	api.data[file] = encoded([]byte("name: Replaced\n"))
 	if _, err := createInstallBranch(api, base, plan); err == nil {
