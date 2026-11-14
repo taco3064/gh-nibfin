@@ -36,7 +36,10 @@ func createInstallPR(api API, plan InitPlan, branch installBranch) (string, erro
 		"body": "Candidate initialization only. Review source and current CI before " +
 			"merging. Host adoption, credentials, isolation and delivery authority " +
 			"are separate; these workflows do not establish readiness or E2E."}
-	writeErr := api.Call("POST", base+"/pulls", body, &pull)
+	var writeErr error
+	if !branch.Existing {
+		writeErr = api.Call("POST", base+"/pulls", body, &pull)
+	}
 	if pull.Number <= 0 {
 		var observed []installPR
 		owner := strings.Split(plan.Repository.FullName, "/")[0]

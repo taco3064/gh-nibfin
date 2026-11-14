@@ -12,12 +12,14 @@ import (
 
 var hostNodeVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
+func nativeSharedHostSupported() bool { return runtime.GOARCH == "amd64" }
+
 func discoverSharedHost(process Process) (*sharedHost, error) {
 	const adoption = "/etc/nibfin/host.json"
 	if _, err := os.Lstat(adoption); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	if runtime.GOARCH != "amd64" {
+	if !nativeSharedHostSupported() {
 		return nil, errors.New("UNSUPPORTED_SHARED_HOST_ARCHITECTURE")
 	}
 	const core = "/opt/nibfin/core"

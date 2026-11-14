@@ -7,6 +7,47 @@ import (
 
 const sharedRunnerWorkflow = ".github/workflows/shared-runner.yml"
 
+var errCoreSharedDestinationUnsupported = errors.New(
+	"PINNED_CORE_SHARED_DESTINATION_UNSUPPORTED")
+
+// Inspect GitHub configuration without activating a route or exposing a secret.
+func sharedWakeConfiguration(api API, repo string, execution SharedExecution) string {
+	base := "repos/" + repo + "/actions/"
+	for _, expected := range []struct {
+		name  string
+		check func(string) bool
+	}{
+		{"NIBFIN_SHARED_RUNNER_POOL", func(value string) bool { return value == "true" }},
+		{"NIBFIN_SHARED_RUNNER_DESTINATION", func(value string) bool {
+			var observed SharedExecution
+			return json.Unmarshal([]byte(value), &observed) == nil && observed == execution
+		}},
+	} {
+		var variable struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		}
+		err := api.Call("GET", base+"variables/"+expected.name, nil, &variable)
+		if err != nil && err.Error() != "NOT_FOUND" {
+			return "unverified"
+		}
+		if variable.Name != expected.name || !expected.check(variable.Value) {
+			return "configuration_required"
+		}
+	}
+	var secret struct {
+		Name string `json:"name"`
+	}
+	err := api.Call("GET", base+"secrets/NIBFIN_WAKE_TOKEN", nil, &secret)
+	if err != nil && err.Error() != "NOT_FOUND" {
+		return "unverified"
+	}
+	if secret.Name != "NIBFIN_WAKE_TOKEN" {
+		return "configuration_required"
+	}
+	return "configured_unverified"
+}
+
 type SharedExecution struct {
 	Repository   string `json:"repository"`
 	RepositoryID int64  `json:"repositoryId"`
@@ -40,7 +81,7 @@ func planSharedExecution(api API, plan *InitPlan, files map[string]string,
 	source, _, err := content(api, pin.Repository, contractPath, pin.Commit)
 	if err != nil {
 		if err.Error() == "NOT_FOUND" {
-			return errors.New("PINNED_CORE_SHARED_DESTINATION_UNSUPPORTED")
+			return errCoreSharedDestinationUnsupported
 		}
 		return err
 	}
@@ -52,7 +93,7 @@ func planSharedExecution(api API, plan *InitPlan, files map[string]string,
 	if json.Unmarshal(source, &contract) != nil || contract.SchemaVersion != 1 ||
 		contract.DestinationVariable != "NIBFIN_SHARED_RUNNER_DESTINATION" ||
 		contract.WorkflowPath != sharedRunnerWorkflow {
-		return errors.New("PINNED_CORE_SHARED_DESTINATION_UNSUPPORTED")
+		return errors.New("INVALID_CORE_SHARED_DESTINATION_CONTRACT")
 	}
 	workflow, _, err := content(api, pin.Repository, contract.WorkflowPath, pin.Commit)
 	if err != nil {

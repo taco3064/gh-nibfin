@@ -91,6 +91,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
 	}
 	var host *sharedHost
+	defaultShared := false
 	if *runnerPath == "" && *runnerName == "" {
 		var err error
 		host, err = discoverSharedHost(a.Process)
@@ -105,9 +106,16 @@ func (a App) Run(args []string, out io.Writer) error {
 				return err
 			}
 			*executionRepo = host.Repository
+		} else if *executionRepo == "" && nativeSharedHostSupported() {
+			*executionRepo = *name
+			defaultShared = true
 		}
 	}
 	plan, err := planInitWithExecution(a.API, *name, *executionRepo)
+	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {
+		// Older producer pins retain their existing installation contract.
+		plan, err = planInit(a.API, *name)
+	}
 	if err != nil {
 		return err
 	}
@@ -127,6 +135,8 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	if host != nil {
 		preview["shared_runners"] = host.Runners
+	} else if plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID {
+		preview["planned_shared_runner_count"] = 2
 	}
 	if err := encoder.Encode(preview); err != nil {
 		return errors.New("OUTPUT_UNAVAILABLE")
