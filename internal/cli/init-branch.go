@@ -16,10 +16,7 @@ func createInstallBranch(api API, base string, plan InitPlan) (installBranch, er
 	var existing reference
 	err := api.Call("GET", base+"/git/ref/heads/"+url.PathEscape(branch), nil, &existing)
 	if err == nil {
-		if plan.Execution != nil {
-			return readSharedInstallBranch(api, base, plan, branch, existing)
-		}
-		return installBranch{}, errors.New("INSTALL_BRANCH_EXISTS_INSPECT_BEFORE_RETRY")
+		return readInstallBranch(api, base, plan, branch, existing)
 	}
 	if err.Error() != "NOT_FOUND" {
 		return installBranch{}, err
@@ -79,7 +76,7 @@ func createInstallBranch(api API, base string, plan InitPlan) (installBranch, er
 	return installBranch{Name: branch, SHA: created.SHA}, nil
 }
 
-func readSharedInstallBranch(api API, base string, plan InitPlan,
+func readInstallBranch(api API, base string, plan InitPlan,
 	branch string, ref reference) (installBranch, error) {
 	invalid := errors.New("INSTALL_BRANCH_EXISTS_INSPECT_BEFORE_RETRY")
 	sha := ref.Object.SHA
