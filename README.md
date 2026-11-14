@@ -72,6 +72,11 @@ After Core host adoption, run `init --apply --install-shared-service` for the
 execution repository to install the verified unit. This uses the host
 administrator's existing permission. Review the unit installation result
 before enabling the two services.
+After enrolling a peer repository on the host, run
+`init --apply --prepare-shared-wake` for that repository to create the
+verified destination variable while shared dispatch is disabled. Existing
+different destinations require inspection. Manage the Wake secret and
+activation separately after validating the host.
 
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.

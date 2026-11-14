@@ -152,3 +152,43 @@ func TestSharedWakeReadbackDistinguishesMissingAndConfigured(t *testing.T) {
 		t.Fatal("Wake readback must not activate shared dispatch")
 	}
 }
+
+type sharedWakeWriteFixture struct{ *fakeAPI }
+
+func (f sharedWakeWriteFixture) Call(method, path string, input, output any) error {
+	if method == "POST" {
+		value := input.(actionsVariable)
+		f.data[path+"/"+value.Name] = value
+	}
+	return f.fakeAPI.Call(method, path, input, output)
+}
+
+func TestPrepareSharedWakeDestinationPreservesInactiveRouting(t *testing.T) {
+	api := sharedWakeWriteFixture{initFixture()}
+	repo := "example/project"
+	base := "repos/" + repo + "/actions/variables"
+	pool := base + "/" + sharedPoolVariable
+	execution := SharedExecution{Repository: "example/execution", RepositoryID: 20}
+	api.data[pool] = actionsVariable{Name: sharedPoolVariable, Value: "true"}
+	if _, err := prepareSharedWakeDestination(api, repo, execution); err == nil ||
+		len(api.writes) != 0 {
+		t.Fatal("must not modify an active route")
+	}
+	delete(api.data, pool)
+	status, err := prepareSharedWakeDestination(api, repo, execution)
+	if err != nil || status != "prepared" || len(api.writes) != 1 {
+		t.Fatalf("expected destination readback despite lost response: %s, %v", status, err)
+	}
+	status, err = prepareSharedWakeDestination(api, repo, execution)
+	if err != nil || status != "unchanged" || len(api.writes) != 1 {
+		t.Fatalf("repeat must reuse the destination: %s, %v", status, err)
+	}
+	execution.RepositoryID++
+	if _, err := prepareSharedWakeDestination(api, repo, execution); err == nil ||
+		len(api.writes) != 1 {
+		t.Fatal("must preserve existing routing")
+	}
+	if _, ok := api.data[pool]; ok {
+		t.Fatal("preparation must not turn on shared dispatch")
+	}
+}

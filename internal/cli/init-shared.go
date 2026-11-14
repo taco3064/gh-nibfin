@@ -7,6 +7,8 @@ import (
 )
 
 const sharedRunnerWorkflow = ".github/workflows/shared-runner.yml"
+const sharedPoolVariable = "NIBFIN_SHARED_RUNNER_POOL"
+const sharedDestinationVariable = "NIBFIN_SHARED_RUNNER_DESTINATION"
 
 var errCoreSharedDestinationUnsupported = errors.New(
 	"PINNED_CORE_SHARED_DESTINATION_UNSUPPORTED")
@@ -18,8 +20,8 @@ func sharedWakeConfiguration(api API, repo string, execution SharedExecution) st
 		name  string
 		check func(string) bool
 	}{
-		{"NIBFIN_SHARED_RUNNER_POOL", func(value string) bool { return value == "true" }},
-		{"NIBFIN_SHARED_RUNNER_DESTINATION", func(value string) bool {
+		{sharedPoolVariable, func(value string) bool { return value == "true" }},
+		{sharedDestinationVariable, func(value string) bool {
 			var observed SharedExecution
 			return json.Unmarshal([]byte(value), &observed) == nil && observed == execution
 		}},
@@ -47,6 +49,50 @@ func sharedWakeConfiguration(api API, repo string, execution SharedExecution) st
 		return "configuration_required"
 	}
 	return "configured_unverified"
+}
+
+type actionsVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// Prepare a new destination while dispatch is disabled. Never repoint an
+// existing route or set the activation variable as part of installation.
+func prepareSharedWakeDestination(api API, repo string,
+	execution SharedExecution) (string, error) {
+	base := "repos/" + repo + "/actions/variables"
+	path := base + "/" + sharedDestinationVariable
+	var observed actionsVariable
+	err := api.Call("GET", path, nil, &observed)
+	if err == nil {
+		var current SharedExecution
+		if observed.Name == sharedDestinationVariable &&
+			json.Unmarshal([]byte(observed.Value), &current) == nil && current == execution {
+			return "unchanged", nil
+		}
+		return "", errors.New("SHARED_WAKE_DESTINATION_CONFLICT")
+	}
+	if err.Error() != "NOT_FOUND" {
+		return "", err
+	}
+	var pool actionsVariable
+	err = api.Call("GET", base+"/"+sharedPoolVariable, nil, &pool)
+	if err != nil && err.Error() != "NOT_FOUND" {
+		return "", err
+	}
+	if err == nil && (pool.Name != sharedPoolVariable || pool.Value != "false") {
+		return "", errors.New("SHARED_WAKE_MUST_BE_DISABLED_DURING_INSTALLATION")
+	}
+	value, err := json.Marshal(execution)
+	if err != nil {
+		return "", err
+	}
+	expected := actionsVariable{Name: sharedDestinationVariable, Value: string(value)}
+	_ = api.Call("POST", base, expected, nil)
+	if err := api.Call("GET", path, nil, &observed); err != nil || observed != expected {
+		return "", errors.New("SHARED_WAKE_DESTINATION_RESULT_UNVERIFIED")
+	}
+	return "prepared", nil
 }
 
 type SharedExecution struct {
