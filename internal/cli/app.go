@@ -155,6 +155,11 @@ func (a App) Run(args []string, out io.Writer) error {
 		}
 	}
 	result, err := applyInit(a.API, plan)
+	if err == nil && host == nil && nativeSharedHostSupported() &&
+		plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID &&
+		result.Code == "SHARED_HOST_ADOPTION_REQUIRED" {
+		result.RunnerPackages, err = a.stageSharedRunnerPackages(plan)
+	}
 	if err == nil && host != nil {
 		result.HostAdoption = host.adoptionStatus(plan.Repository.ID)
 		if result.Code == "SHARED_HOST_ADOPTION_REQUIRED" &&
