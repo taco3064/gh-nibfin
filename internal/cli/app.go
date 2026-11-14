@@ -44,6 +44,7 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
+			"Shared execution: init --repo OWNER/REPO --execution-repo OWNER/REPO.\n"+
 			"Optional Runner setup: --runner-directory PATH --runner-name NAME.\n"+
 			"Member handoff: init --quick request/issue/register/confirm/reconcile\n"+
 			"Recovery: init --quick inspect/cancel; see README for the full sequence.\n"+
@@ -75,14 +76,21 @@ func (a App) Run(args []string, out io.Writer) error {
 	apply := flags.Bool("apply", false, "Create reviewed installation PR and labels")
 	runnerPath := flags.String("runner-directory", "", "Private Runner directory")
 	runnerName := flags.String("runner-name", "", "Name of the repository Runner")
+	executionRepo := flags.String("execution-repo", "", "Shared execution repository")
 	quick := addQuickFlags(flags)
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_INIT_ARGUMENTS")
 	}
 	if quick.used() {
+		if *executionRepo != "" {
+			return errors.New("SHARED_EXECUTION_QUICK_OPTIONS_CONFLICT")
+		}
 		return a.runQuick(*name, *runnerPath, *runnerName, *apply, quick, out)
 	}
-	plan, err := planInit(a.API, *name)
+	if *executionRepo != "" && (*runnerPath != "" || *runnerName != "") {
+		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
+	}
+	plan, err := planInitWithExecution(a.API, *name, *executionRepo)
 	if err != nil {
 		return err
 	}
