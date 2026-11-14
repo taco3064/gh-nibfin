@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -65,19 +66,46 @@ func installSharedService(process Process) (string, error) {
 	if process == nil {
 		return "", errors.New("SHARED_SERVICE_INSTALLATION_UNAVAILABLE")
 	}
-	program, args := node, []string{entry, "install-shared-service-template"}
+	// Imported modules run before Core can validate its own installation pin.
+	if err := verifyPrivilegedCoreTree("/opt/nibfin/core"); err != nil {
+		return "", err
+	}
+	const env = "/usr/bin/env"
+	if err := requireRootOwnedHostPath(env); err != nil {
+		return "", err
+	}
+	program := env
+	args := []string{"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8",
+		node, entry, "install-shared-service-template"}
 	if os.Geteuid() != 0 {
 		program = "/usr/bin/sudo"
 		if err := requireRootOwnedHostPath(program); err != nil {
 			return "", err
 		}
-		args = append([]string{"-n", "--", node}, args...)
+		args = append([]string{"-n", "--", env}, args...)
 	}
 	output, err := process.Run(program, args, nil)
 	if err != nil {
 		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
 	}
 	return decodeSharedServiceInstall(output)
+}
+
+func verifyPrivilegedCoreTree(root string) error {
+	if err := requireRootOwnedHostPath(root); err != nil {
+		return err
+	}
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return errors.New("UNTRUSTED_SHARED_HOST_PATH")
+		}
+		info, err := entry.Info()
+		if err != nil || !info.IsDir() && !info.Mode().IsRegular() ||
+			info.Mode().Perm()&0022 != 0 || info.Sys().(*syscall.Stat_t).Uid != 0 {
+			return errors.New("UNTRUSTED_SHARED_HOST_PATH")
+		}
+		return nil
+	})
 }
 
 func requireRootOwnedHostPath(path string) error {
