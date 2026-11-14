@@ -37,6 +37,10 @@ func TestInitSharedInstallsWorkflowOnlyInExecutionRepository(t *testing.T) {
 	}
 	api.data[base+"/branches/main"] = branch
 	workflowPath := base + "/actions/workflows/shared-runner.yml"
+	_, err = planInitWithExecution(api, project.FullName, execution.FullName)
+	if err == nil || err.Error() != "SHARED_EXECUTION_WORKFLOW_NOT_INSTALLED" {
+		t.Fatalf("expected the missing execution workflow to be identified, got %v", err)
+	}
 	api.data[workflowPath] = map[string]any{
 		"id": 42, "path": sharedRunnerWorkflow, "state": "active",
 	}

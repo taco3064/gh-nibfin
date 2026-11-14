@@ -177,6 +177,9 @@ func verifySharedExecutionWorkflow(api API, repo Repository, expected []byte) er
 	}
 	endpoint := base + "/actions/workflows/shared-runner.yml"
 	if err := api.Call("GET", endpoint, nil, &workflow); err != nil {
+		if err.Error() == "NOT_FOUND" {
+			return errors.New("SHARED_EXECUTION_WORKFLOW_NOT_INSTALLED")
+		}
 		return err
 	}
 	if workflow.ID <= 0 || workflow.Path != sharedRunnerWorkflow ||
