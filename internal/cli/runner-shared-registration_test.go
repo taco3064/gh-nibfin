@@ -1,9 +1,45 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestSharedRegistrationRecoversOnlyAnObservedOfflineSlot(t *testing.T) {
+	a, api, host, path := runnerFixture(t)
+	repo := api.data["repos/example/project"].(Repository)
+	member := api.data["user"].(User)
+	record, err := createRunnerPackage(a.Download, repo, member, "slot", path, api.app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.lost = true
+	record, err = registerRunnerWithLabel(api, host, repo, member, path, record,
+		api.now, sharedRunnerLabel)
+	if err == nil || record.State != "registration-pending" {
+		t.Fatalf("expected pending registration, got %+v, %v", record, err)
+	}
+	if _, err := reconcileSharedRegistration(api, repo, member, path, record,
+		api.runners); err == nil {
+		t.Fatal("missing private credentials must retain pending")
+	}
+	for _, file := range []string{".credentials", ".credentials_rsaparams"} {
+		if err := os.WriteFile(filepath.Join(path, file), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	api.runners[0].Status = "online"
+	if _, err := reconcileSharedRegistration(api, repo, member, path, record,
+		api.runners); err == nil {
+		t.Fatal("online registration must remain pending")
+	}
+	api.runners[0].Status = "offline"
+	result, err := reconcileSharedRegistration(api, repo, member, path, record, api.runners)
+	if err != nil || result.State != "registered" || api.tokens != 1 || host.calls != 1 {
+		t.Fatalf("expected read-only provider recovery, got %+v, %v", result, err)
+	}
+}
 
 func TestSharedOfflineRegistrationRequiresBothNativeLabels(t *testing.T) {
 	a, api, host, directory := runnerFixture(t)

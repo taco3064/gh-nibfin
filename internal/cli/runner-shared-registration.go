@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"time"
 )
@@ -45,6 +46,9 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 	if record.State == "registered" {
 		return readRegisteredSharedSlot(a.API, repo, user, path, record)
 	}
+	if record.State == "registration-pending" {
+		return reconcileSharedRegistration(a.API, repo, user, path, record, runners)
+	}
 	if err := verifyRunnerPackage(path, record.Application, true,
 		runnerManagementLock); err != nil {
 		return record, err
@@ -55,6 +59,44 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 		return record, err
 	}
 	return readRegisteredSharedSlot(a.API, repo, user, path, record)
+}
+
+func reconcileSharedRegistration(api API, repo Repository, user User, path string,
+	pending RunnerInstall, runners []RunnerInfo) (RunnerInstall, error) {
+	unresolved := errors.New("SHARED_RUNNER_REGISTRATION_UNRESOLVED_NO_RETRY")
+	for _, name := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
+		file := filepath.Join(path, name)
+		info, err := os.Lstat(file)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			return pending, unresolved
+		}
+		if err := requirePrivateRunnerPaths([]string{file}); err != nil {
+			return pending, err
+		}
+	}
+	record := pending
+	matches := 0
+	for _, runner := range runners {
+		if runner.Name == pending.Name {
+			record.RunnerID = runner.ID
+			matches++
+		}
+	}
+	if matches != 1 || record.RunnerID <= 0 ||
+		(pending.RunnerID > 0 && pending.RunnerID != record.RunnerID) {
+		return pending, unresolved
+	}
+	if _, err := readRegisteredSharedSlot(api, repo, user, path, record); err != nil {
+		return pending, err
+	}
+	if err := verifyRunnerFiles(path, record.Application); err != nil {
+		return pending, err
+	}
+	record.State = "registered"
+	if err := writeRunnerRecord(path, record); err != nil {
+		return pending, err
+	}
+	return record, nil
 }
 
 func readRegisteredSharedSlot(api API, repo Repository, user User, path string,
