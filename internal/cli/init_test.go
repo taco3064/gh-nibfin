@@ -101,8 +101,8 @@ func TestFreshSharedInitRejectsOlderCoreBeforeInstalling(t *testing.T) {
 	app := App{API: api}
 	err := app.Run([]string{"init", "--repo", "example/project", "--apply"}, io.Discard)
 	var command *CommandError
-	if !errors.As(err, &command) || command.Code != errCoreSharedDestinationUnsupported.Error() ||
-		command.Exit != 2 || len(api.writes) != 0 {
+	if !errors.As(err, &command) || command.Exit != 2 || len(api.writes) != 0 ||
+		command.Code != errCoreSharedDestinationUnsupported.Error() {
 		t.Fatalf("expected an actionable refusal before writes, got %v, %v", err, api.writes)
 	}
 }
