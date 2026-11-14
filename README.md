@@ -53,6 +53,14 @@ are refused by init; use the verified upgrade command below. An existing
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
+With a compatible Core pin on Linux x64, plain init plans two shared Runner
+slots. The first repository supplies the execution workflow. On the same
+adopted host, init for a second repository verifies and reuses those slots.
+Each repository keeps its own Issue, CI and project environment.
+`preflight` reports observed registrations and their online state. This
+candidate still requires administrator-managed host adoption and service
+startup before it can execute protected jobs.
+
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.
 Preview remains read-only. Apply waits for the installation PR to be merged:
