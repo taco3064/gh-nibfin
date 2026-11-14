@@ -121,8 +121,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	plan, err := planInitWithExecution(a.API, *name, *executionRepo)
 	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {
-		// Older producer pins retain their existing installation contract.
-		plan, err = planInit(a.API, *name)
+		// Avoid installing legacy callers on a fresh shared host. Those files
+		// would conflict with the later installation of the shared candidate.
+		return &CommandError{Code: "PINNED_CORE_SHARED_DESTINATION_UNSUPPORTED", Exit: 2}
 	}
 	if err != nil {
 		return err
