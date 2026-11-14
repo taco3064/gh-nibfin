@@ -13,3 +13,7 @@ func discoverSharedHost(Process) (*sharedHost, error) {
 func installSharedService(Process) (string, error) {
 	return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_LINUX_X64")
 }
+
+func runSharedHostAdmin(Process, string, ...string) ([]byte, error) {
+	return nil, errors.New("SHARED_HOST_ADMINISTRATION_REQUIRES_LINUX_X64")
+}

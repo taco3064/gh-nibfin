@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 )
 
 var errLegacySharedHost = errors.New("INSTALLED_CORE_LACKS_SHARED_HOST_INSPECTION")
@@ -46,6 +47,31 @@ type sharedRegistration struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Busy   bool   `json:"busy"`
+}
+
+func adoptSharedPeer(process Process, host sharedHost, plan InitPlan) error {
+	if plan.Execution == nil || plan.Repository.ID == host.RepositoryID {
+		return errors.New("INVALID_SHARED_PEER_INSTALLATION")
+	}
+	out, err := runSharedHostAdmin(process, "adopt-shared-peer", plan.Repository.FullName,
+		strconv.FormatInt(plan.Repository.ID, 10), Pins().Action.Commit)
+	if err != nil {
+		return errors.New("SHARED_PEER_ADOPTION_REQUIRES_ADMIN_OR_READBACK")
+	}
+	var receipt struct {
+		Status       string `json:"status"`
+		RepositoryID int64  `json:"repositoryId"`
+		Runners      []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} `json:"runners"`
+	}
+	if json.Unmarshal(out, &receipt) != nil || receipt.RepositoryID != plan.Repository.ID ||
+		(receipt.Status != "adopted" && receipt.Status != "unchanged") ||
+		!slices.Equal(receipt.Runners, host.Runners) {
+		return errors.New("SHARED_PEER_ADOPTION_REQUIRES_ADMIN_OR_READBACK")
+	}
+	return nil
 }
 
 func decodeSharedServiceInstall(output []byte) (string, error) {
