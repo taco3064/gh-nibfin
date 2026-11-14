@@ -90,6 +90,23 @@ func (a App) Run(args []string, out io.Writer) error {
 	if *executionRepo != "" && (*runnerPath != "" || *runnerName != "") {
 		return errors.New("SHARED_EXECUTION_LEGACY_RUNNER_OPTIONS_CONFLICT")
 	}
+	var host *sharedHost
+	if *runnerPath == "" && *runnerName == "" {
+		var err error
+		host, err = discoverSharedHost(a.Process)
+		if err != nil {
+			return err
+		}
+		if host != nil {
+			if *executionRepo != "" && *executionRepo != host.Repository {
+				return errors.New("SHARED_EXECUTION_HOST_CONFLICT")
+			}
+			if err := verifySharedHost(a.API, *host); err != nil {
+				return err
+			}
+			*executionRepo = host.Repository
+		}
+	}
 	plan, err := planInitWithExecution(a.API, *name, *executionRepo)
 	if err != nil {
 		return err
@@ -108,6 +125,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	if runner != nil {
 		preview["runner_setup"] = runner
 	}
+	if host != nil {
+		preview["shared_runners"] = host.Runners
+	}
 	if err := encoder.Encode(preview); err != nil {
 		return errors.New("OUTPUT_UNAVAILABLE")
 	}
@@ -121,6 +141,11 @@ func (a App) Run(args []string, out io.Writer) error {
 	if err := encoder.Encode(map[string]any{"status": "candidate_source_verified",
 		"core_cache": cache, "host_adoption": "unverified"}); err != nil {
 		return errors.New("OUTPUT_UNAVAILABLE")
+	}
+	if host != nil {
+		if err := recheckSharedHost(a.Process, a.API, *host); err != nil {
+			return err
+		}
 	}
 	result, err := applyInit(a.API, plan)
 	if err != nil {
