@@ -1,6 +1,35 @@
 package cli
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
+
+type sharedInspectionProcess struct{ help string }
+
+func (p sharedInspectionProcess) Run(_ string, args []string, _ []byte) ([]byte, error) {
+	if args[1] == "help" {
+		return []byte(p.help), nil
+	}
+	return nil, errors.New("fixture inspection failure")
+}
+
+func TestSharedInspectionDoesNotTreatBrokenAdoptionAsLegacy(t *testing.T) {
+	for _, test := range []struct {
+		help   string
+		legacy bool
+	}{
+		{`{"commands":["contract"]}`, true},
+		{`{"commands":["contract","inspect-shared-host"]}`, false},
+		{`{"commands":[]}`, false},
+		{"broken", false},
+	} {
+		_, err := readInstalledSharedHost(sharedInspectionProcess{test.help}, "node", "core")
+		if err == nil || errors.Is(err, errLegacySharedHost) != test.legacy {
+			t.Fatalf("unexpected inspection result: %v", err)
+		}
+	}
+}
 
 func TestSharedServiceInstallReadback(t *testing.T) {
 	const unit = `,"unit":"nibfin-shared-runner@.service"`
