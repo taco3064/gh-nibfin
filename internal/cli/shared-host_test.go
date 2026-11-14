@@ -2,6 +2,27 @@ package cli
 
 import "testing"
 
+func TestSharedServiceInstallReadback(t *testing.T) {
+	const unit = `,"unit":"nibfin-shared-runner@.service"`
+	for _, input := range []struct {
+		json, status string
+	}{
+		{`{"status":"installed"` + unit + `,"servicesStarted":false}`,
+			"installed"},
+		{`{"status":"unchanged"` + unit + `,"servicesStarted":false}`,
+			"unchanged"},
+		{`{"status":"installed"` + unit + `,"servicesStarted":true}`,
+			""},
+		{`{"status":"installed","unit":"nibfin-shared-runner@.service"}`, ""},
+		{`{"status":"installed","unit":"another@.service","servicesStarted":false}`, ""},
+	} {
+		status, err := decodeSharedServiceInstall([]byte(input.json))
+		if status != input.status || (err != nil) != (input.status == "") {
+			t.Fatalf("unexpected installation readback %q, %v", status, err)
+		}
+	}
+}
+
 func TestSharedHostRequiresBothOriginalRegistrations(t *testing.T) {
 	api := initFixture()
 	host, err := decodeSharedHost([]byte(`{

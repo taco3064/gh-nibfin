@@ -24,6 +24,21 @@ type sharedRegistration struct {
 	Busy   bool   `json:"busy"`
 }
 
+func decodeSharedServiceInstall(output []byte) (string, error) {
+	var result struct {
+		Status          string `json:"status"`
+		Unit            string `json:"unit"`
+		ServicesStarted *bool  `json:"servicesStarted"`
+	}
+	if json.Unmarshal(output, &result) != nil ||
+		(result.Status != "installed" && result.Status != "unchanged") ||
+		result.Unit != "nibfin-shared-runner@.service" ||
+		result.ServicesStarted == nil || *result.ServicesStarted {
+		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
+	}
+	return result.Status, nil
+}
+
 func (host sharedHost) adoptionStatus(id int64) string {
 	if host.AdoptedRepositoryIDs == nil {
 		return "unverified"
