@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -85,6 +87,23 @@ func TestPublicPersonalAndOrganizationPreview(t *testing.T) {
 				t.Fatal("unsafe template trigger or credential propagation")
 			}
 		}
+	}
+}
+
+func TestFreshSharedInitRejectsOlderCoreBeforeInstalling(t *testing.T) {
+	if !nativeSharedHostSupported() {
+		t.Skip("shared host installation requires Linux x64")
+	}
+	if _, err := os.Lstat("/etc/nibfin/host.json"); !errors.Is(err, os.ErrNotExist) {
+		t.Skip("test requires a clean host")
+	}
+	api := initFixture()
+	app := App{API: api}
+	err := app.Run([]string{"init", "--repo", "example/project", "--apply"}, io.Discard)
+	var command *CommandError
+	if !errors.As(err, &command) || command.Code != errCoreSharedDestinationUnsupported.Error() ||
+		command.Exit != 2 || len(api.writes) != 0 {
+		t.Fatalf("expected an actionable refusal before writes, got %v, %v", err, api.writes)
 	}
 }
 
