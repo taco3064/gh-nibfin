@@ -59,6 +59,9 @@ func TestLiveOfficialRunnerArchive(t *testing.T) {
 		t.Skip("verified official Runner archive is not supplied")
 	}
 	root := t.TempDir()
+	if err := initializePrivateRunnerDirectory(root); err != nil {
+		t.Fatal(err)
+	}
 	data, err := os.ReadFile(source)
 	if err != nil {
 		t.Fatal(err)
