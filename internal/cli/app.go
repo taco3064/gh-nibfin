@@ -45,6 +45,7 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
 			"Shared execution: init --repo OWNER/REPO --execution-repo OWNER/REPO.\n"+
+			"Shared host setup: init --repo OWNER/REPO --apply --start-shared-services.\n"+
 			"Optional Runner setup: --runner-directory PATH --runner-name NAME.\n"+
 			"Member handoff: init --quick request/issue/register/confirm/reconcile\n"+
 			"Recovery: init --quick inspect/cancel; see README for the full sequence.\n"+
@@ -79,11 +80,16 @@ func (a App) Run(args []string, out io.Writer) error {
 	executionRepo := flags.String("execution-repo", "", "Shared execution repository")
 	installService := flags.Bool("install-shared-service", false,
 		"Install the verified shared Runner unit without starting it")
+	startServices := flags.Bool("start-shared-services", false,
+		"Install and start the two adopted shared Runner services")
 	prepareWake := flags.Bool("prepare-shared-wake", false,
 		"Prepare the verified shared Wake destination without activating it")
 	quick := addQuickFlags(flags)
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_INIT_ARGUMENTS")
+	}
+	if *startServices {
+		*installService = true
 	}
 	if quick.used() {
 		if *executionRepo != "" || *installService || *prepareWake {
@@ -100,7 +106,8 @@ func (a App) Run(args []string, out io.Writer) error {
 		*prepareWake || *runnerPath != "" || *runnerName != "") {
 		return err
 	}
-	if *installService && (host == nil || *runnerPath != "" || *runnerName != "") {
+	if *installService && (host == nil && !*startServices ||
+		*runnerPath != "" || *runnerName != "") {
 		return errors.New("SHARED_SERVICE_REQUIRES_ADOPTED_HOST")
 	}
 	if *prepareWake && host == nil {
@@ -188,6 +195,9 @@ func (a App) Run(args []string, out io.Writer) error {
 		if err == nil {
 			result.RunnerSlots, err = a.registerInitSharedSlots(plan, result.RunnerPackages)
 		}
+		if err == nil && *startServices {
+			result.CoreDeployment, err = deploySharedCore(a.API, a.Process)
+		}
 	}
 	if err == nil && host != nil {
 		peer := plan.Execution != nil && plan.Repository.ID != plan.Execution.RepositoryID
@@ -211,10 +221,17 @@ func (a App) Run(args []string, out io.Writer) error {
 			var sources []string
 			sources, err = a.readStagedSharedSlots(plan, registrations)
 			if err == nil {
-				result.ServiceTemplate, err = installSharedService(a.Process, sources)
+				result.ServiceTemplate, err = installSharedService(a.Process, sources,
+					*startServices)
 			}
 			if err == nil {
 				err = retireStagedRegistration(sources)
+			}
+			if err == nil && *startServices {
+				result.RunnerSlots, err = verifySharedHost(a.API, *host)
+				if err == nil && !sharedRunnersOnline(result.RunnerSlots) {
+					err = errors.New("SHARED_SERVICE_GITHUB_ONLINE_READBACK_REQUIRED")
+				}
 			}
 		}
 		if err == nil && (*prepareWake || peer) &&

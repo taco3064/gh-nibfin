@@ -105,6 +105,7 @@ type InitResult struct {
 	PR              string               `json:"pull_request,omitempty"`
 	Wake            string               `json:"shared_wake,omitempty"`
 	HostAdoption    string               `json:"shared_host_adoption,omitempty"`
+	CoreDeployment  string               `json:"shared_core_deployment,omitempty"`
 	RunnerPackages  []string             `json:"shared_runner_packages,omitempty"`
 	RunnerSlots     []sharedRegistration `json:"shared_runners,omitempty"`
 	ServiceTemplate string               `json:"shared_service_template,omitempty"`

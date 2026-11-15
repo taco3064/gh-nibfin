@@ -6,11 +6,15 @@ import "errors"
 
 func nativeSharedHostSupported() bool { return false }
 
+func deploySharedCore(API, Process) (string, error) {
+	return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_LINUX_X64")
+}
+
 func discoverSharedHost(Process) (*sharedHost, error) {
 	return nil, nil
 }
 
-func installSharedService(Process, []string) (string, error) {
+func installSharedService(Process, []string, bool) (string, error) {
 	return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_LINUX_X64")
 }
 

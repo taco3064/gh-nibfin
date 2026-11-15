@@ -75,18 +75,33 @@ func adoptSharedPeer(process Process, host sharedHost, plan InitPlan) error {
 }
 
 func decodeSharedServiceInstall(output []byte) (string, error) {
+	return decodeSharedServiceResult(output, false)
+}
+
+func decodeSharedServiceResult(output []byte, started bool) (string, error) {
 	var result struct {
-		Status          string `json:"status"`
-		Unit            string `json:"unit"`
-		ServicesStarted *bool  `json:"servicesStarted"`
+		Status          string   `json:"status"`
+		Unit            string   `json:"unit"`
+		ServicesStarted *bool    `json:"servicesStarted"`
+		Units           []string `json:"units"`
 	}
 	if json.Unmarshal(output, &result) != nil ||
 		(result.Status != "installed" && result.Status != "unchanged") ||
 		result.Unit != "nibfin-shared-runner@.service" ||
-		result.ServicesStarted == nil || *result.ServicesStarted {
+		result.ServicesStarted == nil || *result.ServicesStarted != started {
+		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
+	}
+	if started && !slices.Equal(result.Units, []string{
+		"nibfin-shared-runner@1.service", "nibfin-shared-runner@2.service",
+	}) {
 		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
 	}
 	return result.Status, nil
+}
+
+func sharedRunnersOnline(runners []sharedRegistration) bool {
+	return len(runners) == 2 && runners[0].Status == "online" &&
+		runners[1].Status == "online"
 }
 
 func (host sharedHost) adoptionStatus(id int64) string {
