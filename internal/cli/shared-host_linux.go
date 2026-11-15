@@ -1,6 +1,8 @@
 package cli
 
 import (
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -12,9 +14,69 @@ import (
 	"syscall"
 )
 
+//go:embed shared-core-deploy.py
+var sharedCoreDeploy string
+
 var hostNodeVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 func nativeSharedHostSupported() bool { return runtime.GOARCH == "amd64" }
+
+func deploySharedCore(api API, process Process) (string, error) {
+	if process == nil || !nativeSharedHostSupported() {
+		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_LINUX_X64")
+	}
+	pins := Pins()
+	archive, err := candidateArchive(api, pins)
+	if err != nil {
+		return "", err
+	}
+	const python = "/usr/bin/python3"
+	resolved, err := filepath.EvalSymlinks(python)
+	if err != nil || !regexp.MustCompile(`^/usr/bin/python3\.\d+$`).MatchString(resolved) {
+		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_SYSTEM_PYTHON")
+	}
+	if err := requireRootOwnedHostPath(resolved); err != nil {
+		return "", err
+	}
+	program := resolved
+	args := []string{"-I", "-c", sharedCoreDeploy, pins.Core.ArchiveHash}
+	if os.Geteuid() != 0 {
+		program = "/usr/bin/sudo"
+		if err := requireRootOwnedHostPath(program); err != nil {
+			return "", err
+		}
+		args = append([]string{"-n", "--", resolved}, args...)
+	}
+	result, err := process.Run(program, args, archive)
+	status := strings.TrimSpace(string(result))
+	if err != nil || status != "installed" && status != "existing" {
+		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_ADMIN_OR_READBACK")
+	}
+	if err := verifyPrivilegedCoreTree("/opt/nibfin/core"); err != nil {
+		return "", err
+	}
+	pin, err := os.CreateTemp("", "nibfin-installed-pin-")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(pin.Name())
+	written := json.NewEncoder(pin).Encode(pins.Core)
+	if closed := pin.Close(); written != nil || closed != nil {
+		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_READBACK")
+	}
+	out, err := process.Run("node", []string{"/opt/nibfin/core/bin/nibfin-core.mjs",
+		"verify", "/opt/nibfin/core", pin.Name()}, nil)
+	var receipt struct {
+		Status string    `json:"status"`
+		Source SourcePin `json:"source"`
+	}
+	if err != nil || json.Unmarshal(out, &receipt) != nil || receipt.Status != "verified" ||
+		receipt.Source.Repository != pins.Core.Repository ||
+		receipt.Source.Commit != pins.Core.Commit {
+		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_READBACK")
+	}
+	return status, nil
+}
 
 func discoverSharedHost(process Process) (*sharedHost, error) {
 	const adoption = "/etc/nibfin/host.json"
@@ -52,16 +114,20 @@ func trustedSharedCore() (string, string, error) {
 	return node, entry, nil
 }
 
-func installSharedService(process Process, sources []string) (string, error) {
+func installSharedService(process Process, sources []string, start bool) (string, error) {
 	var args []string
 	if len(sources) != 0 {
 		args = append([]string{strconv.Itoa(os.Getuid())}, sources...)
 	}
-	output, err := runSharedHostAdmin(process, "install-shared-service-template", args...)
+	operation := "install-shared-service-template"
+	if start {
+		operation = "start-shared-services"
+	}
+	output, err := runSharedHostAdmin(process, operation, args...)
 	if err != nil {
 		return "", errors.New("SHARED_SERVICE_INSTALLATION_REQUIRES_READBACK")
 	}
-	return decodeSharedServiceInstall(output)
+	return decodeSharedServiceResult(output, start)
 }
 
 func runSharedHostAdmin(

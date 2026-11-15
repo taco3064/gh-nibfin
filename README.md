@@ -68,12 +68,17 @@ an individual staged registration, use
 `gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
 while the service is stopped. Keep the administrator's GitHub login store
 outside the service accounts.
-After Core host adoption, run `init --apply --install-shared-service` for the
+On a new host, `init --apply --start-shared-services` also installs the pinned
+Core package into `/opt/nibfin/core` and verifies it there. Use an administrator
+session that can run the built-in installation step. Init reports the host
+adoption requirement until the trusted backend and Controller are configured.
+After Core host adoption, run `init --apply --start-shared-services` for the
 execution repository from the original installing account. Run `sudo -v`
 first if that account requires an interactive administrator confirmation.
 Core verifies the cached Runner 2.338.2 archive and original offline Runner
-IDs before preparing the fixed service slots and installing the unit.
-Review the installation result before enabling the two services.
+IDs before preparing the fixed service slots, installing the unit and starting
+both services. Init reports whether GitHub has observed both IDs online.
+`--install-shared-service` prepares the slots and unit without starting them.
 After enrolling a peer repository on the host, run
 `init --apply --prepare-shared-wake` for that repository to create the
 verified destination variable while shared dispatch is disabled. Existing
