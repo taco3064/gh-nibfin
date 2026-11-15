@@ -68,8 +68,8 @@ an individual staged registration, use
 `gh nibfin runner register --shared --repo OWNER/REPO --directory PATH --apply`
 while the service is stopped. Keep the administrator's GitHub login store
 outside the service accounts.
-On a new host, `init --apply --start-shared-services` also installs the pinned
-Core package into `/opt/nibfin/core` and verifies it there. Use an administrator
+On a new host, `init --apply --start-shared-services` installs the pinned Node
+executable and deploys Core to `/opt/nibfin/core`. Use an administrator
 session that can run the built-in installation step. Init reports the host
 adoption requirement until the trusted backend and Controller are configured.
 After Core host adoption, run `init --apply --start-shared-services` for the

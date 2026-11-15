@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
 	"strconv"
+	"time"
 )
 
 var errLegacySharedHost = errors.New("INSTALLED_CORE_LACKS_SHARED_HOST_INSPECTION")
@@ -102,6 +104,28 @@ func decodeSharedServiceResult(output []byte, started bool) (string, error) {
 func sharedRunnersOnline(runners []sharedRegistration) bool {
 	return len(runners) == 2 && runners[0].Status == "online" &&
 		runners[1].Status == "online"
+}
+
+func readStartedSharedRunners(ctx context.Context, api API, host sharedHost,
+) ([]sharedRegistration, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	for {
+		runners, err := verifySharedHost(api, host)
+		if err != nil || sharedRunnersOnline(runners) {
+			return runners, err
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-deadline.Done():
+			timer.Stop()
+			return runners, errors.New("SHARED_SERVICE_GITHUB_ONLINE_READBACK_REQUIRED")
+		case <-timer.C:
+		}
+	}
 }
 
 func (host sharedHost) adoptionStatus(id int64) string {
