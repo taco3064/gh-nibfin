@@ -18,7 +18,9 @@ func discoverSharedHost(Process) (*sharedHost, error) {
 	return nil, nil
 }
 
-func adoptInitialSharedHost(Process, InitPlan, []sharedRegistration) (*sharedHost, error) {
+func adoptInitialSharedHost(
+	Process, InitPlan, []sharedRegistration,
+) (*sharedHost, error) {
 	return nil, errors.New("SHARED_HOST_ADMINISTRATION_REQUIRES_LINUX_X64")
 }
 
