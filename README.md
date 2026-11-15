@@ -70,11 +70,12 @@ while the service is stopped. Keep the administrator's GitHub login store
 outside the service accounts.
 On a new host, `init --apply --start-shared-services` installs the pinned Node
 executable and deploys Core to `/opt/nibfin/core`. Use an administrator
-session that can run the built-in installation step. Init reports the host
+account. From a terminal, sudo prompts for the account's normal administrator
+authentication when required. Headless runs need an existing authorization
+for the same command. Init reports the host
 adoption requirement until the trusted backend and Controller are configured.
 After Core host adoption, run `init --apply --start-shared-services` for the
-execution repository from the original installing account. Run `sudo -v`
-first if that account requires an interactive administrator confirmation.
+execution repository from the original installing account.
 Core verifies the cached Runner 2.338.2 archive and original offline Runner
 IDs before preparing the fixed service slots, installing the unit and starting
 both services. Init reports whether GitHub has observed both IDs online.
@@ -84,8 +85,6 @@ After enrolling a peer repository on the host, run
 verified destination variable while shared dispatch is disabled. Existing
 different destinations require inspection. Manage the Wake secret and
 activation separately after validating the host.
-When adding a peer, run `sudo -v` before `init --apply` if the current
-account needs an interactive administrator confirmation for host adoption.
 
 To download, verify and register the official Runner as part of onboarding, add
 `--runner-directory ABSOLUTE_PATH --runner-name NAME` to the init command.
