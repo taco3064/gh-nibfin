@@ -72,16 +72,8 @@ func runSharedDeployment(
 	if err := requireRootOwnedHostPath(resolved); err != nil {
 		return nil, err
 	}
-	program := resolved
 	args := append([]string{"-I", "-c", sharedCoreDeploy}, values...)
-	if os.Geteuid() != 0 {
-		program = "/usr/bin/sudo"
-		if err := requireRootOwnedHostPath(program); err != nil {
-			return nil, err
-		}
-		args = append([]string{"-n", "--", resolved}, args...)
-	}
-	return process.Run(program, args, archive)
+	return runSharedAdministrator(process, resolved, args, archive)
 }
 
 func discoverSharedHost(process Process) (*sharedHost, error) {
@@ -154,18 +146,32 @@ func runSharedHostAdmin(
 	if err := requireRootOwnedHostPath(env); err != nil {
 		return nil, err
 	}
-	program := env
 	args := []string{"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8",
 		node, entry, operation}
 	args = append(args, values...)
-	if os.Geteuid() != 0 {
-		program = "/usr/bin/sudo"
-		if err := requireRootOwnedHostPath(program); err != nil {
-			return nil, err
-		}
-		args = append([]string{"-n", "--", env}, args...)
+	return runSharedAdministrator(process, env, args, nil)
+}
+
+func runSharedAdministrator(
+	process Process, program string, args []string, input []byte,
+) ([]byte, error) {
+	if os.Geteuid() == 0 {
+		return process.Run(program, args, input)
 	}
-	return process.Run(program, args, nil)
+	const sudo = "/usr/bin/sudo"
+	if err := requireRootOwnedHostPath(sudo); err != nil {
+		return nil, err
+	}
+	options := []string{"-n", "--", program}
+	// sudo prompts on its controlling terminal and leaves stdin available
+	// for the verified archive. Headless calls retain noninteractive behavior.
+	if _, native := process.(NativeProcess); native {
+		if terminal, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+			terminal.Close()
+			options = options[1:]
+		}
+	}
+	return process.Run(sudo, append(options, args...), input)
 }
 
 func verifyPrivilegedCoreTree(root string) error {
