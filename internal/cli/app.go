@@ -205,6 +205,10 @@ func (a App) Run(args []string, out io.Writer) error {
 		if err == nil && *startServices {
 			result.CoreDeployment, err = deploySharedCore(a.API, a.Process)
 		}
+		if err == nil && *startServices {
+			host, err = adoptInitialSharedHost(a.Process, plan, result.RunnerSlots)
+			registrations = result.RunnerSlots
+		}
 	}
 	if err == nil && host != nil {
 		peer := plan.Execution != nil && plan.Repository.ID != plan.Execution.RepositoryID

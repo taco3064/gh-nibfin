@@ -84,6 +84,9 @@ func discoverSharedHost(process Process) (*sharedHost, error) {
 	if !nativeSharedHostSupported() {
 		return nil, errors.New("UNSUPPORTED_SHARED_HOST_ARCHITECTURE")
 	}
+	if err := requireRootOwnedHostPath(adoption); err != nil {
+		return nil, err
+	}
 	node, entry, err := trustedSharedCore()
 	if err != nil {
 		return nil, err
@@ -95,7 +98,7 @@ func trustedSharedCore() (string, string, error) {
 	const core = "/opt/nibfin/core"
 	versionFile := core + "/.node-version"
 	entry := core + "/bin/nibfin-core.mjs"
-	for _, path := range []string{"/etc/nibfin/host.json", versionFile, entry} {
+	for _, path := range []string{versionFile, entry} {
 		if err := requireRootOwnedHostPath(path); err != nil {
 			return "", "", err
 		}
@@ -131,6 +134,51 @@ func installSharedService(process Process, sources []string, start bool) (string
 func runSharedHostAdmin(
 	process Process, operation string, values ...string,
 ) ([]byte, error) {
+	if err := requireRootOwnedHostPath("/etc/nibfin/host.json"); err != nil {
+		return nil, err
+	}
+	return runInstalledSharedAdmin(process, nil, operation, values...)
+}
+
+func adoptInitialSharedHost(
+	process Process, plan InitPlan, runners []sharedRegistration,
+) (*sharedHost, error) {
+	const profile = "/etc/nibfin/shared-host-profile.json"
+	if _, err := os.Lstat(profile); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err := requireRootOwnedHostPath(profile); err != nil {
+		return nil, err
+	}
+	if len(runners) != 2 {
+		return nil, errors.New("SHARED_HOST_REQUIRES_TWO_STAGED_RUNNERS")
+	}
+	pins := Pins()
+	input, err := json.Marshal(pins.Core)
+	if err != nil {
+		return nil, err
+	}
+	ids := strconv.FormatInt(runners[0].ID, 10) + "," + strconv.FormatInt(runners[1].ID, 10)
+	_, err = runInstalledSharedAdmin(process, input, "adopt-shared-host",
+		plan.Repository.FullName, strconv.FormatInt(plan.Repository.ID, 10),
+		strconv.FormatInt(plan.Member.ID, 10), pins.Action.Commit, ids)
+	if err != nil {
+		return nil, errors.New("SHARED_HOST_ADOPTION_REQUIRES_READBACK")
+	}
+	host, err := discoverSharedHost(process)
+	if err != nil || host == nil || host.RepositoryID != plan.Repository.ID ||
+		host.Repository != plan.Repository.FullName || host.MemberID != plan.Member.ID ||
+		host.adoptionStatus(plan.Repository.ID) != "observed" ||
+		host.Runners[0].ID != runners[0].ID || host.Runners[1].ID != runners[1].ID ||
+		host.Runners[0].Name != runners[0].Name || host.Runners[1].Name != runners[1].Name {
+		return nil, errors.New("SHARED_HOST_ADOPTION_REQUIRES_READBACK")
+	}
+	return host, nil
+}
+
+func runInstalledSharedAdmin(
+	process Process, input []byte, operation string, values ...string,
+) ([]byte, error) {
 	node, entry, err := trustedSharedCore()
 	if err != nil {
 		return nil, err
@@ -149,7 +197,7 @@ func runSharedHostAdmin(
 	args := []string{"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8",
 		node, entry, operation}
 	args = append(args, values...)
-	return runSharedAdministrator(process, env, args, nil)
+	return runSharedAdministrator(process, env, args, input)
 }
 
 func runSharedAdministrator(
