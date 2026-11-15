@@ -30,24 +30,7 @@ func deploySharedCore(api API, process Process) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	const python = "/usr/bin/python3"
-	resolved, err := filepath.EvalSymlinks(python)
-	if err != nil || !regexp.MustCompile(`^/usr/bin/python3\.\d+$`).MatchString(resolved) {
-		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_SYSTEM_PYTHON")
-	}
-	if err := requireRootOwnedHostPath(resolved); err != nil {
-		return "", err
-	}
-	program := resolved
-	args := []string{"-I", "-c", sharedCoreDeploy, pins.Core.ArchiveHash}
-	if os.Geteuid() != 0 {
-		program = "/usr/bin/sudo"
-		if err := requireRootOwnedHostPath(program); err != nil {
-			return "", err
-		}
-		args = append([]string{"-n", "--", resolved}, args...)
-	}
-	result, err := process.Run(program, args, archive)
+	result, err := runSharedDeployment(process, archive, pins.Core.ArchiveHash)
 	status := strings.TrimSpace(string(result))
 	if err != nil || status != "installed" && status != "existing" {
 		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_ADMIN_OR_READBACK")
@@ -64,7 +47,8 @@ func deploySharedCore(api API, process Process) (string, error) {
 	if closed := pin.Close(); written != nil || closed != nil {
 		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_READBACK")
 	}
-	out, err := process.Run("node", []string{"/opt/nibfin/core/bin/nibfin-core.mjs",
+	const entry = "/opt/nibfin/core/bin/nibfin-core.mjs"
+	out, err := process.Run(sharedPinnedNode, []string{entry,
 		"verify", "/opt/nibfin/core", pin.Name()}, nil)
 	var receipt struct {
 		Status string    `json:"status"`
@@ -76,6 +60,28 @@ func deploySharedCore(api API, process Process) (string, error) {
 		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_READBACK")
 	}
 	return status, nil
+}
+
+func runSharedDeployment(
+	process Process, archive []byte, values ...string,
+) ([]byte, error) {
+	resolved, err := filepath.EvalSymlinks("/usr/bin/python3")
+	if err != nil || !regexp.MustCompile(`^/usr/bin/python3\.\d+$`).MatchString(resolved) {
+		return nil, errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_SYSTEM_PYTHON")
+	}
+	if err := requireRootOwnedHostPath(resolved); err != nil {
+		return nil, err
+	}
+	program := resolved
+	args := append([]string{"-I", "-c", sharedCoreDeploy}, values...)
+	if os.Geteuid() != 0 {
+		program = "/usr/bin/sudo"
+		if err := requireRootOwnedHostPath(program); err != nil {
+			return nil, err
+		}
+		args = append([]string{"-n", "--", resolved}, args...)
+	}
+	return process.Run(program, args, archive)
 }
 
 func discoverSharedHost(process Process) (*sharedHost, error) {

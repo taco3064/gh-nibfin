@@ -174,7 +174,14 @@ func (a App) Run(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
-	cache, err := installCoreCache(a.API, a.Process)
+	cacheProcess := a.Process
+	if *startServices {
+		cacheProcess, err = prepareSharedNode(cacheProcess)
+		if err != nil {
+			return err
+		}
+	}
+	cache, err := installCoreCache(a.API, cacheProcess)
 	if err != nil {
 		return err
 	}
@@ -228,10 +235,7 @@ func (a App) Run(args []string, out io.Writer) error {
 				err = retireStagedRegistration(sources)
 			}
 			if err == nil && *startServices {
-				result.RunnerSlots, err = verifySharedHost(a.API, *host)
-				if err == nil && !sharedRunnersOnline(result.RunnerSlots) {
-					err = errors.New("SHARED_SERVICE_GITHUB_ONLINE_READBACK_REQUIRED")
-				}
+				result.RunnerSlots, err = readStartedSharedRunners(a.Context, a.API, *host)
 			}
 		}
 		if err == nil && (*prepareWake || peer) &&

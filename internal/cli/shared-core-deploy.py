@@ -72,9 +72,53 @@ def install(archive, expected, parent):
                 shutil.rmtree(stage)
 
 
+def install_runtime(archive, expected, binary_hash):
+    if len(archive) > 64 * 1024 * 1024 or hashlib.sha256(archive).hexdigest() != expected:
+        raise ValueError("Node archive digest differs")
+    parent = pathlib.Path("/opt/nibfin/tools")
+    trusted(parent.parent.parent)
+    parent.parent.mkdir(mode=0o755, exist_ok=True)
+    trusted(parent.parent)
+    parent.mkdir(mode=0o755, exist_ok=True)
+    trusted(parent)
+    name = "node-v24.22.1-linux-x64"
+    target = parent / name
+    if os.path.lexists(target):
+        trusted(target / "bin")
+        return "existing"
+    stage = pathlib.Path(tempfile.mkdtemp(prefix=".node-install-", dir=parent))
+    try:
+        (stage / "bin").mkdir()
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as package:
+            entry = package.getmember(name + "/bin/node")
+            if not entry.isfile() or entry.size > 144 * 1024 * 1024:
+                raise ValueError("Invalid Node executable")
+            path = stage / "bin/node"
+            with package.extractfile(entry) as source, path.open("xb+") as output:
+                shutil.copyfileobj(source, output)
+                output.flush()
+                output.seek(0)
+                if hashlib.file_digest(output, "sha256").hexdigest() != binary_hash:
+                    raise ValueError("Node executable digest differs")
+                os.fchmod(output.fileno(), 0o755)
+                os.fsync(output.fileno())
+        stage.chmod(0o755)
+        os.rename(stage, target)
+        return "installed"
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+
 if __name__ == "__main__":
     if os.geteuid() != 0:
         raise SystemExit("Host administrator required")
     os.umask(0o022)
-    data = sys.stdin.buffer.read(32 * 1024 * 1024 + 1)
-    print(install(data, sys.argv[1], pathlib.Path("/opt/nibfin")))
+    if len(sys.argv) == 4 and sys.argv[1] == "node":
+        data = sys.stdin.buffer.read(64 * 1024 * 1024 + 1)
+        print(install_runtime(data, sys.argv[2], sys.argv[3]))
+    elif len(sys.argv) == 2:
+        data = sys.stdin.buffer.read(32 * 1024 * 1024 + 1)
+        print(install(data, sys.argv[1], pathlib.Path("/opt/nibfin")))
+    else:
+        raise SystemExit("Invalid installation request")
