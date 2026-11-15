@@ -76,6 +76,10 @@ for the same command. On initial adoption Core reads the administrator-owned
 `/etc/nibfin/shared-host-profile.json` for the verified local backend and
 Controller settings. Init reads back the new host adoption before starting
 services. An installation without the trusted local profile remains pending.
+The optional managed egress setting prepares the dedicated service accounts,
+private Controller directories, restricted sudo relay and both slot gateways.
+An administrator supplies the verified Docker Engine, images and Controller
+credentials using the fixed host paths documented by Core.
 Rerun the same command from the original installing account to resume.
 Core verifies the cached Runner 2.338.2 archive and original offline Runner
 IDs before preparing the fixed service slots, installing the unit and starting
