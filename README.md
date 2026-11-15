@@ -72,10 +72,11 @@ On a new host, `init --apply --start-shared-services` installs the pinned Node
 executable and deploys Core to `/opt/nibfin/core`. Use an administrator
 account. From a terminal, sudo prompts for the account's normal administrator
 authentication when required. Headless runs need an existing authorization
-for the same command. Init reports the host
-adoption requirement until the trusted backend and Controller are configured.
-After Core host adoption, run `init --apply --start-shared-services` for the
-execution repository from the original installing account.
+for the same command. On initial adoption Core reads the administrator-owned
+`/etc/nibfin/shared-host-profile.json` for the verified local backend and
+Controller settings. Init reads back the new host adoption before starting
+services. An installation without the trusted local profile remains pending.
+Rerun the same command from the original installing account to resume.
 Core verifies the cached Runner 2.338.2 archive and original offline Runner
 IDs before preparing the fixed service slots, installing the unit and starting
 both services. Init reports whether GitHub has observed both IDs online.
