@@ -23,8 +23,10 @@ func decodeCallerRecipes(data []byte, pin SourcePin) (map[string][]string, error
 		return nil, errors.New("INVALID_CORE_CALLER_RECIPES")
 	}
 	names := []string{"wake", "issue", "action-wake"}
-	if _, unified := recipes["action-dispatch"]; unified {
-		names = append(names, "action-dispatch")
+	for _, name := range []string{"action-dispatch", "issue-managed"} {
+		if _, present := recipes[name]; present {
+			names = append(names, name)
+		}
 	}
 	if len(recipes) != len(names) {
 		return nil, errors.New("INVALID_CORE_CALLER_RECIPES")
