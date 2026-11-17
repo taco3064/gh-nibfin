@@ -31,12 +31,13 @@ func TestManagedInitRecoversAnAlreadyMergedInstallationPR(t *testing.T) {
 	mainBranch := map[string]any{"protected": true,
 		"commit": map[string]string{"sha": merge}}
 	contentPath := apiPath + "/contents/" + workflow + "?ref=" + merge
+	headContentPath := apiPath + "/contents/" + workflow + "?ref=" + head
 	api := &fakeAPI{data: map[string]any{
 		query:                      []map[string]int{{"number": 7}},
 		apiPath + "/pulls/7":       pr,
 		apiPath + "/branches/main": mainBranch,
 		contentPath:                encoded([]byte(original.Files[0].Content)),
-		apiPath + "/contents/" + workflow + "?ref=" + head: encoded([]byte(original.Files[0].Content)),
+		headContentPath:            encoded([]byte(original.Files[0].Content)),
 	}}
 	intent := managedInstallIntent{Plan: original}
 	var saved bool
@@ -70,7 +71,7 @@ func TestManagedInitRecoversAnAlreadyMergedInstallationPR(t *testing.T) {
 	var pending *CommandError
 	if !errors.As(err, &pending) || pending.Code != "MANAGED_INSTALL_AWAITING_PR_MERGE" ||
 		checkpoint.PR != 7 || checkpoint.Head != head {
-		t.Fatalf("expected an interrupted wait to preserve the PR identity, got %+v, %v", checkpoint, err)
+		t.Fatalf("interrupted wait lost the PR identity, got %+v, %v", checkpoint, err)
 	}
 	delete(api.data, query)
 	pr["state"], pr["merged"] = "closed", true
@@ -78,6 +79,6 @@ func TestManagedInitRecoversAnAlreadyMergedInstallationPR(t *testing.T) {
 		t.Fatal("resuming the stored intent must not replace it")
 		return nil
 	}, publish); err != nil || len(api.writes) != 0 {
-		t.Fatalf("expected to resume the same PR without GitHub writes, got %v and %v", err, api.writes)
+		t.Fatalf("resuming the same PR failed or wrote to GitHub: %v, %v", err, api.writes)
 	}
 }

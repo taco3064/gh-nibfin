@@ -45,18 +45,19 @@ func TestManagedInitRecoversPartiallyStartedSlots(t *testing.T) {
 	if err := os.WriteFile(secretPath, []byte("synthetic"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if sources, err := a.readStagedSharedSlots(plan, runners); err != nil || len(sources) != 0 {
-		t.Fatalf("a partially started pool must resume Core's installed slots, got %v, %v", sources, err)
+	sources, err := a.readStagedSharedSlots(plan, runners)
+	if err != nil || len(sources) != 0 {
+		t.Fatalf("expected to resume the installed slots without sources: %v, %v", sources, err)
 	}
 	runners[1].Status = "online"
 	paths, err := a.stagedSharedRegistrationPaths(plan, runners, false)
 	if err != nil || len(paths) != 1 || paths[0] != path {
-		t.Fatalf("the remaining staged credentials must be found after both IDs are online, got %v, %v", paths, err)
+		t.Fatalf("expected staged credentials after both IDs are online: %v, %v", paths, err)
 	}
 	if err := retireStagedRegistration(paths); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(secretPath); !os.IsNotExist(err) || len(api.writes) != 0 {
-		t.Fatalf("recovery must retire local credentials without GitHub writes, got %v and %v", err, api.writes)
+		t.Fatalf("expected local cleanup without GitHub writes: %v, %v", err, api.writes)
 	}
 }
