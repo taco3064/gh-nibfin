@@ -1,37 +1,21 @@
+/* Nibfin Core: website/src/styles/tokens.css (dark). */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font: 1rem/1.55 system-ui, sans-serif;
-  --background: #f6f5fb;
-  --surface: #fff;
-  --raised: #eeebf9;
-  --ink: #201c34;
-  --muted: #534c68;
-  --line: #dcd6ea;
-  --input-line: #89809e;
-  --accent: #5938ba;
-  --accent-hover: #462794;
-  --on-accent: #fff;
-  --focus: #6c44db;
-  --warning: #694714;
-  --warning-bg: #fff1da;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0c0d19;
-    --surface: #15172a;
-    --raised: #21233b;
-    --ink: #f0edff;
-    --muted: #c0bad6;
-    --line: #36374f;
-    --input-line: #7c7999;
-    --accent: #c4afff;
-    --accent-hover: #d6c8ff;
-    --on-accent: #201532;
-    --focus: #d3bfff;
-    --warning: #f3cb89;
-    --warning-bg: #33251c;
-  }
+  --background: #090b18;
+  --surface: #14182d;
+  --raised: #242a43;
+  --ink: #eeeefa;
+  --muted: #c0c4dc;
+  --line: #343950;
+  --input-line: #7d849f;
+  --link: #cbb8ff;
+  --accent: #b49aff;
+  --accent-hover: #d5c5ff;
+  --on-accent: #17102c;
+  --focus: #d5c5ff;
+  --warning: #f3d5a0;
+  --warning-bg: #392c1a;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -49,7 +33,7 @@ h1 { font-size: clamp(1.9rem, 4vw, 3.25rem); letter-spacing: -.045em; }
 h2 { font-size: clamp(1.2rem, 2vw, 1.55rem); letter-spacing: -.025em; }
 h3 { font-size: 1.08rem; }
 p, li, dd { overflow-wrap: anywhere; }
-a { color: var(--accent); text-underline-offset: .2em; overflow-wrap: anywhere; }
+a { color: var(--link); text-underline-offset: .2em; overflow-wrap: anywhere; }
 a:hover { color: var(--accent-hover); }
 
 .masthead, .overview { display: grid; gap: 1rem; }
@@ -65,7 +49,7 @@ a:hover { color: var(--accent-hover); }
   align-items: center;
   gap: .35rem .75rem;
   margin-bottom: .6rem;
-  color: var(--accent);
+  color: var(--link);
   font-weight: 750;
 }
 
@@ -165,7 +149,7 @@ button:disabled { opacity: .62; }
   gap: .5rem 1rem;
 }
 details { padding-block: .35rem; border-top: 1px solid var(--line); }
-summary { padding-block: .35rem; color: var(--accent); font-weight: 650; }
+summary { padding-block: .35rem; color: var(--link); font-weight: 650; }
 details[open] > summary { margin-bottom: .55rem; }
 details p { color: var(--muted); }
 #repository-evidence + p { margin-top: .5rem; }
@@ -250,7 +234,7 @@ dialog {
   border-color: var(--input-line);
 }
 dialog > * + * { margin-top: .75rem; }
-dialog::backdrop { background: #07091aaa; }
+dialog::backdrop { background: color-mix(in srgb, var(--background) 70%, transparent); }
 
 @media (max-width: 58rem) {
   .overview, .workspace { grid-template-columns: minmax(0, 1fr); }
