@@ -144,18 +144,8 @@ func applyInit(api API, plan InitPlan) (InitResult, error) {
 		}
 		result.PR = pullURL
 	}
-	for _, label := range plan.Labels {
-		body := map[string]string{"name": label, "color": "ededed",
-			"description": "Nibfin lifecycle; only authorized Core may advance work"}
-		writeErr := api.Call("POST", base+"/labels", body, nil)
-		var observed struct {
-			Name string `json:"name"`
-		}
-		if err := api.Call("GET", base+"/labels/"+label, nil, &observed); err != nil ||
-			observed.Name != label {
-			return result, errors.New("LABEL_RESULT_UNKNOWN_READ_BACK_BEFORE_RETRY")
-		}
-		_ = writeErr // Read-back, not the initial response, establishes the effect.
+	if err := ensureInitLabels(api, base, plan.Labels); err != nil {
+		return result, err
 	}
 	if len(plan.Files) == 0 {
 		if plan.Execution != nil {
@@ -168,4 +158,21 @@ func applyInit(api API, plan InitPlan) (InitResult, error) {
 		result.Code = "INSTALLATION_PR_REQUIRES_REVIEW_AND_MERGE"
 	}
 	return result, nil
+}
+
+func ensureInitLabels(api API, base string, labels []string) error {
+	for _, label := range labels {
+		body := map[string]string{"name": label, "color": "ededed",
+			"description": "Nibfin lifecycle; only authorized Core may advance work"}
+		writeErr := api.Call("POST", base+"/labels", body, nil)
+		var observed struct {
+			Name string `json:"name"`
+		}
+		if err := api.Call("GET", base+"/labels/"+label, nil, &observed); err != nil ||
+			observed.Name != label {
+			return errors.New("LABEL_RESULT_UNKNOWN_READ_BACK_BEFORE_RETRY")
+		}
+		_ = writeErr // Read-back, not the initial response, establishes the effect.
+	}
+	return nil
 }
