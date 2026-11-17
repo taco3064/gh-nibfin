@@ -58,14 +58,22 @@ func verifyInstallPR(api API, x *managedInstallIntent, pr observedInstallPR) err
 	}
 	ref := pr.Head.SHA
 	if pr.Merged && pr.State == "closed" {
-		var current reference
-		path := "repos/" + plan.Repository.FullName + "/git/ref/heads/" +
+		var branch struct {
+			Protected bool `json:"protected"`
+			Commit    struct {
+				SHA string `json:"sha"`
+			} `json:"commit"`
+		}
+		path := "repos/" + plan.Repository.FullName + "/branches/" +
 			url.PathEscape(plan.Repository.DefaultBranch)
-		if err := api.Call("GET", path, nil, &current); err != nil ||
-			!commitPattern.MatchString(current.Object.SHA) {
+		if err := api.Call("GET", path, nil, &branch); err != nil ||
+			!commitPattern.MatchString(branch.Commit.SHA) {
 			return errors.New("MANAGED_INSTALL_DEFAULT_BRANCH_UNAVAILABLE")
 		}
-		ref = current.Object.SHA
+		if !branch.Protected {
+			return errors.New("MANAGED_INSTALL_DEFAULT_BRANCH_UNPROTECTED")
+		}
+		ref = branch.Commit.SHA
 	} else if pr.Merged || pr.State != "open" {
 		return errors.New("MANAGED_INSTALL_PR_CLOSED_WITHOUT_MERGE")
 	}
