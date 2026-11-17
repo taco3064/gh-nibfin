@@ -177,7 +177,12 @@ func TestManagedResumeUsesDurableIntentAndControlledHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	managedResumePull(api, peerPlan)()
+	mergePeer := managedResumePull(api, peerPlan)
+	err = app.resumeManagedInit(ctx, peerPlan, token, &out, managedHostOperations{})
+	if !errors.As(err, &pending) || pending.Code != "MANAGED_INSTALL_AWAITING_PR_MERGE" {
+		t.Fatalf("expected an interrupted peer PR wait: %v", err)
+	}
+	mergePeer()
 	adoptions := 0
 	ops.adoptPeer = func(original sharedHost, plan InitPlan) error {
 		if !original.samePool(host) || plan.Repository.ID != 20 {
