@@ -28,6 +28,7 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 	}
 	o.Forward = []string{args[0]}
 	seen := map[string]bool{}
+	explicitRunnerOptions := false
 	for i := 1; i < len(args); i++ {
 		key, value, assigned := strings.Cut(args[i], "=")
 		if seen[key] {
@@ -56,6 +57,9 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 			if key == "--repo" {
 				o.Repo = value
 			}
+			if key == "--runner-name" && value != "" {
+				explicitRunnerOptions = true
+			}
 			o.Forward = append(o.Forward, key, value)
 		case "--consent-open-target", "--apply", "--consent-managed-login",
 			"--install-shared-service", "--start-shared-services", "--prepare-shared-wake":
@@ -70,10 +74,17 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 			if key == "--apply" {
 				o.Apply = enabled
 			}
+			if enabled && (key == "--install-shared-service" ||
+				key == "--start-shared-services" || key == "--prepare-shared-wake") {
+				explicitRunnerOptions = true
+			}
 			o.Forward = append(o.Forward, args[i])
 		default:
 			return o, invalid
 		}
+	}
+	if seen["--agent"] && explicitRunnerOptions {
+		return o, errors.New("AGENT_SELECTION_REQUIRES_MANAGED_INIT")
 	}
 	if !repoPattern.MatchString(o.Repo) || len(o.Repo) > 200 {
 		return o, invalid

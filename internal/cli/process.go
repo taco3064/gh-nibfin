@@ -84,6 +84,11 @@ func runNativeProcess(ctx context.Context, name string, args []string,
 	if err != nil {
 		return nil, err
 	}
+	return runResolvedNativeProcess(ctx, name, path, args, input, retainFailureOutput)
+}
+
+func runResolvedNativeProcess(ctx context.Context, name, path string, args []string,
+	input []byte, retainFailureOutput bool) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, path, args...)
 	if name != "gh" {
 		keys := []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"}
@@ -102,7 +107,7 @@ func runNativeProcess(ctx context.Context, name string, args []string,
 	cmd.Stdin = bytes.NewReader(input)
 	var out, stderr boundedBuffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		// Only the official gh HTTP diagnostic is classified; never disclose it.
 		if name == "gh" && githubRateLimited(stderr.String()) {
