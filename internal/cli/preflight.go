@@ -20,6 +20,7 @@ type preflightReport struct {
 	HostArch      string               `json:"host_arch"`
 	Core          SourcePin            `json:"core_candidate"`
 	Checks        []capability         `json:"checks"`
+	LinuxTarget   any                  `json:"linux_target,omitempty"`
 	Readiness     string               `json:"protected_execution"`
 	SharedRunners []sharedRegistration `json:"shared_runners,omitempty"`
 }
@@ -52,6 +53,9 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 	}
 	report := preflightReport{HostOS: runtime.GOOS, HostArch: runtime.GOARCH,
 		Core: Pins().Core, Readiness: "unverified"}
+	if nativeLinuxTarget() {
+		report.LinuxTarget = managedTargetPreview(a.API, a.Process)
+	}
 	repo, user, err := repository(a.API, *name, true)
 	permission := capability{"repository_admin", "unverified", "REPO_ADMIN_UNVERIFIED"}
 	if err == nil {
@@ -65,7 +69,7 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 		}
 	}
 	report.Checks = append(report.Checks, permission)
-	if permission.Status == "available" && nativeSharedHostSupported() {
+	if permission.Status == "available" && nativeLinuxTarget() {
 		host, sharedErr := discoverSharedHost(a.Process)
 		check, runners := inspectSharedRegistrations(a.API, repo, host, sharedErr)
 		report.Checks = append(report.Checks, check)

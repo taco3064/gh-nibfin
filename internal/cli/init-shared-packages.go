@@ -7,75 +7,82 @@ import (
 	"path/filepath"
 )
 
-const sharedRunnerArchive = "actions-runner-linux-x64-2.338.2.tar.gz"
-const (
-	sharedRunnerDownload = "https://github.com/actions/runner/releases/download/v2.338.2/"
-	sharedRunnerHash     = "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
-)
-
 // Cache official packages under the installing user. The protected service
 // installer must verify them again before copying them to the Runner identities.
 func (a App) stageSharedRunnerPackages(plan InitPlan) ([]string, error) {
 	if plan.Execution == nil || plan.Execution.RepositoryID != plan.Repository.ID {
 		return nil, errors.New("SHARED_RUNNER_PACKAGE_REQUIRES_EXECUTION_REPOSITORY")
 	}
-	app, parent, err := a.sharedSlotsCache(plan)
+	target, err := sharedTargetFromProducer(a.API)
 	if err != nil {
 		return nil, err
 	}
-	return a.stageRunnerSlots(plan, parent, app)
+	return a.stageSelectedSharedRunnerPackages(plan, target)
+}
+
+func (a App) stageSelectedSharedRunnerPackages(plan InitPlan,
+	target sharedTarget) ([]string, error) {
+	app, err := selectSharedRunner(a.API, target)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := sharedSlotsCacheDirectory(plan, app)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := a.stageRunnerSlots(plan, parent, app)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range paths {
+		if err := verifySharedRunnerExecutables(path, target); err != nil {
+			return nil, err
+		}
+	}
+	return paths, nil
 }
 
 func (a App) sharedSlotsCache(plan InitPlan) (RunnerApplication, string, error) {
-	app, err := sharedRunnerApplication(a.API)
+	// Resume and cleanup use the authenticated adopted producer's identity.
+	// A compatible pool must not be migrated to the CLI's fresh-install pin.
+	target, err := adoptedSharedTarget()
+	if err != nil {
+		return RunnerApplication{}, "", err
+	}
+	var app RunnerApplication
+	if target != nil {
+		app, err = selectSharedRunner(a.API, *target)
+	} else {
+		app, err = sharedRunnerApplication(a.API)
+	}
 	if err != nil {
 		return app, "", err
 	}
+	parent, err := sharedSlotsCacheDirectory(plan, app)
+	return app, parent, err
+}
+
+func sharedSlotsCacheDirectory(plan InitPlan, app RunnerApplication) (string, error) {
 	cache, err := os.UserCacheDir()
 	if err != nil {
-		return app, "", errors.New("USER_CACHE_UNAVAILABLE")
+		return "", errors.New("USER_CACHE_UNAVAILABLE")
 	}
 	if err := os.MkdirAll(cache, 0700); err != nil {
-		return app, "", errors.New("USER_CACHE_UNAVAILABLE")
+		return "", errors.New("USER_CACHE_UNAVAILABLE")
 	}
 	cache, err = filepath.EvalSymlinks(cache)
 	if err != nil {
-		return app, "", errors.New("USER_CACHE_UNAVAILABLE")
+		return "", errors.New("USER_CACHE_UNAVAILABLE")
 	}
-	parent, err := sharedRunnerPackageDirectory(cache, plan, app.Hash)
-	if err != nil {
-		return app, "", err
-	}
-	return app, parent, nil
+	return sharedRunnerPackageDirectory(cache, plan, app.Hash)
 }
 
 func sharedRunnerApplication(api API) (RunnerApplication, error) {
-	const endpoint = "repos/actions/runner/releases/tags/v2.338.2"
-	var release struct {
-		Tag    string `json:"tag_name"`
-		Draft  bool   `json:"draft"`
-		Assets []struct {
-			Name   string `json:"name"`
-			Digest string `json:"digest"`
-			URL    string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := api.Call("GET", endpoint, nil, &release); err != nil {
+	target, err := sharedTargetFromProducer(api)
+	if err != nil {
 		return RunnerApplication{}, err
 	}
-	if release.Tag == "v2.338.2" && !release.Draft {
-		for _, asset := range release.Assets {
-			if asset.Name == sharedRunnerArchive &&
-				asset.Digest == "sha256:"+sharedRunnerHash &&
-				asset.URL == sharedRunnerDownload+sharedRunnerArchive {
-				return RunnerApplication{
-					OS: "linux", Arch: "x64", Filename: asset.Name, Hash: sharedRunnerHash,
-					URL: asset.URL,
-				}, nil
-			}
-		}
-	}
-	return RunnerApplication{}, errors.New("OFFICIAL_SHARED_RUNNER_SOURCE_UNAVAILABLE")
+	return selectSharedRunner(api, target)
 }
 
 // The privileged Core operation independently verifies archive bytes and slot
@@ -122,6 +129,9 @@ func (a App) stagedSharedRegistrationPaths(plan InitPlan,
 			return nil, errors.New("SHARED_RUNNER_REGISTRATION_CHANGED")
 		}
 		if forInstall {
+			if err := verifyRunnerFiles(path, app); err != nil {
+				return nil, err
+			}
 			if _, err := readRegisteredSharedSlot(
 				a.API, plan.Repository, plan.Member, path, record); err != nil {
 				return nil, err

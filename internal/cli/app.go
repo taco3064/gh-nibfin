@@ -124,7 +124,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		}
 		*executionRepo = host.Repository
 	} else if *executionRepo == "" && *runnerPath == "" && *runnerName == "" &&
-		!legacyHost && nativeSharedHostSupported() {
+		!legacyHost && nativeLinuxTarget() {
 		*executionRepo = *name
 		defaultShared = true
 	}
@@ -152,6 +152,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	encoder.SetIndent("", "  ")
 	preview := map[string]any{"status": "preview", "plan": plan,
 		"protected_execution": "unverified"}
+	if nativeLinuxTarget() && plan.Execution != nil {
+		preview["linux_target"] = managedTargetPreview(a.API, a.Process)
+	}
 	if legacyHost {
 		preview["shared_host_adoption"] = "installed_core_upgrade_required"
 	}
@@ -178,9 +181,9 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	_, native := a.Process.(NativeProcess)
 	managedPeer := host != nil && len(plan.Files) > 0
-	managedResume := native && nativeSharedHostSupported() &&
+	managedResume := native && nativeLinuxTarget() &&
 		managedIntentAvailable(plan.Repository)
-	managed := native && nativeSharedHostSupported() && plan.Execution != nil &&
+	managed := native && nativeLinuxTarget() && plan.Execution != nil &&
 		(defaultShared || managedPeer || managedResume || (*consentManaged && host != nil)) &&
 		!*installService && !*prepareWake && runner == nil
 	if managed {
@@ -191,7 +194,7 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	cacheProcess := a.Process
 	if *startServices {
-		cacheProcess, err = prepareSharedNode(cacheProcess)
+		cacheProcess, err = prepareSharedNode(a.API, cacheProcess)
 		if err != nil {
 			return err
 		}
@@ -210,7 +213,7 @@ func (a App) Run(args []string, out io.Writer) error {
 		}
 	}
 	result, err := applyInit(a.API, plan)
-	if err == nil && host == nil && nativeSharedHostSupported() &&
+	if err == nil && host == nil && nativeLinuxTarget() &&
 		plan.Execution != nil && plan.Execution.RepositoryID == plan.Repository.ID &&
 		result.Code == "SHARED_HOST_ADOPTION_REQUIRED" {
 		result.RunnerPackages, err = a.stageSharedRunnerPackages(plan)

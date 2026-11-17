@@ -140,14 +140,10 @@ func registerRunnerWithLabel(api API, host RunnerHost, repo Repository, user Use
 func runnerApplicationForRegistration(api API, repo, label string) (
 	RunnerApplication, error,
 ) {
-	app, err := runnerApplication(api, repo)
-	if label != sharedRunnerLabel || err == nil || err.Error() !=
-		"OFFICIAL_RUNNER_SOURCE_UNAVAILABLE" {
-		return app, err
+	if label == sharedRunnerLabel {
+		return sharedRunnerApplication(api)
 	}
-	// GitHub may return no per-repository downloads before the first
-	// registration. The shared Worker supports this exact public release.
-	return sharedRunnerApplication(api)
+	return runnerApplication(api, repo)
 }
 
 func localRunnerMatches(directory string, record RunnerInstall) error {

@@ -17,18 +17,32 @@ import (
 //go:embed shared-core-deploy.py
 var sharedCoreDeploy string
 
-var hostNodeVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
-
-func nativeSharedHostSupported() bool { return runtime.GOARCH == "amd64" }
+func nativeSharedHostSupported() bool {
+	return runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"
+}
 
 func deploySharedCore(api API, process Process) (string, error) {
 	if process == nil || !nativeSharedHostSupported() {
-		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_LINUX_X64")
+		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_NATIVE_LINUX")
 	}
-	pins := Pins()
-	archive, err := candidateArchive(api, pins)
+	selection, err := sharedInstallationFromProducer(api)
 	if err != nil {
 		return "", err
+	}
+	return deploySelectedSharedCore(process, selection)
+}
+
+func deploySelectedSharedCore(
+	process Process, selection sharedInstallation,
+) (string, error) {
+	pins := Pins()
+	archive, target := selection.archive, selection.target
+	if err := requireRootOwnedHostPath(target.nodePath()); err != nil {
+		return "", err
+	}
+	verification := verifySharedExecutableFile(target.nodePath(), target.NodeHash, target)
+	if verification != nil {
+		return "", verification
 	}
 	result, err := runSharedDeployment(process, archive, pins.Core.ArchiveHash)
 	status := strings.TrimSpace(string(result))
@@ -36,6 +50,9 @@ func deploySharedCore(api API, process Process) (string, error) {
 		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_ADMIN_OR_READBACK")
 	}
 	if err := verifyPrivilegedCoreTree("/opt/nibfin/core"); err != nil {
+		return "", err
+	}
+	if err := verifyInstalledCoreManifest("/opt/nibfin/core", pins.Core); err != nil {
 		return "", err
 	}
 	pin, err := os.CreateTemp("", "nibfin-installed-pin-")
@@ -48,7 +65,7 @@ func deploySharedCore(api API, process Process) (string, error) {
 		return "", errors.New("SHARED_CORE_DEPLOYMENT_REQUIRES_READBACK")
 	}
 	const entry = "/opt/nibfin/core/bin/nibfin-core.mjs"
-	out, err := process.Run(sharedPinnedNode, []string{entry,
+	out, err := process.Run(target.nodePath(), []string{entry,
 		"verify", "/opt/nibfin/core", pin.Name()}, nil)
 	var receipt struct {
 		Status string    `json:"status"`
@@ -95,24 +112,71 @@ func discoverSharedHost(process Process) (*sharedHost, error) {
 }
 
 func trustedSharedCore() (string, string, error) {
+	target, err := trustedSharedTarget()
+	if err != nil {
+		return "", "", err
+	}
+	return target.nodePath(), "/opt/nibfin/core/bin/nibfin-core.mjs", nil
+}
+
+func adoptedSharedTarget() (*sharedTarget, error) {
+	if _, err := os.Lstat("/etc/nibfin/host.json"); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	target, err := trustedSharedTarget()
+	if err != nil {
+		return nil, err
+	}
+	return &target, nil
+}
+
+func trustedSharedTarget() (sharedTarget, error) {
 	const core = "/opt/nibfin/core"
 	versionFile := core + "/.node-version"
 	entry := core + "/bin/nibfin-core.mjs"
 	for _, path := range []string{versionFile, entry} {
 		if err := requireRootOwnedHostPath(path); err != nil {
-			return "", "", err
+			return sharedTarget{}, err
 		}
 	}
-	raw, err := os.ReadFile(versionFile)
-	version := strings.TrimSpace(string(raw))
-	if err != nil || !hostNodeVersion.MatchString(version) {
-		return "", "", errors.New("SHARED_HOST_NODE_VERSION_UNAVAILABLE")
+	if err := verifyPrivilegedCoreTree(core); err != nil {
+		return sharedTarget{}, err
 	}
-	node := "/opt/nibfin/tools/node-v" + version + "-linux-x64/bin/node"
+	pin, err := installedSharedPin()
+	if err != nil {
+		return sharedTarget{}, err
+	}
+	if err := verifyInstalledCoreManifest(core, pin); err != nil {
+		return sharedTarget{}, err
+	}
+	raw, err := boundedLinuxFile(versionFile)
+	if err != nil {
+		return sharedTarget{}, errors.New("SHARED_HOST_NODE_VERSION_UNAVAILABLE")
+	}
+	contractPath := core + "/src/shared-platform.json"
+	if err := requireRootOwnedHostPath(contractPath); err != nil {
+		return sharedTarget{}, err
+	}
+	data, err := boundedLinuxFile(contractPath)
+	if err != nil {
+		return sharedTarget{}, err
+	}
+	contract, err := parseSharedPlatform(data, raw)
+	if err != nil {
+		return sharedTarget{}, err
+	}
+	target, err := nativeSharedTarget(contract)
+	if err != nil {
+		return sharedTarget{}, err
+	}
+	node := target.nodePath()
 	if err := requireRootOwnedHostPath(node); err != nil {
-		return "", "", err
+		return sharedTarget{}, err
 	}
-	return node, entry, nil
+	if err := verifySharedExecutableFile(node, target.NodeHash, target); err != nil {
+		return sharedTarget{}, err
+	}
+	return target, nil
 }
 
 func installSharedService(process Process, sources []string, start bool) (string, error) {

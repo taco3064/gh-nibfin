@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -25,7 +26,15 @@ func TestSharedSlotPathMatchesServiceInstance(t *testing.T) {
 }
 
 func TestSharedRegistrationRecoversOnlyAnObservedOfflineSlot(t *testing.T) {
+	if !nativeSharedHostSupported() {
+		t.Skip("shared registration requires native Linux")
+	}
 	a, api, host, path := runnerFixture(t)
+	contract := platformFixture()
+	recordTarget := contract.Targets[runtime.GOARCH]
+	recordTarget.RunnerHash = api.app.Hash
+	contract.Targets[runtime.GOARCH] = recordTarget
+	installSharedProducerFixture(t, api.fakeAPI, contract)
 	repo := api.data["repos/example/project"].(Repository)
 	member := api.data["user"].(User)
 	record, err := createRunnerPackage(a.Download, repo, member, "slot", path, api.app)
@@ -60,7 +69,15 @@ func TestSharedRegistrationRecoversOnlyAnObservedOfflineSlot(t *testing.T) {
 }
 
 func TestSharedOfflineRegistrationRequiresBothNativeLabels(t *testing.T) {
+	if !nativeSharedHostSupported() {
+		t.Skip("shared registration requires native Linux")
+	}
 	a, api, host, directory := runnerFixture(t)
+	contract := platformFixture()
+	recordTarget := contract.Targets[runtime.GOARCH]
+	recordTarget.RunnerHash = api.app.Hash
+	contract.Targets[runtime.GOARCH] = recordTarget
+	installSharedProducerFixture(t, api.fakeAPI, contract)
 	repo := api.data["repos/example/project"].(Repository)
 	member := api.data["user"].(User)
 	name := sharedRunnerSlotName(repo.ID, member.ID, 1)

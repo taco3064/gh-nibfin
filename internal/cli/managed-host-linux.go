@@ -124,13 +124,22 @@ type managedHostOperations struct {
 }
 
 func (a App) managedHostOperations() managedHostOperations {
+	var selection sharedInstallation
 	return managedHostOperations{
 		discover: func() (*sharedHost, error) { return discoverSharedHost(a.Process) },
 		prepare: func(plan InitPlan) error {
-			if _, err := prepareSharedNode(a.Process); err != nil {
+			var err error
+			selection, err = sharedInstallationFromProducer(a.API)
+			if err != nil {
 				return err
 			}
-			if _, err := deploySharedCore(a.API, a.Process); err != nil {
+			if err := requireManagedLinux(selection.platform, a.Process); err != nil {
+				return err
+			}
+			if _, err := prepareSelectedSharedNode(a.Process, selection.target); err != nil {
+				return err
+			}
+			if _, err := deploySelectedSharedCore(a.Process, selection); err != nil {
 				return err
 			}
 			return prepareManagedHost(a.Process, plan)
@@ -138,7 +147,9 @@ func (a App) managedHostOperations() managedHostOperations {
 		credentials: func(member int64, token []byte) error {
 			return transferControllerCredential(a.Process, member, token)
 		},
-		stage:    a.stageSharedRunnerPackages,
+		stage: func(plan InitPlan) ([]string, error) {
+			return a.stageSelectedSharedRunnerPackages(plan, selection.target)
+		},
 		register: a.registerInitSharedSlots,
 		adopt: func(plan InitPlan, slots []sharedRegistration) (*sharedHost, error) {
 			return adoptInitialSharedHost(a.Process, plan, slots)
