@@ -46,8 +46,10 @@ export function issueControls(parent, issue) {
   const matching = issue.identity?.repository?.id === repository?.id &&
     issue.identity?.repository?.name === repository?.name;
   const candidates = matching ? [issue] : [];
-  action(parent, 'Pause', 'pause', candidates);
-  action(parent, 'Resume', 'resume', candidates);
+  const actions = node('div', undefined, 'actions');
+  parent.append(actions);
+  action(actions, 'Pause', 'pause', candidates);
+  action(actions, 'Resume', 'resume', candidates);
 }
 export function configure(snapshot, post) {
   current = snapshot;
@@ -73,9 +75,11 @@ export function configure(snapshot, post) {
     ? `Maximum ${snapshot.label_action_limit} reviewed Issues per request. ` +
       'Native eligibility is rechecked.'
     : 'Request limits unavailable. Read snapshot to refresh.');
-  action(parent, 'Pause All', 'pause',
+  const actions = node('div', undefined, 'actions');
+  parent.append(actions);
+  action(actions, 'Pause All', 'pause',
     issues.filter(issue => issue.state === 'open'), true);
-  action(parent, 'Resume All', 'resume', paused, true);
+  action(actions, 'Resume All', 'resume', paused, true);
   if (!dialog) {
     dialog = node('dialog');
     dialog.setAttribute('aria-label', 'Review label request');
@@ -127,7 +131,9 @@ async function prepare(operation, candidates, batch) {
     close.type = 'button';
     close.dataset.cancel = '';
     close.addEventListener('click', cancel);
-    dialog.append(confirm, close);
+    const actions = node('div', undefined, 'actions');
+    actions.append(confirm, close);
+    dialog.append(actions);
     dialog.showModal();
     close.focus();
     output.textContent = 'Review the exact set before confirming.';

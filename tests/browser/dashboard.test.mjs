@@ -45,7 +45,8 @@ test('deliberate session handoff, graph direction, identities and activity', asy
   assert.deepEqual(await h.context.cookies(), []);
   assert.equal(await page.evaluate(async () =>
     (await indexedDB.databases()).length), 0);
-  await contains(page.locator('#repository'), 'Observed Issues: 3; open: 2; closed: 1');
+  assert.deepEqual(await page.locator('.issue-counts dd').allTextContents(),
+    ['3', '2', '1']);
   await contains(graph(page), 'example/project#1 → example/project#2');
   await contains(graph(page), 'example/project#1 → other/project#1');
   await contains(graph(page), 'other/project#8 — external reference (not collected)');
@@ -239,8 +240,8 @@ test('more than 100 Issues are reachable with keyboard at mobile width', async t
   await page.keyboard.press('Tab');
   assert.equal(await page.getByLabel('Find identity or title').evaluate(el =>
     el === document.activeElement), false);
-  // The repository link and activity disclosure precede the graph controls.
-  for (let i = 0; i < 5; i++) {
+  // The repository link and disclosures precede the graph controls.
+  for (let i = 0; i < 6; i++) {
     const focused = await page.locator('#search').evaluate(el =>
       el === document.activeElement);
     if (focused) break;
@@ -256,6 +257,9 @@ test('more than 100 Issues are reachable with keyboard at mobile width', async t
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
   await contains(details(page), 'example/project#130');
+  const selectedPanel = await details(page).boundingBox();
+  const issueList = await graph(page).boundingBox();
+  assert.ok(selectedPanel.y < issueList.y);
   assert.equal(await details(page).evaluate(el => el === document.activeElement), true);
   await page.keyboard.press('Tab');
   assert.equal(await details(page).getByRole('link').evaluate(el =>
