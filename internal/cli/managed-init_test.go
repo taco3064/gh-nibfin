@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -35,6 +36,7 @@ func TestManagedInitRecoversAnAlreadyMergedInstallationPR(t *testing.T) {
 		apiPath + "/pulls/7":       pr,
 		apiPath + "/branches/main": mainBranch,
 		contentPath:                encoded([]byte(original.Files[0].Content)),
+		apiPath + "/contents/" + workflow + "?ref=" + head: encoded([]byte(original.Files[0].Content)),
 	}}
 	intent := managedInstallIntent{Plan: original}
 	var saved bool
@@ -53,5 +55,29 @@ func TestManagedInitRecoversAnAlreadyMergedInstallationPR(t *testing.T) {
 	err := waitManagedInstall(ctx, api, &intent, save, publish)
 	if err == nil || err.Error() != "MANAGED_INSTALL_DEFAULT_BRANCH_UNPROTECTED" {
 		t.Fatalf("expected branch protection to be required, got %v", err)
+	}
+
+	mainBranch["protected"] = true
+	pr["state"], pr["merged"] = "open", false
+	intent = managedInstallIntent{Plan: original}
+	var checkpoint managedInstallIntent
+	interrupted, cancel := context.WithCancel(ctx)
+	cancel()
+	err = waitManagedInstall(interrupted, api, &intent, func() error {
+		checkpoint = intent
+		return nil
+	}, publish)
+	var pending *CommandError
+	if !errors.As(err, &pending) || pending.Code != "MANAGED_INSTALL_AWAITING_PR_MERGE" ||
+		checkpoint.PR != 7 || checkpoint.Head != head {
+		t.Fatalf("expected an interrupted wait to preserve the PR identity, got %+v, %v", checkpoint, err)
+	}
+	delete(api.data, query)
+	pr["state"], pr["merged"] = "closed", true
+	if err := waitManagedInstall(ctx, api, &checkpoint, func() error {
+		t.Fatal("resuming the stored intent must not replace it")
+		return nil
+	}, publish); err != nil || len(api.writes) != 0 {
+		t.Fatalf("expected to resume the same PR without GitHub writes, got %v and %v", err, api.writes)
 	}
 }

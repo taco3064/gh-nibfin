@@ -83,7 +83,17 @@ func sharedRunnerApplication(api API) (RunnerApplication, error) {
 func (a App) readStagedSharedSlots(plan InitPlan,
 	runners []sharedRegistration) ([]string, error) {
 	if len(runners) != 2 || runners[0].Busy || runners[1].Busy ||
-		runners[0].Status != "offline" || runners[1].Status != "offline" ||
+		runners[0].Status != "offline" || runners[1].Status != "offline" {
+		return nil, nil
+	}
+	return a.stagedSharedRegistrationPaths(plan, runners, true)
+}
+
+// After the destination slots are running, the cache is only used for cleanup.
+// GitHub has already verified the bound IDs, so it need not report them offline.
+func (a App) stagedSharedRegistrationPaths(plan InitPlan,
+	runners []sharedRegistration, forInstall bool) ([]string, error) {
+	if len(runners) != 2 ||
 		runners[0].Name != sharedRunnerSlotName(plan.Repository.ID, plan.Member.ID, 1) ||
 		runners[1].Name != sharedRunnerSlotName(plan.Repository.ID, plan.Member.ID, 2) {
 		return nil, nil
@@ -96,7 +106,10 @@ func (a App) readStagedSharedSlots(plan InitPlan,
 	for _, runner := range runners {
 		path := filepath.Join(parent, runner.Name)
 		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			if forInstall {
+				return nil, nil
+			}
+			continue
 		} else if err != nil {
 			return nil, err
 		}
@@ -104,13 +117,15 @@ func (a App) readStagedSharedSlots(plan InitPlan,
 		if err != nil {
 			return nil, err
 		}
-		if record.State != "registered" || record.RunnerID != runner.ID ||
+		if record.State != "registered" || record.RunnerID != runner.ID || record.Name != runner.Name ||
 			record.Application != app {
 			return nil, errors.New("SHARED_RUNNER_REGISTRATION_CHANGED")
 		}
-		if _, err := readRegisteredSharedSlot(
-			a.API, plan.Repository, plan.Member, path, record); err != nil {
-			return nil, err
+		if forInstall {
+			if _, err := readRegisteredSharedSlot(
+				a.API, plan.Repository, plan.Member, path, record); err != nil {
+				return nil, err
+			}
 		}
 		paths = append(paths, path)
 	}
