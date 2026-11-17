@@ -51,6 +51,7 @@ func verifyInstallPR(api API, x *managedInstallIntent, pr observedInstallPR) err
 		plan.Repository.FullName, pr.Number)
 	if pr.Number <= 0 || pr.URL != wantURL || pr.Head.Ref != branch ||
 		!commitPattern.MatchString(pr.Head.SHA) ||
+		pr.Head.Repo.ID != plan.Repository.ID || pr.Base.Repo.ID != plan.Repository.ID ||
 		pr.Base.Ref != plan.Repository.DefaultBranch ||
 		x.PR > 0 && (pr.Number != x.PR || pr.Head.SHA != x.Head) {
 		return errors.New("MANAGED_INSTALL_PR_CHANGED")
