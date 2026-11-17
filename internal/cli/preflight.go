@@ -16,6 +16,7 @@ type capability struct {
 }
 
 type preflightReport struct {
+	Agent         *agentBinding        `json:"agent,omitempty"`
 	LinuxIdentity string               `json:"linux_identity,omitempty"`
 	HostAdopted   bool                 `json:"shared_host_adopted"`
 	HostOS        string               `json:"host_os"`
@@ -60,6 +61,9 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 		report.LinuxTarget = managedTargetPreview(a.API, a.Process)
 		host, err := discoverSharedHost(a.Process)
 		report.HostAdopted = err == nil && host != nil
+		if report.HostAdopted {
+			report.Agent = host.Agent
+		}
 	}
 	repo, user, err := repository(a.API, *name, true)
 	permission := capability{"repository_admin", "unverified", "REPO_ADMIN_UNVERIFIED"}

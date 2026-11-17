@@ -19,6 +19,15 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 		*version != "latest" && !versionPattern.MatchString(*version) {
 		return errors.New("INVALID_UPGRADE_ARGUMENTS")
 	}
+	host, err := discoverSharedHost(a.Process)
+	if err != nil {
+		return err
+	}
+	if host != nil {
+		if _, err := verifySharedHost(a.API, *host); err != nil {
+			return err
+		}
+	}
 	plan, err := planUpgrade(a.API, *name, *version, *managed)
 	if err != nil {
 		return err
@@ -34,6 +43,11 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	}
 	if !*apply {
 		return nil
+	}
+	if host != nil {
+		if err := recheckSharedHost(a.Process, a.API, *host); err != nil {
+			return err
+		}
 	}
 	result, err := applyUpgrade(a.API, plan, *version)
 	if err != nil {

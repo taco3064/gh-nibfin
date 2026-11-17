@@ -10,11 +10,6 @@ import (
 
 const managedHostEntry = "bin/nibfin-prepare-managed-onboarding.mjs"
 
-type preparationRepository struct {
-	Repository string `json:"repository"`
-	ID         int64  `json:"repositoryId"`
-}
-
 type managedHostPreparation struct {
 	Version      int                     `json:"schemaVersion"`
 	MemberID     int64                   `json:"memberId"`
@@ -109,6 +104,8 @@ func transferControllerCredential(process Process, member int64, token []byte) e
 }
 
 type managedHostOperations struct {
+	setupAgent  func(InitPlan, []byte) error
+	readAgent   func(InitPlan, *sharedHost) error
 	discover    func() (*sharedHost, error)
 	prepare     func(InitPlan) error
 	credentials func(int64, []byte) error
@@ -126,7 +123,14 @@ func (a App) managedHostOperations() managedHostOperations {
 	var selection sharedInstallation
 	return managedHostOperations{
 		activate: a.activateManagedRelay,
-		discover: func() (*sharedHost, error) { return discoverSharedHost(a.Process) },
+		setupAgent: func(plan InitPlan, token []byte) error {
+			if plan.Agent != nil && plan.Agent.Provider != "codex" {
+				return errors.New("AGENT_COMPOSITION_UNAVAILABLE")
+			}
+			return transferControllerCredential(a.Process, plan.Member.ID, token)
+		},
+		readAgent: verifyPlannedAgent,
+		discover:  func() (*sharedHost, error) { return discoverSharedHost(a.Process) },
 		prepare: func(plan InitPlan) error {
 			var err error
 			selection, err = sharedInstallationFromProducer(a.API)
@@ -199,12 +203,17 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		host.Repository != plan.Execution.Repository || host.MemberID != plan.Member.ID) {
 		return errors.New("MANAGED_INSTALL_HOST_BINDING_CHANGED")
 	}
+	if host != nil {
+		if err := checkManagedAgent(ops, plan, host); err != nil {
+			return err
+		}
+	}
 	var packages []string
 	if host == nil {
 		if err := ops.prepare(plan); err != nil {
 			return err
 		}
-		if err := ops.credentials(plan.Member.ID, token); err != nil {
+		if err := setupManagedAgent(ops, plan, token); err != nil {
 			return err
 		}
 		packages, err = ops.stage(plan)
@@ -231,6 +240,9 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		}
 		host = updated
 	}
+	if err := checkManagedAgent(ops, plan, host); err != nil {
+		return err
+	}
 	if plan.Repository.ID != host.RepositoryID {
 		runners, err := readStartedSharedRunners(ctx, a.API, *host)
 		if err != nil {
@@ -240,7 +252,7 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	}
 	if len(packages) == 0 {
 		if initIssueRecipe(plan) != "issue-managed" {
-			if err := ops.credentials(plan.Member.ID, token); err != nil {
+			if err := setupManagedAgent(ops, plan, token); err != nil {
 				return err
 			}
 		}

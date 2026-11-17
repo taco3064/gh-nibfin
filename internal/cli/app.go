@@ -9,6 +9,7 @@ import (
 )
 
 type App struct {
+	agents         *agentOperations
 	handoffCheck   func() error
 	Context        context.Context
 	StartDashboard DashboardStart
@@ -40,7 +41,9 @@ func (a App) Run(args []string, out io.Writer) error {
 		_, err := fmt.Fprintln(out, "gh nibfin: manual Bootstrap candidate\n"+
 			dashboardUsage+"\n"+
 			"Version: gh nibfin version (or --version)\n"+
-			"Usage: gh nibfin init --repo OWNER/REPO [--apply]\n"+
+			"Usage: gh nibfin init --repo OWNER/REPO [--agent codex|claude] [--apply]\n"+
+			"Fresh managed init defaults to Codex; existing pools retain their Agent.\n"+
+			"Agent availability requires verified Core composition; Claude is fixture-only.\n"+
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
 			"Shared execution: init --repo OWNER/REPO --execution-repo OWNER/REPO.\n"+
@@ -52,6 +55,10 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Recovery: init --quick inspect/cancel; see README for the full sequence.\n"+
 			"Use --handoff-directory PATH with each step and --apply to execute.\n"+
 			"Management issues/confirms; members use their own GitHub login.\n"+
+			"Rebuild: runner rebuild --repo OWNER/REPO --agent codex|claude\n"+
+			"Rebuild previews by default; --apply --consent-rebuild applies or resumes.\n"+
+			"Rebuild requires local admin and GitHub authorization for adopted repos.\n"+
+			"Only Core activation confirms replacement release; retry uncertain results.\n"+
 			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+
 			"Mutations require --directory ABSOLUTE_PATH --apply; create also --name.\n"+
 			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")

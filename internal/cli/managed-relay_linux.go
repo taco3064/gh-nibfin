@@ -9,15 +9,32 @@ import (
 )
 
 type managedRelayOperations struct {
-	local   func(relayLocalRequest) ([]byte, error)
-	core    func(string) ([]byte, error)
-	system  func(...string) error
-	refresh func() error
-	recheck func() error
+	local       func(relayLocalRequest) ([]byte, error)
+	core        func(string) ([]byte, error)
+	system      func(...string) error
+	refresh     func() error
+	recheck     func() error
+	replacement bool
 }
 
 func (a App) activateManagedRelay(plan InitPlan,
 	runners []sharedRegistration) (managedRelayResult, error) {
+	return a.activateManagedRelayMode(plan, runners, false)
+}
+
+func (a App) activateReplacementRelay(plan InitPlan,
+	runners []sharedRegistration) (managedRelayResult, error) {
+	snapshot, err := readRebuildSnapshot(a.Process)
+	if err != nil || snapshot.Retirement == nil ||
+		snapshot.Retirement.Phase != "retired" || !snapshot.Retirement.Settled ||
+		!sameRebuildPool(snapshot.Host, snapshot.Retirement.Replacement) {
+		return managedRelayResult{}, errors.New("REBUILD_RETIREMENT_UNVERIFIED")
+	}
+	return a.activateManagedRelayMode(plan, runners, true)
+}
+
+func (a App) activateManagedRelayMode(plan InitPlan,
+	runners []sharedRegistration, replacement bool) (managedRelayResult, error) {
 	if !sharedRunnersOnline(runners) {
 		return managedRelayResult{}, errors.New("MANAGED_RELAY_RUNNERS_UNVERIFIED")
 	}
@@ -35,6 +52,7 @@ func (a App) activateManagedRelay(plan InitPlan,
 		}
 	}
 	ops := managedRelayOperations{
+		replacement: replacement,
 		local: func(request relayLocalRequest) ([]byte, error) {
 			return runRelayLocal(a.Process, request)
 		},
@@ -191,7 +209,7 @@ func configureManagedRelay(api API, plan InitPlan,
 			return result, err
 		}
 		paused, err := observed.paused()
-		if err != nil || paused {
+		if err != nil || paused && !ops.replacement {
 			return result, errors.New("MANAGED_RELAY_PAUSED_REQUIRES_INSPECTION")
 		}
 		if !changed {

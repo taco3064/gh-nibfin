@@ -34,6 +34,7 @@ func readInstalledSharedHost(process Process, node, entry string) (*sharedHost, 
 }
 
 type sharedHost struct {
+	Agent *agentBinding `json:"agent,omitempty"`
 	SharedExecution
 	SchemaVersion        int     `json:"schemaVersion"`
 	MemberID             int64   `json:"memberId"`
@@ -140,7 +141,8 @@ func (host sharedHost) adoptionStatus(id int64) string {
 
 func (host sharedHost) samePool(observed *sharedHost) bool {
 	return observed != nil && host.SharedExecution == observed.SharedExecution &&
-		host.MemberID == observed.MemberID && slices.Equal(host.Runners, observed.Runners)
+		host.MemberID == observed.MemberID && sameAgent(host.Agent, observed.Agent) &&
+		slices.Equal(host.Runners, observed.Runners)
 }
 
 func (host sharedHost) verifyInit(api API, executionRepo, runnerPath,
