@@ -9,6 +9,11 @@ import (
 func templates(
 	pins Producers, memberID int64, recipes map[string][]string,
 ) map[string]string {
+	return templatesForRecipe(pins, memberID, recipes, "issue")
+}
+
+func templatesForRecipe(pins Producers, memberID int64,
+	recipes map[string][]string, recipe string) map[string]string {
 	action := pins.Action.Repository + "@" + pins.Action.Commit
 	pinJSON, _ := json.MarshalIndent(pins, "", "  ")
 	render := func(kind string) string {
@@ -18,7 +23,7 @@ func templates(
 		return strings.ReplaceAll(text, "MEMBER_ID", fmt.Sprint(memberID))
 	}
 	files := map[string]string{
-		".github/workflows/nibfin-issue.yml": render("issue"),
+		".github/workflows/nibfin-issue.yml": render(recipe),
 		".nibfin/producer-pins.json":         string(pinJSON) + "\n",
 	}
 	if _, unified := recipes["action-dispatch"]; unified {

@@ -13,12 +13,13 @@ type Change struct {
 }
 
 type InitPlan struct {
-	Repository Repository       `json:"repository"`
-	Member     User             `json:"member"`
-	Head       string           `json:"head"`
-	Files      []Change         `json:"files"`
-	Labels     []string         `json:"labels"`
-	Execution  *SharedExecution `json:"shared_execution,omitempty"`
+	IssueRecipe string           `json:"issue_recipe,omitempty"`
+	Repository  Repository       `json:"repository"`
+	Member      User             `json:"member"`
+	Head        string           `json:"head"`
+	Files       []Change         `json:"files"`
+	Labels      []string         `json:"labels"`
+	Execution   *SharedExecution `json:"shared_execution,omitempty"`
 }
 
 type reference struct {
@@ -33,11 +34,16 @@ func planInit(api API, name string) (InitPlan, error) {
 }
 
 func planInitWithExecution(api API, name, execution string) (InitPlan, error) {
+	return planInitRecipe(api, name, execution, "issue")
+}
+
+func planInitRecipe(api API, name, execution, recipe string) (InitPlan, error) {
 	repo, user, err := repository(api, name, false)
 	plan := InitPlan{Repository: repo, Member: user, Files: []Change{}, Labels: []string{}}
 	if err != nil {
 		return plan, err
 	}
+	plan.IssueRecipe = recipe
 	pins := Pins()
 	if err := verifyProducers(api, pins); err != nil {
 		return plan, err
@@ -58,7 +64,10 @@ func planInitWithExecution(api API, name, execution string) (InitPlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	files := templates(pins, user.ID, recipes)
+	if recipe != "issue" && recipe != "issue-managed" || len(recipes[recipe]) == 0 {
+		return plan, errors.New("MANAGED_CALLER_SOURCE_UNAVAILABLE")
+	}
+	files := templatesForRecipe(pins, user.ID, recipes, recipe)
 	if execution != "" {
 		if err := planSharedExecution(api, &plan, files, pins.Core, execution); err != nil {
 			return plan, err
@@ -76,6 +85,11 @@ func planInitWithExecution(api API, name, execution string) (InitPlan, error) {
 		}
 		if err == nil {
 			if string(data) != files[path] {
+				if path == managedIssueWorkflow && recipe == "issue-managed" &&
+					recognizeIssueRecipe(pins, user.ID, recipes, string(data)) == "issue" {
+					return plan, &CommandError{
+						Code: "MANAGED_CALLER_REQUIRES_EXPLICIT_UPGRADE", Exit: 2}
+				}
 				return plan, fmt.Errorf("EXISTING_FILE_CONFLICT: %s", path)
 			}
 			continue
@@ -118,7 +132,8 @@ func applyInit(api API, plan InitPlan) (InitResult, error) {
 	if plan.Execution != nil {
 		execution = plan.Execution.Repository
 	}
-	current, err := planInitWithExecution(api, plan.Repository.FullName, execution)
+	current, err := planInitRecipe(api, plan.Repository.FullName, execution,
+		initIssueRecipe(plan))
 	if err != nil {
 		return result, err
 	}

@@ -53,14 +53,22 @@ are refused by init; use the verified upgrade command below. An existing
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
-With a compatible Core pin on Linux x64, plain init plans two shared Runner
-slots. The first repository supplies the execution workflow. On the same
+With a compatible Core pin on Linux x64, plain init selects Core's managed
+Issue caller and plans two shared Runner slots. After verified PR merge, the
+managed path configures the installed notification relay and reports routing
+readback separately from actual dispatch observation. See
+[managed activation and recovery](docs/managed-activation.md). The explicit
+service and Wake options below retain their manual setup behavior.
+
+The first repository supplies the execution workflow. On the same
 adopted host, init for a second repository verifies and reuses those slots.
 Each repository keeps its own Issue, CI and project environment.
-`preflight` reports observed registrations and their online state. This
-candidate still requires administrator-managed host adoption and service
+
+For manual setup, `preflight` reports observed registrations and their
+online state. This candidate still requires administrator-managed host adoption and service
 startup before it can execute protected jobs.
-After the execution workflow has merged, run `init --apply` on Linux x64 as
+After the execution workflow has merged, use the explicit service options on
+Linux x64 as
 the repository administrator without root privileges. It stages both
 official Runner packages and registers them offline. A rerun reads back the
 original slots before attempting a missing registration. To inspect or resume

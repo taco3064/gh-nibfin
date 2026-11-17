@@ -41,7 +41,13 @@ The target CLI source identity identifies the producer tuple being proposed;
 this command does not upgrade the locally installed extension binary.
 
 Both the legacy wake plus separate stage layout and unified dispatch layout are
-recognized. Transitions add or remove the separate stage workflow as needed.
+recognized. Both exact legacy and managed Issue recipes are recognized; ordinary
+upgrades preserve that transport. `--managed-issue` explicitly proposes the
+managed recipe only for an inactive installation without a Wake token secret,
+using the same source verification and PR process. It never activates a route.
+See [managed activation](managed-activation.md) for the subsequent readback and
+active legacy migration boundary. Transitions add or remove the separate stage
+workflow as needed.
 Only a verified old managed file can be deleted. Missing pins, edited workflows,
 foreign files at reserved managed paths, symlinks and executable managed files
 are rejected before mutation. Unrelated tree entries remain unchanged.

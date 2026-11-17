@@ -24,6 +24,7 @@ type upgradeChange struct {
 }
 
 type upgradePlan struct {
+	ManagedIssue  bool            `json:"managed_issue_proposal,omitempty"`
 	Branch        string          `json:"branch"`
 	Repository    Repository      `json:"repository"`
 	Base          string          `json:"base"`
@@ -40,9 +41,10 @@ type upgradePlan struct {
 
 var memberBindingPattern = regexp.MustCompile(`nibfin-user-([1-9][0-9]{0,15})`)
 
-func planUpgrade(api API, name, version string) (upgradePlan, error) {
+func planUpgrade(api API, name, version string, managed ...bool) (upgradePlan, error) {
 	plan := upgradePlan{Branch: upgradeBranchName, Changes: []upgradeChange{},
 		HostAdoption: hostUpgradeObligation}
+	plan.ManagedIssue = len(managed) != 0 && managed[0]
 	repo, _, err := repository(api, name, false)
 	if err != nil {
 		return plan, err
@@ -98,7 +100,15 @@ func planUpgrade(api API, name, version string) (upgradePlan, error) {
 	if err != nil || plan.MemberID > 9007199254740991 {
 		return plan, errors.New("INVALID_INSTALLED_MEMBER_BINDING")
 	}
-	old := templates(plan.Current, plan.MemberID, recipes)
+	issue, err := installedUpgradeFile(api, plan, managedIssueWorkflow)
+	if err != nil {
+		return plan, err
+	}
+	recipe := recognizeIssueRecipe(plan.Current, plan.MemberID, recipes, issue)
+	if recipe == "" {
+		return plan, errors.New("INSTALLED_ISSUE_CALLER_NOT_RECOGNIZED")
+	}
+	old := templatesForRecipe(plan.Current, plan.MemberID, recipes, recipe)
 	for path, expected := range old {
 		observed, err := installedUpgradeFile(api, plan, path)
 		if err != nil {
@@ -112,7 +122,20 @@ func planUpgrade(api API, name, version string) (upgradePlan, error) {
 	if err != nil {
 		return plan, err
 	}
-	next := templates(plan.Target.Producers, plan.MemberID, plan.Target.recipes)
+	if plan.ManagedIssue && recipe != "issue-managed" {
+		if err := requireManagedRouteEligible(api, plan.Repository.FullName); err != nil {
+			return plan, err
+		}
+		if err := requireInactiveSharedWake(api, plan.Repository.FullName); err != nil {
+			return plan, err
+		}
+		recipe = "issue-managed"
+	}
+	if len(plan.Target.recipes[recipe]) == 0 {
+		return plan, errors.New("TARGET_ISSUE_RECIPE_UNSUPPORTED")
+	}
+	next := templatesForRecipe(plan.Target.Producers, plan.MemberID,
+		plan.Target.recipes, recipe)
 	paths := map[string]bool{}
 	for path := range old {
 		paths[path] = true
@@ -183,7 +206,7 @@ func revalidateUpgrade(api API, plan upgradePlan, version string) error {
 	if ref.Ref != "refs/heads/"+repo.DefaultBranch || ref.Object.SHA != plan.Base {
 		return errors.New("UPGRADE_BASE_CHANGED_PREVIEW_AGAIN")
 	}
-	current, err := planUpgrade(api, plan.Repository.FullName, version)
+	current, err := planUpgrade(api, plan.Repository.FullName, version, plan.ManagedIssue)
 	if err != nil {
 		return err
 	}

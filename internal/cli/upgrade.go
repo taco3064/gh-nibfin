@@ -12,12 +12,14 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	flags.SetOutput(io.Discard)
 	name := flags.String("repo", "", "Initialized public OWNER/REPO")
 	version := flags.String("version", "latest", "Official vMAJOR.MINOR.PATCH or latest")
+	managed := flags.Bool("managed-issue", false,
+		"Propose the managed Issue caller for a verified inactive installation")
 	apply := flags.Bool("apply", false, "Propose an upgrade through a protected PR")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *name == "" ||
 		*version != "latest" && !versionPattern.MatchString(*version) {
 		return errors.New("INVALID_UPGRADE_ARGUMENTS")
 	}
-	plan, err := planUpgrade(a.API, *name, *version)
+	plan, err := planUpgrade(a.API, *name, *version, *managed)
 	if err != nil {
 		return err
 	}

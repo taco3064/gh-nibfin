@@ -174,11 +174,16 @@ func upgradeRecipeFixture(unified bool) map[string][]string {
 }
 
 func fixtureProducers(t *testing.T, f *fakeAPI, core, action string,
-	artifactID int64, unified bool) Producers {
+	artifactID int64, unified bool, managed ...bool) Producers {
 	t.Helper()
 	pins := Producers{Core: SourcePin{Repository: officialCore, Commit: core},
 		Action: SourcePin{Repository: officialAction, Commit: action}}
-	recipes, _ := json.Marshal(upgradeRecipeFixture(unified))
+	recipeMap := upgradeRecipeFixture(unified)
+	if len(managed) != 0 && managed[0] {
+		recipeMap["issue-managed"] = []string{
+			"name: Managed issue CORE_COMMIT", "mode: managed", ""}
+	}
+	recipes, _ := json.Marshal(recipeMap)
 	manifest := []byte(`{"schemaVersion":1,"fixture":"controlled source manifest"}`)
 	pins.Core.ManifestHash = sha256Hash(manifest)
 	files := map[string][]byte{"bin/nibfin-core.mjs": []byte("throw 'never execute';\n"),
@@ -199,14 +204,23 @@ func fixtureProducers(t *testing.T, f *fakeAPI, core, action string,
 	return pins
 }
 
-func upgradeFixture(t *testing.T, oldUnified, nextUnified bool) *upgradeAPI {
+func upgradeFixture(t *testing.T, oldUnified, nextUnified bool,
+	managed ...bool) *upgradeAPI {
 	t.Helper()
 	f := &upgradeAPI{fakeAPI: initFixture()}
 	f.old = fixtureProducers(t, f.fakeAPI, strings.Repeat("1", 40),
-		strings.Repeat("2", 40), 101, oldUnified)
+		strings.Repeat("2", 40), 101, oldUnified, managed...)
 	f.target = fixtureProducers(t, f.fakeAPI, strings.Repeat("3", 40),
-		strings.Repeat("4", 40), 102, nextUnified)
-	f.installed = templates(f.old, 42, upgradeRecipeFixture(oldUnified))
+		strings.Repeat("4", 40), 102, nextUnified, managed...)
+	recipes, err := callerRecipes(f, f.old.Core)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe := "issue"
+	if len(managed) != 0 && managed[0] {
+		recipe = "issue-managed"
+	}
+	f.installed = templatesForRecipe(f.old, 42, recipes, recipe)
 	f.baseEntries = map[string]upgradeEntry{}
 	for path, text := range f.installed {
 		f.baseEntries[path] = upgradeEntry{Path: path, Mode: "100644",
