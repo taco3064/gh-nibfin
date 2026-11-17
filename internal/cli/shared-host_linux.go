@@ -108,7 +108,14 @@ func discoverSharedHost(process Process) (*sharedHost, error) {
 	if err != nil {
 		return nil, err
 	}
-	return readInstalledSharedHost(process, node, entry)
+	host, err := readInstalledSharedHost(process, node, entry)
+	if err != nil {
+		return nil, err
+	}
+	if err := readInstalledAgent(process, host); err != nil {
+		return nil, err
+	}
+	return host, nil
 }
 
 func trustedSharedCore() (string, string, error) {
@@ -278,7 +285,7 @@ func runSharedAdministrator(
 	// sudo prompts on its controlling terminal and leaves stdin available
 	// for the verified archive. Headless calls retain noninteractive behavior.
 	switch process.(type) {
-	case NativeProcess, onboardingProcess:
+	case NativeProcess, onboardingProcess, coreResultProcess:
 		if terminal, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 			terminal.Close()
 			options = options[1:]

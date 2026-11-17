@@ -37,13 +37,17 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 		switch key {
 		case "--runner-directory", "--handoff-directory", "--directory", "--quick":
 			return o, errors.New("DESKTOP_PATH_OPTIONS_USE_GUEST_LINUX_CLI")
-		case "--repo", "--target", "--execution-repo", "--runner-name":
+		case "--repo", "--target", "--execution-repo", "--runner-name", "--agent":
 			if !assigned {
 				i++
 				if i == len(args) {
 					return o, invalid
 				}
 				value = args[i]
+			}
+			if key == "--agent" && (args[0] != "init" ||
+				validateAgentOption(value, true) != nil) {
+				return o, invalid
 			}
 			if key == "--target" {
 				o.Target = value

@@ -13,6 +13,7 @@ type Change struct {
 }
 
 type InitPlan struct {
+	Agent       *agentBinding    `json:"agent,omitempty"`
 	IssueRecipe string           `json:"issue_recipe,omitempty"`
 	Repository  Repository       `json:"repository"`
 	Member      User             `json:"member"`

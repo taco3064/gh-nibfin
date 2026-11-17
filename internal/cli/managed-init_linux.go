@@ -99,13 +99,17 @@ func installIntentLock(path string) (func(), error) {
 }
 
 func saveManagedIntent(path string, x managedInstallIntent) error {
+	return writePrivateIntent(path, x)
+}
+
+func writePrivateIntent(path string, value any) error {
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, ".nibfin-install-")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(temp.Name())
-	if err := json.NewEncoder(temp).Encode(x); err != nil {
+	if err := json.NewEncoder(temp).Encode(value); err != nil {
 		temp.Close()
 		return err
 	}
@@ -142,18 +146,24 @@ func loadManagedIntent(path string, plan InitPlan) (managedInstallIntent, error)
 	defer file.Close()
 	const limit = 2 * 1024 * 1024
 	err = json.NewDecoder(io.LimitReader(file, limit)).Decode(&intent)
-	if err != nil || intent.Plan.Repository.ID != plan.Repository.ID ||
+	if err != nil || !validManagedIntent(intent, plan) {
+		return intent, errors.New("MANAGED_INSTALL_INTENT_CHANGED")
+	}
+
+	return intent, nil
+}
+
+func validManagedIntent(intent managedInstallIntent, plan InitPlan) bool {
+	return !(intent.Plan.Repository.ID != plan.Repository.ID ||
 		intent.Plan.Repository.FullName != plan.Repository.FullName ||
 		intent.Plan.Repository.DefaultBranch != plan.Repository.DefaultBranch ||
 		intent.Plan.Member.ID != plan.Member.ID ||
 		!sameSharedExecution(intent.Plan.Execution, plan.Execution) ||
+		!compatibleIntentAgent(intent.Plan.Agent, plan.Agent) ||
 		!managedIntentRecipeCompatible(intent.Plan, plan) ||
 		!reflect.DeepEqual(intent.Pins, Pins()) ||
 		!commitPattern.MatchString(intent.Plan.Head) ||
-		len(intent.Plan.Files) == 0 {
-		return intent, errors.New("MANAGED_INSTALL_INTENT_CHANGED")
-	}
-	return intent, nil
+		len(intent.Plan.Files) == 0)
 }
 
 type onboardingProcess struct {
@@ -244,6 +254,7 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		current.Repository.ID != plan.Repository.ID {
 		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
 	}
+	current.Agent = plan.Agent
 	path, err := managedIntentPath(plan.Repository)
 	if err != nil {
 		return err
@@ -257,6 +268,23 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		initIssueRecipe(current) == "issue-managed" {
 		return a.finishVerifiedManagedInit(ctx, current, token, json.NewEncoder(out), host)
 	}
+	// An active, verified successor is authoritative over obsolete installation
+	// PR intent. Rebuild has separate durable state and never resumes that PR.
+	if len(current.Files) == 0 && initIssueRecipe(current) == "issue-managed" &&
+		current.Execution != nil && host.discover != nil {
+		installed, err := host.discover()
+		if err != nil {
+			return err
+		}
+		if installed != nil && installed.SharedExecution == *current.Execution &&
+			installed.MemberID == current.Member.ID {
+			if err := checkManagedAgent(host, current, installed); err != nil {
+				return err
+			}
+			return a.finishVerifiedManagedInit(ctx, current, token,
+				json.NewEncoder(out), host)
+		}
+	}
 	intent, err := loadManagedIntent(path, current)
 	if err != nil {
 		return err
@@ -264,6 +292,7 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	encoder := json.NewEncoder(out)
 	if initIssueRecipe(intent.Plan) == "issue" &&
 		initIssueRecipe(current) == "issue-managed" && len(current.Files) == 0 {
+		current.Agent = plan.Agent
 		return a.finishVerifiedManagedInit(ctx, current, token, encoder, host)
 	}
 	wait, cancel := context.WithTimeout(ctx, 15*time.Minute)
@@ -282,6 +311,7 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		current.Repository.ID != plan.Repository.ID || len(current.Files) != 0 {
 		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
 	}
+	current.Agent = plan.Agent
 	return a.finishVerifiedManagedInit(ctx, current, token, encoder, host)
 }
 

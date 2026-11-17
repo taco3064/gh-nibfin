@@ -367,3 +367,79 @@ Windows and Apple Silicon installers discover existing WSL 2 or Multipass Ubuntu
 requires consent. Native Linux facts select execution assets. See
 [desktop discovery, installation and recovery](docs/desktop-targets.md) for target
 selection, official prerequisite routes and guest-local login instructions.
+
+### Managed Agent selection and pool replacement
+
+On a compatible Linux managed host, fresh initialization accepts
+`gh nibfin init --repo OWNER/REPO --agent codex` (or `--agent claude`). Omission
+selects Codex only for a fresh pool. Both slots use the same provider and
+model/profile. Existing initialization, peer adoption, preflight and upgrade
+retain the adopted pool and binding. An explicit conflicting selection fails
+before host mutation and directs the operator to `runner rebuild`.
+Agent selection cannot be combined with quick handoffs or legacy Runner/service
+setup options. Desktop initialization validates and forwards the selection to
+its managed Linux target; rebuild runs directly in that target.
+
+Provider composition and replacement support must come from verified Core
+sources. The current production Core composes **Codex only**. Its Claude model
+component does not establish installable Claude support. `--agent claude` is
+rejected before credential intake, retirement or registration removal. Controlled
+Claude fixtures verify orchestration offline; live Claude authentication,
+production composition and end-to-end switching remain unverified and outside
+this implementation. No CLI flag, environment setting or module-path override
+can enable a fixture provider.
+
+Preview the separate replacement operation from an adopted repository:
+
+```sh
+gh nibfin runner rebuild --repo OWNER/REPO --agent codex
+```
+
+Preview reads the pool, requested binding, all adopted repositories and unmet
+prerequisites. It does not create durable intent, retire the pool, change host
+configuration or remove registrations. Resolve incompatible source or managed
+caller requirements through the existing upgrade/installation route first.
+Rebuild does not update producer pins or rewrite caller recipes.
+
+To apply or resume, use the same requested Agent and explicit local consent:
+
+```sh
+gh nibfin runner rebuild --repo OWNER/REPO --agent codex \
+  --apply --consent-rebuild
+```
+
+Run as the installing user with local administrator access. Consent to retire and
+replace both slots is separate from GitHub repository administration rights;
+both are required. Rebuild checks the selected stored GitHub login and current
+administration rights for the execution repository and every adopted repository.
+Private durable intent binds the old IDs, repositories, requested provider and
+model/profile, Core retirement identity and subsequent fresh IDs. A pool-wide
+lock serializes cooperating CLI mutations, including through peer repositories.
+Ordinary initialization cannot resume over an unfinished replacement.
+
+Core closes admission and settles work before granting fresh permission for each
+old registration removal. The CLI removes only matching IDs through official
+GitHub APIs and independently reads back each ID and a complete listing, even
+after a lost response. Both old IDs must be absent and Core must report retirement
+complete before fresh preparation. Rebuild preserves original login stores,
+unrelated services/resources and delivery history; Core owns local retirement
+cleanup. Provider credentials stay in private input, outside command arguments,
+Agent workspaces, durable intent and public output.
+
+If interrupted, repeat the apply command without changing the Agent. Saved
+phases never substitute for live Core settlement. Registration recovery checks
+native and local identities before another creation; an ambiguous registration
+remains incomplete rather than being duplicated. Lost adoption responses are
+reconciled against the saved fresh IDs. Conflicting or stale intent is refused;
+do not delete intent or Core records to force progress.
+
+Rebuild re-adopts every historical repository, starts both listeners and restores
+verified managed wake routing while Core's drain marker keeps Worker execution
+and relay dispatch closed. Online listeners and configured routing are preparation,
+not completion. Only the fixed administrator operation
+`activate-shared-replacement`, with matching retirement, pool and both fresh IDs,
+permits the CLI to publish `MANAGED_REPLACEMENT_ACTIVE`. An uncertain activation
+response remains pending; repeat the same rebuild to reconcile through that
+operation. The CLI never removes the drain marker. Staged registration credentials
+are cleaned after service preparation, and completed CLI intent is removed after
+verified activation and successful output. Core retains its own retirement evidence.

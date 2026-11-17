@@ -331,3 +331,24 @@ func TestManagedRelayInterruptedPreparationRequiresExplicitInspection(t *testing
 		t.Fatal("resumed preparation bypassed staged activation")
 	}
 }
+
+func TestReplacementRelayResumesKnownPausedConfiguration(t *testing.T) {
+	d := newRelayDriver(t)
+	if _, err := configureManagedRelay(relayVariableAPI{d}, d.plan,
+		d.operations()); err != nil {
+		t.Fatal(err)
+	}
+	d.paused = true
+	if _, err := configureManagedRelay(relayVariableAPI{d}, d.plan,
+		d.operations()); err == nil {
+		t.Fatal("ordinary init must not resume an administrator-paused relay")
+	}
+	ops := d.operations()
+	ops.replacement = true
+	if _, err := configureManagedRelay(relayVariableAPI{d}, d.plan, ops); err != nil {
+		t.Fatal(err)
+	}
+	if d.paused {
+		t.Fatal("verified replacement relay remained paused")
+	}
+}

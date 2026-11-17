@@ -11,6 +11,12 @@ const sharedRunnerLabel = "nibfin-shared"
 
 func (a App) registerSharedSlot(repo Repository, user User, path string,
 	record RunnerInstall, now time.Time) (RunnerInstall, error) {
+	return a.registerSharedSlotChecked(repo, user, path, record, now, nil)
+}
+
+func (a App) registerSharedSlotChecked(repo Repository, user User, path string,
+	record RunnerInstall, now time.Time, replacement func(*sharedHost) error,
+) (RunnerInstall, error) {
 	first := sharedRunnerSlotName(repo.ID, user.ID, 1)
 	second := sharedRunnerSlotName(repo.ID, user.ID, 2)
 	if !sharedSlotPathMatches(path, record.Name, first, second) {
@@ -34,7 +40,11 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 	if err != nil {
 		return record, err
 	}
-	if host != nil {
+	if replacement != nil {
+		if err := replacement(host); err != nil {
+			return record, err
+		}
+	} else if host != nil {
 		return record, errors.New("SHARED_RUNNER_POOL_ALREADY_ADOPTED")
 	}
 	pin := Pins().Core

@@ -11,6 +11,7 @@ func (a App) runInit(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	name := flags.String("repo", "", "Public OWNER/REPO")
+	agent := flags.String("agent", "", "Managed Agent: codex or claude")
 	apply := flags.Bool("apply", false, "Create reviewed installation PR and labels")
 	runnerPath := flags.String("runner-directory", "", "Private Runner directory")
 	runnerName := flags.String("runner-name", "", "Name of the repository Runner")
@@ -28,6 +29,19 @@ func (a App) runInit(args []string, out io.Writer) error {
 	quick := addQuickFlags(flags)
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_INIT_ARGUMENTS")
+	}
+	explicitAgent := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "agent" {
+			explicitAgent = true
+		}
+	})
+	if err := validateAgentOption(*agent, explicitAgent); err != nil {
+		return err
+	}
+	if explicitAgent && (quick.used() || *runnerPath != "" ||
+		*runnerName != "" || *installService || *startServices || *prepareWake) {
+		return errors.New("AGENT_SELECTION_REQUIRES_MANAGED_INIT")
 	}
 	if err := guardHandoff(); err != nil {
 		return err
@@ -85,6 +99,33 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if explicitAgent && (legacyHost || plan.Execution == nil || !nativeLinuxTarget()) {
+		return errors.New("AGENT_SELECTION_REQUIRES_MANAGED_INIT")
+	}
+	if plan.Execution != nil && nativeLinuxTarget() &&
+		(explicitAgent || native || a.agents != nil) {
+		var installed *agentBinding
+		if host != nil {
+			installed = host.Agent
+		} else {
+			installed, err = managedIntentAgent(plan)
+			if err != nil {
+				return err
+			}
+			if installed == nil && managedIntentAvailable(plan.Repository) &&
+				explicitAgent && *agent != "codex" {
+				return errors.New("AGENT_MISMATCH_USE_RUNNER_REBUILD_WITH_AGENT")
+			}
+		}
+		if host != nil && installed == nil {
+			return errors.New("INSTALLED_AGENT_READBACK_REQUIRED")
+		}
+		binding, err := selectAgent(*agent, explicitAgent, installed, a.agentCapability)
+		if err != nil {
+			return err
+		}
+		plan.Agent = &binding
+	}
 	if *installService && (plan.Execution == nil ||
 		plan.Repository.ID != plan.Execution.RepositoryID) {
 		return errors.New("SHARED_SERVICE_REQUIRES_EXECUTION_REPOSITORY")
@@ -127,6 +168,11 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
+	unlock, err := lockSharedInit(plan)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := guardHandoff(); err != nil {
 		return err
 	}

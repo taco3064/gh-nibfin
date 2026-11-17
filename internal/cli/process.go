@@ -75,6 +75,11 @@ func (NativeProcess) Run(name string, args []string, input []byte) ([]byte, erro
 
 func (NativeProcess) RunContext(ctx context.Context, name string,
 	args []string, input []byte) ([]byte, error) {
+	return runNativeProcess(ctx, name, args, input, false)
+}
+
+func runNativeProcess(ctx context.Context, name string, args []string,
+	input []byte, retainFailureOutput bool) ([]byte, error) {
 	path, err := toolPath(name)
 	if err != nil {
 		return nil, err
@@ -108,6 +113,12 @@ func (NativeProcess) RunContext(ctx context.Context, name string,
 		}
 		if name == "gh" && strings.Contains(stderr.String(), "(HTTP 403)") {
 			return nil, errors.New("PERMISSION_DENIED")
+		}
+		if retainFailureOutput {
+			var exit *exec.ExitError
+			if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 2 {
+				return out.Bytes(), errors.New("CORE_PENDING_RESULT")
+			}
 		}
 		return nil, errors.New("PROCESS_RESULT_UNAVAILABLE")
 	}

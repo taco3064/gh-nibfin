@@ -26,6 +26,9 @@ func (a App) runRunnerForInstall(
 	if len(args) == 0 {
 		return errors.New("RUNNER_COMMAND_REQUIRED")
 	}
+	if args[0] == "rebuild" {
+		return a.runRebuild(args[1:], out)
+	}
 	command := args[0]
 	if command != "create" && command != "register" && command != "list" &&
 		command != "unregister" && command != "remove" {
