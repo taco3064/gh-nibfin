@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -64,6 +65,16 @@ func TestSharedHostRequiresBothOriginalRegistrations(t *testing.T) {
 	}
 	if host.adoptionStatus(20) != "observed" || host.adoptionStatus(21) != "required" {
 		t.Fatal("Runner reuse must distinguish adopted and new repositories")
+	}
+	peer := *host
+	peer.AdoptedRepositoryIDs = []int64{10, 20, 21}
+	if !host.samePool(&peer) {
+		t.Fatal("adopting a peer must preserve the existing pool identity")
+	}
+	peer.Runners = slices.Clone(host.Runners)
+	peer.Runners[1].ID = 27
+	if host.samePool(&peer) {
+		t.Fatal("adopting a peer must refuse a replacement Runner ID")
 	}
 	path := "repos/example/project/actions/runners?per_page=100&page=1"
 	runner := func(id int, name string) map[string]any {

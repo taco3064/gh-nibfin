@@ -138,6 +138,11 @@ func (host sharedHost) adoptionStatus(id int64) string {
 	return "required"
 }
 
+func (host sharedHost) samePool(observed *sharedHost) bool {
+	return observed != nil && host.SharedExecution == observed.SharedExecution &&
+		host.MemberID == observed.MemberID && slices.Equal(host.Runners, observed.Runners)
+}
+
 func (host sharedHost) verifyInit(api API, executionRepo, runnerPath,
 	runnerName string) ([]sharedRegistration, error) {
 	if runnerPath != "" || runnerName != "" {
@@ -154,8 +159,7 @@ func recheckSharedHost(process Process, api API, planned sharedHost) error {
 	if err != nil {
 		return err
 	}
-	if host == nil || host.SharedExecution != planned.SharedExecution ||
-		host.MemberID != planned.MemberID || !slices.Equal(host.Runners, planned.Runners) ||
+	if !planned.samePool(host) ||
 		!slices.Equal(host.AdoptedRepositoryIDs, planned.AdoptedRepositoryIDs) {
 		return errors.New("SHARED_EXECUTION_HOST_CHANGED")
 	}

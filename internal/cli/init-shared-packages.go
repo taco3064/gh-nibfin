@@ -117,8 +117,8 @@ func (a App) stagedSharedRegistrationPaths(plan InitPlan,
 		if err != nil {
 			return nil, err
 		}
-		if record.State != "registered" || record.RunnerID != runner.ID || record.Name != runner.Name ||
-			record.Application != app {
+		if record.State != "registered" || record.RunnerID != runner.ID ||
+			record.Name != runner.Name || record.Application != app {
 			return nil, errors.New("SHARED_RUNNER_REGISTRATION_CHANGED")
 		}
 		if forInstall {

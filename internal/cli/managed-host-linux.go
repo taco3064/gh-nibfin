@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 )
 
 const managedHostEntry = "bin/nibfin-prepare-managed-onboarding.mjs"
@@ -159,9 +158,8 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 			return err
 		}
 		updated, err := discoverSharedHost(a.Process)
-		if err != nil || updated == nil || updated.adoptionStatus(plan.Repository.ID) != "observed" ||
-			updated.SharedExecution != host.SharedExecution || updated.MemberID != host.MemberID ||
-			!slices.Equal(updated.Runners, host.Runners) {
+		if err != nil || !host.samePool(updated) ||
+			updated.adoptionStatus(plan.Repository.ID) != "observed" {
 			return errors.New("MANAGED_HOST_ADOPTION_PENDING")
 		}
 		host = updated
