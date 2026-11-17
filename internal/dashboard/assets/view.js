@@ -67,7 +67,6 @@ export function display(value, post) {
   failed = false;
   const parent = get('repository');
   parent.replaceChildren();
-  line(parent, `Repository observations: ${status(snapshot.repository.status)}`);
   const repositories = items(snapshot.repository);
   if (repositories === null) line(parent, 'Repository identity unavailable.');
   else if (!repositories.length) line(parent, 'No repository identity observed.');
@@ -76,14 +75,24 @@ export function display(value, post) {
     link(heading, repository.name, githubURL(repository.url, repository));
     parent.append(heading);
   }
+  line(parent, `Repository observations: ${status(snapshot.repository.status)}`);
   const issues = items(snapshot.issues);
   if (issues !== null) {
     const open = issues.filter(issue => issue.state === 'open').length;
     const closed = issues.filter(issue => issue.state === 'closed').length;
-    line(parent, `Observed Issues: ${issues.length}; open: ${open}; closed: ${closed}. ` +
-      'Counts describe collected facts, not verified completion.');
+    const counts = node('dl', undefined, 'issue-counts');
+    for (const [label, value] of [
+      ['Observed Issues', issues.length], ['Open', open], ['Closed', closed],
+    ]) {
+      const item = node('div');
+      item.append(node('dt', label), node('dd', value));
+      counts.append(item);
+    }
+    parent.append(counts);
   }
-  claims(parent, snapshot.core);
+  const evidence = get('repository-evidence');
+  evidence.replaceChildren();
+  claims(evidence, snapshot.core);
   activity(get('activity'), snapshot);
   get('dashboard').hidden = false;
   renderGraph();

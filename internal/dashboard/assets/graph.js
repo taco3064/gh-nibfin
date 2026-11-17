@@ -1,10 +1,13 @@
-import {labelObservation} from './model.js';
+import {labelObservation, text} from './model.js';
 import {issueControls} from './controls.js';
 import {items, status, identity, key, state, progress, githubURL} from './model.js';
 import {node, line, link, claims} from './dom.js';
 
 function issueButton(issue, selected, choose) {
-  const button = node('button', `${identity(issue.identity)} — ${issue.title}`);
+  const button = node('button');
+  const id = identity(issue.identity);
+  button.setAttribute('aria-label', text(`${id} — ${issue.title}`));
+  button.append(node('span', id, 'node-id'), node('span', issue.title, 'node-title'));
   button.type = 'button';
   button.className = 'issue-node';
   button.setAttribute('aria-pressed', String(key(issue.identity) === selected));
@@ -52,8 +55,11 @@ export function graph(parent, alternative, issues, context) {
     const labels = progress(issue).join(', ') || 'No progress';
     line(source, `${state(issue.state)} · ${labels} · ` +
       `pause label ${labelObservation(issue)}`);
-    row.append(source, node('span', '→', 'direction'));
-    const targets = node('div');
+    const hasEdges = (items(issue.blocked_by)?.length ?? 0) > 0;
+    const direction = node('span', hasEdges ? '→' : '', 'direction');
+    direction.setAttribute('aria-hidden', 'true');
+    row.append(source, direction);
+    const targets = node('div', undefined, 'targets');
     blockers(targets, issue, context);
     row.append(targets);
     list.append(row);
@@ -66,6 +72,7 @@ export function graph(parent, alternative, issues, context) {
 }
 export function details(parent, issue, context) {
   parent.replaceChildren();
+  parent.classList.toggle('has-selection', Boolean(issue));
   if (!issue) return line(parent, 'Select an Issue to inspect its details.');
   parent.append(node('h3', `${identity(issue.identity)} — ${issue.title}`));
   link(parent, 'Open native Issue on GitHub', githubURL(issue.identity?.url,
