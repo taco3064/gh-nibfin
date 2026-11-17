@@ -110,12 +110,63 @@ func transferControllerCredential(process Process, member int64, token []byte) e
 
 type installResultEncoder interface{ Encode(any) error }
 
+type managedHostOperations struct {
+	discover    func() (*sharedHost, error)
+	prepare     func(InitPlan) error
+	credentials func(int64, []byte) error
+	stage       func(InitPlan) ([]string, error)
+	register    func(InitPlan, []string) ([]sharedRegistration, error)
+	adopt       func(InitPlan, []sharedRegistration) (*sharedHost, error)
+	adoptPeer   func(sharedHost, InitPlan) error
+	staged      func(InitPlan, []sharedRegistration) ([]string, error)
+	start       func([]string) error
+	cleanup     func(InitPlan, []sharedRegistration) error
+}
+
+func (a App) managedHostOperations() managedHostOperations {
+	return managedHostOperations{
+		discover: func() (*sharedHost, error) { return discoverSharedHost(a.Process) },
+		prepare: func(plan InitPlan) error {
+			if _, err := prepareSharedNode(a.Process); err != nil {
+				return err
+			}
+			if _, err := deploySharedCore(a.API, a.Process); err != nil {
+				return err
+			}
+			return prepareManagedHost(a.Process, plan)
+		},
+		credentials: func(member int64, token []byte) error {
+			return transferControllerCredential(a.Process, member, token)
+		},
+		stage:    a.stageSharedRunnerPackages,
+		register: a.registerInitSharedSlots,
+		adopt: func(plan InitPlan, slots []sharedRegistration) (*sharedHost, error) {
+			return adoptInitialSharedHost(a.Process, plan, slots)
+		},
+		adoptPeer: func(host sharedHost, plan InitPlan) error {
+			return adoptSharedPeer(a.Process, host, plan)
+		},
+		staged: a.readStagedSharedSlots,
+		start: func(paths []string) error {
+			_, err := installSharedService(a.Process, paths, true)
+			return err
+		},
+		cleanup: func(plan InitPlan, runners []sharedRegistration) error {
+			paths, err := a.stagedSharedRegistrationPaths(plan, runners, false)
+			if err != nil {
+				return err
+			}
+			return retireStagedRegistration(paths)
+		},
+	}
+}
+
 func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
-	encoder installResultEncoder) error {
+	encoder installResultEncoder, ops managedHostOperations) error {
 	if err := requireInactiveSharedWake(a.API, plan.Repository.FullName); err != nil {
 		return err
 	}
-	host, err := discoverSharedHost(a.Process)
+	host, err := ops.discover()
 	if err != nil {
 		return err
 	}
@@ -128,36 +179,30 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	}
 	var packages []string
 	if host == nil {
-		if _, err := prepareSharedNode(a.Process); err != nil {
+		if err := ops.prepare(plan); err != nil {
 			return err
 		}
-		if _, err := deploySharedCore(a.API, a.Process); err != nil {
+		if err := ops.credentials(plan.Member.ID, token); err != nil {
 			return err
 		}
-		if err := prepareManagedHost(a.Process, plan); err != nil {
-			return err
-		}
-		if err := transferControllerCredential(a.Process, plan.Member.ID, token); err != nil {
-			return err
-		}
-		packages, err = a.stageSharedRunnerPackages(plan)
+		packages, err = ops.stage(plan)
 		if err != nil {
 			return err
 		}
-		runners, err := a.registerInitSharedSlots(plan, packages)
+		runners, err := ops.register(plan, packages)
 		if err != nil {
 			return err
 		}
-		host, err = adoptInitialSharedHost(a.Process, plan, runners)
+		host, err = ops.adopt(plan, runners)
 		if err != nil || host == nil {
 			return errors.New("MANAGED_HOST_ADOPTION_PENDING")
 		}
 	} else if plan.Repository.ID != host.RepositoryID &&
 		host.adoptionStatus(plan.Repository.ID) != "observed" {
-		if err := adoptSharedPeer(a.Process, *host, plan); err != nil {
+		if err := ops.adoptPeer(*host, plan); err != nil {
 			return err
 		}
-		updated, err := discoverSharedHost(a.Process)
+		updated, err := ops.discover()
 		if err != nil || !host.samePool(updated) ||
 			updated.adoptionStatus(plan.Repository.ID) != "observed" {
 			return errors.New("MANAGED_HOST_ADOPTION_PENDING")
@@ -172,7 +217,7 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		return publishManagedHandoff(encoder, plan, runners)
 	}
 	if len(packages) == 0 {
-		if err := transferControllerCredential(a.Process, plan.Member.ID, token); err != nil {
+		if err := ops.credentials(plan.Member.ID, token); err != nil {
 			return err
 		}
 		live, err := verifySharedHost(a.API, *host)
@@ -180,32 +225,28 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 			return err
 		}
 		if sharedRunnersOnline(live) {
-			return a.finishManagedHandoff(encoder, plan, live)
+			return finishManagedHandoff(encoder, plan, live, ops)
 		}
 		// Core installs both slots before starting either service. If one is
 		// already online, resume from the installed slots without staging.
-		packages, err = a.readStagedSharedSlots(plan, live)
+		packages, err = ops.staged(plan, live)
 		if err != nil {
 			return err
 		}
 	}
-	if _, err := installSharedService(a.Process, packages, true); err != nil {
+	if err := ops.start(packages); err != nil {
 		return err
 	}
 	runners, err := readStartedSharedRunners(ctx, a.API, *host)
 	if err != nil {
 		return err
 	}
-	return a.finishManagedHandoff(encoder, plan, runners)
+	return finishManagedHandoff(encoder, plan, runners, ops)
 }
 
-func (a App) finishManagedHandoff(encoder installResultEncoder, plan InitPlan,
-	runners []sharedRegistration) error {
-	paths, err := a.stagedSharedRegistrationPaths(plan, runners, false)
-	if err != nil {
-		return err
-	}
-	if err := retireStagedRegistration(paths); err != nil {
+func finishManagedHandoff(encoder installResultEncoder, plan InitPlan,
+	runners []sharedRegistration, ops managedHostOperations) error {
+	if err := ops.cleanup(plan, runners); err != nil {
 		return err
 	}
 	return publishManagedHandoff(encoder, plan, runners)
