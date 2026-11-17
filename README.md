@@ -359,3 +359,11 @@ above. Artifact production itself
 never installs extensions, publishes releases, creates tags, or manages services.
 Cross-compilation validates file formats and architectures; native macOS/Windows
 execution and public availability require their own release verification.
+
+## Desktop Linux targets
+
+Windows and Apple Silicon installers discover existing WSL 2 or Multipass Ubuntu
+24.04 guests before repository planning. Preview stays read-only; opening a guest
+requires consent. Native Linux facts select execution assets. See
+[desktop discovery, installation and recovery](docs/desktop-targets.md) for target
+selection, official prerequisite routes and guest-local login instructions.

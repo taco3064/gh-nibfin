@@ -21,7 +21,7 @@ func TestInitRunnerPreviewRegistrationAndRepeat(t *testing.T) {
 	var output bytes.Buffer
 	args := []string{"init", "--repo", "example/project", "--runner-directory",
 		directory, "--runner-name", "first-runner"}
-	if err := app.Run(args, &output); err != nil {
+	if err := app.runInit(args[1:], &output); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(directory); !errors.Is(err, os.ErrNotExist) {

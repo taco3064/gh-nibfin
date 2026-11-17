@@ -174,6 +174,9 @@ func (a App) managedHostOperations() managedHostOperations {
 
 func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	encoder installResultEncoder, ops managedHostOperations) error {
+	if err := a.requireHandoff(); err != nil {
+		return err
+	}
 	if initIssueRecipe(plan) == "issue-managed" {
 		if err := requireManagedRouteEligible(a.API, plan.Repository.FullName); err != nil {
 			return err

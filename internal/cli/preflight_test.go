@@ -49,8 +49,8 @@ func TestPreflightReportsFactsWithoutProtectedReadiness(t *testing.T) {
 	process := &inspectionProcess{dockerHost: "unix:///var/run/docker.sock"}
 	api := initFixture()
 	var output bytes.Buffer
-	err := (App{API: api, Process: process}).Run(
-		[]string{"preflight", "--repo", "example/project"}, &output)
+	err := (App{API: api, Process: process}).runPreflight(
+		[]string{"--repo", "example/project"}, &output)
 	var command *CommandError
 	if !errors.As(err, &command) || command.Exit != 2 {
 		t.Fatal("missing Core proof must remain unverified")
@@ -78,8 +78,8 @@ func TestPreflightMissingAndDeniedToolsNeverExposeDiagnostics(t *testing.T) {
 	repo.Permissions = nil
 	api.data["repos/example/project"] = repo
 	var output bytes.Buffer
-	_ = (App{API: api, Process: &inspectionProcess{missing: true}}).Run(
-		[]string{"preflight", "--repo", "example/project"}, &output)
+	_ = (App{API: api, Process: &inspectionProcess{missing: true}}).runPreflight(
+		[]string{"--repo", "example/project"}, &output)
 	if strings.Contains(output.String(), "secret") ||
 		!strings.Contains(output.String(), "REPOSITORY_PERMISSION_REQUIRED") ||
 		!strings.Contains(output.String(), "TOOL_INSPECTION_UNAVAILABLE") {
