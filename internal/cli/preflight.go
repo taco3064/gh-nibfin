@@ -16,6 +16,8 @@ type capability struct {
 }
 
 type preflightReport struct {
+	LinuxIdentity string               `json:"linux_identity,omitempty"`
+	HostAdopted   bool                 `json:"shared_host_adopted"`
 	HostOS        string               `json:"host_os"`
 	HostArch      string               `json:"host_arch"`
 	Core          SourcePin            `json:"core_candidate"`
@@ -54,7 +56,10 @@ func (a App) runPreflight(args []string, out io.Writer) error {
 	report := preflightReport{HostOS: runtime.GOOS, HostArch: runtime.GOARCH,
 		Core: Pins().Core, Readiness: "unverified"}
 	if nativeLinuxTarget() {
+		report.LinuxIdentity = linuxIdentity()
 		report.LinuxTarget = managedTargetPreview(a.API, a.Process)
+		host, err := discoverSharedHost(a.Process)
+		report.HostAdopted = err == nil && host != nil
 	}
 	repo, user, err := repository(a.API, *name, true)
 	permission := capability{"repository_admin", "unverified", "REPO_ADMIN_UNVERIFIED"}

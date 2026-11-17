@@ -99,7 +99,7 @@ func TestFreshSharedInitRejectsOlderCoreBeforeInstalling(t *testing.T) {
 	}
 	api := initFixture()
 	app := App{API: api}
-	err := app.Run([]string{"init", "--repo", "example/project", "--apply"}, io.Discard)
+	err := app.runInit([]string{"--repo", "example/project", "--apply"}, io.Discard)
 	var command *CommandError
 	if !errors.As(err, &command) || command.Exit != 2 || len(api.writes) != 0 ||
 		command.Code != errCoreSharedDestinationUnsupported.Error() {

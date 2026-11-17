@@ -230,6 +230,9 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 // operations. In-package Go drivers can exercise the same orchestration.
 func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	out io.Writer, host managedHostOperations) error {
+	if err := a.requireHandoff(); err != nil {
+		return err
+	}
 	api := a.API
 	pin := Pins().Core
 	if _, _, err := content(api, pin.Repository, managedHostEntry, pin.Commit); err != nil {
@@ -284,6 +287,9 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 
 func (a App) finishVerifiedManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	encoder installResultEncoder, host managedHostOperations) error {
+	if err := a.requireHandoff(); err != nil {
+		return err
+	}
 	if err := ensureInitLabels(a.API, "repos/"+plan.Repository.FullName,
 		plan.Labels); err != nil {
 		return err

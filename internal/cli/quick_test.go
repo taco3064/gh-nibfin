@@ -111,7 +111,7 @@ func (f *quickFixture) run(operation string, apply bool, options ...string) erro
 	if apply {
 		args = append(args, "--apply")
 	}
-	err := f.app.Run(args, &f.output)
+	err := f.app.runInit(args[1:], &f.output)
 	if strings.Contains(f.output.String(), runnerTokenSentinel) {
 		return errors.New("SECRET_DISCLOSED")
 	}

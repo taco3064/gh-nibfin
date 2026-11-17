@@ -196,6 +196,10 @@ func TestQuickPrivateBoundedInputAndStrictDecode(t *testing.T) {
 	if os.WriteFile(path, []byte("{}"), 0644) != nil {
 		t.Fatal("fixture input write failed")
 	}
+	// Explicitly create the negative fixture even under a restrictive umask.
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := readQuick(path, true); err == nil {
 		t.Fatal("public-readable capability accepted")
 	}
@@ -266,9 +270,9 @@ func TestQuickIssuanceAbortRetiresCapabilityAndCannotReissue(t *testing.T) {
 			var output bytes.Buffer
 			var err error
 			if failure == "output" {
-				err = f.app.Run(args, &quickOutputFailure{})
+				err = f.app.runInit(args[1:], &quickOutputFailure{})
 			} else {
-				err = f.app.Run(args, &output)
+				err = f.app.runInit(args[1:], &output)
 			}
 			if err == nil || f.api.base.tokens != 1 || f.host.calls != 0 {
 				t.Fatal("issuance fault did not preserve the external-effect boundary")
@@ -276,7 +280,7 @@ func TestQuickIssuanceAbortRetiresCapabilityAndCannotReissue(t *testing.T) {
 			if _, err := os.Lstat(f.secret); !errors.Is(err, os.ErrNotExist) {
 				t.Fatal("aborted issuance retained a temporary bearer capability")
 			}
-			if err := f.app.Run(args, &output); err == nil || f.api.base.tokens != 1 {
+			if err := f.app.runInit(args[1:], &output); err == nil || f.api.base.tokens != 1 {
 				t.Fatal("aborted issuance requested another token automatically")
 			}
 			if _, err := os.Stat(filepath.Join(f.manager, "state.json")); err != nil {
