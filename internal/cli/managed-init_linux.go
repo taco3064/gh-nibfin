@@ -220,12 +220,20 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 		return err
 	}
 	defer clear(api.token)
+	a.API = api
+	a.Process = onboardingProcess{ctx: ctx, process: NativeProcess{}}
+	return a.resumeManagedInit(ctx, plan, api.token, out, a.managedHostOperations())
+}
+
+// The production caller supplies only the selected native login and fixed host
+// operations. In-package Go drivers can exercise the same orchestration.
+func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
+	out io.Writer, host managedHostOperations) error {
+	api := a.API
 	pin := Pins().Core
 	if _, _, err := content(api, pin.Repository, managedHostEntry, pin.Commit); err != nil {
 		return errors.New("MANAGED_INSTALL_CORE_SOURCE_REQUIRED")
 	}
-	a.API = api
-	a.Process = onboardingProcess{ctx: ctx, process: NativeProcess{}}
 	current, err := planInitWithExecution(api, plan.Repository.FullName,
 		plan.Execution.Repository)
 	if err != nil || current.Member.ID != plan.Member.ID ||
@@ -266,5 +274,5 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 		current.Labels); err != nil {
 		return err
 	}
-	return a.finishManagedInit(ctx, current, api.token, encoder)
+	return a.finishManagedInit(ctx, current, token, encoder, host)
 }
