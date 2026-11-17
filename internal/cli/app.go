@@ -128,7 +128,13 @@ func (a App) Run(args []string, out io.Writer) error {
 		*executionRepo = *name
 		defaultShared = true
 	}
-	plan, err := planInitWithExecution(a.API, *name, *executionRepo)
+	_, native := a.Process.(NativeProcess)
+	recipe := "issue"
+	if native && nativeLinuxTarget() && *executionRepo != "" &&
+		(defaultShared || host != nil) && !*installService && !*prepareWake {
+		recipe = "issue-managed"
+	}
+	plan, err := planInitRecipe(a.API, *name, *executionRepo, recipe)
 	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {
 		// Avoid installing legacy callers on a fresh shared host. Those files
 		// would conflict with the later installation of the shared candidate.
@@ -179,7 +185,6 @@ func (a App) Run(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
-	_, native := a.Process.(NativeProcess)
 	managedPeer := host != nil && len(plan.Files) > 0
 	managedResume := native && nativeLinuxTarget() &&
 		managedIntentAvailable(plan.Repository)

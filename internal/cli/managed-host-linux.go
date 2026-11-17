@@ -108,8 +108,6 @@ func transferControllerCredential(process Process, member int64, token []byte) e
 	return nil
 }
 
-type installResultEncoder interface{ Encode(any) error }
-
 type managedHostOperations struct {
 	discover    func() (*sharedHost, error)
 	prepare     func(InitPlan) error
@@ -121,11 +119,13 @@ type managedHostOperations struct {
 	staged      func(InitPlan, []sharedRegistration) ([]string, error)
 	start       func([]string) error
 	cleanup     func(InitPlan, []sharedRegistration) error
+	activate    func(InitPlan, []sharedRegistration) (managedRelayResult, error)
 }
 
 func (a App) managedHostOperations() managedHostOperations {
 	var selection sharedInstallation
 	return managedHostOperations{
+		activate: a.activateManagedRelay,
 		discover: func() (*sharedHost, error) { return discoverSharedHost(a.Process) },
 		prepare: func(plan InitPlan) error {
 			var err error
@@ -174,7 +174,15 @@ func (a App) managedHostOperations() managedHostOperations {
 
 func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	encoder installResultEncoder, ops managedHostOperations) error {
-	if err := requireInactiveSharedWake(a.API, plan.Repository.FullName); err != nil {
+	if initIssueRecipe(plan) == "issue-managed" {
+		if err := requireManagedRouteEligible(a.API, plan.Repository.FullName); err != nil {
+			return err
+		}
+		if _, err := prepareSharedWakeDestination(a.API, plan.Repository.FullName,
+			*plan.Execution); err != nil {
+			return err
+		}
+	} else if err := requireInactiveSharedWake(a.API, plan.Repository.FullName); err != nil {
 		return err
 	}
 	host, err := ops.discover()
@@ -225,11 +233,13 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		if err != nil {
 			return err
 		}
-		return publishManagedHandoff(encoder, plan, runners)
+		return publishManagedRoute(encoder, plan, runners, ops)
 	}
 	if len(packages) == 0 {
-		if err := ops.credentials(plan.Member.ID, token); err != nil {
-			return err
+		if initIssueRecipe(plan) != "issue-managed" {
+			if err := ops.credentials(plan.Member.ID, token); err != nil {
+				return err
+			}
 		}
 		live, err := verifySharedHost(a.API, *host)
 		if err != nil {
@@ -260,20 +270,5 @@ func finishManagedHandoff(encoder installResultEncoder, plan InitPlan,
 	if err := ops.cleanup(plan, runners); err != nil {
 		return err
 	}
-	return publishManagedHandoff(encoder, plan, runners)
-}
-
-func publishManagedHandoff(encoder installResultEncoder, plan InitPlan,
-	runners []sharedRegistration) error {
-	return encoder.Encode(struct {
-		Status       string               `json:"status"`
-		Code         string               `json:"code"`
-		Wake         string               `json:"wake"`
-		MemberID     int64                `json:"member_id"`
-		RepositoryID int64                `json:"repository_id"`
-		Execution    *SharedExecution     `json:"execution"`
-		Source       Producers            `json:"source"`
-		Runners      []sharedRegistration `json:"runners"`
-	}{"completed", "MANAGED_INSTALLATION_INACTIVE", "inactive",
-		plan.Member.ID, plan.Repository.ID, plan.Execution, Pins(), runners})
+	return publishManagedRoute(encoder, plan, runners, ops)
 }

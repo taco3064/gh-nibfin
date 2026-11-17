@@ -147,6 +147,7 @@ func loadManagedIntent(path string, plan InitPlan) (managedInstallIntent, error)
 		intent.Plan.Repository.DefaultBranch != plan.Repository.DefaultBranch ||
 		intent.Plan.Member.ID != plan.Member.ID ||
 		!sameSharedExecution(intent.Plan.Execution, plan.Execution) ||
+		!managedIntentRecipeCompatible(intent.Plan, plan) ||
 		!reflect.DeepEqual(intent.Pins, Pins()) ||
 		!commitPattern.MatchString(intent.Plan.Head) ||
 		len(intent.Plan.Files) == 0 {
@@ -234,8 +235,8 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	if _, _, err := content(api, pin.Repository, managedHostEntry, pin.Commit); err != nil {
 		return errors.New("MANAGED_INSTALL_CORE_SOURCE_REQUIRED")
 	}
-	current, err := planInitWithExecution(api, plan.Repository.FullName,
-		plan.Execution.Repository)
+	current, err := planInitRecipe(api, plan.Repository.FullName,
+		plan.Execution.Repository, initIssueRecipe(plan))
 	if err != nil || current.Member.ID != plan.Member.ID ||
 		current.Repository.ID != plan.Repository.ID {
 		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
@@ -249,11 +250,19 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		return err
 	}
 	defer closeLock()
+	if len(current.Files) == 0 && !managedIntentAvailable(current.Repository) &&
+		initIssueRecipe(current) == "issue-managed" {
+		return a.finishVerifiedManagedInit(ctx, current, token, json.NewEncoder(out), host)
+	}
 	intent, err := loadManagedIntent(path, current)
 	if err != nil {
 		return err
 	}
 	encoder := json.NewEncoder(out)
+	if initIssueRecipe(intent.Plan) == "issue" &&
+		initIssueRecipe(current) == "issue-managed" && len(current.Files) == 0 {
+		return a.finishVerifiedManagedInit(ctx, current, token, encoder, host)
+	}
 	wait, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if err := waitManagedInstall(wait, api, &intent, func() error {
@@ -264,15 +273,20 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	}); err != nil {
 		return err
 	}
-	current, err = planInitWithExecution(api, plan.Repository.FullName,
-		plan.Execution.Repository)
+	current, err = planInitRecipe(api, plan.Repository.FullName,
+		plan.Execution.Repository, initIssueRecipe(plan))
 	if err != nil || current.Member.ID != plan.Member.ID ||
 		current.Repository.ID != plan.Repository.ID || len(current.Files) != 0 {
 		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
 	}
-	if err := ensureInitLabels(api, "repos/"+plan.Repository.FullName,
-		current.Labels); err != nil {
+	return a.finishVerifiedManagedInit(ctx, current, token, encoder, host)
+}
+
+func (a App) finishVerifiedManagedInit(ctx context.Context, plan InitPlan, token []byte,
+	encoder installResultEncoder, host managedHostOperations) error {
+	if err := ensureInitLabels(a.API, "repos/"+plan.Repository.FullName,
+		plan.Labels); err != nil {
 		return err
 	}
-	return a.finishManagedInit(ctx, current, token, encoder, host)
+	return a.finishManagedInit(ctx, plan, token, encoder, host)
 }
