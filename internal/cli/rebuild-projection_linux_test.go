@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,11 +57,11 @@ export const retirementPath = '/fixture-retirement', drainPath = '/fixture-drain
 						t.Fatal(err)
 					}
 				}
-				// Test-only module composition. Production always uses fixed paths
-				// after source/path verification and has no override mechanism.
+				// The fixture uses the CI interpreter without the installed-tool
+				// path policy. Production always verifies its fixed paths.
 				script := strings.ReplaceAll(rebuildSnapshotScript, "/opt/nibfin/core", root)
-				output, err := runNativeProcess(context.Background(), "node", []string{
-					"--input-type=module", "--eval", script}, nil, false)
+				output, err := exec.Command("node", "--input-type=module", "--eval", script).
+					Output()
 				if changed {
 					if err == nil || len(output) != 0 {
 						t.Fatal("changed adoption was reported as a stable snapshot")

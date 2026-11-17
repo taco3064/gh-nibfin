@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -125,10 +126,14 @@ func TestRebuildCapabilityAllowsOnlyFixedActivation(t *testing.T) {
 }
 
 func TestCorePendingOutputIsNarrowAndStderrStaysPrivate(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, code := range []string{"1", "2"} {
 		script := `process.stdout.write('{"status":"pending"}');
 process.stderr.write('fixture-private-diagnostic'); process.exit(` + code + `);`
-		output, err := runNativeProcess(context.Background(), "node", []string{
+		output, err := runResolvedNativeProcess(context.Background(), "node", node, []string{
 			"--input-type=module"}, []byte(script), true)
 		if err == nil || bytes.Contains(output, []byte("private")) ||
 			strings.Contains(err.Error(), "private") {
