@@ -140,7 +140,9 @@ func loadManagedIntent(path string, plan InitPlan) (managedInstallIntent, error)
 		return intent, err
 	}
 	defer file.Close()
-	if err := json.NewDecoder(io.LimitReader(file, 2*1024*1024)).Decode(&intent); err != nil || intent.Plan.Repository.ID != plan.Repository.ID ||
+	const limit = 2 * 1024 * 1024
+	err = json.NewDecoder(io.LimitReader(file, limit)).Decode(&intent)
+	if err != nil || intent.Plan.Repository.ID != plan.Repository.ID ||
 		intent.Plan.Repository.FullName != plan.Repository.FullName ||
 		intent.Plan.Repository.DefaultBranch != plan.Repository.DefaultBranch ||
 		intent.Plan.Member.ID != plan.Member.ID ||

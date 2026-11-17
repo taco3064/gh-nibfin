@@ -178,7 +178,8 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	_, native := a.Process.(NativeProcess)
 	managedPeer := host != nil && len(plan.Files) > 0
-	managedResume := native && nativeSharedHostSupported() && managedIntentAvailable(plan.Repository)
+	managedResume := native && nativeSharedHostSupported() &&
+		managedIntentAvailable(plan.Repository)
 	managed := native && nativeSharedHostSupported() && plan.Execution != nil &&
 		(defaultShared || managedPeer || managedResume || (*consentManaged && host != nil)) &&
 		!*installService && !*prepareWake && runner == nil

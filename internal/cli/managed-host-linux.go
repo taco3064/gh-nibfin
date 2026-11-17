@@ -45,7 +45,11 @@ func prepareManagedHost(process Process, plan InitPlan) error {
 	if err := requireRootOwnedHostPath(entry); err != nil {
 		return err
 	}
-	output, err := runSharedAdministrator(process, "/usr/bin/env",
+	const env = "/usr/bin/env"
+	if err := requireRootOwnedHostPath(env); err != nil {
+		return err
+	}
+	output, err := runSharedAdministrator(process, env,
 		[]string{"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8", node, entry,
 			"--consent-dedicated-engine"}, input)
 	var result struct {
@@ -159,6 +163,9 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		}
 	}
 	if plan.Repository.ID == host.RepositoryID && len(packages) == 0 {
+		if err := transferControllerCredential(a.Process, plan.Member.ID, token); err != nil {
+			return err
+		}
 		if live, readErr := readStartedSharedRunners(ctx, a.API, *host); readErr == nil {
 			return publishManagedHandoff(encoder, plan, live)
 		}

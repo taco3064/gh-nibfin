@@ -26,7 +26,7 @@ func selectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, path, "auth", "token", "--hostname",
-		"github.com", "--user", user.Login, "--no-refresh")
+		"github.com", "--user", user.Login)
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "GH_PROMPT_DISABLED=1",
 		"GH_NO_UPDATE_NOTIFIER=1", "GH_NO_EXTENSION_UPDATE_NOTIFIER=1"}
 	for _, name := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR",

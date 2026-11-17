@@ -12,11 +12,17 @@ type installPR struct {
 	URL    string `json:"html_url"`
 	State  string `json:"state"`
 	Head   struct {
-		Ref string `json:"ref"`
-		SHA string `json:"sha"`
+		Ref  string `json:"ref"`
+		SHA  string `json:"sha"`
+		Repo struct {
+			ID int64 `json:"id"`
+		} `json:"repo"`
 	} `json:"head"`
 	Base struct {
-		Ref string `json:"ref"`
+		Ref  string `json:"ref"`
+		Repo struct {
+			ID int64 `json:"id"`
+		} `json:"repo"`
 	} `json:"base"`
 }
 
