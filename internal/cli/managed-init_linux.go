@@ -256,5 +256,15 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 	}); err != nil {
 		return err
 	}
+	current, err = planInitWithExecution(api, plan.Repository.FullName,
+		plan.Execution.Repository)
+	if err != nil || current.Member.ID != plan.Member.ID ||
+		current.Repository.ID != plan.Repository.ID || len(current.Files) != 0 {
+		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
+	}
+	if err := ensureInitLabels(api, "repos/"+plan.Repository.FullName,
+		current.Labels); err != nil {
+		return err
+	}
 	return a.finishManagedInit(ctx, current, api.token, encoder)
 }
