@@ -16,6 +16,20 @@ func (a App) registerSharedSlot(repo Repository, user User, path string,
 	if !sharedSlotPathMatches(path, record.Name, first, second) {
 		return record, errors.New("SHARED_RUNNER_SLOT_IDENTITY_MISMATCH")
 	}
+	target, err := sharedTargetFromProducer(a.API)
+	if err != nil {
+		return record, err
+	}
+	app, err := selectSharedRunner(a.API, target)
+	if err != nil {
+		return record, err
+	}
+	if app != record.Application {
+		return record, errors.New("SHARED_RUNNER_TARGET_MISMATCH")
+	}
+	if err := verifySharedRunnerExecutables(path, target); err != nil {
+		return record, err
+	}
 	host, err := discoverSharedHost(a.Process)
 	if err != nil {
 		return record, err

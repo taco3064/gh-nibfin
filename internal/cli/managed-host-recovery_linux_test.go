@@ -10,13 +10,7 @@ func TestManagedInitRecoversPartiallyStartedSlots(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cache)
 	api := initFixture()
-	api.data["repos/actions/runner/releases/tags/v2.338.2"] = map[string]any{
-		"tag_name": "v2.338.2",
-		"assets": []map[string]string{{
-			"name": sharedRunnerArchive, "digest": "sha256:" + sharedRunnerHash,
-			"browser_download_url": sharedRunnerDownload + sharedRunnerArchive,
-		}},
-	}
+	installSharedProducerFixture(t, api, platformFixture())
 	a := App{API: api}
 	plan := InitPlan{
 		Repository: api.data["repos/example/project"].(Repository),

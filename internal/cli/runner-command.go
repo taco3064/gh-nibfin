@@ -42,7 +42,7 @@ func (a App) runRunnerForInstall(
 		return errors.New("INVALID_RUNNER_ARGUMENTS")
 	}
 	if *shared && (command != "register" || !nativeSharedHostSupported()) {
-		return errors.New("SHARED_RUNNER_REGISTRATION_REQUIRES_LINUX_X64")
+		return errors.New("SHARED_RUNNER_REGISTRATION_REQUIRES_NATIVE_LINUX")
 	}
 	repo, user, err := repository(a.API, *name, true)
 	if err != nil {
