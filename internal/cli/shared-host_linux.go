@@ -213,7 +213,8 @@ func runSharedAdministrator(
 	options := []string{"-n", "--", program}
 	// sudo prompts on its controlling terminal and leaves stdin available
 	// for the verified archive. Headless calls retain noninteractive behavior.
-	if _, native := process.(NativeProcess); native {
+	switch process.(type) {
+	case NativeProcess, onboardingProcess:
 		if terminal, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 			terminal.Close()
 			options = options[1:]

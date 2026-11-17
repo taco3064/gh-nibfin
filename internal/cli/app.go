@@ -84,6 +84,8 @@ func (a App) Run(args []string, out io.Writer) error {
 		"Install and start the two adopted shared Runner services")
 	prepareWake := flags.Bool("prepare-shared-wake", false,
 		"Prepare the verified shared Wake destination without activating it")
+	consentManaged := flags.Bool("consent-managed-login", false,
+		"Authorize the selected GitHub login and dedicated managed host setup")
 	quick := addQuickFlags(flags)
 	if flags.Parse(args[1:]) != nil || flags.NArg() != 0 || *name == "" {
 		return errors.New("INVALID_INIT_ARGUMENTS")
@@ -173,6 +175,18 @@ func (a App) Run(args []string, out io.Writer) error {
 	}
 	if !*apply {
 		return nil
+	}
+	_, native := a.Process.(NativeProcess)
+	managedPeer := host != nil && len(plan.Files) > 0
+	managedResume := native && nativeSharedHostSupported() && managedIntentAvailable(plan.Repository)
+	managed := native && nativeSharedHostSupported() && plan.Execution != nil &&
+		(defaultShared || managedPeer || managedResume || (*consentManaged && host != nil)) &&
+		!*installService && !*prepareWake && runner == nil
+	if managed {
+		return a.runManagedInit(plan, *consentManaged, out)
+	}
+	if *consentManaged {
+		return errors.New("MANAGED_INSTALL_OPTIONS_CONFLICT")
 	}
 	cacheProcess := a.Process
 	if *startServices {
