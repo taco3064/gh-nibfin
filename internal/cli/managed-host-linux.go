@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 )
 
 const managedHostEntry = "bin/nibfin-prepare-managed-onboarding.mjs"
@@ -157,39 +158,56 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		if err := adoptSharedPeer(a.Process, *host, plan); err != nil {
 			return err
 		}
-		host, err = discoverSharedHost(a.Process)
-		if err != nil || host == nil || host.adoptionStatus(plan.Repository.ID) != "observed" {
+		updated, err := discoverSharedHost(a.Process)
+		if err != nil || updated == nil || updated.adoptionStatus(plan.Repository.ID) != "observed" ||
+			updated.SharedExecution != host.SharedExecution || updated.MemberID != host.MemberID ||
+			!slices.Equal(updated.Runners, host.Runners) {
 			return errors.New("MANAGED_HOST_ADOPTION_PENDING")
 		}
+		host = updated
 	}
-	if plan.Repository.ID == host.RepositoryID && len(packages) == 0 {
+	if plan.Repository.ID != host.RepositoryID {
+		runners, err := readStartedSharedRunners(ctx, a.API, *host)
+		if err != nil {
+			return err
+		}
+		return publishManagedHandoff(encoder, plan, runners)
+	}
+	if len(packages) == 0 {
 		if err := transferControllerCredential(a.Process, plan.Member.ID, token); err != nil {
 			return err
 		}
-		if live, readErr := readStartedSharedRunners(ctx, a.API, *host); readErr == nil {
-			return publishManagedHandoff(encoder, plan, live)
+		live, err := verifySharedHost(a.API, *host)
+		if err != nil {
+			return err
 		}
-		// Adoption may have completed before the first service start.
-		staged := make([]sharedRegistration, 0, 2)
-		for _, slot := range host.Runners {
-			staged = append(staged, sharedRegistration{ID: slot.ID, Name: slot.Name,
-				Status: "offline"})
+		if sharedRunnersOnline(live) {
+			return a.finishManagedHandoff(encoder, plan, live)
 		}
-		packages, err = a.readStagedSharedSlots(plan, staged)
+		// Core installs both slots before starting either service. If one is
+		// already online, resume from the installed slots without staging.
+		packages, err = a.readStagedSharedSlots(plan, live)
 		if err != nil {
 			return err
 		}
 	}
-	if len(packages) != 0 {
-		if _, err := installSharedService(a.Process, packages, true); err != nil {
-			return err
-		}
-		if err := retireStagedRegistration(packages); err != nil {
-			return err
-		}
+	if _, err := installSharedService(a.Process, packages, true); err != nil {
+		return err
 	}
 	runners, err := readStartedSharedRunners(ctx, a.API, *host)
 	if err != nil {
+		return err
+	}
+	return a.finishManagedHandoff(encoder, plan, runners)
+}
+
+func (a App) finishManagedHandoff(encoder installResultEncoder, plan InitPlan,
+	runners []sharedRegistration) error {
+	paths, err := a.stagedSharedRegistrationPaths(plan, runners, false)
+	if err != nil {
+		return err
+	}
+	if err := retireStagedRegistration(paths); err != nil {
 		return err
 	}
 	return publishManagedHandoff(encoder, plan, runners)
