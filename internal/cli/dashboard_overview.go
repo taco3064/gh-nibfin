@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -51,27 +50,21 @@ func (o dashboardObserver) Observe() snapshot.LocalObservation {
 	}
 	// Help is a capability read, never an install/upgrade or administrator call.
 	help, err := o.run(node, []string{entry, "help"}, nil)
-	var commands struct {
-		Commands []string `json:"commands"`
-	}
-	if err != nil || len(help) > 65536 || json.Unmarshal(help, &commands) != nil {
+	if err != nil {
 		return unavailable("UNAVAILABLE")
 	}
-	if !overviewCommand(commands.Commands, "observe-local-work") {
+	commands, err := observationCommands(help)
+	if err != nil {
 		return unavailable("UNSUPPORTED_CORE")
 	}
 	token, err := o.run("gh", []string{"auth", "token", "--hostname", "github.com"}, nil)
 	if err != nil || len(token) > 16385 {
 		return unavailable("CREDENTIAL_UNAVAILABLE")
 	}
-	credential := strings.TrimSpace(string(token))
-	if len(credential) > 16384 || credential == "" ||
-		strings.ContainsAny(credential, " \t\r\n\x00") {
+	input, err := observationInput(token)
+	if err != nil {
 		return unavailable("CREDENTIAL_UNAVAILABLE")
 	}
-	input, _ := json.Marshal(struct {
-		Token string `json:"token"`
-	}{credential})
 	data, err := o.run(node, []string{entry, "observe-local-work"}, input)
 	if err != nil {
 		// Unclassified failures disclose neither process output nor diagnostics.
@@ -81,17 +74,17 @@ func (o dashboardObserver) Observe() snapshot.LocalObservation {
 	if value.Status != "observed" {
 		return value
 	}
-	if overviewCommand(commands.Commands, "inspect-shared-host") {
+	if overviewCommand(commands, "inspect-shared-host") {
 		data, err := o.run(node, []string{entry, "inspect-shared-host"}, nil)
 		var host *sharedHost
 		if err == nil && len(data) <= 256*1024 {
 			host, err = decodeSharedHost(data)
 		}
-		if err == nil && host != nil && host.MemberID == o.subject.ID &&
-			len(host.AdoptedRepositoryIDs) <= 32 {
-			value.AdoptedIDs = host.AdoptedRepositoryIDs
-		} else {
+		ids, partial := overviewAdoptedIDs(host, o.subject.ID)
+		if err != nil || partial {
 			value.Completeness = "partial"
+		} else {
+			value.AdoptedIDs = ids
 		}
 	}
 	return value

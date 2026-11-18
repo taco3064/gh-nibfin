@@ -19,19 +19,7 @@ func discoverDesktop(p Process, host, repo string) ([]desktopTarget, error) {
 	var targets []desktopTarget
 	var err error
 	if host == "windows" {
-		quiet, e := desktopQuery(p, "wsl.exe", "--list", "--quiet")
-		if e != nil {
-			return nil, errors.New("WSL_INVENTORY_UNAVAILABLE")
-		}
-		verbose, e := desktopQuery(p, "wsl.exe", "--list", "--verbose")
-		if e != nil {
-			return nil, errors.New("WSL_INVENTORY_UNAVAILABLE")
-		}
-		active, e := desktopQuery(p, "wsl.exe", "--list", "--running", "--quiet")
-		if e != nil {
-			return nil, errors.New("WSL_RUNNING_INVENTORY_UNAVAILABLE")
-		}
-		targets, err = parseWSL(quiet, verbose, active)
+		targets, err = wslInventory(p)
 	} else {
 		data, e := desktopQuery(p, "multipass", "list", "--format", "json")
 		if e != nil {
@@ -163,4 +151,20 @@ func coarseDesktopTarget(p Process, t *desktopTarget) {
 		KernelArch: arch, Readiness: "unverified", Checks: []capability{
 			{"systemd", status, "COARSE_OBSERVATION_ONLY"},
 		}}
+}
+
+func wslInventory(p Process) ([]desktopTarget, error) {
+	quiet, e := desktopQuery(p, "wsl.exe", "--list", "--quiet")
+	if e != nil {
+		return nil, errors.New("WSL_INVENTORY_UNAVAILABLE")
+	}
+	verbose, e := desktopQuery(p, "wsl.exe", "--list", "--verbose")
+	if e != nil {
+		return nil, errors.New("WSL_INVENTORY_UNAVAILABLE")
+	}
+	active, e := desktopQuery(p, "wsl.exe", "--list", "--running", "--quiet")
+	if e != nil {
+		return nil, errors.New("WSL_RUNNING_INVENTORY_UNAVAILABLE")
+	}
+	return parseWSL(quiet, verbose, active)
 }
