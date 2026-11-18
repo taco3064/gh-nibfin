@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -121,6 +122,17 @@ func runResolvedNativeProcess(ctx context.Context, name, path string, args []str
 		}
 		if retainFailureOutput {
 			var exit *exec.ExitError
+			if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 &&
+				len(args) == 2 && args[1] == "observe-local-work" {
+				var denial struct {
+					SchemaVersion int    `json:"schemaVersion"`
+					Status        string `json:"status"`
+				}
+				if out.Len() <= 1024 && json.Unmarshal(out.Bytes(), &denial) == nil &&
+					denial.SchemaVersion == 1 && denial.Status == "denied" {
+					return []byte(`{"schemaVersion":1,"status":"denied"}`), nil
+				}
+			}
 			if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 2 {
 				return out.Bytes(), errors.New("CORE_PENDING_RESULT")
 			}

@@ -38,6 +38,7 @@ type Collector interface {
 // selects the embedded shell. Now and Random are injectable test seams; production
 // should leave them nil to use time.Now and crypto/rand.Reader.
 type Config struct {
+	Overview   OverviewCollector
 	Controller pause.Controller
 	Repository string
 	Bind       string
@@ -48,6 +49,7 @@ type Config struct {
 }
 
 type Service struct {
+	overview        *overviewState
 	controller      pause.Controller
 	reviews         map[string]*reviewed
 	mutationContext context.Context
@@ -78,7 +80,8 @@ func Start(ctx context.Context, config Config) (*Service, error) {
 
 func start(ctx context.Context, c Config,
 	listen func(string, string) (net.Listener, error)) (*Service, error) {
-	if ctx == nil || !snapshot.ValidRepository(c.Repository) || c.Provider == nil {
+	if ctx == nil || c.Provider == nil ||
+		(c.Overview == nil && !snapshot.ValidRepository(c.Repository)) {
 		return nil, errors.New("invalid dashboard configuration")
 	}
 	address, err := bindAddress(c.Bind)
@@ -118,6 +121,7 @@ func start(ctx context.Context, c Config,
 		ReadTimeout: 5 * time.Second, WriteTimeout: RequestBound,
 		IdleTimeout: 15 * time.Second, MaxHeaderBytes: 8 * 1024,
 		ErrorLog: log.New(io.Discard, "", 0)}
+	s.startOverview(mutationContext, c.Overview)
 	served := make(chan error, 1)
 	go func() { served <- s.server.Serve(listener) }()
 	go s.lifecycle(ctx, served)
@@ -157,6 +161,13 @@ func (s *Service) lifecycle(ctx context.Context, served <-chan error) {
 		s.closeErr = errors.New("dashboard shutdown bound exceeded")
 		_ = s.server.Close()
 	}
+	if s.overview != nil {
+		select {
+		case <-s.overview.done:
+		case <-shutdown.Done():
+			s.closeErr = errors.New("overview shutdown bound exceeded")
+		}
+	}
 	if !servingStopped {
 		serveErr = <-served
 	}
@@ -177,7 +188,11 @@ func (s *Service) BootstrapURL() string {
 	if s.closed || !s.now().Before(s.expires) {
 		return ""
 	}
-	return s.origin + "/#" + s.secret
+	suffix := ""
+	if s.overview != nil {
+		suffix = ":overview"
+	}
+	return s.origin + "/#" + s.secret + suffix
 }
 
 // Close is concurrent-safe and idempotent. It invalidates proof before returning

@@ -62,7 +62,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "unavailable")
 		return
 	}
-	if r.URL.Path == "/api/labels" {
+	if r.URL.Path == "/api/labels" || r.URL.Path == "/api/repository" {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
 			failure(w, 405, "method_not_allowed")
@@ -72,6 +72,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.RequestURI != r.URL.Path || len(r.TransferEncoding) != 0 ||
 			r.ContentLength > mutationBodyLimit {
 			failure(w, 400, "invalid_request")
+			return
+		}
+		if r.URL.Path == "/api/repository" {
+			s.selectRepository(w, r)
 			return
 		}
 		s.mutation(w, r)
@@ -86,6 +90,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.RequestURI != r.URL.Path || r.ContentLength != 0 ||
 		len(r.TransferEncoding) != 0 {
 		failure(w, 400, "invalid_request")
+		return
+	}
+	if r.URL.Path == "/api/overview" || r.URL.Path == "/api/updates" {
+		s.overviewRequest(w, r)
 		return
 	}
 	if r.URL.Path == "/api/snapshot" {
@@ -105,7 +113,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	failure(w, 404, "not_found")
 }
 
-func (s *Service) acquire(r *http.Request) int {
+func (s *Service) authenticate(r *http.Request) int {
 	proof := r.Header.Values(SessionHeader)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -117,6 +125,18 @@ func (s *Service) acquire(r *http.Request) int {
 	}
 	if _, err := hex.DecodeString(proof[0]); err != nil ||
 		subtle.ConstantTimeCompare([]byte(proof[0]), []byte(s.secret)) != 1 {
+		return 401
+	}
+	return 0
+}
+
+func (s *Service) acquire(r *http.Request) int {
+	if status := s.authenticate(r); status != 0 {
+		return status
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || !s.now().Before(s.expires) {
 		return 401
 	}
 	if s.busy {
@@ -138,7 +158,14 @@ func (s *Service) snapshot(w http.ResponseWriter, r *http.Request) {
 	defer func() { s.mu.Lock(); s.busy = false; s.mu.Unlock() }()
 	// Collection is synchronous. Client disconnects cannot release the single
 	// collection slot while a non-context-aware transport is still working.
-	result := s.provider.Collect(s.repository).At(s.now())
+	s.mu.Lock()
+	repository := s.repository
+	s.mu.Unlock()
+	if !snapshot.ValidRepository(repository) {
+		failure(w, 400, "repository_required")
+		return
+	}
+	result := s.provider.Collect(repository).At(s.now())
 	data, err := json.Marshal(struct {
 		snapshot.Snapshot
 		MaxTargets int `json:"label_action_limit"`

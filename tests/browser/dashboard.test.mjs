@@ -314,3 +314,136 @@ test('hostile text is inert and resource links are validated exactly', async t =
   assert.ok(h.requests.every(r => new URL(r.url()).origin === h.origin));
   assert.deepEqual(h.errors, []);
 });
+
+// The full suite remains hosted; this case is also a focused development scenario.
+test('overview live updates, uncertainty and responsive navigation', async t => {
+  const {overviewFixture} = await import('./overview-fixtures.mjs');
+  const fixture = overviewFixture();
+  for (const value of fixture.overviews) {
+    value.issues.items[0].title += '\u202e<img src=x onerror=alert(1)>';
+  }
+  const h = await open(t, fixture, 'overview');
+  const {page} = h;
+  await page.locator('.runner-card').first().waitFor();
+  assert.equal(await page.locator('.runner-card').count(), 4);
+  assert.equal(await page.locator('.busy-indicator').count(), 1);
+  await contains(page.locator('.runner-card').first(), 'Issue: Unknown');
+  await contains(page.locator('.runner-card').first(), 'Stage: Unknown');
+  await contains(page.locator('#assigned-issues'), 'Execution unknown');
+  const title = await page.locator('#assigned-issues button').textContent();
+  assert.ok(title.includes('�') && !title.includes('\u202e'));
+  assert.equal(await page.locator('#assigned-issues img').count(), 0);
+  const api = h.requests.filter(request => request.url().includes('/api/'));
+  assert.ok(api.some(request => request.url().endsWith('/api/updates')));
+  const proof = new URL(h.url).hash.slice(1).split(':')[0];
+  assert.ok(api.every(request => request.headers()['x-nibfin-session'] === proof));
+  assert.ok(h.requests.every(request => !request.url().includes(proof)));
+  assert.ok(!await page.locator('body').innerHTML().then(html => html.includes(proof)));
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  assert.equal(await page.locator('.busy-indicator').evaluate(element =>
+    getComputedStyle(element).animationName), 'none');
+  for (const viewport of [{width: 1280, height: 900}, {width: 390, height: 844}]) {
+    await page.setViewportSize(viewport);
+    assert.ok(await page.evaluate(() =>
+      document.documentElement.scrollWidth <= window.innerWidth));
+    if (process.env.NIBFIN_OVERVIEW_SHOTS) {
+      await page.screenshot({path: `${process.env.NIBFIN_OVERVIEW_SHOTS}/` +
+        `candidate-fixture-${viewport.width}.png`, fullPage: true});
+    }
+  }
+  await page.evaluate(() => {
+    window.fixtureNow = Date.now;
+    Date.now = () => window.fixtureNow() + 31000;
+  });
+  await page.waitForFunction(() =>
+    document.querySelector('.runner-card').textContent.includes('stale observation'));
+  assert.equal(await page.locator('.busy-indicator').count(), 0);
+  await page.evaluate(() => { Date.now = window.fixtureNow; delete window.fixtureNow; });
+  await page.waitForFunction(() => document.querySelector('.busy-indicator'));
+  await page.locator('#overview-search').fill('Assigned');
+  await page.getByRole('button', {name: /example\/project#1 — Assigned/}).click();
+  await page.locator('#dashboard').waitFor({state: 'visible'});
+  await contains(page.locator('#details'), 'A dependent');
+  await page.getByRole('button', {name: 'Back to overview', exact: true}).click();
+  assert.equal(await page.locator('#overview-search').inputValue(), 'Assigned');
+  h.advance();
+  await page.waitForFunction(() =>
+    document.querySelectorAll('.busy-indicator').length === 0,
+    null, {timeout: 15000});
+  await contains(page.locator('.runner-card').first(), 'idle');
+  assert.equal(await page.locator('#assigned-issues .selected').count(), 1);
+  await page.evaluate(() => {
+    window.fixtureOfflineEvents = 0;
+    window.addEventListener('offline', () => window.fixtureOfflineEvents++, {once: true});
+  });
+  await h.context.setOffline(true);
+  if (!await page.evaluate(() => window.fixtureOfflineEvents)) {
+    // Protocol transport emulation can leave navigator/window state unchanged.
+    console.log('Fixture: supplying an offline event omitted by transport emulation.');
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  }
+  await page.waitForFunction(() => document.getElementById('overview-connection')
+    .textContent.includes('Disconnected'));
+  await h.context.setOffline(false);
+  await page.waitForFunction(() => document.getElementById('overview-connection')
+    .textContent === 'Connected', null, {timeout: 20000});
+  const streams = h.requests.filter(request => request.url().endsWith('/api/updates'));
+  assert.ok(streams.length >= 2);
+  assert.ok(streams.at(-1).headers()['last-event-id']);
+  assert.equal(await page.locator('#assigned-issues article').count(), 1);
+  assert.equal(await page.locator('#assigned-issues .selected').count(), 1);
+  assert.equal(await page.locator('#overview-search').inputValue(), 'Assigned');
+  assert.deepEqual(h.errors, []);
+});
+
+test('overview stream parses split resets and resumes with a header cursor', async () => {
+  const {connectOverview} = await import(
+    '../../internal/dashboard/assets/overview-stream.js');
+  const calls = [];
+  const received = [];
+  const statuses = [];
+  const encoder = new TextEncoder();
+  const request = async (path, options) => {
+    calls.push({path, headers: options.headers});
+    if (calls.length > 1) return new Response('', {status: 401});
+    const event = 'id: 7\nevent: reset\ndata: ' + JSON.stringify({
+      id: 7, kind: 'reset', overview: {schema_version: 1}
+    }) + '\n\n';
+    return new Response(new ReadableStream({start(controller) {
+      controller.enqueue(encoder.encode(event.slice(0, 15)));
+      controller.enqueue(encoder.encode(event.slice(15)));
+      controller.close();
+    }}), {headers: {'Content-Type': 'text/event-stream'}});
+  };
+  await connectOverview(request, value => received.push(value),
+    value => statuses.push(value), new AbortController().signal);
+  assert.deepEqual(received, [{schema_version: 1}]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].headers['Last-Event-ID'], '7');
+  assert.ok(calls.every(call => call.path === '/api/updates'));
+  assert.match(statuses.at(-1), /expired or denied/);
+});
+
+test('overview known empty and denied coverage remain explicit', async t => {
+  const {overviewFixture} = await import('./overview-fixtures.mjs');
+  const fixture = overviewFixture();
+  const empty = structuredClone(fixture.overviews[0]);
+  empty.runners.items = [];
+  empty.issues.items = [];
+  const denied = structuredClone(empty);
+  denied.local_status = 'denied';
+  for (const section of [denied.runners, denied.issues, denied.repositories]) {
+    section.status = status('denied', false, 'permission_denied');
+  }
+  fixture.overviews = [empty, denied];
+  const h = await open(t, fixture, 'overview');
+  await h.page.getByText('No local Runner registrations.', {exact: true}).waitFor();
+  await contains(h.page.locator('#assigned-empty'), 'No assigned open Issues');
+  h.advance();
+  await h.page.waitForFunction(() => document.getElementById('runner-coverage')
+    .textContent.includes('Access denied'), null, {timeout: 15000});
+  await contains(h.page.locator('#runners'), 'unavailable or partial');
+  await contains(h.page.locator('#assigned-empty'), 'inventory is incomplete');
+  assert.equal(await h.page.locator('.busy-indicator').count(), 0);
+  assert.deepEqual(h.errors, []);
+});

@@ -66,6 +66,7 @@ export async function open(t, value, mode = '') {
   await page.goto(mode === 'missing' ? `${origin}/` : url);
   await page.waitForFunction(() => location.hash === '');
   return {page, context, requests, errors, url, origin,
+    advance() { child.stdin.write('next\n'); },
     async load() {
       await page.getByRole('button', {name: 'Read snapshot', exact: true}).click();
       await page.locator('#dashboard').waitFor({state: 'visible'});
