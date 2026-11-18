@@ -26,11 +26,13 @@ type DashboardService interface {
 type DashboardStart func(context.Context, dashboard.Config) (DashboardService, error)
 
 const dashboardUsage = "Usage: gh nibfin dashboard [--repo OWNER/REPO]\n" +
+	"Or: gh nibfin dashboard --overview\n" +
 	"Runs in the foreground. Press Ctrl+C to stop; closing a tab does not stop it."
 
 func (a App) runDashboard(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("dashboard", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	overview := flags.Bool("overview", false, "User overview")
 	name := flags.String("repo", "", "Repository to read")
 	err := flags.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {
@@ -42,6 +44,9 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 	}
 	explicit := false
 	flags.Visit(func(f *flag.Flag) { explicit = explicit || f.Name == "repo" })
+	if *overview && explicit {
+		return errors.New("OVERVIEW_REPOSITORY_CONFLICT")
+	}
 	if explicit && !snapshot.ValidRepository(*name) {
 		return errors.New("INVALID_REPOSITORY")
 	}
@@ -52,13 +57,23 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 	if ctx.Err() != nil {
 		return nil
 	}
-	if !explicit {
+	if !explicit && !*overview {
 		*name, err = dashboardRepository(a.Process)
 		if err != nil {
 			return err
 		}
 	}
-	if err := dashboardIdentity(a.API, *name); err != nil {
+	var overviewProvider dashboard.OverviewCollector
+	var repositoryProvider dashboard.Collector = snapshot.Provider{API: a.API}
+	if *overview {
+		subject, err := dashboardSubject(a.API)
+		if err != nil {
+			return err
+		}
+		repositoryProvider = dashboardOverviewRepository{api: a.API, subject: subject}
+		overviewProvider = snapshot.OverviewProvider{Provider: snapshot.Provider{API: a.API},
+			Subject: subject, Observer: dashboardObserver{process: a.Process, subject: subject}}
+	} else if err := dashboardIdentity(a.API, *name); err != nil {
 		return err
 	}
 	if ctx.Err() != nil {
@@ -71,7 +86,7 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 		}
 	}
 	service, err := start(ctx, dashboard.Config{Repository: *name,
-		Provider:   snapshot.Provider{API: a.API},
+		Provider: repositoryProvider, Overview: overviewProvider,
 		Controller: pause.Controller{Provider: NativePause{API: a.API, Process: a.Process}}})
 	if err != nil {
 		return errors.New("DASHBOARD_START_FAILED")
@@ -130,11 +145,14 @@ func dashboardIdentity(api API, name string) error {
 	if api == nil {
 		return failure
 	}
-	var user User
-	if api.Call("GET", "user", nil, &user) != nil || user.ID <= 0 ||
-		user.Type != "User" || !dashboardLogin.MatchString(user.Login) {
+	if _, err := dashboardSubject(api); err != nil {
 		return failure
 	}
+	return dashboardRepositoryRead(api, name)
+}
+
+func dashboardRepositoryRead(api API, name string) error {
+	failure := errors.New("DASHBOARD_AUTHENTICATED_READ_REQUIRED")
 	var repo Repository
 	if api.Call("GET", "repos/"+name, nil, &repo) != nil || repo.ID <= 0 ||
 		!snapshot.ValidRepository(repo.FullName) || !strings.EqualFold(repo.FullName, name) ||

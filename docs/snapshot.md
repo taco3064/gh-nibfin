@@ -146,3 +146,34 @@ Issue projections include an optional additive `pause_label` object with native
 It is a label observation, independent of `core.pause`, which remains Unknown with
 no_supported_reader. Missing fields in older consumers/fixtures mean unreadable,
 not an absent label. Collection freshness applies to these observations too.
+
+## Additive overview projection
+
+`OverviewProvider.CollectOverview` leaves the repository `Provider.Collect` contract
+unchanged. It combines a subject-bound `LocalObserver` with bounded native assigned
+Issue reads over installed adopted routes. Native repositories are resolved and
+permission-checked before Issues are read. Arbitrary repositories and search hits
+cannot establish adoption. Shared-host inspection may supplement route discovery
+with adopted native IDs; a missing or partial discovery remains visible.
+
+`LocalObservation` models Core local-work schema 1. The decoder validates subject,
+qualified identities, supported provenance, codes and native job links, drops unknown
+fields, and returns a safe availability state on failure. Credentials and raw process
+output never enter this model. No Core completion claim is synthesized from native
+Issue state or from the repository Snapshot's unsupported defaults.
+
+The overview lists open native Issues assigned to the authenticated ID/login,
+including Issues without `scope`; PR entries are excluded. Core node-ID joins are
+independent of the existing database-ID snapshot identity. Each Issue row contains
+all matching work records, so several jobs do not duplicate the native Issue.
+Absent work means unknown execution. Dispatch, queue, execution, qualified pause,
+dependencies, pending effects and explicit no-admission evidence are independent.
+
+Collection sections carry independent status and completeness. Runner keys combine
+registration repository ID and Runner ID and merge adopted routes without assuming
+two slots. Runner association is independent of busy state and may remain unknown.
+The browser expires current native registration claims after 30 seconds from their
+read, while preserving Core's separate source freshness (which may be unknown when
+GitHub supplies no source timestamp). Stale retained rows keep their original times.
+See [Dashboard contracts](dashboard.md#additive-integration-contracts-for-219) for the
+additive Issue-row and reconciliation envelope used by the follow-up UI.

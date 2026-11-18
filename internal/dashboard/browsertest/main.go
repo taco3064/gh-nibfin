@@ -29,8 +29,20 @@ func run() error {
 		return fmt.Errorf("fixture unavailable")
 	}
 	var value snapshot.Snapshot
+	var overview dashboard.OverviewCollector
 	if err := json.Unmarshal(data, &value); err != nil {
 		return fmt.Errorf("invalid fixture")
+	}
+	if len(os.Args) == 3 && os.Args[2] == "overview" {
+		var sequence struct {
+			Snapshot  snapshot.Snapshot   `json:"snapshot"`
+			Overviews []snapshot.Overview `json:"overviews"`
+		}
+		if json.Unmarshal(data, &sequence) != nil || len(sequence.Overviews) == 0 {
+			return fmt.Errorf("invalid overview fixture")
+		}
+		value = sequence.Snapshot
+		overview = &overviewSequence{values: sequence.Overviews}
 	}
 	var expired atomic.Bool
 	now := func() time.Time {
@@ -47,7 +59,8 @@ func run() error {
 		provider, controller = native, pause.Controller{Provider: native}
 	}
 	service, err := dashboard.Start(context.Background(), dashboard.Config{
-		Repository: "example/project", Provider: provider, Controller: controller, Now: now,
+		Overview: overview, Repository: "example/project", Provider: provider,
+		Controller: controller, Now: now,
 	})
 	if err != nil {
 		return err
@@ -60,7 +73,11 @@ func run() error {
 		_ = service.Close()
 		return fmt.Errorf("test pipe unavailable")
 	}
-	_, _ = io.Copy(io.Discard, os.Stdin)
+	if sequence, ok := overview.(*overviewSequence); ok {
+		readOverviewCommands(os.Stdin, sequence)
+	} else {
+		_, _ = io.Copy(io.Discard, os.Stdin)
+	}
 	return service.Close()
 }
 

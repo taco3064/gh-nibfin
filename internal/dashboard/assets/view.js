@@ -103,3 +103,9 @@ export function invalidate() {
   failed = true;
   if (snapshot) freshness();
 }
+
+export function selectIssue(identity) {
+  selected = key(identity);
+  renderGraph();
+  get('details').focus();
+}

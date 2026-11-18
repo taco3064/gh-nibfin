@@ -2,19 +2,24 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 )
 
 func dashboardBrowserCommand(platform, target string) (string, []string, error) {
 	u, err := url.Parse(target)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" ||
-		u.Path != "/" || len(u.Fragment) != 64 {
+		u.Path != "/" || len(strings.TrimSuffix(u.Fragment, ":overview")) != 64 {
+		return "", nil, errors.New("INVALID_DASHBOARD_HANDOFF")
+	}
+	if _, err := hex.DecodeString(strings.TrimSuffix(u.Fragment, ":overview")); err != nil {
 		return "", nil, errors.New("INVALID_DASHBOARD_HANDOFF")
 	}
 	ip := net.ParseIP(u.Hostname())
