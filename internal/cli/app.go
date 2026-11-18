@@ -64,6 +64,9 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Inspect: gh nibfin preflight --repo OWNER/REPO [--directory RUNNER_PATH]")
 		return err
 	}
+	if args[0] == overviewBridgeCommand {
+		return a.runOverviewBridge(args[1:], out)
+	}
 	if args[0] == "dashboard" {
 		return a.runDashboard(args[1:], out)
 	}

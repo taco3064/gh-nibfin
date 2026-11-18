@@ -390,3 +390,59 @@ continue through the existing fixed review/apply path with native permission
 checks, repository-scoped batches and single-use reviews. Navigation or stale
 observations invalidate the visible review; a label submission still does not
 prove a confirmed Core effect.
+
+### Windows overview through an existing WSL 2 installation
+
+From any Windows directory, including outside a Git checkout:
+
+```powershell
+gh nibfin dashboard --overview
+# If more than one verified guest belongs to your current Windows gh user:
+gh nibfin dashboard --overview --target wsl:Ubuntu-24.04
+```
+
+The service and browser stay on Windows. Discovery considers only running WSL 2
+user distributions, excludes Docker Desktop, and does not run installation
+preflight. Offline Runners and missing installation tools do not disqualify a
+readable adopted Core. A sole verified target is selected; multiple verified
+targets require `--target`. An explicit unavailable target never falls back to
+another guest. No Git directory, default distribution or persistent target registry
+participates in selection. Discovery checks candidates until all have been inspected
+or a second verified target makes explicit selection necessary. Unavailable guests
+do not hide an eligible target later in the inventory.
+
+The guest must already have an adopted Core, its verified native Node executable,
+and a compatible installed Linux CLI implementing the private overview bridge.
+An older CLI or Core is an unavailable compatibility state; update it deliberately
+inside the guest. The credential-free bootstrap uses the guest's system Python 3
+and gh's Linux extension data location (`$XDG_DATA_HOME/gh/extensions`, otherwise
+`~/.local/share/gh/extensions`). It resolves the canonical executable before
+running it and rejects repository/temporary entries, foreign ownership and group
+or world writable ancestry. A user-owned CLI is allowed. Core and Node retain
+stronger root-owned installation and source verification.
+
+Machine identity, native architecture and canonical CLI entry (including its file
+identity) are bound to this Dashboard session. Every private read rechecks that
+binding and the guest rechecks it before reading private stdin. If the target
+changes, stops or disappears, restart deliberately with the intended target;
+refresh stays on the bound guest. A failed verification read reports unavailable
+for that refresh. The next refresh verifies the same guest before obtaining
+credentials again.
+
+Only after target verification does Windows obtain its current `gh` credential.
+It travels as a token-only JSON object over anonymous stdin to that guest bridge
+and the verified Core. The adapter does not use a guest gh login or administrator
+credential. Tokens never appear in arguments, environment, URLs or temporary files.
+The browser receives the shared sanitized observation projection without guest
+paths or diagnostics. Denied, partial, offline and unavailable facts retain their
+meanings; supplemental adopted IDs remain discoverable without active Issue work.
+Inventory retains its 64 KiB bound; private Core observations retain their 1 MiB
+contract with bounded wrapper metadata. Windows discovery and observation use the
+Dashboard lifetime and propagate cancellation through the native transport. The
+guest bridge uses its caller context without an additional observation deadline;
+slow readable installations are not rejected by a fixed discovery or read timeout.
+
+Controlled adapter and bridge fixtures exercise these paths without Windows,
+installed WSL state or real credentials. Actual Windows/WSL installation behavior,
+Windows browser rendering, release compatibility and hosted Windows CI remain
+separate verification evidence; Linux fixture results do not certify them.

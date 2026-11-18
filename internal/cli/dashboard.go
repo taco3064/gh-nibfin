@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/taco3064/gh-nibfin/internal/dashboard"
@@ -26,13 +27,14 @@ type DashboardService interface {
 type DashboardStart func(context.Context, dashboard.Config) (DashboardService, error)
 
 const dashboardUsage = "Usage: gh nibfin dashboard [--repo OWNER/REPO]\n" +
-	"Or: gh nibfin dashboard --overview\n" +
+	"Or: gh nibfin dashboard --overview [--target wsl:NAME]\n" +
 	"Runs in the foreground. Press Ctrl+C to stop; closing a tab does not stop it."
 
 func (a App) runDashboard(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("dashboard", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	overview := flags.Bool("overview", false, "User overview")
+	target := flags.String("target", "", "Existing running WSL overview target")
 	name := flags.String("repo", "", "Repository to read")
 	err := flags.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {
@@ -42,13 +44,20 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 	if err != nil || flags.NArg() != 0 {
 		return errors.New("INVALID_DASHBOARD_ARGUMENTS")
 	}
-	explicit := false
-	flags.Visit(func(f *flag.Flag) { explicit = explicit || f.Name == "repo" })
+	explicit, targetSet := false, false
+	flags.Visit(func(f *flag.Flag) {
+		explicit = explicit || f.Name == "repo"
+		targetSet = targetSet || f.Name == "target"
+	})
 	if *overview && explicit {
 		return errors.New("OVERVIEW_REPOSITORY_CONFLICT")
 	}
 	if explicit && !snapshot.ValidRepository(*name) {
 		return errors.New("INVALID_REPOSITORY")
+	}
+	targetErr := validateOverviewTarget(*overview, *target, targetSet, runtime.GOOS)
+	if targetErr != nil {
+		return targetErr
 	}
 	ctx := a.Context
 	if ctx == nil {
@@ -57,6 +66,8 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 	if ctx.Err() != nil {
 		return nil
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if !explicit && !*overview {
 		*name, err = dashboardRepository(a.Process)
 		if err != nil {
@@ -73,8 +84,14 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 		}
 		repositoryProvider = dashboardOverviewRepository{api: a.API, subject: subject}
 		diagnoser = dashboardDiagnoser{api: a.API, process: a.Process, subject: subject}
+		var observer snapshot.LocalObserver = dashboardObserver{
+			process: a.Process, subject: subject}
+		if runtime.GOOS == "windows" {
+			observer = &wslOverviewObserver{ctx: ctx, process: a.Process,
+				subject: subject, explicit: *target}
+		}
 		overviewProvider = snapshot.OverviewProvider{Provider: snapshot.Provider{API: a.API},
-			Subject: subject, Observer: dashboardObserver{process: a.Process, subject: subject}}
+			Subject: subject, Observer: observer}
 	} else if err := dashboardIdentity(a.API, *name); err != nil {
 		return err
 	}
@@ -94,6 +111,7 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 		return errors.New("DASHBOARD_START_FAILED")
 	}
 	finish := func(primary error) error {
+		cancel()
 		if service.Close() != nil {
 			return errors.New("DASHBOARD_SHUTDOWN_FAILED")
 		}
@@ -160,6 +178,15 @@ func dashboardRepositoryRead(api API, name string) error {
 		!snapshot.ValidRepository(repo.FullName) || !strings.EqualFold(repo.FullName, name) ||
 		!repo.Permissions["pull"] {
 		return failure
+	}
+	return nil
+}
+
+func validateOverviewTarget(overview bool, target string, set bool, host string) error {
+	if set && (!overview || host != "windows" ||
+		!strings.HasPrefix(target, "wsl:") ||
+		!guestName.MatchString(strings.TrimPrefix(target, "wsl:"))) {
+		return errors.New("INVALID_DASHBOARD_TARGET")
 	}
 	return nil
 }
