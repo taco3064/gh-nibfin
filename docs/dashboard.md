@@ -168,6 +168,9 @@ operable with visible focus. Selection moves focus to the details region.
 
 ## Verification boundary
 
+For UI changes, see the [Dashboard delivery guidance](dashboard-ui-delivery.md)
+for design, visual checks and screenshot evidence.
+
 Local tests use real loopback listeners and official-API-shaped synthetic fixtures,
 including failures, isolation, expiry, concurrent collection and in-flight stop.
 They require no credentials. The existing affected-package CI selector discovers
