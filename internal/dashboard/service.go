@@ -60,6 +60,7 @@ type Service struct {
 	server          *http.Server
 	listener        net.Listener
 	origin          string
+	selected        snapshot.Repository
 	repository      string
 	provider        Collector
 	assets          map[string]Asset

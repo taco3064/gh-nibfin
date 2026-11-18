@@ -300,10 +300,15 @@ supported evidence reader is available. The provider adds no control permission.
 
 ## Local dashboard
 
-Run `gh nibfin dashboard [--repo OWNER/REPO]` with your existing GitHub login.
-Omitting `--repo` selects the current repository through GitHub CLI context; use
-`--repo` when discovery is unavailable. Actual repository read access is required,
-without push/admin rights. The command opens the local session in your browser
+Run `gh nibfin dashboard` with your existing GitHub login from any directory.
+The browser opens your overview. Select an adopted project in the project picker,
+including projects without assigned open Issues, to inspect its graph and activity.
+Use **Back to overview** to switch projects without restarting. Verified public
+repository read access is required, without push/admin rights. `--overview` is a
+compatibility synonym. The removed `--repo` option returns migration guidance;
+select the project in the page instead. On Windows, use the existing running WSL
+route with `gh nibfin dashboard --target wsl:NAME` when needed. Missing observation
+sources are shown as unavailable. The command opens the local session in your browser
 and stays in the foreground. Press Ctrl+C to stop; closing a tab does not stop it.
 Shutdown waits within the existing collection and transport bounds. The printed
 origin contains no session proof. See [the dashboard contract](docs/dashboard.md)

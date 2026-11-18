@@ -8,8 +8,9 @@ the installation push/admin gate. Repository mode uses trusted startup selection
 Overview mode permits authenticated navigation among permission-checked adopted
 repositories. Pause/Resume uses a trusted injected
 `pause.Controller`, assembled by the CLI with `cli.NativePause` and the current gh login.
-The CLI entry point is `gh nibfin dashboard [--repo OWNER/REPO]`. The default
-packaged UI renders the repository summary and native Issue dependency graph.
+The CLI entry point is `gh nibfin dashboard`. It always opens the signed-in user's
+local overview, independently of the working directory. Select a verified adopted
+public project in the browser to open its summary, graph, PR/activity and Issue views.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
@@ -19,11 +20,12 @@ Configuration is instance-local. No process-global session or snapshot cache exi
 
 ## Foreground CLI lifetime
 
-Run `gh nibfin dashboard --repo OWNER/REPO` with your existing GitHub CLI login.
-In repository mode, omitting `--repo` resolves the current repository using
-`gh repo view`; if discovery fails, supply `--repo` explicitly. Repository startup
-requires a valid current user and matching repository identity with read permission,
-without push/admin. `--overview` authenticates the user without inferring a repository.
+Run `gh nibfin dashboard` with your existing GitHub CLI login from any directory.
+The command performs no current-directory repository inference. `--overview` remains
+a compatibility synonym. Former `--repo OWNER/REPO` and `--repo=OWNER/REPO` arguments
+fail with guidance to run the bare command and select a project in the page.
+Project reads require the same signed-in subject and current native public/read
+permission, and must match the selected stable GitHub repository identity.
 Help performs no login, service or browser operation.
 
 The command starts one service and deliberately hands its fragment bootstrap URL
@@ -268,9 +270,10 @@ handler. They establish no live GitHub/Core, multi-account or installed-platform
 
 ## User overview
 
-`gh nibfin dashboard --overview` opens the signed-in user's local work overview.
-It conflicts with an explicit `--repo`, including an empty one. Without `--overview`,
-repository selection and inference retain their existing behavior.
+`gh nibfin dashboard` opens the signed-in user's local work overview.
+The compatibility `--overview` flag is a synonym for this default. The removed
+`--repo` argument fails with project-picker migration guidance, including empty
+and equals forms. Startup never infers a repository from the working directory.
 
 The overview shows any number of local registrations, keyed by registration
 repository ID and Runner ID, with merged adopted routes. Busy, idle, offline and
@@ -289,7 +292,7 @@ observations, queued jobs, dispatched runs, execution, qualified pause, dependen
 and unresolved external effects remain distinguishable. Pause does not mean that
 admitted execution has stopped. Unknown and stale evidence never enables an action.
 
-Issue buttons select only permission-checked adopted repositories and open the
+The project picker and Issue buttons select verified adopted repositories and open the
 existing local repository graph/detail view. Full graph, PR and Actions reads occur
 on that path. Existing Pause/Resume review and permission checks remain in force.
 Back to overview retains the overview search and selected Issue. Background updates
@@ -396,9 +399,9 @@ prove a confirmed Core effect.
 From any Windows directory, including outside a Git checkout:
 
 ```powershell
-gh nibfin dashboard --overview
+gh nibfin dashboard
 # If more than one verified guest belongs to your current Windows gh user:
-gh nibfin dashboard --overview --target wsl:Ubuntu-24.04
+gh nibfin dashboard --target wsl:Ubuntu-24.04
 ```
 
 The service and browser stay on Windows. Discovery considers only running WSL 2
@@ -446,3 +449,20 @@ Controlled adapter and bridge fixtures exercise these paths without Windows,
 installed WSL state or real credentials. Actual Windows/WSL installation behavior,
 Windows browser rendering, release compatibility and hosted Windows CI remain
 separate verification evidence; Linux fixture results do not certify them.
+
+### Project navigation
+
+The project picker uses adopted repository inventory, independently of assigned
+Issue rows. Verified projects with zero assigned open Issues remain selectable.
+Complete empty, partial, unavailable and stale observations are distinguished.
+Retained project rows are labeled and cannot authorize detail reads. Refresh the
+overview to verify them again. Server authorization is repeated for subsequent
+snapshot reads; browser values never grant access.
+
+Use **Open project** or an assigned Issue to inspect a project. **Back to overview**
+preserves the overview search and project choice where those identities remain
+available. Graph filters and Issue selection are remembered per stable project
+identity; missing Issues and incompatible reviewed actions are cleared. Late
+responses from superseded navigation cannot replace the displayed project.
+Overview collection and its authenticated SSE stream continue during inspection.
+A failed project read returns to usable overview navigation.

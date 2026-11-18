@@ -34,3 +34,7 @@
 .issue-explanation details {
   margin-block: .5rem;
 }
+
+.project-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
+#project-picker { min-width: 0; max-width: 100%; flex: 1 1 16rem; }
+#back-overview { margin: 1rem; }

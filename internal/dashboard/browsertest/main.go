@@ -30,18 +30,20 @@ func run() error {
 	}
 	var value snapshot.Snapshot
 	var overview dashboard.OverviewCollector
+	var projects map[string]snapshot.Snapshot
 	if err := json.Unmarshal(data, &value); err != nil {
 		return fmt.Errorf("invalid fixture")
 	}
 	if len(os.Args) == 3 && os.Args[2] == "overview" {
 		var sequence struct {
-			Snapshot  snapshot.Snapshot   `json:"snapshot"`
-			Overviews []snapshot.Overview `json:"overviews"`
+			Projects  map[string]snapshot.Snapshot `json:"projects"`
+			Snapshot  snapshot.Snapshot            `json:"snapshot"`
+			Overviews []snapshot.Overview          `json:"overviews"`
 		}
 		if json.Unmarshal(data, &sequence) != nil || len(sequence.Overviews) == 0 {
 			return fmt.Errorf("invalid overview fixture")
 		}
-		value = sequence.Snapshot
+		value, projects = sequence.Snapshot, sequence.Projects
 		fixtureDiagnoses(data, sequence.Overviews)
 		overview = &overviewSequence{values: sequence.Overviews}
 	}
@@ -58,6 +60,9 @@ func run() error {
 	if len(os.Args) == 3 && (os.Args[2] == "labels" || os.Args[2] == "overview") {
 		native := labelFixture(value)
 		provider, controller = native, pause.Controller{Provider: native}
+	}
+	if projects != nil {
+		provider = projectFixtures{primary: provider, projects: projects}
 	}
 	service, err := dashboard.Start(context.Background(), dashboard.Config{
 		Overview: overview, Repository: "example/project", Provider: provider,

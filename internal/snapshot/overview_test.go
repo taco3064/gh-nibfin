@@ -15,6 +15,7 @@ func (f localFixture) Observe() LocalObservation { return f.value }
 type overviewAPI struct {
 	calls           []string
 	deny            bool
+	emptyAssigned   bool
 	identityFailure string
 }
 
@@ -30,12 +31,15 @@ func (a *overviewAPI) Call(method, path string, input, output any) error {
 			return fmt.Errorf("%s", a.identityFailure)
 		}
 		data = `{"id":7,"login":"reader"}`
-	case path == "repos/example/project":
+	case path == "repos/example/project" || path == "repositories/1":
 		if a.deny {
 			return fmt.Errorf("PERMISSION_DENIED")
 		}
 		data = `{"id":1,"full_name":"example/project","permissions":{"pull":true}}`
 	case strings.HasPrefix(path, "repos/example/project/issues?"):
+		if a.emptyAssigned {
+			return json.Unmarshal([]byte(`[]`), output)
+		}
 		if !strings.Contains(path, "assignee=reader") || strings.Contains(path, "labels=") {
 			panic("not the assigned inventory")
 		}
@@ -178,5 +182,33 @@ func TestOverviewIdentityReadFailureKeepsItsAvailabilityReason(t *testing.T) {
 		Observer: localFixture{local}}).CollectOverview()
 	if value.Discovery.Availability != Unknown || value.Discovery.Reason != RateLimited {
 		t.Fatal("unavailable identity was misreported as denial", value.Discovery)
+	}
+}
+
+func TestOverviewEmptyAdoptionRequiresObservedInventory(t *testing.T) {
+	for _, observed := range []bool{false, true} {
+		local := observedLocal(t, 0)
+		if observed {
+			local.AdoptedIDs = []int64{}
+		}
+		out := (OverviewProvider{Provider: Provider{API: &overviewAPI{}},
+			Subject: local.Subject, Observer: localFixture{local}}).CollectOverview()
+		if out.Repositories.Status.Complete != observed ||
+			len(out.Repositories.Items) != 0 {
+			t.Fatal("unavailable discovery confused with empty", observed, out)
+		}
+	}
+}
+
+func TestOverviewAdoptedProjectWithoutAssignedIssues(t *testing.T) {
+	local := observedLocal(t, 0)
+	local.AdoptedIDs = []int64{1}
+	api := &overviewAPI{emptyAssigned: true}
+	out := (OverviewProvider{Provider: Provider{API: api}, Subject: local.Subject,
+		Observer: localFixture{local}}).CollectOverview()
+	if !out.Repositories.Status.Complete || len(out.Repositories.Items) != 1 ||
+		out.Repositories.Items[0].ID != 1 || !out.Issues.Status.Complete ||
+		len(out.Issues.Items) != 0 {
+		t.Fatal("project inventory depended on Issue rows", out)
 	}
 }

@@ -9,12 +9,9 @@ func TestOverviewTargetValidation(t *testing.T) {
 	for _, host := range []string{"windows", "linux", "darwin"} {
 		for _, target := range []string{"wsl:Ubuntu", "", "wsl:", "multipass:Ubuntu",
 			"wsl:../Ubuntu", "wsl:A\nB"} {
-			err := validateOverviewTarget(true, target, true, host)
+			err := validateOverviewTarget(target, true, host)
 			if (err == nil) != (host == "windows" && target == "wsl:Ubuntu") {
 				t.Fatal(host, target, err)
-			}
-			if validateOverviewTarget(false, target, true, host) == nil {
-				t.Fatal("repository mode accepted overview target")
 			}
 		}
 	}

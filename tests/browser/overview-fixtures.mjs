@@ -21,11 +21,20 @@ export function overviewFixture() {
     observed_at: now, expires_at: new Date(Date.now() + 30000).toISOString(),
     local_status: 'observed', discovery: status(), repositories: section([repository]),
     runners: section(runners), issues: section([row]), work: []};
+  const emptyProject = {id: 2, name: 'example/empty',
+    url: 'https://github.com/example/empty'};
+  value.repositories.items.push(emptyProject);
+  const emptySnapshot = snapshot();
+  emptySnapshot.repository = section([emptyProject]);
+  emptySnapshot.issues = section([]);
+  emptySnapshot.pull_requests = section([]);
+  emptySnapshot.runs = section([]);
   const idle = structuredClone(value);
   idle.runners.items[0].state = 'idle';
   idle.runners.items[0].busy.value = false;
   idle.runners.items[0].association.value = null;
-  return {snapshot: snapshot(), overviews: [value, idle]};
+  return {snapshot: snapshot(), overviews: [value, idle],
+    projects: {'example/empty': emptySnapshot}};
 }
 
 export function diagnosisFixture() {

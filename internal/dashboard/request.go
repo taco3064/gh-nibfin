@@ -165,12 +165,29 @@ func (s *Service) snapshot(w http.ResponseWriter, r *http.Request) {
 	// collection slot while a non-context-aware transport is still working.
 	s.mu.Lock()
 	repository := s.repository
+	selected := s.selected
+	overview := s.overview != nil
+	eligible, allowed := s.eligibleRepository(repository)
 	s.mu.Unlock()
+	if overview && (!allowed || selected.ID != eligible.ID) {
+		failure(w, 403, "repository_unavailable")
+		return
+	}
 	if !snapshot.ValidRepository(repository) {
 		failure(w, 400, "repository_required")
 		return
 	}
-	result := s.provider.Collect(repository).At(s.now())
+	var result snapshot.Snapshot
+	if provider, ok := s.provider.(repositoryCollector); overview && ok {
+		result = provider.CollectRepository(selected)
+	} else {
+		result = s.provider.Collect(repository)
+	}
+	result = result.At(s.now())
+	if overview && !matchesRepository(result, selected) {
+		failure(w, 403, "repository_unavailable")
+		return
+	}
 	data, err := json.Marshal(struct {
 		snapshot.Snapshot
 		MaxTargets int `json:"label_action_limit"`
@@ -182,6 +199,10 @@ func (s *Service) snapshot(w http.ResponseWriter, r *http.Request) {
 	// Shutdown or session expiry during collection must not disclose its result.
 	s.mu.Lock()
 	valid := !s.closed && s.now().Before(s.expires)
+	if overview {
+		repo, allowed := s.eligibleRepository(repository)
+		valid = valid && allowed && repo.ID == selected.ID
+	}
 	s.mu.Unlock()
 	if !valid {
 		failure(w, 401, "unauthorized")

@@ -32,8 +32,9 @@ func (f overviewFixture) CollectOverview() snapshot.Overview {
 
 func overviewValue() snapshot.Overview {
 	status := snapshot.Status{Availability: snapshot.Known, Complete: true}
-	return snapshot.Overview{SchemaVersion: 1, Subject: snapshot.Subject{ID: 7,
-		Login: "reader"}, Discovery: status,
+	return snapshot.Overview{SchemaVersion: 1, ObservedAt: time.Now(),
+		ExpiresAt: time.Now().Add(time.Minute), Subject: snapshot.Subject{ID: 7,
+			Login: "reader"}, Discovery: status,
 		Repositories: snapshot.Section[snapshot.Repository]{Status: status,
 			Items: []snapshot.Repository{{ID: 1, Name: "example/project"}}},
 		Issues: snapshot.Section[snapshot.OverviewIssue]{Status: status,
@@ -61,7 +62,10 @@ func overviewGET(t *testing.T, s *Service, path, token, cursor string) *http.Res
 
 func TestOverviewStreamAuthenticationAndIndependentCollection(t *testing.T) {
 	fixture := overviewFixture{make(chan struct{}), make(chan struct{}), overviewValue()}
-	s := launch(t, Config{Overview: fixture})
+	s := launch(t, Config{Overview: fixture, Provider: &recordingCollector{
+		collect: func(string) snapshot.Snapshot { return projectSnapshot() },
+	}})
+	allowProject(s)
 	<-fixture.started
 	token := strings.Split(proof(s), ":")[0]
 	for _, path := range []string{"/api/overview", "/api/updates"} {
@@ -123,6 +127,7 @@ func TestOverviewStreamClosesBeforePendingDetailCollection(t *testing.T) {
 		return snapshot.Snapshot{}
 	}}
 	s := launch(t, Config{Overview: fixture, Provider: provider})
+	allowProject(s)
 	// Release the synchronous detail collector before launch's cleanup on failure.
 	defer close(release)
 	token := strings.Split(proof(s), ":")[0]
@@ -184,6 +189,7 @@ func TestOverviewReplayAndPartialReconciliation(t *testing.T) {
 	partial := reconcileOverview(old, next)
 	if len(partial.Issues.Items) != 1 || len(partial.Runners.Items) != 1 ||
 		!partial.Issues.Items[0].Retained || !partial.Runners.Items[0].Retained ||
+		!partial.Repositories.Items[0].Retained || old.Repositories.Items[0].Retained ||
 		old.Issues.Items[0].Retained || old.Runners.Items[0].Retained {
 		t.Fatal("partial absence removed rows")
 	}
@@ -268,4 +274,19 @@ func TestOverviewExpiryTerminatesStreamAndRefusesReads(t *testing.T) {
 	if denied.StatusCode != 401 {
 		t.Fatal("expired read disclosed overview", denied.StatusCode)
 	}
+}
+
+func projectSnapshot() snapshot.Snapshot {
+	return snapshot.Snapshot{SchemaVersion: 1, StartedAt: time.Now(),
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Repository: overviewValue().Repositories,
+		Issues: snapshot.Section[snapshot.Issue]{Status: snapshot.Status{
+			Availability: snapshot.Known, Complete: true}, Items: []snapshot.Issue{}}}
+}
+
+func allowProject(s *Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.overview.current = overviewValue()
+	s.selected = s.overview.current.Repositories.Items[0]
 }
