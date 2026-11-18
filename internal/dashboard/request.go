@@ -62,7 +62,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "unavailable")
 		return
 	}
-	if r.URL.Path == "/api/labels" || r.URL.Path == "/api/repository" {
+	if r.URL.Path == "/api/labels" || r.URL.Path == "/api/repository" ||
+		r.URL.Path == "/api/diagnosis" {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
 			failure(w, 405, "method_not_allowed")
@@ -72,6 +73,10 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.RequestURI != r.URL.Path || len(r.TransferEncoding) != 0 ||
 			r.ContentLength > mutationBodyLimit {
 			failure(w, 400, "invalid_request")
+			return
+		}
+		if r.URL.Path == "/api/diagnosis" {
+			s.diagnosis(w, r)
 			return
 		}
 		if r.URL.Path == "/api/repository" {

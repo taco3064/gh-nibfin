@@ -63,6 +63,7 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 			return err
 		}
 	}
+	var diagnoser dashboard.Diagnoser
 	var overviewProvider dashboard.OverviewCollector
 	var repositoryProvider dashboard.Collector = snapshot.Provider{API: a.API}
 	if *overview {
@@ -71,6 +72,7 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 			return err
 		}
 		repositoryProvider = dashboardOverviewRepository{api: a.API, subject: subject}
+		diagnoser = dashboardDiagnoser{api: a.API, process: a.Process, subject: subject}
 		overviewProvider = snapshot.OverviewProvider{Provider: snapshot.Provider{API: a.API},
 			Subject: subject, Observer: dashboardObserver{process: a.Process, subject: subject}}
 	} else if err := dashboardIdentity(a.API, *name); err != nil {
@@ -86,7 +88,7 @@ func (a App) runDashboard(args []string, out io.Writer) error {
 		}
 	}
 	service, err := start(ctx, dashboard.Config{Repository: *name,
-		Provider: repositoryProvider, Overview: overviewProvider,
+		Provider: repositoryProvider, Overview: overviewProvider, Diagnoser: diagnoser,
 		Controller: pause.Controller{Provider: NativePause{API: a.API, Process: a.Process}}})
 	if err != nil {
 		return errors.New("DASHBOARD_START_FAILED")

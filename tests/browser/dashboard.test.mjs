@@ -447,3 +447,97 @@ test('overview known empty and denied coverage remain explicit', async t => {
   assert.equal(await h.page.locator('.busy-indicator').count(), 0);
   assert.deepEqual(h.errors, []);
 });
+
+test('selected Issue diagnosis preserves attempt and unknown outcomes', async t => {
+  const {diagnosisFixture} = await import('./overview-fixtures.mjs');
+  const h = await open(t, diagnosisFixture(), 'overview');
+  const {page} = h;
+  await page.getByRole('button', {name: /example\/project#1 — Assigned/}).click();
+  const panel = page.locator('.issue-explanation');
+  await contains(panel, 'A required input was unavailable.');
+  await contains(panel, 'Historical report');
+  await contains(panel, 'Attributed explanation');
+  assert.equal(h.requests.filter(r => r.url().endsWith('/api/diagnosis')).length, 0);
+  await panel.getByRole('combobox').selectOption(
+    'accept:22222222-2222-2222-2222-222222222222');
+  await panel.getByRole('button', {name: 'Request read-only diagnosis'}).click();
+  await panel.getByRole('status').filter({hasText: 'no-capacity'}).waitFor();
+  const submitted = h.requests.find(r => r.url().endsWith('/api/diagnosis'));
+  const body = submitted.postDataJSON();
+  assert.deepEqual(body.attempt,
+    {id: '22222222-2222-2222-2222-222222222222', stage: 'accept'});
+  assert.equal(body.selection.identity.repository.id, 1);
+  assert.equal(body.selection.identity.id, 1001);
+  assert.equal(body.selection.node_id, 'I_one');
+  assert.equal(body.diagnose, true);
+  assert.ok(!JSON.stringify(body).includes('token'));
+  await contains(panel, 'Possible causes (hypotheses)');
+  await contains(panel, 'The retained evidence is incomplete.');
+  // Simulated denial checks presentation; native refusals are adapter-tested.
+  await page.route('**/api/diagnosis', route => route.fulfill({status: 200,
+    contentType: 'application/json', body: JSON.stringify({status: 'denied',
+      code: 'DIAGNOSIS_ACCESS_DENIED'})}));
+  await panel.getByRole('button', {name: 'Request read-only diagnosis'}).click();
+  await panel.getByRole('status').filter({hasText: 'Diagnosis denied'}).waitFor();
+  await page.unroute('**/api/diagnosis');
+  await page.route('**/api/diagnosis', route => route.abort());
+  await panel.getByRole('button', {name: 'Request read-only diagnosis'}).click();
+  await panel.getByRole('status').filter({hasText: 'outcome unknown'}).waitFor();
+  assert.equal(await panel.getByRole('button').isDisabled(), true);
+  // Observation updates do not resubmit uncertain work.
+  const count = h.requests.filter(r => r.url().endsWith('/api/diagnosis')).length;
+  await page.getByRole('button', {name: 'Back to overview', exact: true}).click();
+  h.advance();
+  await page.waitForFunction(() =>
+    document.querySelector('.runner-card').textContent.includes('idle'),
+    null, {timeout: 15000});
+  assert.equal(h.requests.filter(r => r.url().endsWith('/api/diagnosis')).length, count);
+  await page.getByRole('button', {name: /example\/project#1 — Assigned/}).click();
+  await panel.getByRole('combobox').selectOption(
+    'deliver:11111111-1111-1111-1111-111111111111');
+  await panel.getByRole('combobox').selectOption(
+    'accept:22222222-2222-2222-2222-222222222222');
+  await contains(panel.getByRole('status'), 'outcome unknown');
+  assert.equal(await panel.getByRole('button').isDisabled(), true);
+  for (const viewport of [{width: 1280, height: 900}, {width: 390, height: 844}]) {
+    await page.setViewportSize(viewport);
+    assert.ok(await page.evaluate(() =>
+      document.documentElement.scrollWidth <= window.innerWidth));
+  }
+  await panel.getByRole('combobox').selectOption(
+    'deliver:11111111-1111-1111-1111-111111111111');
+  await page.evaluate(() => {
+    const nativeNow = Date.now;
+    Date.now = () => nativeNow() + 31000;
+  });
+  await panel.getByText('Selection unavailable or stale. Refresh before acting.')
+    .waitFor();
+  assert.equal(await panel.getByRole('button').isDisabled(), true);
+  assert.deepEqual(h.errors, []);
+});
+
+test('selected Issue diagnosis keeps Pause reviews bound across selection changes',
+  async t => {
+    const {diagnosisFixture} = await import('./overview-fixtures.mjs');
+    const h = await open(t, diagnosisFixture(), 'overview');
+    const {page} = h;
+    await page.getByRole('button', {name: /example\/project#1 — Assigned/}).click();
+    await details(page).getByRole('button', {name: 'Pause', exact: true}).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor({state: 'visible'});
+    const review = h.requests.find(r => r.url().endsWith('/api/labels'));
+    assert.deepEqual(review.postDataJSON().targets,
+      [{repository_id: 1, issue_id: 1001, number: 1}]);
+    await page.evaluate(async identity => {
+      const view = await import('/view.js');
+      view.selectIssue(identity);
+    }, identity(1, {id: 2, name: 'other/project',
+      url: 'https://github.com/other/project'}));
+    await dialog.waitFor({state: 'hidden'});
+    await contains(details(page).locator('.issue-explanation'),
+      'Blocker report unavailable.');
+    assert.equal(await details(page).getByRole('button',
+      {name: 'Pause', exact: true}).isDisabled(), true);
+    assert.equal(h.requests.filter(r => r.url().endsWith('/api/labels')).length, 1);
+    assert.deepEqual(h.errors, []);
+  });
