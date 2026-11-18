@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -116,11 +117,50 @@ type dashboardOverviewRepository struct {
 }
 
 func (p dashboardOverviewRepository) Collect(name string) snapshot.Snapshot {
-	current, err := dashboardSubject(p.api)
-	if err != nil || current.ID != p.subject.ID ||
-		!strings.EqualFold(current.Login, p.subject.Login) ||
-		dashboardRepositoryRead(p.api, name) != nil {
-		return (snapshot.Provider{}).Collect(name)
+	return p.CollectRepository(snapshot.Repository{Name: name})
+}
+
+func (p dashboardOverviewRepository) CollectRepository(
+	repo snapshot.Repository,
+) snapshot.Snapshot {
+	if !p.currentSubject() {
+		return (snapshot.Provider{}).Collect(repo.Name)
 	}
-	return (snapshot.Provider{API: p.api}).Collect(name)
+	api := dashboardRepositoryAPI{API: p.api, expected: repo}
+	value := (snapshot.Provider{API: api}).Collect(repo.Name)
+	if len(value.Repository.Items) > 0 && !p.currentSubject() {
+		return (snapshot.Provider{}).Collect(repo.Name)
+	}
+	return value
+}
+
+func (p dashboardOverviewRepository) currentSubject() bool {
+	current, err := dashboardSubject(p.api)
+	return err == nil && current.ID == p.subject.ID &&
+		strings.EqualFold(current.Login, p.subject.Login)
+}
+
+// Check the native identity and permission in the same response consumed by
+// Snapshot, before it follows any Issue, PR or activity endpoints.
+type dashboardRepositoryAPI struct {
+	API
+	expected snapshot.Repository
+}
+
+func (a dashboardRepositoryAPI) Call(method, path string, input, output any) error {
+	if path != "repos/"+a.expected.Name {
+		return a.API.Call(method, path, input, output)
+	}
+	var raw json.RawMessage
+	if err := a.API.Call(method, path, input, &raw); err != nil {
+		return err
+	}
+	var repo Repository
+	if json.Unmarshal(raw, &repo) != nil || repo.ID <= 0 || repo.Private ||
+		!strings.EqualFold(repo.FullName, a.expected.Name) ||
+		!repo.Permissions["pull"] ||
+		(a.expected.ID != 0 && repo.ID != a.expected.ID) {
+		return errors.New("PERMISSION_DENIED")
+	}
+	return json.Unmarshal(raw, output)
 }

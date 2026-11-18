@@ -106,7 +106,7 @@ func (c *collector) dependencies(from Identity) Section[Edge] {
 		if !ValidRepository(name) {
 			return 0, invalid
 		}
-		unresolved := Repository{0, name, "https://github.com/" + name}
+		unresolved := Repository{Name: name, URL: "https://github.com/" + name}
 		if _, err := issueIdentity(raw, unresolved); err != nil {
 			return 0, err
 		}

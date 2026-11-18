@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/taco3064/gh-nibfin/internal/snapshot"
@@ -156,14 +155,9 @@ func (s *Service) selectRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	allowed := false
-	if s.overview != nil {
-		for _, repo := range s.overview.current.Repositories.Items {
-			allowed = allowed || strings.EqualFold(repo.Name, input.Repository)
-		}
-	}
+	repo, allowed := s.eligibleRepository(input.Repository)
 	if allowed {
-		s.repository = input.Repository
+		s.repository, s.selected = repo.Name, repo
 		// A reviewed operation cannot cross repository navigation.
 		s.reviews = make(map[string]*reviewed)
 	}

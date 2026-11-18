@@ -80,6 +80,14 @@ func TestDashboardOverviewPrivateAdapter(t *testing.T) {
 }
 
 func TestDashboardOverviewPublicEntry(t *testing.T) {
+	for _, args := range [][]string{{"dashboard"}, {"dashboard", "--overview"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			testDashboardOverviewEntry(t, args)
+		})
+	}
+}
+
+func testDashboardOverviewEntry(t *testing.T, entry []string) {
 	for _, args := range [][]string{{"--overview", "--repo", "example/project"},
 		{"--overview", "extra"}, {"--overview=invalid"}} {
 		if (App{}).Run(append([]string{"dashboard"}, args...), io.Discard) == nil {
@@ -102,7 +110,7 @@ func TestDashboardOverviewPublicEntry(t *testing.T) {
 			cancel()
 			return nil
 		}}
-	if err := app.Run([]string{"dashboard", "--overview"}, io.Discard); err != nil {
+	if err := app.Run(entry, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(api.calls, []string{"user"}) || fake.closed != 1 {

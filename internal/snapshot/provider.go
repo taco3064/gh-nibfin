@@ -169,7 +169,7 @@ func (c *collector) repository(name string) repoResult {
 				return r
 			}
 		}
-		r.repo = Repository{raw.ID, raw.Name, "https://github.com/" + raw.Name}
+		r.repo = Repository{ID: raw.ID, Name: raw.Name, URL: "https://github.com/" + raw.Name}
 	}
 	c.repos[key] = r
 	return r

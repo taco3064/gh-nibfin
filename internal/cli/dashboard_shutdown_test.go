@@ -5,62 +5,42 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/taco3064/gh-nibfin/internal/dashboard"
+	"github.com/taco3064/gh-nibfin/internal/snapshot"
 )
 
-type dashboardBlockingAPI struct {
-	base             *dashboardAPI
+type dashboardBlockingOverview struct {
 	entered, release chan struct{}
 }
 
-func (f *dashboardBlockingAPI) Call(method, path string, input, output any) error {
-	if strings.Contains(path, "/issues?") {
-		close(f.entered)
-		<-f.release
-		return errors.New("PERMISSION_DENIED")
-	}
-	return f.base.Call(method, path, input, output)
+func (f dashboardBlockingOverview) CollectOverview() snapshot.Overview {
+	close(f.entered)
+	<-f.release
+	return snapshot.Overview{}
 }
 
 func TestDashboardWaitsForActiveCollection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	api := &dashboardBlockingAPI{readableDashboardAPI(), make(chan struct{}),
-		make(chan struct{})}
-	requestDone := make(chan error, 1)
+	collector := dashboardBlockingOverview{make(chan struct{}), make(chan struct{})}
 	canceled := make(chan struct{})
 	result := make(chan error, 1)
 	var service *dashboard.Service
-	a := App{Context: ctx, API: api}
+	a := App{Context: ctx, API: readableDashboardAPI()}
 	a.StartDashboard = func(ctx context.Context, c dashboard.Config) (
 		DashboardService, error) {
 		var err error
+		c.Overview = collector
 		service, err = dashboard.Start(ctx, c)
 		return service, err
 	}
 	a.OpenDashboard = func(_ context.Context, target string) error {
-		u, err := url.Parse(target)
-		if err != nil {
-			return err
-		}
-		go func() {
-			request, _ := http.NewRequest("GET", service.URL()+"/api/snapshot", nil)
-			request.Header.Set(dashboard.SessionHeader, u.Fragment)
-			response, err := http.DefaultClient.Do(request)
-			if err == nil {
-				_, err = io.Copy(io.Discard, response.Body)
-				response.Body.Close()
-			}
-			requestDone <- err
-		}()
 		select {
-		case <-api.entered:
+		case <-collector.entered:
 		case <-time.After(3 * time.Second):
 			return errors.New("collection did not start")
 		}
@@ -69,7 +49,7 @@ func TestDashboardWaitsForActiveCollection(t *testing.T) {
 		return nil
 	}
 	go func() {
-		result <- a.Run([]string{"dashboard", "--repo", "example/project"}, io.Discard)
+		result <- a.Run([]string{"dashboard"}, io.Discard)
 	}()
 	select {
 	case <-canceled:
@@ -81,7 +61,7 @@ func TestDashboardWaitsForActiveCollection(t *testing.T) {
 		t.Fatal("returned before active collection finished", err)
 	case <-time.After(30 * time.Millisecond):
 	}
-	close(api.release)
+	close(collector.release)
 	select {
 	case err := <-result:
 		if err != nil {
@@ -89,9 +69,6 @@ func TestDashboardWaitsForActiveCollection(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("shutdown did not finish")
-	}
-	if err := <-requestDone; err != nil {
-		t.Fatal(err)
 	}
 	if service.BootstrapURL() != "" {
 		t.Fatal("proof retained")
@@ -123,7 +100,7 @@ func TestDashboardRealBindAndOpenFailure(t *testing.T) {
 			opened = true
 			return errors.New("secret /private diagnostic")
 		}
-		err := a.Run([]string{"dashboard", "--repo", "example/project"}, io.Discard)
+		err := a.Run([]string{"dashboard"}, io.Discard)
 		cancel()
 		if occupied != nil {
 			occupied.Close()

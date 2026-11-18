@@ -29,6 +29,13 @@
     <summary>Discovery evidence</summary>
     <pre id="overview-evidence"></pre>
   </details>
+  <h2>Projects</h2>
+  <p id="project-coverage" role="status">Pending project inventory…</p>
+  <div class="project-navigation">
+    <label for="project-picker">Adopted project</label>
+    <select id="project-picker" disabled></select>
+    <button id="open-project" type="button" disabled>Open project</button>
+  </div>
   <h2>Local Runners</h2>
   <p id="runner-coverage"></p>
   <div id="runners"></div>
@@ -44,7 +51,7 @@
 <main id="dashboard" hidden>
   <section class="overview" aria-labelledby="repository-heading">
     <div class="repository-card">
-      <h2 id="repository-heading">Repository summary</h2>
+      <h2 id="repository-heading" tabindex="-1">Repository summary</h2>
       <div id="repository"></div>
       <p id="freshness" role="status"></p>
     </div>

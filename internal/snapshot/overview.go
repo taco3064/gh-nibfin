@@ -79,7 +79,8 @@ func (p OverviewProvider) CollectOverview() Overview {
 		}
 		routes[id] = AdoptedRoute{raw.Name, id}
 	}
-	if len(routes) == 0 {
+	// An explicit empty inventory differs from a missing supplementary inspection.
+	if len(routes) == 0 && local.AdoptedIDs == nil {
 		out.Discovery = failed(status, Unavailable)
 	}
 	if len(routes) > 32 {
@@ -127,7 +128,7 @@ func (p OverviewProvider) CollectOverview() Overview {
 			out.Issues.Status = failed(status, reason)
 			continue
 		}
-		repo := Repository{id, raw.Name, "https://github.com/" + raw.Name}
+		repo := Repository{ID: id, Name: raw.Name, URL: "https://github.com/" + raw.Name}
 		out.Repositories.Items = append(out.Repositories.Items, repo)
 		issues, collected := c.assignedIssues(repo, p.Subject, local.Work,
 			1000-len(out.Issues.Items))

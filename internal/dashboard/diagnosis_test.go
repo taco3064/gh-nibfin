@@ -23,7 +23,9 @@ func (f diagnosisFunc) Diagnose(ctx context.Context, s DiagnosisSelection,
 
 func diagnosisService(t *testing.T, d Diagnoser) (*Service, diagnosisRequest) {
 	t.Helper()
-	s := launch(t, Config{Diagnoser: d})
+	s := launch(t, Config{Diagnoser: d, Provider: &recordingCollector{
+		collect: func(string) snapshot.Snapshot { return projectSnapshot() },
+	}})
 	identity := snapshot.Identity{Repository: snapshot.Repository{
 		ID: 1, Name: "example/project", URL: "https://github.com/example/project"},
 		ID: 101, Number: 1, URL: "https://github.com/example/project/issues/1"}
@@ -145,6 +147,10 @@ func TestDiagnosisServiceLifecycleAndReadSeparation(t *testing.T) {
 	})
 	s, input := diagnosisService(t, d)
 	readOnly := false
+	// Detail reads require a currently verified project selected in this session.
+	if code := selectProject(t, s, input.Selection.Identity.Repository.Name); code != 200 {
+		t.Fatal("verified project selection failed", code)
+	}
 	input.Diagnose = &readOnly
 	body, _ := json.Marshal(input)
 	token := strings.Split(proof(s), ":")[0]

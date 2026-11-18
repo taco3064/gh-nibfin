@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/taco3064/gh-nibfin/internal/dashboard"
-	"github.com/taco3064/gh-nibfin/internal/snapshot"
 )
 
 type dashboardAPI struct {
@@ -92,11 +91,6 @@ func TestDashboardParsingAndIdentityFailures(t *testing.T) {
 		func(f *dashboardAPI) { f.failure = "secret /private/path" },
 		func(f *dashboardAPI) { f.user = `{}` },
 		func(f *dashboardAPI) { f.user = `{"id":1,"login":"bad/name","type":"User"}` },
-		func(f *dashboardAPI) { f.repo = `{}` },
-		func(f *dashboardAPI) { f.repo = `{"id":2,"full_name":"other/project"}` },
-		func(f *dashboardAPI) {
-			f.repo = `{"id":2,"full_name":"example/project","permissions":{"push":true}}`
-		},
 	} {
 		f := readableDashboardAPI()
 		change(f)
@@ -105,15 +99,15 @@ func TestDashboardParsingAndIdentityFailures(t *testing.T) {
 			t.Fatal("started without identity")
 			return nil, nil
 		}}
-		err := a.Run([]string{"dashboard", "--repo", "example/project"}, io.Discard)
+		err := a.Run([]string{"dashboard"}, io.Discard)
 		if err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatal("unsafe identity result", err)
 		}
 	}
 }
 
-func TestDashboardDiscoveryAndLifecycleFailures(t *testing.T) {
-	for _, mode := range []string{"discovery", "start", "open", "close", "serve",
+func TestDashboardOverviewAndLifecycleFailures(t *testing.T) {
+	for _, mode := range []string{"start", "open", "close", "serve",
 		"cancel-before", "cancel-start", "success"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -121,9 +115,6 @@ func TestDashboardDiscoveryAndLifecycleFailures(t *testing.T) {
 			p := &dashboardProcess{t: t, data: `{"nameWithOwner":"example/project"}`}
 			s := &dashboardFake{done: make(chan struct{})}
 			starts, opens := 0, 0
-			if mode == "discovery" {
-				p.data = `{"nameWithOwner":"bad"}`
-			}
 			if mode == "cancel-before" {
 				cancel()
 			}
@@ -131,10 +122,10 @@ func TestDashboardDiscoveryAndLifecycleFailures(t *testing.T) {
 			a.StartDashboard = func(_ context.Context, c dashboard.Config) (
 				DashboardService, error) {
 				starts++
-				if c.Repository != "example/project" || c.Bind != "" {
+				if c.Repository != "" || c.Overview == nil || c.Bind != "" {
 					t.Fatal(c)
 				}
-				if _, ok := c.Provider.(snapshot.Provider); !ok {
+				if _, ok := c.Provider.(dashboardOverviewRepository); !ok {
 					t.Fatal("wrong provider")
 				}
 				if mode == "start" {
@@ -162,7 +153,7 @@ func TestDashboardDiscoveryAndLifecycleFailures(t *testing.T) {
 			}
 			var out bytes.Buffer
 			err := a.Run([]string{"dashboard"}, &out)
-			wantError := mode == "discovery" || mode == "start" || mode == "open" ||
+			wantError := mode == "start" || mode == "open" ||
 				mode == "close" || mode == "serve"
 			if (err != nil) != wantError {
 				t.Fatal(mode, err)
@@ -176,10 +167,13 @@ func TestDashboardDiscoveryAndLifecycleFailures(t *testing.T) {
 			if mode == "cancel-before" && (starts != 0 || opens != 0 || p.calls != 0) {
 				t.Fatal("canceled invocation performed work")
 			}
+			if p.calls != 0 {
+				t.Fatal("startup inferred a repository")
+			}
 			if starts == 1 && mode != "start" && s.closed != 1 {
 				t.Fatal("not closed")
 			}
-			if (mode == "start" || mode == "cancel-start" || mode == "discovery") && opens != 0 {
+			if (mode == "start" || mode == "cancel-start") && opens != 0 {
 				t.Fatal("opened before startup")
 			}
 		})
@@ -193,8 +187,9 @@ func TestDashboardComposedLoopback(t *testing.T) {
 	var service *dashboard.Service
 	var origin, proof string
 	starts, opens := 0, 0
-	a := App{Context: ctx, API: api,
-		Process: &dashboardProcess{t: t, err: errors.New("must not discover")}}
+	// No local observation source is supplied: this test exercises the real
+	// loopback/session lifecycle without depending on installed Core or WSL.
+	a := App{Context: ctx, API: api}
 	a.StartDashboard = func(ctx context.Context, c dashboard.Config) (
 		DashboardService, error) {
 		starts++
@@ -208,7 +203,7 @@ func TestDashboardComposedLoopback(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		origin, proof = service.URL(), u.Fragment
+		origin, proof = service.URL(), strings.Split(u.Fragment, ":")[0]
 		if origin != "http://"+u.Host || proof == "" {
 			t.Fatal("wrong handoff")
 		}
@@ -216,7 +211,7 @@ func TestDashboardComposedLoopback(t *testing.T) {
 			proof  string
 			status int
 		}{
-			{"", 401}, {"wrong", 401}, {proof, 200},
+			{"", 401}, {"wrong", 401}, {proof, 403},
 		} {
 			req, _ := http.NewRequest("GET", origin+"/api/snapshot", nil)
 			req.Header.Set(dashboard.SessionHeader, test.proof)
@@ -229,21 +224,13 @@ func TestDashboardComposedLoopback(t *testing.T) {
 			if response.StatusCode != test.status {
 				t.Fatal(response.StatusCode, string(data))
 			}
-			if test.status == 200 {
-				var result snapshot.Snapshot
-				if json.Unmarshal(data, &result) != nil || result.SchemaVersion != 1 ||
-					len(result.Repository.Items) != 1 ||
-					result.Repository.Items[0].Name != "example/project" ||
-					result.Issues.Status.Availability != snapshot.Denied {
-					t.Fatal("projection changed", string(data))
-				}
-			}
+
 		}
 		cancel()
 		return nil
 	}
 	var out bytes.Buffer
-	if err := a.Run([]string{"dashboard", "--repo", "example/project"}, &out); err != nil {
+	if err := a.Run([]string{"dashboard"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if starts != 1 || opens != 1 || strings.Contains(out.String(), proof) {
@@ -283,12 +270,13 @@ func TestDashboardBrowserArguments(t *testing.T) {
 	}
 }
 
-func TestDashboardDiscoveryFailureIsBounded(t *testing.T) {
-	p := &dashboardProcess{t: t, err: errors.New("secret /private")}
-	_, err := dashboardRepository(p)
-	if err == nil || !strings.Contains(err.Error(), "--repo") ||
-		strings.Contains(err.Error(), "secret") {
-		t.Fatal(err)
+func TestDashboardRemovedRepositoryGuidance(t *testing.T) {
+	for _, args := range [][]string{{"--repo", "example/project"},
+		{"--repo=example/project"}, {"--repo"}, {"--overview", "--repo=x/y"}} {
+		err := (App{}).Run(append([]string{"dashboard"}, args...), io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "select a project in the page") {
+			t.Fatal("missing migration guidance", args, err)
+		}
 	}
 }
 
@@ -298,7 +286,10 @@ func TestDashboardHelpHasNoEffects(t *testing.T) {
 		if err := (App{}).Run(args, &out); err != nil {
 			t.Fatal(err)
 		}
-		for _, text := range []string{"dashboard [--repo OWNER/REPO]", "foreground", "Ctrl+C"} {
+		if args[0] == "dashboard" && strings.Contains(out.String(), "--repo") {
+			t.Fatal("removed option advertised")
+		}
+		for _, text := range []string{"dashboard [--overview]", "foreground", "Ctrl+C"} {
 			if !strings.Contains(out.String(), text) {
 				t.Fatal("missing help", text)
 			}
