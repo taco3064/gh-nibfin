@@ -1,4 +1,4 @@
-import {configure, freshness as controlFreshness} from './controls.js';
+import {configure, selectionChanged, freshness as controlFreshness} from './controls.js';
 import {items, status, identity, key, progress, stale, validate, githubURL}
   from './model.js';
 import {progressLabels, issueStates} from './model.js';
@@ -46,6 +46,7 @@ function renderGraph() {
   const context = {all, selected,
     visible: new Set(filtered.map(issue => key(issue.identity))),
     choose(value) {
+      if (selected !== value) selectionChanged();
       selected = value;
       renderGraph();
       get('details').focus();
@@ -105,6 +106,7 @@ export function invalidate() {
 }
 
 export function selectIssue(identity) {
+  if (selected !== key(identity)) selectionChanged();
   selected = key(identity);
   renderGraph();
   get('details').focus();

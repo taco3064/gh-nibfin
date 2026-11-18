@@ -39,6 +39,8 @@ type LocalIssue struct {
 }
 
 type LocalWork struct {
+	Diagnosis        *DiagnosisProjection `json:"diagnosis"`
+	diagnosisJSON    []byte
 	Issue            *LocalIssue          `json:"issue"`
 	IssueObservation Observation[*bool]   `json:"issueObservation"`
 	Native           *LocalJob            `json:"native"`

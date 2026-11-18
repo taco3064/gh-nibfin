@@ -361,3 +361,32 @@ Controlled Go and browser fixtures cover the adapter, projection and stream with
 installed host state or production credentials. Hosted browser/CI checks own full
 suite results. Installed-host rollout and live-provider support require separate
 verification.
+
+## Selected-Issue explanation and diagnosis
+
+In the user overview, select an assigned Issue to open its repository details.
+The explanation shows retained Core blocker reports by stage and admission
+attempt. This attempt is not a GitHub run-attempt number. Native facts,
+attributed explanations, possible causes and missing evidence have separate
+labels. Historical reports cannot establish the current cause, even when the
+collection is recent. Expand the evidence to inspect source times and safe
+native links; the dependency graph remains available.
+
+**Request read-only diagnosis** is explicit. Rendering, refreshing and reconnecting
+only observe retained reports through the existing overview stream. The service
+binds the repository ID, Issue database and node IDs, number and session subject;
+the CLI revalidates current native identity and assignment before private stdin
+transport to the trusted installed Core. Core independently owns authorization
+and capacity. Older Core versions or unsupported platforms report unavailable;
+the Dashboard does not install or upgrade anything.
+
+A submitted request remains pending until a response arrives. Denial,
+insufficient evidence, unavailable capacity and an unresolved effect are distinct.
+An in-flight retained record does not prove running progress. Lost responses stay
+unknown until retained evidence resolves them, with no automatic resubmission.
+Requests use the current service/session lifecycle rather than the short
+observation timeout. Diagnosis never resumes or reruns delivery. Pause and Resume
+continue through the existing fixed review/apply path with native permission
+checks, repository-scoped batches and single-use reviews. Navigation or stale
+observations invalidate the visible review; a label submission still does not
+prove a confirmed Core effect.

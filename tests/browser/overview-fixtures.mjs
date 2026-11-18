@@ -27,3 +27,37 @@ export function overviewFixture() {
   idle.runners.items[0].association.value = null;
   return {snapshot: snapshot(), overviews: [value, idle]};
 }
+
+export function diagnosisFixture() {
+  const fixture = overviewFixture();
+  const issue = {repository: 'example/project', repositoryId: 1,
+    number: 1, id: 'I_one', qualified: 'example/project#1'};
+  const report = {reference: 'report:' + 'a'.repeat(64),
+    binding: {issue, stage: 'deliver', subjectId: 7,
+      admissionId: '11111111-1111-1111-1111-111111111111', native: {}},
+    producer: 'agent', confidence: 'attributed',
+    observedAt: '2026-11-01T00:00:00Z', summary: 'Agent reported a blocker.',
+    rootCause: 'A required input was unavailable.', findings: ['Input was missing.'],
+    confirmed: [], missing: ['INDEPENDENT_CAUSE_CONFIRMATION_UNAVAILABLE'],
+    references: ['https://github.com/example/project/issues/1'],
+    executionAuthority: false};
+  const second = structuredClone(report);
+  second.reference = 'report:' + 'b'.repeat(64);
+  second.binding.admissionId = '22222222-2222-2222-2222-222222222222';
+  second.binding.stage = 'accept';
+  for (const value of fixture.overviews) {
+    value.issues.items[0].evidence = [{issue, diagnosis: {status: 'reported',
+      reports: [report, second], diagnoses: {status: 'observed', results: [{
+        status: 'reported', producer: 'diagnosis-agent', confidence: 'attributed',
+        explanation: 'The retained evidence is incomplete.',
+        hypotheses: ['A prerequisite might be missing.'], missing: ['Native telemetry.'],
+        invocationId: '33333333-3333-3333-3333-333333333333',
+        evidenceId: 'c'.repeat(64), subjectId: 7, issue,
+        attempt: {id: second.binding.admissionId, stage: 'accept'},
+        observedAt: '2026-11-02T00:00:00Z', confirmed: [],
+        sourceReports: [second.reference], sourceTimes: [second.observedAt],
+        executionAuthority: false
+      }]}}}];
+  }
+  return fixture;
+}

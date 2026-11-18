@@ -1,5 +1,7 @@
 import {node, line, link} from './dom.js';
 import {text} from './model.js';
+import {selectionChanged} from './controls.js';
+import {observeDiagnosis} from './diagnosis.js';
 import {connectOverview} from './overview-stream.js';
 
 const get = id => document.getElementById(id);
@@ -91,6 +93,10 @@ function states(row) {
       values.add('not yet scheduled (no admission observed)');
     }
   }
+  const report = (row.evidence ?? []).flatMap(work =>
+    work.diagnosis?.reports ?? []).find(value => value.rootCause);
+  if (report) values.add(`${report.confidence} historical explanation: ` +
+    report.rootCause);
   return [...values].join('; ') || 'Execution unknown';
 }
 
@@ -111,6 +117,7 @@ export function start(request, readRepository) {
       get('assigned-coverage').textContent = 'Pending assigned-Issue inventory…';
       return;
     }
+    observeDiagnosis(value, request);
     const elapsed = Date.now() - Date.parse(value.observed_at);
     const age = Math.max(0, Math.floor(elapsed / 1000));
     get('overview-freshness').textContent =
@@ -213,6 +220,7 @@ export function start(request, readRepository) {
   });
   get('overview-search').addEventListener('input', render);
   get('back-overview').addEventListener('click', () => {
+    selectionChanged();
     get('dashboard').hidden = true;
     panel.hidden = false;
   });

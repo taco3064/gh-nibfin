@@ -23,3 +23,14 @@
 }
 
 .observation-stale { color: var(--warning); }
+
+.issue-explanation {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.issue-explanation select {
+  max-width: 100%;
+}
+.issue-explanation details {
+  margin-block: .5rem;
+}

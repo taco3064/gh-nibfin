@@ -7,6 +7,7 @@
   button.disabled = !/^[a-f0-9]{64}$/.test(proof);
   if (!button.disabled) output.textContent = 'Ready. Select Read snapshot to connect.';
   let view;
+  let readVersion = 0;
   const request = (path, options = {}) => fetch(path, {
     credentials: 'omit', cache: 'no-store', redirect: 'error', ...options,
     headers: {'X-Nibfin-Session': proof, ...options.headers}
@@ -19,6 +20,8 @@
   async function getOverview() {
     const overview = await import('/overview.js');
     overview.start(request, async (repository, identity) => {
+      readVersion++;
+      view?.invalidate();
       output.textContent = 'Reading repository detail…';
       try {
         const selected = await request('/api/repository', {
@@ -26,7 +29,7 @@
           body: JSON.stringify({repository})
         });
         if (!selected.ok) throw new Error('Unavailable');
-        await read();
+        if (!await read(identity)) throw new Error('Stale selection');
         view?.selectIssue(identity);
         document.getElementById('user-overview').hidden = true;
         document.getElementById('back-overview').hidden = false;
@@ -36,7 +39,9 @@
       }
     });
   }
-  async function read() {
+  async function read(expected) {
+    const version = ++readVersion;
+    view?.invalidate();
     button.disabled = true;
     output.textContent = 'Reading local snapshot…';
     try {
@@ -49,7 +54,15 @@
       });
       if (!response.ok) throw new Error('Unavailable');
       const snapshot = await response.json();
+      if (version !== readVersion) return false;
+      if (expected && !(snapshot.issues?.items ?? []).some(issue =>
+        issue.identity.id === expected.id && issue.identity.number === expected.number &&
+        issue.identity.repository.id === expected.repository.id &&
+        issue.identity.repository.name === expected.repository.name)) {
+        throw new Error('Selected Issue unavailable');
+      }
       view ??= await import('/view.js');
+      if (version !== readVersion) return false;
       view.display(snapshot, async intent => {
         const response = await fetch('/api/labels', {
           method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error',
@@ -60,13 +73,15 @@
         return response.json();
       });
       output.textContent = 'Snapshot loaded. Read again to refresh observations.';
+      return true;
     } catch {
+      if (version !== readVersion) return false;
       view?.invalidate();
       if (mode === 'overview') throw new Error('Unavailable');
       output.textContent = 'Snapshot unavailable or unsupported. ' +
         'Retry Read snapshot, or reopen a current local session link.';
     } finally {
-      button.disabled = false;
+      if (version === readVersion) button.disabled = false;
     }
   }
   button.addEventListener('click', () => { void read().catch(() => {}); });

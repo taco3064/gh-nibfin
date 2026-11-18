@@ -42,6 +42,7 @@ func run() error {
 			return fmt.Errorf("invalid overview fixture")
 		}
 		value = sequence.Snapshot
+		fixtureDiagnoses(data, sequence.Overviews)
 		overview = &overviewSequence{values: sequence.Overviews}
 	}
 	var expired atomic.Bool
@@ -54,13 +55,13 @@ func run() error {
 	}
 	var provider dashboard.Collector = fixture{value}
 	var controller pause.Controller
-	if len(os.Args) == 3 && os.Args[2] == "labels" {
+	if len(os.Args) == 3 && (os.Args[2] == "labels" || os.Args[2] == "overview") {
 		native := labelFixture(value)
 		provider, controller = native, pause.Controller{Provider: native}
 	}
 	service, err := dashboard.Start(context.Background(), dashboard.Config{
 		Overview: overview, Repository: "example/project", Provider: provider,
-		Controller: controller, Now: now,
+		Controller: controller, Now: now, Diagnoser: diagnosisFixture{},
 	})
 	if err != nil {
 		return err
