@@ -44,7 +44,7 @@ func TestDashboardNativeInterrupt(t *testing.T) {
 			}
 			return process.Signal(os.Interrupt)
 		}
-		if err := runApp(a, []string{"dashboard", "--repo", "example/project"},
+		if err := runApp(a, []string{"dashboard"},
 			io.Discard); err != nil {
 			t.Fatal(err)
 		}

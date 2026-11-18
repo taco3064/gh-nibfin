@@ -254,7 +254,7 @@ func TestBoundsAndFreshness(t *testing.T) {
 }
 
 func TestUnsafeLinksOmitted(t *testing.T) {
-	repo := Repository{10, selected, "https://github.com/" + selected}
+	repo := Repository{ID: 10, Name: selected, URL: "https://github.com/" + selected}
 	for _, link := range []string{"javascript:alert(1)", "https://evil.example/run/1",
 		repo.URL + "/actions/runs/1/job/2?token=secret",
 		repo.URL + "/actions/runs/1/job/2#markup", repo.URL + "/../secret",

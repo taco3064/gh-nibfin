@@ -8,8 +8,9 @@ the installation push/admin gate. Repository mode uses trusted startup selection
 Overview mode permits authenticated navigation among permission-checked adopted
 repositories. Pause/Resume uses a trusted injected
 `pause.Controller`, assembled by the CLI with `cli.NativePause` and the current gh login.
-The CLI entry point is `gh nibfin dashboard [--repo OWNER/REPO]`. The default
-packaged UI renders the repository summary and native Issue dependency graph.
+The CLI entry point is `gh nibfin dashboard`. It always opens the signed-in user's
+local overview, independently of the working directory. Select a verified adopted
+public project in the browser to open its summary, graph, PR/activity and Issue views.
 
 `URL()` returns the actual origin without credentials. Default binding is
 `127.0.0.1:0`, so the OS selects an available port. `Config.Bind` accepts only a
@@ -19,11 +20,12 @@ Configuration is instance-local. No process-global session or snapshot cache exi
 
 ## Foreground CLI lifetime
 
-Run `gh nibfin dashboard --repo OWNER/REPO` with your existing GitHub CLI login.
-In repository mode, omitting `--repo` resolves the current repository using
-`gh repo view`; if discovery fails, supply `--repo` explicitly. Repository startup
-requires a valid current user and matching repository identity with read permission,
-without push/admin. `--overview` authenticates the user without inferring a repository.
+Run `gh nibfin dashboard` with your existing GitHub CLI login from any directory.
+The command performs no current-directory repository inference. `--overview` remains
+a compatibility synonym. Former `--repo OWNER/REPO` and `--repo=OWNER/REPO` arguments
+fail with guidance to run the bare command and select a project in the page.
+Project reads require the same signed-in subject and current native public/read
+permission, and must match the selected stable GitHub repository identity.
 Help performs no login, service or browser operation.
 
 The command starts one service and deliberately hands its fragment bootstrap URL
@@ -268,9 +270,10 @@ handler. They establish no live GitHub/Core, multi-account or installed-platform
 
 ## User overview
 
-`gh nibfin dashboard --overview` opens the signed-in user's local work overview.
-It conflicts with an explicit `--repo`, including an empty one. Without `--overview`,
-repository selection and inference retain their existing behavior.
+`gh nibfin dashboard` opens the signed-in user's local work overview.
+The compatibility `--overview` flag is a synonym for this default. The removed
+`--repo` argument fails with project-picker migration guidance, including empty
+and equals forms. Startup never infers a repository from the working directory.
 
 The overview shows any number of local registrations, keyed by registration
 repository ID and Runner ID, with merged adopted routes. Busy, idle, offline and
@@ -289,7 +292,7 @@ observations, queued jobs, dispatched runs, execution, qualified pause, dependen
 and unresolved external effects remain distinguishable. Pause does not mean that
 admitted execution has stopped. Unknown and stale evidence never enables an action.
 
-Issue buttons select only permission-checked adopted repositories and open the
+The project picker and Issue buttons select verified adopted repositories and open the
 existing local repository graph/detail view. Full graph, PR and Actions reads occur
 on that path. Existing Pause/Resume review and permission checks remain in force.
 Back to overview retains the overview search and selected Issue. Background updates
@@ -361,3 +364,105 @@ Controlled Go and browser fixtures cover the adapter, projection and stream with
 installed host state or production credentials. Hosted browser/CI checks own full
 suite results. Installed-host rollout and live-provider support require separate
 verification.
+
+## Selected-Issue explanation and diagnosis
+
+In the user overview, select an assigned Issue to open its repository details.
+The explanation shows retained Core blocker reports by stage and admission
+attempt. This attempt is not a GitHub run-attempt number. Native facts,
+attributed explanations, possible causes and missing evidence have separate
+labels. Historical reports cannot establish the current cause, even when the
+collection is recent. Expand the evidence to inspect source times and safe
+native links; the dependency graph remains available.
+
+**Request read-only diagnosis** is explicit. Rendering, refreshing and reconnecting
+only observe retained reports through the existing overview stream. The service
+binds the repository ID, Issue database and node IDs, number and session subject;
+the CLI revalidates current native identity and assignment before private stdin
+transport to the trusted installed Core. Core independently owns authorization
+and capacity. Older Core versions or unsupported platforms report unavailable;
+the Dashboard does not install or upgrade anything.
+
+A submitted request remains pending until a response arrives. Denial,
+insufficient evidence, unavailable capacity and an unresolved effect are distinct.
+An in-flight retained record does not prove running progress. Lost responses stay
+unknown until retained evidence resolves them, with no automatic resubmission.
+Requests use the current service/session lifecycle rather than the short
+observation timeout. Diagnosis never resumes or reruns delivery. Pause and Resume
+continue through the existing fixed review/apply path with native permission
+checks, repository-scoped batches and single-use reviews. Navigation or stale
+observations invalidate the visible review; a label submission still does not
+prove a confirmed Core effect.
+
+### Windows overview through an existing WSL 2 installation
+
+From any Windows directory, including outside a Git checkout:
+
+```powershell
+gh nibfin dashboard
+# If more than one verified guest belongs to your current Windows gh user:
+gh nibfin dashboard --target wsl:Ubuntu-24.04
+```
+
+The service and browser stay on Windows. Discovery considers only running WSL 2
+user distributions, excludes Docker Desktop, and does not run installation
+preflight. Offline Runners and missing installation tools do not disqualify a
+readable adopted Core. A sole verified target is selected; multiple verified
+targets require `--target`. An explicit unavailable target never falls back to
+another guest. No Git directory, default distribution or persistent target registry
+participates in selection. Discovery checks candidates until all have been inspected
+or a second verified target makes explicit selection necessary. Unavailable guests
+do not hide an eligible target later in the inventory.
+
+The guest must already have an adopted Core, its verified native Node executable,
+and a compatible installed Linux CLI implementing the private overview bridge.
+An older CLI or Core is an unavailable compatibility state; update it deliberately
+inside the guest. The credential-free bootstrap uses the guest's system Python 3
+and gh's Linux extension data location (`$XDG_DATA_HOME/gh/extensions`, otherwise
+`~/.local/share/gh/extensions`). It resolves the canonical executable before
+running it and rejects repository/temporary entries, foreign ownership and group
+or world writable ancestry. A user-owned CLI is allowed. Core and Node retain
+stronger root-owned installation and source verification.
+
+Machine identity, native architecture and canonical CLI entry (including its file
+identity) are bound to this Dashboard session. Every private read rechecks that
+binding and the guest rechecks it before reading private stdin. If the target
+changes, stops or disappears, restart deliberately with the intended target;
+refresh stays on the bound guest. A failed verification read reports unavailable
+for that refresh. The next refresh verifies the same guest before obtaining
+credentials again.
+
+Only after target verification does Windows obtain its current `gh` credential.
+It travels as a token-only JSON object over anonymous stdin to that guest bridge
+and the verified Core. The adapter does not use a guest gh login or administrator
+credential. Tokens never appear in arguments, environment, URLs or temporary files.
+The browser receives the shared sanitized observation projection without guest
+paths or diagnostics. Denied, partial, offline and unavailable facts retain their
+meanings; supplemental adopted IDs remain discoverable without active Issue work.
+Inventory retains its 64 KiB bound; private Core observations retain their 1 MiB
+contract with bounded wrapper metadata. Windows discovery and observation use the
+Dashboard lifetime and propagate cancellation through the native transport. The
+guest bridge uses its caller context without an additional observation deadline;
+slow readable installations are not rejected by a fixed discovery or read timeout.
+
+Controlled adapter and bridge fixtures exercise these paths without Windows,
+installed WSL state or real credentials. Actual Windows/WSL installation behavior,
+Windows browser rendering, release compatibility and hosted Windows CI remain
+separate verification evidence; Linux fixture results do not certify them.
+
+### Project navigation
+
+The project picker uses adopted repository inventory, independently of assigned
+Issue rows. Verified projects with zero assigned open Issues remain selectable.
+Complete empty, partial, unavailable and stale observations are distinguished.
+Retained project rows are labeled and cannot authorize detail reads. Refresh the
+overview to verify them again. Server authorization is repeated for subsequent
+snapshot reads; browser values never grant access.
+
+Use **Open project** or an assigned Issue to inspect a project. **Back to overview**
+preserves the overview search and project choice where those identities remain
+available. Graph filters and Issue selection are remembered per stable project
+identity; missing Issues and incompatible reviewed actions are cleared. Late
+responses from superseded navigation cannot replace the displayed project.
+Overview collection and its authenticated SSE stream continue during inspection.
+A failed project read returns to usable overview navigation.

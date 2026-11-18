@@ -187,3 +187,11 @@ async function apply(version) {
     freshness();
   }
 }
+
+// A pending review belongs to one visible selection, even within a repository.
+export function selectionChanged() {
+  revision++;
+  review = undefined;
+  if (!busy && dialog?.open) dialog.close();
+  freshness();
+}

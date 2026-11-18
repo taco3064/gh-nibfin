@@ -1,5 +1,8 @@
 import {node, line, link} from './dom.js';
 import {text} from './model.js';
+import {selectionChanged} from './controls.js';
+import {observeDiagnosis} from './diagnosis.js';
+import {renderProjects} from './projects.js';
 import {connectOverview} from './overview-stream.js';
 
 const get = id => document.getElementById(id);
@@ -91,14 +94,19 @@ function states(row) {
       values.add('not yet scheduled (no admission observed)');
     }
   }
+  const report = (row.evidence ?? []).flatMap(work =>
+    work.diagnosis?.reports ?? []).find(value => value.rootCause);
+  if (report) values.add(`${report.confidence} historical explanation: ` +
+    report.rootCause);
   return [...values].join('; ') || 'Execution unknown';
 }
 
-export function start(request, readRepository) {
+export function start(request, readRepository, returnToOverview) {
   const panel = get('user-overview');
   panel.hidden = false;
   get('page-title').textContent = 'Your local work';
-  get('page-intro').textContent = 'Registered Runners and assigned open GitHub Issues.';
+  get('page-intro').textContent =
+    'Adopted projects, registered Runners and assigned open GitHub Issues.';
   let value;
   let selected;
   let navigating = false;
@@ -111,6 +119,8 @@ export function start(request, readRepository) {
       get('assigned-coverage').textContent = 'Pending assigned-Issue inventory…';
       return;
     }
+    renderProjects(value, readRepository);
+    observeDiagnosis(value, request);
     const elapsed = Date.now() - Date.parse(value.observed_at);
     const age = Math.max(0, Math.floor(elapsed / 1000));
     get('overview-freshness').textContent =
@@ -177,7 +187,7 @@ export function start(request, readRepository) {
         selected = row.key;
         render();
         try {
-          await readRepository(row.identity.repository.name, row.identity);
+          await readRepository(row.identity.repository, row.identity);
         } finally {
           navigating = false;
         }
@@ -213,8 +223,8 @@ export function start(request, readRepository) {
   });
   get('overview-search').addEventListener('input', render);
   get('back-overview').addEventListener('click', () => {
-    get('dashboard').hidden = true;
-    panel.hidden = false;
+    selectionChanged();
+    returnToOverview();
   });
   const timer = setInterval(render, 1000);
   window.addEventListener('pagehide', () => {

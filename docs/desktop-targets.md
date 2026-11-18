@@ -109,3 +109,35 @@ to bypass recovery. Core owns isolation, Runner adoption and recovery decisions.
 [wsl]: https://learn.microsoft.com/en-us/windows/wsl/basic-commands
 [systemd]: https://learn.microsoft.com/en-us/windows/wsl/systemd
 [multipass]: https://canonical.com/multipass/docs/latest/how-to-guides/install-multipass/
+
+## Read-only Windows Dashboard overview
+
+Overview observation is separate from the installation handoff described above.
+`gh nibfin dashboard --overview [--target wsl:NAME]` uses the **Windows** gh user
+and keeps its service/browser on Windows. It neither starts stopped distributions
+nor provisions, upgrades or enrolls guests. Only a running WSL 2 guest with a
+verified installed CLI bridge and an existing adopted Core for that same member
+is eligible. Runner online status and installation preflight tools are not gates.
+
+A single verified target is unambiguous. Several require explicit selection; an
+invalid explicit target cannot redirect to another guest. Missing or outdated
+bridges, unreadable installations and wrong-member targets produce unavailable
+states, never complete empty inventories. Session refresh revalidates the bound
+machine, architecture and executable and requires deliberate restart/reselection
+after a confirmed change. A failed verification read can retry on the same
+bound guest without sending credentials to an unverified target. Discovery and
+private reads follow the Dashboard lifetime and
+propagate cancellation without a fixed deadline. Discovery stops once two verified
+targets establish ambiguity; inventory size alone does not require selection.
+Inventory and private observation output retain their separate size bounds.
+
+Unlike init handoff, this fixed read forwards the Windows token on anonymous
+stdin **only after** credential-free filesystem and adopted-Core verification.
+It never forwards environment credentials or uses the guest's gh login. The
+installed user-owned executable must be outside Git repositories and temporary
+directories with safe ownership and permissions throughout its canonical ancestry.
+Local development extension links into a checkout are therefore unsuitable for
+private observation. Core/Node still require their existing root-owned manifest
+and architecture verification. Updating an incompatible guest CLI is an operator
+action. See [the Dashboard boundary](dashboard.md#windows-overview-through-an-existing-wsl-2-installation)
+for bootstrap locations, transport limits and platform evidence limitations.

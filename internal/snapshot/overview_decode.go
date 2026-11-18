@@ -71,7 +71,12 @@ func DecodeLocalObservation(data []byte, subject Subject) LocalObservation {
 			return bad
 		}
 	}
-	for _, w := range value.Work {
+	for i := range value.Work {
+		w := &value.Work[i]
+		if w.Issue != nil && len(w.diagnosisJSON) > 0 {
+			w.Diagnosis = DecodeDiagnosis(w.diagnosisJSON, *w.Issue, subject.ID)
+		}
+		w.diagnosisJSON = nil
 		if w.Issue != nil && (!validRoute(w.Issue.AdoptedRoute) ||
 			w.Issue.Number <= 0 || !nodeIssueID.MatchString(w.Issue.ID) ||
 			w.Issue.Qualified != fmt.Sprintf("%s#%d", w.Issue.Repository,

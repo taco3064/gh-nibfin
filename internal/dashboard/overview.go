@@ -122,7 +122,10 @@ func reconcileOverview(old, next snapshot.Overview) snapshot.Overview {
 		next.Repositories.Items = retainRows(old.Repositories.Items,
 			next.Repositories.Items, func(row snapshot.Repository) string {
 				return row.Name
-			}, 32, nil)
+			}, 32, func(row snapshot.Repository) snapshot.Repository {
+				row.Retained = true
+				return row
+			})
 	}
 	return next
 }

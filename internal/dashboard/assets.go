@@ -21,6 +21,8 @@ func copyAssets(input map[string]Asset) (map[string]Asset, error) {
 		input = make(map[string]Asset)
 		for path, kind := range map[string]string{
 			"/":                   "text/html; charset=utf-8",
+			"/diagnosis.js":       "text/javascript; charset=utf-8",
+			"/projects.js":        "text/javascript; charset=utf-8",
 			"/overview.js":        "text/javascript; charset=utf-8",
 			"/overview-stream.js": "text/javascript; charset=utf-8",
 			"/overview.css":       "text/css; charset=utf-8",

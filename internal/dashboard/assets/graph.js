@@ -1,4 +1,5 @@
 import {labelObservation, text} from './model.js';
+import {explanation} from './diagnosis.js';
 import {issueControls} from './controls.js';
 import {items, status, identity, key, state, progress, githubURL} from './model.js';
 import {node, line, link, claims} from './dom.js';
@@ -82,6 +83,7 @@ export function details(parent, issue, context) {
   line(parent, `Assignees: ${(issue.assignees ?? [])
     .map(person => person.login).join(', ') || 'None observed'}`);
   issueControls(parent, issue);
+  explanation(parent, issue.identity);
   claims(parent, issue.core);
   blockers(parent, issue, context);
 }

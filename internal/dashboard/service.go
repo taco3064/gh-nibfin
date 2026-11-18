@@ -38,6 +38,7 @@ type Collector interface {
 // selects the embedded shell. Now and Random are injectable test seams; production
 // should leave them nil to use time.Now and crypto/rand.Reader.
 type Config struct {
+	Diagnoser  Diagnoser
 	Overview   OverviewCollector
 	Controller pause.Controller
 	Repository string
@@ -49,6 +50,8 @@ type Config struct {
 }
 
 type Service struct {
+	diagnoser       Diagnoser
+	diagnosisActive bool
 	overview        *overviewState
 	controller      pause.Controller
 	reviews         map[string]*reviewed
@@ -57,6 +60,7 @@ type Service struct {
 	server          *http.Server
 	listener        net.Listener
 	origin          string
+	selected        snapshot.Repository
 	repository      string
 	provider        Collector
 	assets          map[string]Asset
@@ -110,7 +114,8 @@ func start(ctx context.Context, c Config,
 		return nil, errors.New("dashboard listener unavailable")
 	}
 	mutationContext, cancelMutations := context.WithCancel(ctx)
-	s := &Service{controller: c.Controller, reviews: make(map[string]*reviewed),
+	s := &Service{diagnoser: c.Diagnoser, controller: c.Controller,
+		reviews:         make(map[string]*reviewed),
 		mutationContext: mutationContext, cancelMutations: cancelMutations,
 		listener:   listener,
 		origin:     "http://" + listener.Addr().String(),

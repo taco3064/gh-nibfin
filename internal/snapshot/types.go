@@ -43,9 +43,10 @@ type Section[T any] struct {
 }
 
 type Repository struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Retained bool   `json:"retained,omitempty"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
 }
 
 type Identity struct {

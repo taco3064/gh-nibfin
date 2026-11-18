@@ -1,4 +1,4 @@
-import {configure, freshness as controlFreshness} from './controls.js';
+import {configure, selectionChanged, freshness as controlFreshness} from './controls.js';
 import {items, status, identity, key, progress, stale, validate, githubURL}
   from './model.js';
 import {progressLabels, issueStates} from './model.js';
@@ -9,6 +9,8 @@ import {graph, details} from './graph.js';
 const get = id => document.getElementById(id);
 let snapshot;
 let selected;
+const saved = new Map();
+let project;
 let timer;
 let failed = false;
 const filters = get('filters');
@@ -46,6 +48,7 @@ function renderGraph() {
   const context = {all, selected,
     visible: new Set(filtered.map(issue => key(issue.identity))),
     choose(value) {
+      if (selected !== value) selectionChanged();
       selected = value;
       renderGraph();
       get('details').focus();
@@ -62,6 +65,22 @@ function renderGraph() {
 export function display(value, post) {
   const next = validate(value);
   clearInterval(timer);
+  const repository = next.repository.items?.[0];
+  const nextProject = repository ? `${repository.id}:${repository.name}` : undefined;
+  if (project !== nextProject) {
+    if (project) saved.set(project, {selected,
+      filters: ['search', 'state', 'progress'].map(id => get(id).value)});
+    const previous = saved.get(nextProject);
+    selected = previous?.selected;
+    ['search', 'state', 'progress'].forEach((id, index) => {
+      get(id).value = previous?.filters[index] ?? '';
+    });
+    selectionChanged();
+  }
+  project = nextProject;
+  if (!(next.issues.items ?? []).some(issue => key(issue.identity) === selected)) {
+    selected = undefined;
+  }
   snapshot = next;
   configure(snapshot, post);
   failed = false;
@@ -105,6 +124,7 @@ export function invalidate() {
 }
 
 export function selectIssue(identity) {
+  if (selected !== key(identity)) selectionChanged();
   selected = key(identity);
   renderGraph();
   get('details').focus();
