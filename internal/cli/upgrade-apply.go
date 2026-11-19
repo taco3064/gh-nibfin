@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
 )
@@ -9,7 +10,14 @@ const upgradeAuthor = "Nibfin <nibfin@users.noreply.github.com>"
 const upgradeDate = "2000-01-01T00:00:00Z"
 
 func upgradeMessage(plan upgradePlan) string {
-	return "Propose verified Nibfin source upgrade\n\nPlan: " + plan.ID + "\n"
+	return "Propose verified Nibfin source upgrade\n\nPlan: " + plan.ID + "\n" +
+		"Sources: " + upgradeSourceMetadata(plan.Target) + "\n"
+}
+
+// Keep the verified source tuple in commit metadata across native rebases.
+func upgradeSourceMetadata(source upgradeSource) string {
+	data, _ := json.Marshal(source)
+	return string(data)
 }
 
 func upgradeCommitID(plan upgradePlan, tree string) string {
@@ -105,7 +113,7 @@ func applyUpgrade(api API, plan upgradePlan, version string) (InitResult, error)
 	tree := treeHash(changedUpgradeTree(plan), "")
 	expected := upgradeCommitID(plan, tree)
 	// Inspect the durable branch before creating even unreachable objects.
-	err := upgradeRef(api, base, branch, expected)
+	head, err := readUpgradeRef(api, plan)
 	existing := err == nil
 	if err != nil && err.Error() != "NOT_FOUND" {
 		return result, err
@@ -119,7 +127,8 @@ func applyUpgrade(api API, plan upgradePlan, version string) (InitResult, error)
 	}
 	sha := expected
 	if existing {
-		err = verifyUpgradeCommit(api, base, sha, tree, plan)
+		sha = head
+		_, err = observeUpgradeProposal(api, plan, version, sha)
 	} else {
 		sha, err = ensureUpgradeObjects(api, plan, version)
 	}
@@ -143,7 +152,7 @@ func applyUpgrade(api API, plan upgradePlan, version string) (InitResult, error)
 	if err := upgradeRef(api, base, branch, sha); err != nil {
 		return result, err
 	}
-	pull, err := upgradePR(api, plan, version, branch, sha, existing)
+	pull, err := upgradePR(api, plan, version, branch, sha)
 	if err != nil {
 		return result, err
 	}

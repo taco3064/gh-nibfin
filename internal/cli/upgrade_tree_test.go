@@ -25,7 +25,9 @@ func TestUpgradeGitObjectGoldenIdentities(t *testing.T) {
 	}
 	plan := upgradePlan{Base: strings.Repeat("a", 40), ID: strings.Repeat("0", 64)}
 	sha := upgradeCommitID(plan, tree)
-	if sha != "f12985f45dc8cf0d24d49a4dcc2a06941f2d9dbc" {
+	// Updated commit golden independently encoded with Python hashlib after adding
+	// source metadata; the tree/blob goldens above remain unchanged.
+	if sha != "9df6b9c344d66aece3305464b4b74d1be6861271" {
 		t.Fatal(sha)
 	}
 	nested := map[string]upgradeEntry{

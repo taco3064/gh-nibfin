@@ -249,7 +249,7 @@ func TestUpgradeOutputFailureAndPendingResult(t *testing.T) {
 	err = (App{API: f, Process: upgradeNoProcess{t}}).Run(args, &out)
 	command, ok := err.(*CommandError)
 	if !ok || command.Exit != 2 || !strings.Contains(out.String(), "pending") ||
-		!strings.Contains(out.String(), "UPGRADE_PR_UNKNOWN_READ_BACK_BEFORE_RETRY") {
+		!strings.Contains(out.String(), "READ_BACK_UNAVAILABLE") {
 		t.Fatal(out.String(), err)
 	}
 }
