@@ -184,11 +184,9 @@ func fixtureProducers(t *testing.T, f *fakeAPI, core, action string,
 			"name: Managed issue CORE_COMMIT", "mode: managed", ""}
 	}
 	recipes, _ := json.Marshal(recipeMap)
-	manifest := []byte(`{"schemaVersion":1,"fixture":"controlled source manifest"}`)
-	pins.Core.ManifestHash = sha256Hash(manifest)
 	files := map[string][]byte{"bin/nibfin-core.mjs": []byte("throw 'never execute';\n"),
-		".node-version": []byte("24.22.1\n"), "manifest.json": manifest,
-		"src/caller-recipes.json": recipes}
+		".node-version": []byte("24.22.1\n"), "src/caller-recipes.json": recipes}
+	fixtureCoreManifest(files, &pins.Core)
 	pins.Artifact.ID = artifactID
 	fixtureArchive(t, f, &pins, files)
 	pinJSON, _ := json.Marshal(pins.Core)
@@ -278,7 +276,7 @@ func fixtureArchive(t *testing.T, f *fakeAPI, pins *Producers,
 	sort.Strings(names)
 	for _, name := range names {
 		data := files[name]
-		if err := tarWriter.WriteHeader(&tar.Header{Name: name, Mode: 0644,
+		if err := tarWriter.WriteHeader(&tar.Header{Name: name, Mode: fixtureCoreMode(name),
 			Typeflag: tar.TypeReg, Size: int64(len(data))}); err != nil {
 			t.Fatal(err)
 		}

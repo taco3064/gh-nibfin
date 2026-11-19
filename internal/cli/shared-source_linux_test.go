@@ -60,3 +60,42 @@ func TestInstalledCoreAuthenticatedBeforeExecution(t *testing.T) {
 		t.Fatal("changed source mode accepted")
 	}
 }
+
+func TestInstalledCoreRejectsUnsafeFiles(t *testing.T) {
+	for _, kind := range []string{"symlink", "hardlink", "manifest-symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			files := map[string][]byte{"entry.mjs": []byte("never execute\n")}
+			pin := SourcePin{Repository: officialCore, Commit: strings.Repeat("a", 40)}
+			fixtureCoreManifest(files, &pin)
+			for name, data := range files {
+				if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := verifyInstalledCoreManifest(root, pin); err != nil {
+				t.Fatal(err)
+			}
+			name := "entry.mjs"
+			if kind == "manifest-symlink" {
+				name = "nibfin-manifest.json"
+			}
+			original := filepath.Join(root, name)
+			target := filepath.Join(t.TempDir(), "target")
+			if err := os.Rename(original, target); err != nil {
+				t.Fatal(err)
+			}
+			link := os.Symlink
+			if kind == "hardlink" {
+				link = os.Link
+			}
+			if err := link(target, original); err != nil {
+				t.Fatal(err)
+			}
+			err := verifyInstalledCoreManifest(root, pin)
+			if err == nil || err.Error() != "SHARED_CORE_INSTALLED_SOURCE_MISMATCH" {
+				t.Fatal("unsafe file accepted or diagnostic changed", err)
+			}
+		})
+	}
+}

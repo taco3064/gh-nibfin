@@ -142,7 +142,8 @@ func TestUpgradeAnnotatedTagsAndVersionMismatch(t *testing.T) {
 }
 
 func TestUpgradeArchiveManifestAndRecipeBytesAreBound(t *testing.T) {
-	for _, kind := range []string{"manifest", "recipes"} {
+	kinds := []string{"manifest", "recipes", "unbound-recipes", "missing-manifest"}
+	for _, kind := range kinds {
 		f := upgradeFixture(t, false, true)
 		pins := f.target
 		archive, err := candidateArchive(f, pins)
@@ -157,12 +158,19 @@ func TestUpgradeArchiveManifestAndRecipeBytesAreBound(t *testing.T) {
 		for name, file := range original {
 			files[name] = file.data
 		}
-		want := "CORE_MANIFEST_HASH_MISMATCH"
+		want := "CORE_MANIFEST_MISMATCH"
 		if kind == "manifest" {
-			files["manifest.json"] = []byte("altered manifest")
+			files["nibfin-manifest.json"] = []byte("altered manifest")
+		} else if kind == "missing-manifest" {
+			files["unrelated.json"] = files["nibfin-manifest.json"]
+			delete(files, "nibfin-manifest.json")
 		} else {
 			files["src/caller-recipes.json"] = []byte("altered recipes")
-			want = "CORE_ARCHIVE_RECIPE_MISMATCH"
+			want = "CORE_MANIFEST_FILE_MISMATCH"
+			if kind == "recipes" {
+				fixtureCoreManifest(files, &pins.Core)
+				want = "CORE_ARCHIVE_RECIPE_MISMATCH"
+			}
 		}
 		fixtureArchive(t, f.fakeAPI, &pins, files)
 		bound, _ := json.Marshal(pins.Core)

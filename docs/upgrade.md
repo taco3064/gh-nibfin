@@ -32,6 +32,14 @@ the same caller recipe bytes as the immutable Core source. Downloaded code is
 never executed to establish preview trust. Expired or unavailable source artifacts
 are unsupported rather than a reason to fall back to a tag or local cache.
 
+Upgrade authenticates the named `nibfin-manifest.json` using its canonical JSON
+content identity, including the pinned repository and commit. Whitespace, object
+key ordering and a trailing newline do not change that identity. Every declared
+file must match its path, mode, size and digest; missing and undeclared files are
+rejected. Authenticated recipe bytes must also match the pinned immutable source.
+This verification reads archive data without executing downloaded code. It does
+not install Core, publish a release or certify host adoption.
+
 The installed `.nibfin/producer-pins.json` and every managed workflow must match
 bytes reconstructed from those verified old sources, including the original
 `nibfin-user-*` member binding. The authenticated maintainer is not substituted

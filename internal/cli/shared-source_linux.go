@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"syscall"
 )
 
@@ -59,63 +56,18 @@ func readSharedSourceFile(path string, limit int64) ([]byte, error) {
 // preserves compatible installed versions instead of forcing a reinstall.
 func verifyInstalledCoreManifest(root string, pin SourcePin) error {
 	invalid := errors.New("SHARED_CORE_INSTALLED_SOURCE_MISMATCH")
-	if pin.Repository != "taco3064/nibfin-core" || !commitPattern.MatchString(pin.Commit) ||
-		!digestPattern.MatchString(pin.ManifestHash) {
-		return invalid
-	}
-	data, err := readSharedSourceFile(filepath.Join(root, "nibfin-manifest.json"), 1024*1024)
+	data, err := readSharedSourceFile(filepath.Join(root, coreManifestName), 1024*1024)
 	if err != nil {
 		return invalid
 	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if decoder.Decode(&value) != nil {
+	declarations, err := parseCoreManifest(data, pin)
+	if err != nil {
 		return invalid
 	}
-	var canonical bytes.Buffer
-	encoder := json.NewEncoder(&canonical)
-	encoder.SetEscapeHTML(false)
-	if encoder.Encode(value) != nil ||
-		sha256Hash(bytes.TrimSuffix(canonical.Bytes(), []byte("\n"))) != pin.ManifestHash {
-		return invalid
-	}
-	var manifest struct {
-		Schema     int    `json:"schemaVersion"`
-		Repository string `json:"repository"`
-		Commit     string `json:"commit"`
-		Files      []struct {
-			Path string `json:"path"`
-			Mode string `json:"mode"`
-			Size int64  `json:"size"`
-			Hash string `json:"sha256"`
-		} `json:"files"`
-	}
-	if json.Unmarshal(data, &manifest) != nil || manifest.Schema != 1 ||
-		manifest.Repository != pin.Repository || manifest.Commit != pin.Commit ||
-		len(manifest.Files) == 0 || len(manifest.Files) > 1000 {
-		return invalid
-	}
-	seen := map[string]bool{"nibfin-manifest.json": true}
-	var total int64
-	safe := regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
-	for _, source := range manifest.Files {
+	seen := map[string]bool{coreManifestName: true}
+	for _, source := range declarations {
 		path := source.Path
-		if len(path) > 100 || !safe.MatchString(path) || strings.HasPrefix(path, "/") ||
-			seen[path] || source.Size < 0 || source.Size > 32*1024*1024 ||
-			!digestPattern.MatchString(source.Hash) {
-			return invalid
-		}
-		for _, part := range strings.Split(path, "/") {
-			if part == "" || part == "." || part == ".." || part == ".git" {
-				return invalid
-			}
-		}
 		seen[path] = true
-		total += source.Size
-		if total > 32*1024*1024 {
-			return invalid
-		}
 		full := filepath.Join(root, filepath.FromSlash(path))
 		stat, err := os.Lstat(full)
 		if err != nil || !stat.Mode().IsRegular() {
@@ -141,8 +93,8 @@ func verifyInstalledCoreManifest(root string, pin SourcePin) error {
 		hash := sha256.New()
 		size, readErr := io.Copy(hash, io.LimitReader(file, source.Size+1))
 		closeErr := file.Close()
-		if readErr != nil || closeErr != nil || size != source.Size ||
-			hex.EncodeToString(hash.Sum(nil)) != source.Hash {
+		if readErr != nil || closeErr != nil ||
+			!source.matches(mode, size, hex.EncodeToString(hash.Sum(nil))) {
 			return invalid
 		}
 	}
