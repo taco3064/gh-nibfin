@@ -11,6 +11,7 @@ import (
 type App struct {
 	agents         *agentOperations
 	handoffCheck   func() error
+	upgrade        *upgradeCommandOperations
 	Context        context.Context
 	StartDashboard DashboardStart
 	OpenDashboard  func(context.Context, string) error

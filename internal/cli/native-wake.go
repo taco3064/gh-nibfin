@@ -61,6 +61,15 @@ func nativeWakeSecretMetadata(api API, repo string) (nativeSecretMetadata, bool,
 
 func prepareNativeWake(api API, plan InitPlan, state *nativeWakeSetup,
 	save func() error, publish func(string) error) error {
+	return prepareNativeWakeWithRoute(api, plan, state, save, publish, func() error {
+		return requireInactiveSharedWake(api, plan.Repository.FullName)
+	})
+}
+
+// Both installation and migration use the same durable provider write protocol.
+// The caller supplies code-owned route observation, never a user bypass flag.
+func prepareNativeWakeWithRoute(api API, plan InitPlan, state *nativeWakeSetup,
+	save func() error, publish func(string) error, route func() error) error {
 	if err := nativeWakeAuthority(api, plan); err != nil {
 		return err
 	}
@@ -83,7 +92,10 @@ func prepareNativeWake(api API, plan InitPlan, state *nativeWakeSetup,
 		if state.SecretState != "" && state.SecretState != "pending" {
 			return errors.New("NATIVE_WAKE_SETUP_INVALID")
 		}
-		if err := requireInactiveSharedWake(api, plan.Repository.FullName); err != nil {
+		if route == nil {
+			return errors.New("NATIVE_WAKE_ROUTE_OBSERVATION_REQUIRED")
+		}
+		if err := route(); err != nil {
 			return err
 		}
 		if _, err := prepareSharedWakeDestination(api, plan.Repository.FullName,
@@ -96,6 +108,12 @@ func prepareNativeWake(api API, plan InitPlan, state *nativeWakeSetup,
 		// metadata never attributes the previous write or proves secret equality.
 		state.SecretState = "pending"
 		if err := save(); err != nil {
+			return err
+		}
+		if err := nativeWakeAuthority(api, plan); err != nil {
+			return err
+		}
+		if err := route(); err != nil {
 			return err
 		}
 		if err := publish(plan.Repository.FullName); err != nil {

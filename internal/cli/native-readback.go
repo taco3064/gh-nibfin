@@ -6,11 +6,17 @@ import "errors"
 // Secret metadata remains configuration evidence, never ownership or equality.
 func readNativeInstallation(api API, plan InitPlan,
 	discover func() (*sharedHost, error)) (*sharedHost, []sharedRegistration, error) {
+	return readNativeInstallationWithPins(api, plan, discover, managedPlanProducers(plan))
+}
+
+func readNativeInstallationWithPins(api API, plan InitPlan,
+	discover func() (*sharedHost, error), pins Producers) (
+	*sharedHost, []sharedRegistration, error) {
 	if err := nativeWakeAuthority(api, plan); err != nil {
 		return nil, nil, err
 	}
-	current, err := planInitRecipe(api, plan.Repository.FullName,
-		plan.Execution.Repository, "issue")
+	current, err := planInitRecipeWithPins(api, plan.Repository.FullName,
+		plan.Execution.Repository, "issue", pins)
 	if err != nil {
 		return nil, nil, err
 	}

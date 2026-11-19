@@ -141,8 +141,10 @@ Missing or inconsistent official metadata fails closed without writes.
 
 Only explicit `--apply` can create a separate upgrade branch and PR. Native
 review, CI, protections and merge still apply. This neither installs a CLI binary
-nor updates a running Core host or Runner. Host adoption is a separate trusted
-operation. See [upgrade usage and recovery](docs/upgrade.md) for supported layouts,
+nor replaces the running pool. For adopted managed Linux installations, latest apply
+also prepares native routing for actual adopted consumers and resumes Core-owned
+adoption, notification cleanup and lifecycle completion after merge. See
+[upgrade usage and recovery](docs/upgrade.md) for supported layouts,
 source verification, pending effects and the limits of local fixture evidence.
 
 ## Sources and trust boundary

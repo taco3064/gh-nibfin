@@ -12,7 +12,15 @@ func (a App) resumeRebuild(i *rebuildIntent, token []byte, ops rebuildOperations
 	if err != nil || reconcileRebuildSnapshot(*i, snapshot) != nil {
 		return errors.New("REBUILD_SNAPSHOT_UNVERIFIED")
 	}
+	if releasedRebuild(*i, snapshot) {
+		return a.completeReleasedRebuild(*i, ops, encoder)
+	}
 	if sameRebuildPool(&i.Old, snapshot.Host) {
+		if ops.migrate != nil {
+			if err := ops.migrate(*snapshot.Host); err != nil {
+				return err
+			}
+		}
 		if err := retireRebuild(a.API, i, ops, save); err != nil {
 			return err
 		}
@@ -135,6 +143,23 @@ func (a App) resumeRebuild(i *rebuildIntent, token []byte, ops rebuildOperations
 	if callErr != nil || verifyRebuildActivation(output, *i) != nil {
 		return errors.New("REBUILD_ACTIVATION_UNCERTAIN_REPEAT_SAME_COMMAND")
 	}
+	var activation struct {
+		Continuation json.RawMessage `json:"continuation"`
+	}
+	if json.Unmarshal(output, &activation) != nil {
+		return errors.New("REBUILD_ACTIVATION_UNCERTAIN_REPEAT_SAME_COMMAND")
+	}
+	continuation, err := nativeContinuationPayload(activation.Continuation)
+	if err != nil {
+		// Older Core may omit the additive continuation field. The same fixed
+		// lifecycle operation observes and resumes work without rebuilding.
+		return a.completeReleasedRebuild(*i, ops, encoder)
+	}
+	if continuation.Status == "pending" {
+		_ = encoder.Encode(map[string]any{"status": "pending",
+			"continuation": continuation, "retirementId": i.RetirementID})
+		return &CommandError{Code: "NATIVE_CONTINUATION_PENDING", Exit: 2}
+	}
 	if err := verifyFinalRebuildSnapshot(*i, ops); err != nil {
 		return err
 	}
@@ -142,7 +167,8 @@ func (a App) resumeRebuild(i *rebuildIntent, token []byte, ops rebuildOperations
 		"code": "MANAGED_REPLACEMENT_ACTIVE", "activation": "core_verified",
 		"retirementId": i.RetirementID, "agent": i.Agent,
 		"execution": i.Old.SharedExecution, "runners": runners,
-		"repositories": i.Repositories, "routing": routes})
+		"repositories": i.Repositories, "routing": routes,
+		"continuation": continuation})
 }
 
 func verifyRebuildActivation(output []byte, i rebuildIntent) error {

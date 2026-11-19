@@ -32,23 +32,13 @@ func requireRebuildCapability(output []byte) error {
 }
 
 func (a App) requireRebuildProducers() error {
-	output, err := a.inspectSelectedProducer(rebuildCapabilityScript)
-	if err != nil || requireRebuildCapability(output) != nil {
-		return errors.New("REBUILD_SELECTED_CORE_INCOMPATIBLE")
-	}
 	node, entry, err := trustedSharedCore()
 	if err != nil {
 		return errors.New("REBUILD_INSTALLED_CORE_UNVERIFIED")
 	}
-	output, err = a.Process.Run(node, []string{entry, "contract"}, nil)
+	output, err := a.Process.Run(node, []string{entry, "contract"}, nil)
 	if err != nil || requireRebuildCapability(output) != nil {
 		return errors.New("REBUILD_INSTALLED_CORE_INCOMPATIBLE")
-	}
-	// Existing adoption and managed resource preparation require the installed
-	// source pin. An ordinary producer upgrade belongs to its maintenance route.
-	pin, err := installedSharedPin()
-	if err != nil || pin != Pins().Core {
-		return errors.New("REBUILD_INSTALLED_SOURCE_REQUIRES_UPGRADE")
 	}
 	return nil
 }

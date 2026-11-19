@@ -215,7 +215,11 @@ type sharedInstallation struct {
 }
 
 func sharedInstallationFromProducer(api API) (sharedInstallation, error) {
-	archive, err := candidateArchive(api, Pins())
+	return sharedInstallationForProducers(api, Pins())
+}
+
+func sharedInstallationForProducers(api API, pins Producers) (sharedInstallation, error) {
+	archive, err := candidateArchive(api, pins)
 	if err != nil {
 		return sharedInstallation{}, err
 	}

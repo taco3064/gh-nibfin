@@ -21,8 +21,8 @@ version is illustrative; it is not a claim that this release exists.
 The CLI uses authenticated provider reads from `taco3064/gh-nibfin`. A release and
 its tag locate a commit; a release name alone never authorizes a write. Lightweight
 and bounded annotated tags are resolved to a full immutable commit and read back.
-The CLI reads that commit's existing `internal/cli/producers.json`. No new
-compatibility catalog or Core API is required.
+The CLI reads that commit's existing `internal/cli/producers.json` for a release
+target. Managed latest can use the verified maintained source pair described below.
 
 Both old and target tuples must refer to the official `taco3064/nibfin-core` and
 `taco3064/nibfin-act` sources. Their exact commits and the Action's complete
@@ -49,13 +49,18 @@ The target CLI source identity identifies the producer tuple being proposed;
 this command does not upgrade the locally installed extension binary.
 
 Both the legacy wake plus separate stage layout and unified dispatch layout are
-recognized. Both exact legacy and managed Issue recipes are recognized; ordinary
-upgrades preserve that transport. `--managed-issue` explicitly proposes the
-managed recipe only for an inactive installation without a Wake token secret,
-using the same source verification and PR process. It never activates a route.
-See [managed activation](managed-activation.md) for the subsequent readback and
-active legacy migration boundary. Transitions add or remove the separate stage
-workflow as needed.
+recognized. Both exact legacy and managed Issue recipes are recognized. For an
+adopted managed Linux installation, default/latest apply migrates its actual
+adopted consumers to native Issue dispatch. Explicit stable versions and other
+installations retain PR-only behavior. New `--managed-issue` requests report that
+the artifact route is retired; historical proposal metadata remains readable.
+Transitions add or remove the separate stage workflow as needed.
+
+Managed latest uses one verified source pair across all consumers. It compares
+the maintained execution repository and verified installed Core with the stable
+release, preserving the newer complete compatible pair. A current source target
+is identified separately from a CLI release. Diverged source pairs are reported
+without deployment; an older CLI's embedded sources cannot downgrade the host.
 Only a verified old managed file can be deleted. Missing pins, edited workflows,
 foreign files at reserved managed paths, symlinks and executable managed files
 are rejected before mutation. Unrelated tree entries remain unchanged.
@@ -67,9 +72,10 @@ current and target immutable sources, compatibility, exact added/modified/delete
 paths and replacement bytes. It also reports host-adoption obligations separately.
 Identical verified inputs yield the same plan ID and output. Preview performs no
 GitHub writes, filesystem/cache installation, Runner or service operation. A
-current installation returns `no_change`; even apply then makes no mutations.
+current repository returns `no_change`. Managed latest apply still completes
+any unfinished configuration, adoption, cleanup and lifecycle continuation.
 
-Explicit apply revalidates the repository, current permission, default branch,
+PR publication revalidates the repository, current permission, default branch,
 installed content and resolved target before each mutation. It creates only
 the bounded `nibfin/upgrade` branch and a proposed PR. Full resulting tree
 hashes, the commit's single base parent, branch and PR repository/head/base/state/
@@ -82,9 +88,37 @@ remain necessary. It is neither an installed upgrade nor host adoption. Core own
 separate trusted adoption and official-host coordination. This command does not
 stop a host or decide whether a delivery may continue.
 
+## Existing managed native migration
+
+Managed apply reuses the selected `gh auth login` through the shared private
+credential publisher. It discovers actual adopted consumers from Core-owned host
+bindings, independently of old notification configuration or journal receipts.
+Before publishing a native caller PR, it verifies the complete recognized old
+caller, member, repository and existing execution destination. It prepares the
+native credential without disabling the working artifact route. Credential
+metadata establishes configuration only, never token equality or validity.
+
+Repeat the same apply while proposals await normal review and merge. The existing
+upgrade publisher owns PR recovery and native rebase. Confirmed secret writes
+are reused; an unknown write re-enters its normal upsert, while a successful
+publication followed by failed metadata observation retries only the read.
+
+After main contains the verified native caller, apply refreshes its adoption
+through Core. A true Core source transition requires the supported host source
+upgrade; caller refresh does not deploy code. Only after every actual consumer
+is ready does CLI request Core's fixed notification retirement operation. Core
+decides which owned obsolete resources are removable. CLI then calls the same
+fixed lifecycle completion used by native init. Owner pauses remain authoritative.
+A pending continuation re-enters completion on retry without registering Runners
+or publishing completed work again. No timer or CLI Issue queue is introduced.
+
 ## Pending and unknown results
 
-Apply failures return exit 2 with a pending result and a bounded diagnostic.
+Unfinished apply returns exit 2 with a pending result and a safe diagnostic.
+Core administrator denial or an unsupported operation retains exit 1 and its
+specific code. Optional GitHub API diagnostics include only their kind and HTTP
+status, without response bodies or credential information. Management operations
+respect the command's cancellation and caller deadline without an added duration.
 Changed repository ownership, revoked permission, changed installed managed
 content or changed source intent remains pending with a specific cause. Repeat
 explicit apply after resolving that cause; preview remains read-only.
@@ -102,10 +136,10 @@ member and caller transport are permitted. Extra edits, altered modes, foreign
 reserved paths, ambiguous PRs and closed unmerged proposals require inspection;
 the CLI never overwrites or resets them.
 
-New proposal commits also record the verified target release and CLI/Core/Action
-source tuple. Native rebase preserves this metadata. Continuation compares it
-with the freshly verified target even when two CLI commits generate identical
-managed files. Legacy commits without that tuple are recoverable only when their
+New proposal commits record the verified release or maintained source target.
+Native rebase preserves this metadata. A matching verified maintained pair can
+reuse an original release proposal without rewriting its identity or publication.
+Legacy commits without a source tuple are recoverable only when their
 original plan binding can still be verified against the proposal parent or its
 authoritative ancestry. This preserves that source binding after a native rebase.
 Unavailable ancestry reads remain pending until observation succeeds; an obsolete

@@ -2,8 +2,6 @@ package cli
 
 import "errors"
 
-type installResultEncoder interface{ Encode(any) error }
-
 func publishManagedRoute(encoder installResultEncoder, plan InitPlan,
 	runners []sharedRegistration, ops managedHostOperations) error {
 	if plan.NativeManaged {

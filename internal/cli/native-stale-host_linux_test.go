@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -76,9 +77,39 @@ func TestNativeActualSourceTransitionKeepsTheUpgradeBoundary(t *testing.T) {
 	plan.NativeManaged = true
 	merge()
 	api := &nativeWakeAPI{fakeAPI: base}
-	old := Pins()
-	old.Core.Commit = strings.Repeat("d", 40)
-	oldPlan := historicalNativePlan(plan, old)
+	old := fixtureProducers(t, base, strings.Repeat("d", 40),
+		strings.Repeat("e", 40), 103, true, true)
+	current := Pins()
+	oldSource := "repos/" + old.Core.Repository + "/contents/"
+	for _, path := range []string{"src/shared-runner-contract.json", sharedRunnerWorkflow} {
+		base.data[oldSource+path+"?ref="+old.Core.Commit] =
+			base.data[oldSource+path+"?ref="+current.Core.Commit]
+	}
+	execution := plan.Repository
+	execution.ID, execution.FullName = 20, "example/execution"
+	plan.Execution = &SharedExecution{execution.FullName, execution.ID}
+	root := "repos/" + execution.FullName
+	base.data[root] = execution
+	head := strings.Repeat("c", 40)
+	base.data[root+"/git/ref/heads/main"] = map[string]any{
+		"ref": "refs/heads/main", "object": map[string]string{"sha": head}}
+	base.data[root+"/branches/main"] = map[string]any{
+		"name": "main", "protected": true, "commit": map[string]string{"sha": head}}
+	base.data[root+"/actions/workflows/shared-runner.yml"] = map[string]any{
+		"id": 42, "path": sharedRunnerWorkflow, "state": "active"}
+	base.data[root+"/contents/"+sharedRunnerWorkflow+"?ref="+head] =
+		encoded([]byte("runner"))
+	data, _ := json.Marshal(current)
+	base.data[root+"/contents/.nibfin/producer-pins.json?ref="+head] = encoded(data)
+	recipes, err := callerRecipes(api, old.Core)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPlan := plan
+	oldPlan.Sources, oldPlan.Files = &old, []Change{}
+	for path, text := range templatesForRecipe(old, plan.Member.ID, recipes, "issue") {
+		oldPlan.Files = append(oldPlan.Files, Change{path, text})
+	}
 	saveNativeFixtureIntent(t, managedInstallIntent{Plan: oldPlan, Pins: old})
 	for _, file := range oldPlan.Files {
 		base.data["repos/example/project/contents/"+file.Path+"?ref="+
@@ -88,7 +119,7 @@ func TestNativeActualSourceTransitionKeepsTheUpgradeBoundary(t *testing.T) {
 		t.Fatal("an actual source transition cannot silently install a root package")
 		return nil
 	}}
-	err := (App{API: api}).resumeManagedInit(context.Background(), plan, nil,
+	err = (App{API: api}).resumeManagedInit(context.Background(), plan, nil,
 		new(bytes.Buffer), ops)
 	if err == nil || !strings.Contains(err.Error(), "EXISTING_FILE_CONFLICT") ||
 		len(api.writes) != 0 || api.secretWrites != 0 {

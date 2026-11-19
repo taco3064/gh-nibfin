@@ -13,6 +13,7 @@ type Change struct {
 }
 
 type InitPlan struct {
+	Sources       *Producers       `json:"sources,omitempty"`
 	NativeManaged bool             `json:"native_managed,omitempty"`
 	Agent         *agentBinding    `json:"agent,omitempty"`
 	IssueRecipe   string           `json:"issue_recipe,omitempty"`
@@ -140,6 +141,8 @@ type InitResult struct {
 	ServiceTemplate string               `json:"shared_service_template,omitempty"`
 	WakeDestination string               `json:"shared_wake_destination,omitempty"`
 }
+
+type installResultEncoder interface{ Encode(any) error }
 
 func applyInit(api API, plan InitPlan) (InitResult, error) {
 	return applyInitWithPins(api, plan, Pins())

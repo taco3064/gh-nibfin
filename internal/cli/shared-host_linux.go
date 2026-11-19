@@ -89,7 +89,7 @@ func runSharedDeployment(
 	if err := requireRootOwnedHostPath(resolved); err != nil {
 		return nil, err
 	}
-	args := append([]string{"-I", "-c", sharedCoreDeploy}, values...)
+	args := append([]string{"-I", "-c", sharedDeploymentSource(values)}, values...)
 	return runSharedAdministrator(process, resolved, args, archive)
 }
 
@@ -214,6 +214,11 @@ func runSharedHostAdmin(
 func adoptInitialSharedHost(
 	process Process, plan InitPlan, runners []sharedRegistration,
 ) (*sharedHost, error) {
+	return adoptInitialSharedHostWithPins(process, plan, runners, Pins())
+}
+
+func adoptInitialSharedHostWithPins(process Process, plan InitPlan,
+	runners []sharedRegistration, pins Producers) (*sharedHost, error) {
 	const profile = "/etc/nibfin/shared-host-profile.json"
 	if _, err := os.Lstat(profile); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -224,7 +229,6 @@ func adoptInitialSharedHost(
 	if len(runners) != 2 {
 		return nil, errors.New("SHARED_HOST_REQUIRES_TWO_STAGED_RUNNERS")
 	}
-	pins := Pins()
 	input, err := json.Marshal(pins.Core)
 	if err != nil {
 		return nil, err

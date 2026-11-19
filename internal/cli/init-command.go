@@ -86,19 +86,13 @@ func (a App) runInit(args []string, out io.Writer) error {
 	}
 	_, native := a.Process.(NativeProcess)
 	recipe := "issue"
-	if native && nativeLinuxTarget() && *executionRepo != "" &&
-		host != nil && !*installService && !*prepareWake {
-		recipe = "issue-managed"
-	}
-	plan, err := planInitRecipe(a.API, *name, *executionRepo, recipe)
-	nativeManaged := native && defaultShared && !*installService && !*prepareWake
-	var routeError *CommandError
-	if native && host != nil && errors.As(err, &routeError) &&
-		routeError.Code == "MANAGED_CALLER_REQUIRES_EXPLICIT_UPGRADE" {
-		// A completed fresh native install is authoritative on continuation.
-		// Never migrate an artifact caller merely to resume initialization.
-		plan, err = planInitRecipe(a.API, *name, *executionRepo, "issue")
-		nativeManaged = err == nil
+	nativeManaged := native && nativeLinuxTarget() && *executionRepo != "" &&
+		!*installService && !*prepareWake && *runnerPath == "" && *runnerName == ""
+	var plan InitPlan
+	if nativeManaged && host != nil {
+		plan, err = planNativeHostInit(a.API, *name, *executionRepo, *host)
+	} else {
+		plan, err = planInitRecipe(a.API, *name, *executionRepo, recipe)
 	}
 	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {
 		// Avoid installing legacy callers on a fresh shared host. Those files
@@ -178,23 +172,18 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
+	if err := guardHandoff(); err != nil {
+		return err
+	}
+	managed := plan.NativeManaged && !*installService && !*prepareWake && runner == nil
+	if managed {
+		return a.runManagedInit(plan, *consentManaged, out)
+	}
 	unlock, err := lockSharedInit(plan)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if err := guardHandoff(); err != nil {
-		return err
-	}
-	managedPeer := host != nil && len(plan.Files) > 0
-	managedResume := native && nativeLinuxTarget() &&
-		managedIntentAvailable(plan.Repository)
-	managed := native && nativeLinuxTarget() && plan.Execution != nil &&
-		(defaultShared || managedPeer || managedResume || (*consentManaged && host != nil)) &&
-		!*installService && !*prepareWake && runner == nil
-	if managed {
-		return a.runManagedInit(plan, *consentManaged, out)
-	}
 	if *consentManaged {
 		return errors.New("MANAGED_INSTALL_OPTIONS_CONFLICT")
 	}

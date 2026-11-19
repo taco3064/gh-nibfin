@@ -25,6 +25,7 @@ type upgradeChange struct {
 
 type upgradePlan struct {
 	ManagedIssue  bool            `json:"managed_issue_proposal,omitempty"`
+	DesiredRecipe string          `json:"desired_issue_recipe,omitempty"`
 	Branch        string          `json:"branch"`
 	Repository    Repository      `json:"repository"`
 	Base          string          `json:"base"`
@@ -37,6 +38,8 @@ type upgradePlan struct {
 	HostAdoption  string          `json:"host_adoption"`
 	ID            string          `json:"id"`
 	entries       map[string]upgradeEntry
+	issueRecipe   string
+	frozenTarget  bool
 }
 
 var memberBindingPattern = regexp.MustCompile(`nibfin-user-([1-9][0-9]{0,15})`)
@@ -49,9 +52,62 @@ func planUpgrade(api API, name, version string, managed ...bool) (upgradePlan, e
 // A retained proposal is checked against the verified installation at its parent.
 func planUpgradeAt(api API, name, version string, managed bool,
 	revision string) (upgradePlan, error) {
+	return planUpgradeRecipeAt(api, name, version, managed, "", revision)
+}
+
+func planNativeUpgrade(api API, name, version string) (upgradePlan, error) {
+	current, err := planUpgrade(api, name, version)
+	if err != nil || current.issueRecipe == "issue" {
+		// Native-to-native upgrade keeps historical proposal identity, including
+		// legacy PRs whose original message contains only its plan ID.
+		return current, err
+	}
+	plan, err := planUpgradeSourceAt(api, name, version, false, "issue", "", &current.Target)
+	// Public PR-only upgrades retain their original release revalidation policy.
+	plan.frozenTarget = false
+	return plan, err
+}
+
+func replanUpgrade(api API, plan upgradePlan, version,
+	revision string) (upgradePlan, error) {
+	if !plan.frozenTarget {
+		return planUpgradeRecipeAt(api, plan.Repository.FullName, version,
+			plan.ManagedIssue, plan.DesiredRecipe, revision)
+	}
+	return planUpgradeSourceAt(api, plan.Repository.FullName, version,
+		plan.ManagedIssue, plan.DesiredRecipe, revision, &plan.Target)
+}
+
+func planUpgradeRecipeAt(api API, name, version string, managed bool,
+	desired, revision string) (upgradePlan, error) {
+	return planUpgradeSourceAt(api, name, version, managed, desired, revision, nil)
+}
+
+func planNativeUpgradeTarget(api API, name, version string,
+	target upgradeSource) (upgradePlan, error) {
+	current, err := planUpgradeSourceAt(api, name, version, false, "", "", &target)
+	if err != nil || current.issueRecipe == "issue" {
+		return current, err
+	}
+	return planUpgradeSourceAt(api, name, version, false, "issue", "", &target)
+}
+
+func planUpgradeSourceAt(api API, name, version string, managed bool,
+	desired, revision string, selected *upgradeSource) (upgradePlan, error) {
 	plan := upgradePlan{Branch: upgradeBranchName, Changes: []upgradeChange{},
 		HostAdoption: hostUpgradeObligation}
 	plan.ManagedIssue = managed
+	plan.DesiredRecipe = desired
+	plan.frozenTarget = selected != nil
+	if selected != nil && (selected.Kind != "" && selected.Kind != "installed-current" ||
+		selected.Kind == "installed-current" && (selected.Execution == nil ||
+			!repoPattern.MatchString(selected.Execution.Repository) ||
+			selected.Execution.RepositoryID <= 0)) {
+		return plan, errors.New("NATIVE_MIGRATION_TARGET_AUTHORITY_INVALID")
+	}
+	if desired != "" && desired != "issue" {
+		return plan, errors.New("UNSUPPORTED_UPGRADE_ISSUE_RECIPE")
+	}
 	repo, _, err := repository(api, name, false)
 	if err != nil {
 		return plan, err
@@ -94,7 +150,11 @@ func planUpgradeAt(api API, name, version string, managed bool,
 	if decodeUpgradePins([]byte(pins), &plan.Current) != nil {
 		return plan, errors.New("INVALID_INSTALLED_PRODUCERS")
 	}
-	recipes, err := upgradeRecipes(api, plan.Current)
+	readRecipes := upgradeRecipes
+	if selected != nil && (selected.Kind == "installed-current" || selected.maintained) {
+		readRecipes = maintainedUpgradeRecipes
+	}
+	recipes, err := readRecipes(api, plan.Current)
 	if err != nil {
 		return plan, err
 	}
@@ -118,6 +178,7 @@ func planUpgradeAt(api API, name, version string, managed bool,
 	if recipe == "" {
 		return plan, errors.New("INSTALLED_ISSUE_CALLER_NOT_RECOGNIZED")
 	}
+	plan.issueRecipe = recipe
 	old := templatesForRecipe(plan.Current, plan.MemberID, recipes, recipe)
 	for path, expected := range old {
 		observed, err := installedUpgradeFile(api, plan, path)
@@ -128,7 +189,12 @@ func planUpgradeAt(api API, name, version string, managed bool,
 			return plan, fmt.Errorf("INSTALLED_MANAGED_FILE_CHANGED: %s", path)
 		}
 	}
-	plan.Target, err = resolveUpgrade(api, version)
+	if selected == nil {
+		plan.Target, err = resolveUpgrade(api, version)
+	} else {
+		plan.Target = *selected
+		plan.Target.recipes, err = readRecipes(api, selected.Producers)
+	}
 	if err != nil {
 		return plan, err
 	}
@@ -140,6 +206,9 @@ func planUpgradeAt(api API, name, version string, managed bool,
 			return plan, err
 		}
 		recipe = "issue-managed"
+	}
+	if plan.DesiredRecipe != "" {
+		recipe = plan.DesiredRecipe
 	}
 	if len(plan.Target.recipes[recipe]) == 0 {
 		return plan, errors.New("TARGET_ISSUE_RECIPE_UNSUPPORTED")
@@ -163,6 +232,11 @@ func planUpgradeAt(api API, name, version string, managed bool,
 	for _, path := range ordered {
 		before, installed := old[path]
 		after, wanted := next[path]
+		if selected != nil && selected.Kind == "installed-current" && installed &&
+			path == ".nibfin/producer-pins.json" &&
+			installedProducerSourcesMatch([]byte(before), selected.Producers) {
+			after = before
+		}
 		if !installed {
 			if _, exists := plan.entries[path]; exists {
 				return plan, fmt.Errorf("UNRECOGNIZED_MANAGED_PATH: %s", path)
@@ -216,7 +290,7 @@ func revalidateUpgrade(api API, plan upgradePlan, version string) error {
 	if ref.Ref != "refs/heads/"+repo.DefaultBranch || ref.Object.SHA != plan.Base {
 		return errors.New("UPGRADE_BASE_CHANGED_PREVIEW_AGAIN")
 	}
-	current, err := planUpgrade(api, plan.Repository.FullName, version, plan.ManagedIssue)
+	current, err := replanUpgrade(api, plan, version, "")
 	if err != nil {
 		return err
 	}

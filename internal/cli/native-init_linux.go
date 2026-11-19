@@ -15,8 +15,7 @@ func (a App) resumeNativeManagedInit(ctx context.Context, plan InitPlan, token [
 	if plan.Execution == nil || initIssueRecipe(plan) != "issue" {
 		return errors.New("NATIVE_WAKE_PLAN_REQUIRED")
 	}
-	current, err := planInitRecipe(a.API, plan.Repository.FullName,
-		plan.Execution.Repository, "issue")
+	current, err := refreshNativeInitPlan(a.API, plan)
 	if err != nil {
 		return err
 	}
@@ -41,7 +40,7 @@ func (a App) resumeNativeManagedInit(ctx context.Context, plan InitPlan, token [
 	if !intent.Plan.NativeManaged || initIssueRecipe(intent.Plan) != "issue" {
 		return errors.New("NATIVE_WAKE_EXISTING_INSTALL_REQUIRES_MIGRATION")
 	}
-	if !managedIntentUsesCurrentProducers(intent) {
+	if !sameProducerSources(intent.Pins, managedPlanProducers(current)) {
 		return a.resumeStaleNativeIntent(ctx, current, token, out, ops, path, intent)
 	}
 	return a.continueNativeManagedInit(ctx, current, token, out, ops, path, intent)
@@ -80,8 +79,7 @@ func (a App) continueNativeManagedInit(ctx context.Context, current InitPlan,
 		}); err != nil {
 			return err
 		}
-		current, err = planInitRecipe(a.API, plan.Repository.FullName,
-			plan.Execution.Repository, "issue")
+		current, err = refreshNativeInitPlan(a.API, plan)
 		if err != nil || len(current.Files) != 0 ||
 			current.Repository.ID != plan.Repository.ID || current.Member.ID != plan.Member.ID ||
 			!sameSharedExecution(current.Execution, plan.Execution) {
@@ -101,25 +99,6 @@ func (a App) continueNativeManagedInit(ctx context.Context, current InitPlan,
 		}
 	}
 	return a.finishVerifiedManagedInit(ctx, current, token, encoder, ops)
-}
-
-type nativeContinuation struct {
-	Status  string            `json:"status"`
-	Results []json.RawMessage `json:"results"`
-	Code    string            `json:"code,omitempty"`
-}
-
-func decodeNativeContinuation(data []byte, err error) (nativeContinuation, error) {
-	var result nativeContinuation
-	if json.Unmarshal(data, &result) != nil || result.Results == nil ||
-		(result.Status != "dispatched" && result.Status != "paused" &&
-			result.Status != "pending") ||
-		(result.Status == "pending" && (err == nil ||
-			err.Error() != "CORE_PENDING_RESULT")) ||
-		(result.Status != "pending" && err != nil) {
-		return result, errors.New("NATIVE_CONTINUATION_REQUIRES_READBACK")
-	}
-	return result, nil
 }
 
 func (a App) activateNativeManagedRoute(plan InitPlan,

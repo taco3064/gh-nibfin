@@ -158,10 +158,12 @@ func (a App) managedHostOperations() managedHostOperations {
 		},
 		register: a.registerInitSharedSlots,
 		adopt: func(plan InitPlan, slots []sharedRegistration) (*sharedHost, error) {
-			return adoptInitialSharedHost(a.Process, plan, slots)
+			return adoptInitialSharedHostWithPins(a.Process, plan, slots,
+				managedPlanProducers(plan))
 		},
 		adoptPeer: func(host sharedHost, plan InitPlan) error {
-			return adoptSharedPeer(a.Process, host, plan)
+			return adoptSharedPeerWithAction(a.Process, host, plan,
+				managedPlanProducers(plan).Action.Commit)
 		},
 		staged: a.readStagedSharedSlots,
 		start: func(paths []string) error {

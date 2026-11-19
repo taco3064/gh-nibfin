@@ -21,8 +21,7 @@ func verifyLegacyUpgradeBinding(api API, parent upgradePlan, version,
 		candidate := parent
 		var err error
 		if revision != parent.Base {
-			candidate, err = planUpgradeAt(api, parent.Repository.FullName, version,
-				parent.ManagedIssue, revision)
+			candidate, err = replanUpgrade(api, parent, version, revision)
 		}
 		// A side ancestry may predate installation or carry a different intent.
 		// Only a matching original plan proves the binding; other candidates

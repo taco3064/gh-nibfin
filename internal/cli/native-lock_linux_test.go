@@ -51,13 +51,9 @@ func TestNativeCompletedPRContinuesInsideTheOriginalLock(t *testing.T) {
 		saveNativeFixtureIntent(t, managedInstallIntent{
 			Plan: historicalNativePlan(plan, old), Pins: old, Native: state,
 			PR: 7, Head: strings.Repeat("b", 40)})
-		discoveries, continuations := 0, 0
+		continuations := 0
 		ops := managedHostOperations{
 			discover: func() (*sharedHost, error) {
-				discoveries++
-				if discoveries == 1 {
-					return nil, nil
-				}
 				return host, nil
 			},
 			cleanup: func(InitPlan, []sharedRegistration) error { return nil },
@@ -73,10 +69,10 @@ func TestNativeCompletedPRContinuesInsideTheOriginalLock(t *testing.T) {
 		}
 		err := (App{API: api}).resumeManagedInit(context.Background(), plan, nil,
 			new(bytes.Buffer), ops)
-		if (err != nil) != fail || continuations != 1 || discoveries < 3 ||
+		if (err != nil) != fail || continuations != 1 ||
 			api.secretWrites != 0 || len(api.writes) != 0 {
 			t.Fatal("completed PR did not continue inside the admitted operation", err,
-				discoveries, continuations)
+				continuations)
 		}
 		assertNativeInstallLockReleased(t, plan)
 	}

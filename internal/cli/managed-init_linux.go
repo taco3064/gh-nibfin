@@ -136,7 +136,7 @@ func loadManagedIntent(path string, plan InitPlan) (managedInstallIntent, error)
 		return intent, err
 	}
 	if !present {
-		intent = managedInstallIntent{Plan: plan, Pins: Pins()}
+		intent = managedInstallIntent{Plan: plan, Pins: managedPlanProducers(plan)}
 		if len(plan.Files) == 0 && !plan.NativeManaged {
 			return intent, errors.New("MANAGED_INSTALL_ORIGINAL_PR_INTENT_REQUIRED")
 		}
@@ -169,9 +169,7 @@ type onboardingProcess struct {
 }
 
 func (p onboardingProcess) Run(name string, args []string, input []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(p.ctx, 50*time.Minute)
-	defer cancel()
-	return p.process.RunContext(ctx, name, args, input)
+	return p.process.RunContext(p.ctx, name, args, input)
 }
 
 func codexCredentialEnvelope(token []byte) ([]byte, error) {
@@ -230,6 +228,57 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 	defer clear(api.token)
 	a.API = api
 	a.Process = onboardingProcess{ctx: ctx, process: NativeProcess{}}
+	if plan.NativeManaged {
+		host, err := discoverSharedHost(a.Process)
+		if err != nil {
+			return err
+		}
+		if host != nil && host.adoptionStatus(plan.Repository.ID) == "observed" &&
+			len(plan.Files) == 0 {
+			return a.continueNativeUpgrade(*host, "latest", out)
+		}
+	}
+	if plan.NativeManaged {
+		err := nativeInitLifecycle(nativeInitOperations{
+			prepare: func() error { return a.prepareCoreMaintenance(managedPlanProducers(plan)) },
+			lock:    func() (func(), error) { return lockSharedInit(plan) },
+			resume: func() error {
+				return a.resumeManagedInit(ctx, plan, api.token, out, a.managedHostOperations())
+			},
+			verify: func() error {
+				current, err := refreshNativeInitPlan(a.API, plan)
+				if err != nil || len(current.Files) != 0 {
+					return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
+				}
+				_, _, err = readNativeInstallation(a.API, current,
+					func() (*sharedHost, error) { return discoverSharedHost(a.Process) })
+				return err
+			},
+			finish: func() error {
+				output, callErr := runInstalledSharedAdmin(rebuildResultProcess(a.Process), nil,
+					"complete-installed-lifecycle")
+				continuation, err := decodeNativeContinuation(output, callErr)
+				if err != nil {
+					return err
+				}
+				if err := json.NewEncoder(out).Encode(map[string]any{
+					"status": "maintenance_ready", "continuation": continuation}); err != nil {
+					return err
+				}
+				if continuation.Status == "pending" {
+					return &CommandError{Code: "NATIVE_CONTINUATION_PENDING", Exit: 2}
+				}
+				return nil
+			},
+		})
+		encodeCoreOperationFailure(json.NewEncoder(out), err)
+		return err
+	}
+	unlock, err := lockSharedInit(plan)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return a.resumeManagedInit(ctx, plan, api.token, out, a.managedHostOperations())
 }
 
