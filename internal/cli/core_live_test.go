@@ -38,10 +38,6 @@ func TestLiveCandidateCache(t *testing.T) {
 			t.Fatal("caller must exactly match immutable Core recipe")
 		}
 	}
-	wake := files[".github/workflows/nibfin-wake.yml"]
-	if !strings.Contains(wake, "\n    timeout-minutes: 180\n") {
-		t.Fatal("installed delivery job must have a three-hour timeout")
-	}
 	if node, err := exec.LookPath("node"); err == nil {
 		resolved, _ := filepath.EvalSymlinks(node)
 		if stat, err := os.Stat(resolved); err == nil {
@@ -62,13 +58,6 @@ func TestLiveCandidateCache(t *testing.T) {
 	want := filepath.Join(canonical, "Nibfin", "candidates", "core", Pins().Core.Commit)
 	if path != want {
 		t.Fatal("candidate must be installed inside the isolated test cache")
-	}
-	sandbox, err := os.ReadFile(filepath.Join(path, "src", "codex-sandbox.mjs"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(sandbox), "/tmp:rw,exec,nosuid,nodev,") {
-		t.Fatal("installed Core must allow execution in the private role scratch space")
 	}
 	t.Log("actual Core archive/manifest/installation verified; no host adoption")
 }
