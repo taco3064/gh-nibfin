@@ -110,14 +110,7 @@ func TestUpgradeUnknownEffectsReadBackBeforeRetry(t *testing.T) {
 		// Once the exact effect is visible, reconciliation can continue safely.
 		f.denyRead = ""
 		result, err = applyUpgrade(f, plan, "latest")
-		if effect == "/git/refs" {
-			if err == nil || !strings.Contains(err.Error(), "PR_UNKNOWN") {
-				t.Fatal(err)
-			}
-			if len(f.writes) != count {
-				t.Fatal("existing branch cannot authorize a PR replay")
-			}
-		} else if err != nil || result.PR == "" {
+		if err != nil || result.PR == "" {
 			t.Fatal(effect, result, err)
 		}
 		counts := map[string]int{}
@@ -211,41 +204,26 @@ func TestUpgradeConflictingBranchesAndPRsNeverAuthorizeReplay(t *testing.T) {
 	}
 }
 
-func TestUpgradeChangedBaseOrTargetCannotReplayPriorProposal(t *testing.T) {
-	for _, kind := range []string{"base", "target"} {
-		f := upgradeFixture(t, false, true)
-		plan := fixtureUpgradePlan(t, f)
-		if _, err := applyUpgrade(f, plan, "latest"); err != nil {
-			t.Fatal(err)
-		}
-		writes := len(f.writes)
-		if kind == "base" {
-			next := strings.Repeat("b", 40)
-			commit := f.data[upgradeRepo+"/git/commits/"+plan.Base].(upgradeCommit)
-			commit.SHA = next
-			f.data[upgradeRepo+"/git/commits/"+next] = commit
-			ref := reference{Ref: "refs/heads/main"}
-			ref.Object.SHA = next
-			f.data[upgradeRepo+"/git/ref/heads/main"] = ref
-			for path, text := range f.installed {
-				f.data[upgradeRepo+"/contents/"+path+"?ref="+next] = encoded([]byte(text))
-			}
-		} else {
-			pins := fixtureProducers(t, f.fakeAPI, strings.Repeat("6", 40),
-				strings.Repeat("7", 40), 103, true)
-			setFixtureTarget(f, pins)
-		}
-		current, err := planUpgrade(f, "example/project", "latest")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := applyUpgrade(f, current, "latest"); err == nil ||
-			!strings.Contains(err.Error(), "BRANCH_CONFLICT") {
-			t.Fatal(kind, err)
-		}
-		if len(f.writes) != writes {
-			t.Fatal("replayed prior unresolved proposal", f.writes)
-		}
+func TestUpgradeChangedTargetCannotReplayPriorProposal(t *testing.T) {
+	f := upgradeFixture(t, false, true)
+	plan := fixtureUpgradePlan(t, f)
+	if _, err := applyUpgrade(f, plan, "latest"); err != nil {
+		t.Fatal(err)
+	}
+	writes := len(f.writes)
+	pins := fixtureProducers(t, f.fakeAPI, strings.Repeat("6", 40),
+		strings.Repeat("7", 40), 103, true)
+	setFixtureTarget(f, pins)
+	current, err := planUpgrade(f, "example/project", "latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyUpgrade(f, current, "latest"); err == nil ||
+		!strings.Contains(err.Error(), "BRANCH_CONFLICT") {
+		t.Fatal(err)
+	}
+	if len(f.writes) != writes {
+		t.Fatal("replayed prior unresolved proposal", f.writes)
 	}
 }
 

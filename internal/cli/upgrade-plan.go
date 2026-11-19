@@ -42,9 +42,16 @@ type upgradePlan struct {
 var memberBindingPattern = regexp.MustCompile(`nibfin-user-([1-9][0-9]{0,15})`)
 
 func planUpgrade(api API, name, version string, managed ...bool) (upgradePlan, error) {
+	managedIssue := len(managed) != 0 && managed[0]
+	return planUpgradeAt(api, name, version, managedIssue, "")
+}
+
+// A retained proposal is checked against the verified installation at its parent.
+func planUpgradeAt(api API, name, version string, managed bool,
+	revision string) (upgradePlan, error) {
 	plan := upgradePlan{Branch: upgradeBranchName, Changes: []upgradeChange{},
 		HostAdoption: hostUpgradeObligation}
-	plan.ManagedIssue = len(managed) != 0 && managed[0]
+	plan.ManagedIssue = managed
 	repo, _, err := repository(api, name, false)
 	if err != nil {
 		return plan, err
@@ -64,6 +71,9 @@ func planUpgrade(api API, name, version string, managed ...bool) (upgradePlan, e
 		return plan, errors.New("TARGET_HEAD_UNAVAILABLE")
 	}
 	plan.Base = ref.Object.SHA
+	if revision != "" {
+		plan.Base = revision
+	}
 	var commit upgradeCommit
 	if err := api.Call("GET", base+"/git/commits/"+plan.Base,
 		nil, &commit); err != nil {

@@ -23,6 +23,8 @@ type upgradeAPI struct {
 	target         Producers
 	installed      map[string]string
 	baseEntries    map[string]upgradeEntry
+	refuseWrite    string
+	rebaseResult   string
 	lost           string
 	denyRead       string
 	denyAfterWrite string
@@ -42,10 +44,17 @@ func (f *upgradeAPI) Call(method, path string, input, output any) error {
 	if f.beforeWrite != nil {
 		f.beforeWrite(path)
 	}
+	if path == f.refuseWrite {
+		return errors.New("WRITE_NOT_STARTED")
+	}
 	if method != "POST" {
 		return errors.New("UNEXPECTED_MUTATION")
 	}
 	switch path {
+	case "graphql":
+		if err := f.nativeRebase(input, output); err != nil {
+			return err
+		}
 	case upgradeRepo + "/git/trees":
 		body := input.(map[string]any)
 		old := f.data[upgradeRepo+"/git/trees/"+
@@ -100,7 +109,7 @@ func (f *upgradeAPI) Call(method, path string, input, output any) error {
 		f.data[key] = ref
 	case upgradeRepo + "/pulls":
 		body := input.(map[string]any)
-		pull := upgradePull{Number: 9, State: "open",
+		pull := upgradePull{Number: 9, NodeID: "PR_fixture9", State: "open",
 			URL: "https://github.com/example/project/pull/9", Body: body["body"].(string)}
 		pull.Head.Ref = body["head"].(string)
 		ref := f.data[upgradeRepo+"/git/ref/heads/"+

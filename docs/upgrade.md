@@ -70,7 +70,7 @@ GitHub writes, filesystem/cache installation, Runner or service operation. A
 current installation returns `no_change`; even apply then makes no mutations.
 
 Explicit apply revalidates the repository, current permission, default branch,
-base, installed content and resolved target before each mutation. It creates only
+installed content and resolved target before each mutation. It creates only
 the bounded `nibfin/upgrade` branch and a proposed PR. Full resulting tree
 hashes, the commit's single base parent, branch and PR repository/head/base/state/
 URL/body are read back. It never updates main, force-pushes, merges, changes
@@ -85,26 +85,56 @@ stop a host or decide whether a delivery may continue.
 ## Pending and unknown results
 
 Apply failures return exit 2 with a pending result and a bounded diagnostic.
-A changed repository, permission, base, installed content or source resolution
-requires a fresh preview. If main advances after branch creation, the existing
-branch is retained for inspection; the command reports the base change and does
-not claim an installed upgrade or silently retarget the branch.
+Changed repository ownership, revoked permission, changed installed managed
+content or changed source intent remains pending with a specific cause. Repeat
+explicit apply after resolving that cause; preview remains read-only.
 
 Trees and commits have deterministic Git object identities, including explicit
-fixed commit metadata, so lost responses can be read back by the expected ID.
-Unknown read-back stops further mutations. Existing branches are reused only
-when their exact immutable commit matches the plan. A single reserved branch also
-prevents a changed base or target from replaying an unresolved earlier proposal.
-After merging, reconcile or remove the old branch through normal repository
-operations before proposing another upgrade; the CLI never resets it. Matching
-open PRs are read back rather than recreated. Conflicting, multiple, closed or foreign PRs stop.
+fixed commit metadata, so lost creation responses can be read back by expected ID.
+A failed, denied or incomplete observation stops further writes. No local receipt
+or original write response is needed to continue.
 
-An existing branch with no visible PR remains pending: a previous PR response
-might have been lost. Repeating apply does not authorize another PR creation.
-Inspect the named branch and all PR states through GitHub, establish the actual
-effect, and reconcile under your repository's normal review process. The CLI does
-not delete branches or reset unknown effects for you. Never resolve an unknown
-result by force-pushing or weakening protection.
+Repeated explicit apply reads the reserved branch, all relevant PR states and
+individual PR details. It corroborates CLI proposal metadata with repository and
+branch identities, the commit's single parent and the complete verified tree.
+Only the managed changes reconstructed from verified sources and the original
+member and caller transport are permitted. Extra edits, altered modes, foreign
+reserved paths, ambiguous PRs and closed unmerged proposals require inspection;
+the CLI never overwrites or resets them.
+
+New proposal commits also record the verified target release and CLI/Core/Action
+source tuple. Native rebase preserves this metadata. Continuation compares it
+with the freshly verified target even when two CLI commits generate identical
+managed files. Legacy commits without that tuple are recoverable only when their
+original plan binding can still be verified against the proposal parent or its
+authoritative ancestry. This preserves that source binding after a native rebase.
+Unavailable ancestry reads remain pending until observation succeeds; an obsolete
+plan ID is never replaced with an assumption about today's target release.
+
+Ordinary default-branch advancement is recoverable. For an open verified proposal,
+the CLI uses GitHub's native PR-branch rebase with `REBASE` and the observed
+`expectedHeadOid` guard on the same PR. It then reads back the branch, PR, ancestry,
+full managed result and current authorization and source binding. Unrelated main
+changes are preserved. A mutation response alone is not proof of completion.
+Conflicts or competing edits stay pending with their cause; resolve conflicts
+through the repository's normal process before repeating explicit apply.
+
+After a lost rebase response, confirmed current results are reused without another
+mutation. Successful reads that show unfinished work allow the next explicit
+apply to re-enter the normal guarded operation. Unavailable observations remain
+pending until they can be read successfully; no background polling is added.
+
+If complete successful reads confirm that a verified unfinished branch has no PR,
+explicit apply performs ordinary PR publication. It reads all relevant PR state
+again after publication, including after a lost response, and reuses a uniquely
+confirmed matching PR. A retained branch behind main can first be published and
+then rebased through the same guarded native route. Failed or malformed listings
+never establish absence or authorize a blind write replay.
+
+Once the verified installation is current, apply returns `no_change` without
+mutations even if the old branch remains. Before proposing a different upgrade,
+reconcile or remove that branch through normal repository operations. The CLI
+never resets it, merges a PR, or weakens protections to recover an unknown effect.
 
 Controlled tests cover Personal/Organization permissions, source integrity,
 layout changes, races, lost responses and isolation. They do not certify live
