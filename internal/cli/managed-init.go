@@ -9,10 +9,11 @@ import (
 )
 
 type managedInstallIntent struct {
-	Plan InitPlan  `json:"plan"`
-	Pins Producers `json:"pins"`
-	PR   int       `json:"pull_request,omitempty"`
-	Head string    `json:"pull_head,omitempty"`
+	Native *nativeWakeSetup `json:"native_wake,omitempty"`
+	Plan   InitPlan         `json:"plan"`
+	Pins   Producers        `json:"pins"`
+	PR     int              `json:"pull_request,omitempty"`
+	Head   string           `json:"pull_head,omitempty"`
 }
 
 type observedInstallPR struct {
@@ -79,7 +80,8 @@ func verifyInstallPR(api API, x *managedInstallIntent, pr observedInstallPR) err
 	}
 	for _, file := range plan.Files {
 		data, _, err := content(api, plan.Repository.FullName, file.Path, ref)
-		if err != nil || string(data) != file.Content {
+		if err != nil || !initFileMatches(file.Path, file.Content, data, x.Pins,
+			x.Plan.NativeManaged) {
 			return errors.New("MANAGED_INSTALL_WORKFLOW_READBACK_MISMATCH")
 		}
 	}
@@ -93,7 +95,11 @@ func waitManagedInstall(ctx context.Context, api API, x *managedInstallIntent,
 		return err
 	}
 	if pr.Number == 0 {
-		if _, err := applyInit(api, x.Plan); err != nil {
+		pins := Pins()
+		if x.Plan.NativeManaged {
+			pins = x.Pins
+		}
+		if _, err := applyInitWithPins(api, x.Plan, pins); err != nil {
 			return err
 		}
 		pr, err = observeInstallIntent(api, x)

@@ -45,6 +45,16 @@ func Pins() Producers {
 	return pins
 }
 
+func sameProducerSources(left, right Producers) bool {
+	return left.Core == right.Core && left.Action == right.Action
+}
+
+func installedProducerSourcesMatch(data []byte, current Producers) bool {
+	var installed Producers
+	return decodeUpgradePins(data, &installed) == nil &&
+		sameProducerSources(installed, current)
+}
+
 type Content struct {
 	Type     string `json:"type"`
 	Encoding string `json:"encoding"`
@@ -73,7 +83,7 @@ func content(api API, repo, path, ref string) ([]byte, string, error) {
 	return data, file.SHA, nil
 }
 
-func verifyProducers(api API, pins Producers) error {
+func validateProducerPins(pins Producers) error {
 	if !digestPattern.MatchString(pins.Core.ArchiveHash) ||
 		!digestPattern.MatchString(pins.Core.ManifestHash) || pins.Artifact.ID <= 0 ||
 		!strings.HasPrefix(pins.Artifact.Digest, "sha256:") ||
@@ -84,6 +94,15 @@ func verifyProducers(api API, pins Producers) error {
 		if !repoPattern.MatchString(pin.Repository) || !commitPattern.MatchString(pin.Commit) {
 			return errors.New("INVALID_PRODUCER_PIN")
 		}
+	}
+	return nil
+}
+
+func verifyProducers(api API, pins Producers) error {
+	if err := validateProducerPins(pins); err != nil {
+		return err
+	}
+	for _, pin := range []SourcePin{pins.Core, pins.Action} {
 		var repo Repository
 		if err := api.Call("GET", "repos/"+pin.Repository, nil, &repo); err != nil {
 			return err

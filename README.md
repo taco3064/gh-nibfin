@@ -53,10 +53,12 @@ are refused by init; use the verified upgrade command below. An existing
 installation branch is reported for inspection rather than blindly overwritten.
 After authorized PR merge, unchanged initialization reads back without new writes.
 
-With a compatible Core pin on Linux x64, plain init selects Core's managed
-Issue caller and plans two shared Runner slots. After verified PR merge, the
-managed path configures the installed notification relay and reports routing
-readback separately from actual dispatch observation. See
+With a compatible Core source on Linux, fresh managed init selects Core's native
+Issue caller and plans two shared Runner slots. It prepares the authorized
+destination and encrypted Actions credential from the selected GitHub CLI login
+before publishing the installation PR. After merge and host readiness, it enables
+the native route and requests Core lifecycle completion. No notification timer
+is installed. Configuration and continuation remain separate results. See
 [managed activation and recovery](docs/managed-activation.md). The explicit
 service and Wake options below retain their manual setup behavior.
 

@@ -13,14 +13,15 @@ type Change struct {
 }
 
 type InitPlan struct {
-	Agent       *agentBinding    `json:"agent,omitempty"`
-	IssueRecipe string           `json:"issue_recipe,omitempty"`
-	Repository  Repository       `json:"repository"`
-	Member      User             `json:"member"`
-	Head        string           `json:"head"`
-	Files       []Change         `json:"files"`
-	Labels      []string         `json:"labels"`
-	Execution   *SharedExecution `json:"shared_execution,omitempty"`
+	NativeManaged bool             `json:"native_managed,omitempty"`
+	Agent         *agentBinding    `json:"agent,omitempty"`
+	IssueRecipe   string           `json:"issue_recipe,omitempty"`
+	Repository    Repository       `json:"repository"`
+	Member        User             `json:"member"`
+	Head          string           `json:"head"`
+	Files         []Change         `json:"files"`
+	Labels        []string         `json:"labels"`
+	Execution     *SharedExecution `json:"shared_execution,omitempty"`
 }
 
 type reference struct {
@@ -39,13 +40,17 @@ func planInitWithExecution(api API, name, execution string) (InitPlan, error) {
 }
 
 func planInitRecipe(api API, name, execution, recipe string) (InitPlan, error) {
+	return planInitRecipeWithPins(api, name, execution, recipe, Pins())
+}
+
+func planInitRecipeWithPins(api API, name, execution, recipe string,
+	pins Producers) (InitPlan, error) {
 	repo, user, err := repository(api, name, false)
 	plan := InitPlan{Repository: repo, Member: user, Files: []Change{}, Labels: []string{}}
 	if err != nil {
 		return plan, err
 	}
 	plan.IssueRecipe = recipe
-	pins := Pins()
 	if err := verifyProducers(api, pins); err != nil {
 		return plan, err
 	}
@@ -85,7 +90,8 @@ func planInitRecipe(api API, name, execution, recipe string) (InitPlan, error) {
 			return plan, err
 		}
 		if err == nil {
-			if string(data) != files[path] {
+			if !initFileMatches(path, files[path], data, pins,
+				recipe == "issue" && execution != "") {
 				if path == managedIssueWorkflow && recipe == "issue-managed" &&
 					recognizeIssueRecipe(pins, user.ID, recipes, string(data)) == "issue" {
 					return plan, &CommandError{
@@ -114,6 +120,14 @@ func planInitRecipe(api API, name, execution, recipe string) (InitPlan, error) {
 	return plan, nil
 }
 
+func initFileMatches(path, expected string, actual []byte, pins Producers,
+	native bool) bool {
+	// Artifact locators are retrieval metadata, not installed source. Preserve
+	// actual Core/Action integrity and caller bindings while allowing new fetches.
+	return string(actual) == expected || native && path == ".nibfin/producer-pins.json" &&
+		installedProducerSourcesMatch(actual, pins)
+}
+
 type InitResult struct {
 	Status          string               `json:"status"`
 	Code            string               `json:"code"`
@@ -128,13 +142,17 @@ type InitResult struct {
 }
 
 func applyInit(api API, plan InitPlan) (InitResult, error) {
+	return applyInitWithPins(api, plan, Pins())
+}
+
+func applyInitWithPins(api API, plan InitPlan, pins Producers) (InitResult, error) {
 	result := InitResult{Status: "pending", Code: "INSTALLATION_INCOMPLETE"}
 	execution := ""
 	if plan.Execution != nil {
 		execution = plan.Execution.Repository
 	}
-	current, err := planInitRecipe(api, plan.Repository.FullName, execution,
-		initIssueRecipe(plan))
+	current, err := planInitRecipeWithPins(api, plan.Repository.FullName, execution,
+		initIssueRecipe(plan), pins)
 	if err != nil {
 		return result, err
 	}
