@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -20,21 +19,14 @@ type selectedGitHub struct {
 	scopes string
 }
 
-func selectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
+func readSelectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
 	path, err := toolPath("gh")
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, path, "auth", "token", "--hostname",
 		"github.com", "--user", user.Login)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "GH_PROMPT_DISABLED=1",
-		"GH_NO_UPDATE_NOTIFIER=1", "GH_NO_EXTENSION_UPDATE_NOTIFIER=1"}
-	for _, name := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR",
-		"DBUS_SESSION_BUS_ADDRESS", "GH_CONFIG_DIR", "GNUPGHOME"} {
-		if value, ok := os.LookupEnv(name); ok {
-			cmd.Env = append(cmd.Env, name+"="+value)
-		}
-	}
+	cmd.Env = selectedGhEnvironment(nil)
 	var out boundedBuffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -70,17 +62,6 @@ func selectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
 		!strings.EqualFold(actual.Login, user.Login) {
 		clear(token)
 		return nil, errors.New("MANAGED_GITHUB_ACCOUNT_CHANGED")
-	}
-	if api.scopes != "" {
-		found := false
-		for _, scope := range strings.Split(api.scopes, ",") {
-			found = found || strings.TrimSpace(scope) == "workflow"
-		}
-		if !found {
-			clear(token)
-			return nil, errors.New(
-				"MANAGED_GH_WORKFLOW_SCOPE_REQUIRED_USE_GH_AUTH_REFRESH")
-		}
 	}
 	return api, nil
 }

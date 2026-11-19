@@ -6,6 +6,9 @@ type installResultEncoder interface{ Encode(any) error }
 
 func publishManagedRoute(encoder installResultEncoder, plan InitPlan,
 	runners []sharedRegistration, ops managedHostOperations) error {
+	if plan.NativeManaged {
+		return publishNativeManagedRoute(encoder, plan, runners, ops)
+	}
 	if plan.Agent != nil {
 		host, err := ops.discover()
 		if err != nil {

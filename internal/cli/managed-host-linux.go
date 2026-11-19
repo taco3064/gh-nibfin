@@ -117,11 +117,13 @@ type managedHostOperations struct {
 	start       func([]string) error
 	cleanup     func(InitPlan, []sharedRegistration) error
 	activate    func(InitPlan, []sharedRegistration) (managedRelayResult, error)
+	native      func(InitPlan, []sharedRegistration) (nativeContinuation, error)
 }
 
 func (a App) managedHostOperations() managedHostOperations {
 	var selection sharedInstallation
 	return managedHostOperations{
+		native:   a.activateNativeManagedRoute,
 		activate: a.activateManagedRelay,
 		setupAgent: func(plan InitPlan, token []byte) error {
 			if plan.Agent != nil && plan.Agent.Provider != "codex" {
@@ -181,7 +183,9 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	if err := a.requireHandoff(); err != nil {
 		return err
 	}
-	if initIssueRecipe(plan) == "issue-managed" {
+	if plan.NativeManaged {
+		// Native setup is prepared before publication and reconciled on resume.
+	} else if initIssueRecipe(plan) == "issue-managed" {
 		if err := requireManagedRouteEligible(a.API, plan.Repository.FullName); err != nil {
 			return err
 		}
@@ -251,7 +255,7 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		return publishManagedRoute(encoder, plan, runners, ops)
 	}
 	if len(packages) == 0 {
-		if initIssueRecipe(plan) != "issue-managed" {
+		if initIssueRecipe(plan) != "issue-managed" && !plan.NativeManaged {
 			if err := setupManagedAgent(ops, plan, token); err != nil {
 				return err
 			}

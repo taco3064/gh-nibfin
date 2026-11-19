@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
-	"os"
 )
 
 func setupManagedAgent(ops managedHostOperations, plan InitPlan, token []byte) error {
@@ -34,18 +31,12 @@ func managedIntentAgent(plan InitPlan) (*agentBinding, error) {
 	if err != nil {
 		return nil, err
 	}
-	file, err := privateInstallFile(path, os.O_RDONLY)
-	if errors.Is(err, os.ErrNotExist) {
+	intent, present, err := readManagedIntent(path)
+	if err == nil && !present {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, errors.New("MANAGED_INSTALL_STATE_UNAVAILABLE")
-	}
-	defer file.Close()
-	var intent managedInstallIntent
-	decoder := json.NewDecoder(io.LimitReader(file, 2*1024*1024+1))
-	if decoder.Decode(&intent) != nil || decoder.Decode(new(any)) != io.EOF {
-		return nil, errors.New("MANAGED_INSTALL_INTENT_CHANGED")
+		return nil, err
 	}
 	plan.Agent = intent.Plan.Agent
 	if !validManagedIntent(intent, plan) ||

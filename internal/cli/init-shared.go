@@ -16,32 +16,25 @@ var errCoreSharedDestinationUnsupported = errors.New(
 // Inspect GitHub configuration without activating a route or exposing a secret.
 func sharedWakeConfiguration(api API, repo string, execution SharedExecution) string {
 	base := "repos/" + repo + "/actions/"
-	for _, expected := range []struct {
-		name  string
-		check func(string) bool
-	}{
-		{sharedPoolVariable, func(value string) bool { return value == "true" }},
-		{sharedDestinationVariable, func(value string) bool {
-			var observed SharedExecution
-			return json.Unmarshal([]byte(value), &observed) == nil && observed == execution
-		}},
-	} {
-		var variable struct {
-			Name  string `json:"name"`
-			Value string `json:"value"`
-		}
-		err := api.Call("GET", base+"variables/"+expected.name, nil, &variable)
-		if err != nil && err.Error() != "NOT_FOUND" {
-			return "unverified"
-		}
-		if variable.Name != expected.name || !expected.check(variable.Value) {
-			return "configuration_required"
-		}
+	var pool actionsVariable
+	err := api.Call("GET", base+"variables/"+sharedPoolVariable, nil, &pool)
+	if err != nil && err.Error() != "NOT_FOUND" {
+		return "unverified"
+	}
+	if pool.Name != sharedPoolVariable || pool.Value != "true" {
+		return "configuration_required"
+	}
+	present, err := readSharedWakeDestination(api, repo, execution)
+	if err != nil && err.Error() != "SHARED_WAKE_DESTINATION_CONFLICT" {
+		return "unverified"
+	}
+	if !present {
+		return "configuration_required"
 	}
 	var secret struct {
 		Name string `json:"name"`
 	}
-	err := api.Call("GET", base+"secrets/NIBFIN_WAKE_TOKEN", nil, &secret)
+	err = api.Call("GET", base+"secrets/NIBFIN_WAKE_TOKEN", nil, &secret)
 	if err != nil && err.Error() != "NOT_FOUND" {
 		return "unverified"
 	}
@@ -72,24 +65,35 @@ func requireInactiveSharedWake(api API, repo string) error {
 	return nil
 }
 
-// Prepare a new destination while dispatch is disabled. Never repoint an
-// existing route or set the activation variable as part of installation.
-func prepareSharedWakeDestination(api API, repo string,
-	execution SharedExecution) (string, error) {
-	base := "repos/" + repo + "/actions/variables"
-	path := base + "/" + sharedDestinationVariable
+func readSharedWakeDestination(api API, repo string,
+	execution SharedExecution) (bool, error) {
+	path := "repos/" + repo + "/actions/variables/" + sharedDestinationVariable
 	var observed actionsVariable
 	err := api.Call("GET", path, nil, &observed)
 	if err == nil {
 		var current SharedExecution
 		if observed.Name == sharedDestinationVariable &&
 			json.Unmarshal([]byte(observed.Value), &current) == nil && current == execution {
-			return "unchanged", nil
+			return true, nil
 		}
-		return "", errors.New("SHARED_WAKE_DESTINATION_CONFLICT")
+		return false, errors.New("SHARED_WAKE_DESTINATION_CONFLICT")
 	}
 	if err.Error() != "NOT_FOUND" {
+		return false, err
+	}
+	return false, nil
+}
+
+// Prepare a new destination while dispatch is disabled. Never repoint an
+// existing route or set the activation variable as part of installation.
+func prepareSharedWakeDestination(api API, repo string,
+	execution SharedExecution) (string, error) {
+	present, err := readSharedWakeDestination(api, repo, execution)
+	if err != nil {
 		return "", err
+	}
+	if present {
+		return "unchanged", nil
 	}
 	if err := requireInactiveSharedWake(api, repo); err != nil {
 		return "", err
@@ -99,8 +103,10 @@ func prepareSharedWakeDestination(api API, repo string,
 		return "", err
 	}
 	expected := actionsVariable{Name: sharedDestinationVariable, Value: string(value)}
+	base := "repos/" + repo + "/actions/variables"
 	_ = api.Call("POST", base, expected, nil)
-	if err := api.Call("GET", path, nil, &observed); err != nil || observed != expected {
+	present, err = readSharedWakeDestination(api, repo, execution)
+	if err != nil || !present {
 		return "", errors.New("SHARED_WAKE_DESTINATION_RESULT_UNVERIFIED")
 	}
 	return "prepared", nil

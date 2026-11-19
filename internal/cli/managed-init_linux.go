@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -132,38 +131,36 @@ func writePrivateIntent(path string, value any) error {
 }
 
 func loadManagedIntent(path string, plan InitPlan) (managedInstallIntent, error) {
-	intent := managedInstallIntent{Plan: plan, Pins: Pins()}
-	file, err := privateInstallFile(path, os.O_RDONLY)
-	if errors.Is(err, os.ErrNotExist) {
-		if len(plan.Files) == 0 {
+	intent, present, err := readManagedIntent(path)
+	if err != nil {
+		return intent, err
+	}
+	if !present {
+		intent = managedInstallIntent{Plan: plan, Pins: Pins()}
+		if len(plan.Files) == 0 && !plan.NativeManaged {
 			return intent, errors.New("MANAGED_INSTALL_ORIGINAL_PR_INTENT_REQUIRED")
 		}
 		return intent, saveManagedIntent(path, intent)
 	}
-	if err != nil {
-		return intent, err
-	}
-	defer file.Close()
-	const limit = 2 * 1024 * 1024
-	err = json.NewDecoder(io.LimitReader(file, limit)).Decode(&intent)
-	if err != nil || !validManagedIntent(intent, plan) {
+	if !validManagedIntent(intent, plan) {
 		return intent, errors.New("MANAGED_INSTALL_INTENT_CHANGED")
 	}
 
 	return intent, nil
 }
 
-func validManagedIntent(intent managedInstallIntent, plan InitPlan) bool {
+func validManagedIntentIdentity(intent managedInstallIntent, plan InitPlan) bool {
 	return !(intent.Plan.Repository.ID != plan.Repository.ID ||
 		intent.Plan.Repository.FullName != plan.Repository.FullName ||
 		intent.Plan.Repository.DefaultBranch != plan.Repository.DefaultBranch ||
 		intent.Plan.Member.ID != plan.Member.ID ||
 		!sameSharedExecution(intent.Plan.Execution, plan.Execution) ||
 		!compatibleIntentAgent(intent.Plan.Agent, plan.Agent) ||
+		intent.Plan.NativeManaged != plan.NativeManaged ||
 		!managedIntentRecipeCompatible(intent.Plan, plan) ||
-		!reflect.DeepEqual(intent.Pins, Pins()) ||
+		(intent.Plan.Agent != nil && !intent.Plan.Agent.valid()) ||
 		!commitPattern.MatchString(intent.Plan.Head) ||
-		len(intent.Plan.Files) == 0)
+		len(intent.Plan.Files) == 0 && !intent.Plan.NativeManaged)
 }
 
 type onboardingProcess struct {
@@ -240,6 +237,9 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 // operations. In-package Go drivers can exercise the same orchestration.
 func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	out io.Writer, host managedHostOperations) error {
+	if plan.NativeManaged {
+		return a.resumeNativeManagedInit(ctx, plan, token, out, host)
+	}
 	if err := a.requireHandoff(); err != nil {
 		return err
 	}

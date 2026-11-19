@@ -87,10 +87,19 @@ func (a App) runInit(args []string, out io.Writer) error {
 	_, native := a.Process.(NativeProcess)
 	recipe := "issue"
 	if native && nativeLinuxTarget() && *executionRepo != "" &&
-		(defaultShared || host != nil) && !*installService && !*prepareWake {
+		host != nil && !*installService && !*prepareWake {
 		recipe = "issue-managed"
 	}
 	plan, err := planInitRecipe(a.API, *name, *executionRepo, recipe)
+	nativeManaged := native && defaultShared && !*installService && !*prepareWake
+	var routeError *CommandError
+	if native && host != nil && errors.As(err, &routeError) &&
+		routeError.Code == "MANAGED_CALLER_REQUIRES_EXPLICIT_UPGRADE" {
+		// A completed fresh native install is authoritative on continuation.
+		// Never migrate an artifact caller merely to resume initialization.
+		plan, err = planInitRecipe(a.API, *name, *executionRepo, "issue")
+		nativeManaged = err == nil
+	}
 	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {
 		// Avoid installing legacy callers on a fresh shared host. Those files
 		// would conflict with the later installation of the shared candidate.
@@ -99,6 +108,7 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	plan.NativeManaged = nativeManaged
 	if explicitAgent && (legacyHost || plan.Execution == nil || !nativeLinuxTarget()) {
 		return errors.New("AGENT_SELECTION_REQUIRES_MANAGED_INIT")
 	}
