@@ -44,6 +44,7 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
+	reportSourceCleanup(out, reconcileCoreSources())
 	if host != nil {
 		if err := recheckSharedHost(a.Process, a.API, *host); err != nil {
 			return err

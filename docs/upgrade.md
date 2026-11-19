@@ -67,7 +67,8 @@ current and target immutable sources, compatibility, exact added/modified/delete
 paths and replacement bytes. It also reports host-adoption obligations separately.
 Identical verified inputs yield the same plan ID and output. Preview performs no
 GitHub writes, filesystem/cache installation, Runner or service operation. A
-current installation returns `no_change`; even apply then makes no mutations.
+current installation returns `no_change`; apply makes no GitHub mutations for it.
+Applied invocations can still reconcile obsolete CLI source-cache entries.
 
 Explicit apply revalidates the repository, current permission, default branch,
 installed content and resolved target before each mutation. It creates only
@@ -132,7 +133,7 @@ then rebased through the same guarded native route. Failed or malformed listings
 never establish absence or authorize a blind write replay.
 
 Once the verified installation is current, apply returns `no_change` without
-mutations even if the old branch remains. Before proposing a different upgrade,
+GitHub mutations even if the old branch remains. Before proposing a different upgrade,
 reconcile or remove that branch through normal repository operations. The CLI
 never resets it, merges a PR, or weakens protections to recover an unknown effect.
 
@@ -141,3 +142,25 @@ layout changes, races, lost responses and isolation. They do not certify live
 release availability, protected GitHub E2E, released-version A-to-B host adoption
 or native platform support. Those remain separate native acceptance/release
 checks. Unavailable live evidence must remain Unverified.
+
+## Source-cache lifetime
+
+Applied upgrade reconciles CLI-owned Core source operations already present in
+its user cache, including when no source change is needed. It does not extract a
+new Core tree, execute downloaded code or depend on a previous cache copy. Preview
+remains free of cleanup mutations. Provider-confirmed branch and PR effects are
+reused through the normal continuation path even if cleanup's response is lost.
+
+Only exclusively owned operation copies with confirmed disposal eligibility can
+be removed. Other operations and repositories keep their selected sources. Linux
+uses the original owner process identity and recorded verifier process group;
+surviving or reused groups defer removal. Unknown identity/consumer state,
+retained handoffs, incomplete startup records, foreign changes and symlinks retain
+the entry with a concrete diagnostic. Other platforms defer when native process
+observation is unavailable. Legacy shared commit directories are preserved because
+current use cannot be excluded safely. Missing housekeeping never proves disposal
+eligibility and does not block an unrelated upgrade. A later applied invocation
+reconciles partial removal against actual remaining filesystem state.
+
+This concerns the CLI's user source cache only. Privileged installed Core, rollout
+backups, Runner directories and Job workspaces retain their existing owners.

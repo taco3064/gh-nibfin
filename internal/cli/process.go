@@ -19,6 +19,8 @@ type Process interface {
 
 type NativeProcess struct{}
 
+const nativeProcessTimeout = 2 * time.Minute
+
 type boundedBuffer struct{ bytes.Buffer }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
@@ -69,7 +71,7 @@ func toolPath(name string) (string, error) {
 }
 
 func (NativeProcess) Run(name string, args []string, input []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), nativeProcessTimeout)
 	defer cancel()
 	return (NativeProcess{}).RunContext(ctx, name, args, input)
 }
@@ -90,22 +92,7 @@ func runNativeProcess(ctx context.Context, name string, args []string,
 
 func runResolvedNativeProcess(ctx context.Context, name, path string, args []string,
 	input []byte, retainFailureOutput bool) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, path, args...)
-	if name != "gh" {
-		keys := []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"}
-		if name == "codex" || name == "docker" {
-			keys = append(keys, "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")
-		}
-		if name == "codex" {
-			keys = append(keys, "CODEX_HOME")
-		}
-		for _, key := range keys {
-			if value, ok := os.LookupEnv(key); ok {
-				cmd.Env = append(cmd.Env, key+"="+value)
-			}
-		}
-	}
-	cmd.Stdin = bytes.NewReader(input)
+	cmd := nativeCommand(ctx, name, path, args, input)
 	var out, stderr boundedBuffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	err := cmd.Run()
@@ -152,6 +139,27 @@ func runResolvedNativeProcess(ctx context.Context, name, path string, args []str
 		return codexLoginMode(out.String() + "\n" + stderr.String())
 	}
 	return out.Bytes(), nil
+}
+
+func nativeCommand(ctx context.Context, name, path string, args []string,
+	input []byte) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, path, args...)
+	if name != "gh" {
+		keys := []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"}
+		if name == "codex" || name == "docker" {
+			keys = append(keys, "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")
+		}
+		if name == "codex" {
+			keys = append(keys, "CODEX_HOME")
+		}
+		for _, key := range keys {
+			if value, ok := os.LookupEnv(key); ok {
+				cmd.Env = append(cmd.Env, key+"="+value)
+			}
+		}
+	}
+	cmd.Stdin = bytes.NewReader(input)
+	return cmd
 }
 
 func githubRateLimited(output string) bool {

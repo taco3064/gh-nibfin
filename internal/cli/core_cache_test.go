@@ -40,25 +40,20 @@ func testArchiveMode(t *testing.T, names []string, mode int64) []byte {
 	return buffer.Bytes()
 }
 
-func TestFailedFreshCacheRemovedAndExistingDataPreserved(t *testing.T) {
-	archive := testArchive(t, []string{"bin/nibfin-core.mjs", ".node-version"})
-	for _, existing := range []bool{false, true} {
-		target := filepath.Join(t.TempDir(), "candidate")
-		if existing {
-			if os.Mkdir(target, 0700) != nil ||
-				os.WriteFile(filepath.Join(target, "user-data"), []byte("keep"), 0600) != nil {
-				t.Fatal("cannot prepare existing cache")
-			}
-		}
-		_, err := verifyCache(failingVerifier{}, archive, target, "trusted-verifier",
-			"approved-pin", Pins().Core)
-		if err == nil {
-			t.Fatal("failed verification must not succeed")
-		}
-		_, statErr := os.Stat(target)
-		if existing && statErr != nil || !existing && !errors.Is(statErr, os.ErrNotExist) {
-			t.Fatal("cleanup must remove only the newly created failed cache")
-		}
+func TestCacheVerifierDoesNotOwnExistingData(t *testing.T) {
+	target := t.TempDir()
+	path := filepath.Join(target, "user-data")
+	if err := os.WriteFile(path, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := verifyCache(failingVerifier{}, target, "trusted-verifier",
+		"approved-pin", Pins().Core)
+	if err == nil {
+		t.Fatal("failed verification must not succeed")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "keep" {
+		t.Fatal("verification must not acquire deletion ownership", err)
 	}
 }
 

@@ -123,6 +123,7 @@ func (a App) runQuick(name, runnerPath, runnerName string, apply bool,
 	if !apply {
 		return nil
 	}
+	reportSourceCleanup(out, reconcileCoreSources())
 	clock := a.Clock
 	if clock == nil {
 		clock = time.Now

@@ -41,8 +41,9 @@ gh nibfin init --repo OWNER/REPO
 gh nibfin init --repo OWNER/REPO --apply
 ```
 
-The first command only previews. `--apply` verifies and caches the approved Core
-source, creates a separate installation branch/PR, reads back the actual workflow
+The first command only previews. `--apply` verifies an operation-owned copy of
+the approved Core source, creates a separate installation branch/PR, reads back
+the actual workflow
 contents and PR identity, and creates absent lifecycle label definitions. It does
 not label Issues, overwrite unknown files, push the default branch or merge.
 Exit 2 means installation still needs review/merge or its effect is unknown;
@@ -157,6 +158,27 @@ runtime installation. Its temporary bootstrap verifier comes from the approved
 archive; an existing cache cannot replace that verifier. The selected `node`
 must match Core's own `.node-version`. For an fnm-managed installation, for example,
 run the CLI inside the corresponding `fnm exec --using VERSION -- ...` environment.
+
+Each non-managed init operation reserves its own source extraction. The reported
+`core_cache` path is valid only for that operation; it is released after its final
+consumer, including when installation is pending or output fails. Privileged Core
+deployment reads its own authenticated archive and never depends on this path.
+
+Applied init (including managed and member-handoff routes) and upgrade reconcile
+older operation-owned copies without extracting source just for cleanup. Preview
+never retires sources. Cleanup reports `removed`, `retained` or `deferred` with a
+reason; uncertainty does not replace an installation or provider failure. Linux
+retirement checks the recorded owner process identity and the dedicated verifier
+process group, including surviving consumers. An active or reused group, unknown
+process identity, interrupted verifier startup, retained handoff, foreign edit or
+symlink prevents deletion. Platforms without the required native observations
+retain the source and report that observation as unavailable. Legacy shared
+commit-named directories and missing/unclassified ownership records are preserved;
+a directory name, age or successful verification alone never permits deletion.
+Partial retirement resumes from the remaining entries on a later normal apply.
+Retirement first captures each entry in private staging, then validates the
+captured identity before removal. A concurrent foreign replacement is restored
+without overwriting new arrivals, or preserved at the reported staging path.
 
 Core's current host installer uses a directory replacement operation that returns
 `EPERM` on Windows. CLI source caching instead reserves a new directory, safely

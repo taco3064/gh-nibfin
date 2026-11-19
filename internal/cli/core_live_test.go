@@ -44,19 +44,27 @@ func TestLiveCandidateCache(t *testing.T) {
 			t.Logf("Node executable: %s mode=%v", resolved, stat.Mode())
 		}
 	}
-	path, err := installCoreCache(api, process)
+	source, err := installCoreCache(api, process)
+	if source != nil {
+		defer func() {
+			result := source.Release()
+			t.Logf("source retirement: %s: %s", result.Status, result.Reason)
+		}()
+	}
 	if err != nil {
 		cache, _ := os.UserCacheDir()
 		canonical, resolveErr := filepath.EvalSymlinks(cache)
 		t.Logf("OS cache: %s canonical=%s error=%v", cache, canonical, resolveErr)
 		t.Fatal(err)
 	}
+	path := source.Directory
 	canonical, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(canonical, "Nibfin", "candidates", "core", Pins().Core.Commit)
-	if path != want {
+	want := filepath.Join(canonical, "Nibfin", "candidates", "core")
+	if filepath.Dir(filepath.Dir(path)) != want ||
+		!strings.HasPrefix(filepath.Base(filepath.Dir(path)), ".source-") {
 		t.Fatal("candidate must be installed inside the isolated test cache")
 	}
 	t.Log("actual Core archive/manifest/installation verified; no host adoption")

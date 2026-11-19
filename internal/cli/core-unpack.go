@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -72,21 +71,14 @@ func unpackCore(archive []byte, destination string) error {
 	if err != nil {
 		return err
 	}
-	for name, source := range files {
-		path := filepath.Join(destination, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return errors.New("CORE_EXTRACTION_FAILED")
-		}
-		mode := os.FileMode(0600) | os.FileMode(source.mode&0100)
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-		if err != nil {
-			return errors.New("CORE_EXTRACTION_FAILED")
-		}
-		_, writeErr := file.Write(source.data)
-		closeErr := file.Close()
-		if writeErr != nil || closeErr != nil {
-			return errors.New("CORE_EXTRACTION_FAILED")
-		}
+	if err := os.MkdirAll(destination, 0700); err != nil {
+		return errors.New("CORE_EXTRACTION_FAILED")
 	}
-	return nil
+	root, err := os.OpenRoot(destination)
+	if err != nil {
+		return errors.New("CORE_EXTRACTION_FAILED")
+	}
+	defer root.Close()
+	_, err = extractCoreFiles(files, root)
+	return err
 }

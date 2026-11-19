@@ -168,6 +168,7 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
+	reportSourceCleanup(out, reconcileCoreSources())
 	unlock, err := lockSharedInit(plan)
 	if err != nil {
 		return err
@@ -196,11 +197,17 @@ func (a App) runInit(args []string, out io.Writer) error {
 		}
 	}
 	cache, err := installCoreCache(a.API, cacheProcess)
+	if cache != nil {
+		defer func() {
+			reportSourceCleanup(out, []sourceCleanupResult{cache.Release()})
+		}()
+	}
 	if err != nil {
 		return err
 	}
 	if err := encoder.Encode(map[string]any{"status": "candidate_source_verified",
-		"core_cache": cache, "host_adoption": "unverified"}); err != nil {
+		"core_cache": cache.Directory, "source_lifetime": "current_operation",
+		"host_adoption": "unverified"}); err != nil {
 		return errors.New("OUTPUT_UNAVAILABLE")
 	}
 	if host != nil {
