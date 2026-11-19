@@ -116,6 +116,7 @@ type managedHostOperations struct {
 	staged      func(InitPlan, []sharedRegistration) ([]string, error)
 	start       func([]string) error
 	cleanup     func(InitPlan, []sharedRegistration) error
+	complete    func() ([]byte, error)
 	activate    func(InitPlan, []sharedRegistration) (managedRelayResult, error)
 }
 
@@ -123,6 +124,10 @@ func (a App) managedHostOperations() managedHostOperations {
 	var selection sharedInstallation
 	return managedHostOperations{
 		activate: a.activateManagedRelay,
+		complete: func() ([]byte, error) {
+			return runInstalledSharedAdmin(rebuildResultProcess(a.Process), nil,
+				"complete-installed-lifecycle")
+		},
 		setupAgent: func(plan InitPlan, token []byte) error {
 			if plan.Agent != nil && plan.Agent.Provider != "codex" {
 				return errors.New("AGENT_COMPOSITION_UNAVAILABLE")
@@ -189,8 +194,10 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 			*plan.Execution); err != nil {
 			return err
 		}
-	} else if err := requireInactiveSharedWake(a.API, plan.Repository.FullName); err != nil {
-		return err
+	} else if !plan.NativeManaged {
+		if err := requireInactiveSharedWake(a.API, plan.Repository.FullName); err != nil {
+			return err
+		}
 	}
 	host, err := ops.discover()
 	if err != nil {
@@ -248,10 +255,10 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		if err != nil {
 			return err
 		}
-		return publishManagedRoute(encoder, plan, runners, ops)
+		return a.publishReadyManagedRoute(encoder, plan, runners, ops)
 	}
 	if len(packages) == 0 {
-		if initIssueRecipe(plan) != "issue-managed" {
+		if initIssueRecipe(plan) != "issue-managed" && !plan.NativeManaged {
 			if err := setupManagedAgent(ops, plan, token); err != nil {
 				return err
 			}
@@ -261,7 +268,7 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 			return err
 		}
 		if sharedRunnersOnline(live) {
-			return finishManagedHandoff(encoder, plan, live, ops)
+			return a.finishManagedHandoff(encoder, plan, live, ops)
 		}
 		// Core installs both slots before starting either service. If one is
 		// already online, resume from the installed slots without staging.
@@ -277,13 +284,13 @@ func (a App) finishManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	if err != nil {
 		return err
 	}
-	return finishManagedHandoff(encoder, plan, runners, ops)
+	return a.finishManagedHandoff(encoder, plan, runners, ops)
 }
 
-func finishManagedHandoff(encoder installResultEncoder, plan InitPlan,
+func (a App) finishManagedHandoff(encoder installResultEncoder, plan InitPlan,
 	runners []sharedRegistration, ops managedHostOperations) error {
 	if err := ops.cleanup(plan, runners); err != nil {
 		return err
 	}
-	return publishManagedRoute(encoder, plan, runners, ops)
+	return a.publishReadyManagedRoute(encoder, plan, runners, ops)
 }

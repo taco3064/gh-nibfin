@@ -3,3 +3,5 @@
 /dist/
 /coverage.out
 /.core-fixture/
+/.nibfin-cache/
+/codex-bwrap-synthetic-mount-targets-0/

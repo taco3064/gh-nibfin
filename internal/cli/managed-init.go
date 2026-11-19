@@ -8,11 +8,19 @@ import (
 	"time"
 )
 
+// Only nonsecret observations enter the installation intent. Metadata is an
+// observation of our confirmed write, never a credential equality/validity proof.
+type nativeCredentialObservation struct {
+	State     string `json:"state,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
 type managedInstallIntent struct {
-	Plan InitPlan  `json:"plan"`
-	Pins Producers `json:"pins"`
-	PR   int       `json:"pull_request,omitempty"`
-	Head string    `json:"pull_head,omitempty"`
+	Native nativeCredentialObservation `json:"native,omitempty"`
+	Plan   InitPlan                    `json:"plan"`
+	Pins   Producers                   `json:"pins"`
+	PR     int                         `json:"pull_request,omitempty"`
+	Head   string                      `json:"pull_head,omitempty"`
 }
 
 type observedInstallPR struct {
@@ -70,7 +78,7 @@ func verifyInstallPR(api API, x *managedInstallIntent, pr observedInstallPR) err
 			!commitPattern.MatchString(branch.Commit.SHA) {
 			return errors.New("MANAGED_INSTALL_DEFAULT_BRANCH_UNAVAILABLE")
 		}
-		if !branch.Protected {
+		if !branch.Protected && !plan.NativeManaged {
 			return errors.New("MANAGED_INSTALL_DEFAULT_BRANCH_UNPROTECTED")
 		}
 		ref = branch.Commit.SHA
@@ -130,4 +138,8 @@ func waitManagedInstall(ctx context.Context, api API, x *managedInstallIntent,
 		}
 	}
 	return nil
+}
+
+func hostRepository(host sharedHost) Repository {
+	return Repository{ID: host.RepositoryID, FullName: host.Repository}
 }

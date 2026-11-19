@@ -24,10 +24,13 @@ func managedInstallConsent(plan InitPlan, explicit bool) error {
 		return errors.New("MANAGED_INSTALL_REQUIRES_CONSENT_MANAGED_LOGIN")
 	}
 	defer terminal.Close()
+	action := "Core will manage its Docker Engine and Controller credentials."
+	if plan.NativeManaged {
+		action += " Init will configure an encrypted Actions wake credential."
+	}
 	_, err = fmt.Fprintf(terminal,
 		"Reuse github.com login %s for unattended Nibfin on this dedicated host? "+
-			"Core will manage its Docker Engine and Controller credentials. [y/N] ",
-		plan.Member.Login)
+			"%s [y/N] ", plan.Member.Login, action)
 	if err != nil {
 		return errors.New("MANAGED_INSTALL_CONSENT_UNAVAILABLE")
 	}
@@ -135,7 +138,7 @@ func loadManagedIntent(path string, plan InitPlan) (managedInstallIntent, error)
 	intent := managedInstallIntent{Plan: plan, Pins: Pins()}
 	file, err := privateInstallFile(path, os.O_RDONLY)
 	if errors.Is(err, os.ErrNotExist) {
-		if len(plan.Files) == 0 {
+		if len(plan.Files) == 0 && !plan.NativeManaged {
 			return intent, errors.New("MANAGED_INSTALL_ORIGINAL_PR_INTENT_REQUIRED")
 		}
 		return intent, saveManagedIntent(path, intent)
@@ -163,7 +166,8 @@ func validManagedIntent(intent managedInstallIntent, plan InitPlan) bool {
 		!managedIntentRecipeCompatible(intent.Plan, plan) ||
 		!reflect.DeepEqual(intent.Pins, Pins()) ||
 		!commitPattern.MatchString(intent.Plan.Head) ||
-		len(intent.Plan.Files) == 0)
+		(len(intent.Plan.Files) == 0 && !plan.NativeManaged) ||
+		intent.Plan.NativeManaged != plan.NativeManaged)
 }
 
 type onboardingProcess struct {
@@ -226,7 +230,11 @@ func (a App) runManagedInit(plan InitPlan, consent bool, out io.Writer) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	api, err := selectedLogin(ctx, plan.Member)
+	login := selectedLogin
+	if plan.NativeManaged {
+		login = selectedNativeLogin
+	}
+	api, err := login(ctx, plan.Member)
 	if err != nil {
 		return err
 	}
@@ -255,6 +263,7 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
 	}
 	current.Agent = plan.Agent
+	current.NativeManaged = plan.NativeManaged
 	path, err := managedIntentPath(plan.Repository)
 	if err != nil {
 		return err
@@ -264,6 +273,13 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		return err
 	}
 	defer closeLock()
+	if current.NativeManaged && len(current.Files) == 0 &&
+		!managedIntentAvailable(current.Repository) {
+		recovered, err := a.resumeReadyNativeInit(current, json.NewEncoder(out), host)
+		if recovered || err != nil {
+			return err
+		}
+	}
 	if len(current.Files) == 0 && !managedIntentAvailable(current.Repository) &&
 		initIssueRecipe(current) == "issue-managed" {
 		return a.finishVerifiedManagedInit(ctx, current, token, json.NewEncoder(out), host)
@@ -289,10 +305,22 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 	if err != nil {
 		return err
 	}
+	if plan.NativeManaged {
+		publisher, _ := api.(nativeSecretPublisher)
+		if err := prepareNativeSetup(api, publisher, nativeSetupFromPlan(current),
+			&intent.Native, func() error { return saveManagedIntent(path, intent) }); err != nil {
+			return err
+		}
+		if len(current.Files) == 0 {
+			return a.finishVerifiedManagedInit(ctx, current, token,
+				json.NewEncoder(out), host)
+		}
+	}
 	encoder := json.NewEncoder(out)
 	if initIssueRecipe(intent.Plan) == "issue" &&
 		initIssueRecipe(current) == "issue-managed" && len(current.Files) == 0 {
 		current.Agent = plan.Agent
+		current.NativeManaged = plan.NativeManaged
 		return a.finishVerifiedManagedInit(ctx, current, token, encoder, host)
 	}
 	wait, cancel := context.WithTimeout(ctx, 15*time.Minute)
@@ -312,6 +340,7 @@ func (a App) resumeManagedInit(ctx context.Context, plan InitPlan, token []byte,
 		return errors.New("MANAGED_INSTALL_PLAN_REQUIRES_READBACK")
 	}
 	current.Agent = plan.Agent
+	current.NativeManaged = plan.NativeManaged
 	return a.finishVerifiedManagedInit(ctx, current, token, encoder, host)
 }
 

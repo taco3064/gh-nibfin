@@ -85,10 +85,41 @@ func (a App) runInit(args []string, out io.Writer) error {
 		defaultShared = true
 	}
 	_, native := a.Process.(NativeProcess)
+	nativeManaged := native && nativeLinuxTarget() && defaultShared &&
+		!*installService && !*prepareWake
+	if native && nativeLinuxTarget() && host != nil {
+		nativeManaged, err = nativeManagedIntent(hostRepository(*host))
+		nativeManaged = nativeManaged && *name == host.Repository
+		if err != nil {
+			return err
+		}
+		if !nativeManaged && *name == host.Repository &&
+			!managedIntentAvailable(hostRepository(*host)) {
+			nativeManaged, err = observedNativeManagedRoute(a.API, *host)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if nativeManaged {
+		repo, _, readErr := repository(a.API, *name, false)
+		if readErr != nil {
+			return readErr
+		}
+		if managedIntentAvailable(repo) {
+			nativeManaged, err = nativeManagedIntent(repo)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	nativeManaged = nativeManaged && !*installService && !*prepareWake
 	recipe := "issue"
 	if native && nativeLinuxTarget() && *executionRepo != "" &&
 		(defaultShared || host != nil) && !*installService && !*prepareWake {
-		recipe = "issue-managed"
+		if !nativeManaged {
+			recipe = "issue-managed"
+		}
 	}
 	plan, err := planInitRecipe(a.API, *name, *executionRepo, recipe)
 	if defaultShared && errors.Is(err, errCoreSharedDestinationUnsupported) {
@@ -99,6 +130,7 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	plan.NativeManaged = nativeManaged
 	if explicitAgent && (legacyHost || plan.Execution == nil || !nativeLinuxTarget()) {
 		return errors.New("AGENT_SELECTION_REQUIRES_MANAGED_INIT")
 	}
@@ -180,7 +212,8 @@ func (a App) runInit(args []string, out io.Writer) error {
 	managedResume := native && nativeLinuxTarget() &&
 		managedIntentAvailable(plan.Repository)
 	managed := native && nativeLinuxTarget() && plan.Execution != nil &&
-		(defaultShared || managedPeer || managedResume || (*consentManaged && host != nil)) &&
+		(defaultShared || nativeManaged || managedPeer || managedResume ||
+			(*consentManaged && host != nil)) &&
 		!*installService && !*prepareWake && runner == nil
 	if managed {
 		return a.runManagedInit(plan, *consentManaged, out)

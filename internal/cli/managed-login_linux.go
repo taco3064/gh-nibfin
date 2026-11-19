@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -21,20 +20,23 @@ type selectedGitHub struct {
 }
 
 func selectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
+	return selectedLoginWithRefresh(ctx, user, false, false)
+}
+
+func selectedNativeLogin(ctx context.Context, user User) (*selectedGitHub, error) {
+	return selectedLoginWithRefresh(ctx, user, true, true)
+}
+
+func selectedLoginWithRefresh(ctx context.Context, user User, native, refresh bool) (
+	*selectedGitHub, error,
+) {
 	path, err := toolPath("gh")
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, path, "auth", "token", "--hostname",
 		"github.com", "--user", user.Login)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "GH_PROMPT_DISABLED=1",
-		"GH_NO_UPDATE_NOTIFIER=1", "GH_NO_EXTENSION_UPDATE_NOTIFIER=1"}
-	for _, name := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR",
-		"DBUS_SESSION_BUS_ADDRESS", "GH_CONFIG_DIR", "GNUPGHOME"} {
-		if value, ok := os.LookupEnv(name); ok {
-			cmd.Env = append(cmd.Env, name+"="+value)
-		}
-	}
+	cmd.Env = selectedLoginEnvironment()
 	var out boundedBuffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -72,12 +74,26 @@ func selectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
 		return nil, errors.New("MANAGED_GITHUB_ACCOUNT_CHANGED")
 	}
 	if api.scopes != "" {
-		found := false
+		workflow, repository := false, false
 		for _, scope := range strings.Split(api.scopes, ",") {
-			found = found || strings.TrimSpace(scope) == "workflow"
+			switch strings.TrimSpace(scope) {
+			case "workflow":
+				workflow = true
+			case "repo", "public_repo":
+				repository = true
+			}
 		}
-		if !found {
+		if !workflow || native && !repository {
 			clear(token)
+			if native && refresh {
+				if err := refreshSelectedAuthorization(ctx, user); err != nil {
+					return nil, err
+				}
+				return selectedLoginWithRefresh(ctx, user, true, false)
+			}
+			if native {
+				return nil, errors.New("MANAGED_GH_WORKFLOW_AUTHORIZATION_REQUIRED")
+			}
 			return nil, errors.New(
 				"MANAGED_GH_WORKFLOW_SCOPE_REQUIRED_USE_GH_AUTH_REFRESH")
 		}

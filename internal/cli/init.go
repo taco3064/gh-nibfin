@@ -13,14 +13,15 @@ type Change struct {
 }
 
 type InitPlan struct {
-	Agent       *agentBinding    `json:"agent,omitempty"`
-	IssueRecipe string           `json:"issue_recipe,omitempty"`
-	Repository  Repository       `json:"repository"`
-	Member      User             `json:"member"`
-	Head        string           `json:"head"`
-	Files       []Change         `json:"files"`
-	Labels      []string         `json:"labels"`
-	Execution   *SharedExecution `json:"shared_execution,omitempty"`
+	NativeManaged bool             `json:"native_managed,omitempty"`
+	Agent         *agentBinding    `json:"agent,omitempty"`
+	IssueRecipe   string           `json:"issue_recipe,omitempty"`
+	Repository    Repository       `json:"repository"`
+	Member        User             `json:"member"`
+	Head          string           `json:"head"`
+	Files         []Change         `json:"files"`
+	Labels        []string         `json:"labels"`
+	Execution     *SharedExecution `json:"shared_execution,omitempty"`
 }
 
 type reference struct {

@@ -1,77 +1,82 @@
-# Managed Issue wake activation on Linux
+# Managed native Issue wake on Linux
 
-Plain `gh nibfin init --repo OWNER/REPO` previews the managed caller on a
-compatible Linux x64 host. `--apply` uses the installing user's existing GitHub
-CLI login after the existing consent step (`--consent-managed-login` supplies
-explicit consent). The installation PR still requires native review and merge.
-No repository token secret or test Issue is created.
+Fresh `gh nibfin init --repo OWNER/REPO` previews Core's native `issue`
+caller and two shared Runner slots on a compatible Linux host. `--apply`
+uses the explicitly selected existing GitHub CLI login after consent
+(`--consent-managed-login` supplies explicit consent). The installation PR
+still follows native review and merge. Users do not create, copy or paste a
+Wake token.
 
-After verifying the merged managed caller, init adopts the repository, starts
-or reads back the two shared Runner slots, verifies the execution destination,
-and configures Core's installed notification relay. A peer repository retains
-its own adoption and joins the same relay and Runner pool. Init does not
-register additional slots or install another service for a peer.
+Before publishing the installation PR, init verifies the selected account,
+target and execution repository identities, repository administration access
+and Actions configuration. If the stored OAuth login lacks workflow
+permission, supported `gh auth refresh` requests authorization only when that
+same account is active; init then captures and verifies the selected login
+again. A different active account is never silently switched.
 
-The managed caller's `mode: managed` selects Core's notification behavior.
-`NIBFIN_SHARED_RUNNER_POOL=true` separately suppresses local reusable-workflow
-dispatch. Init establishes that variable only after relay preparation and reads
-it back before enabling the timer and explicitly resuming the relay. Lost
-variable responses are reconciled through GET before another mutation.
+Init prepares `NIBFIN_SHARED_RUNNER_DESTINATION` without repointing an existing
+destination, and configures `NIBFIN_WAKE_TOKEN` using GitHub CLI's encrypted
+Actions secret setup. The selected credential goes through private standard
+input, never command arguments, credential files or result records. Existing
+unrelated secrets cause a conflict. Secret metadata alone never proves
+credential equality or validity.
 
-`MANAGED_ROUTING_CONFIGURED` means the installed bindings, destination, Runner
-identities, suppression variables, timer and control state were read back.
-The result includes `relay.dispatch_observed` for the target repository,
-with host-wide consumed receipt and unknown-effect counts separately. A configured route need not have received a
-notification yet. Consumed receipts prove dispatch readback, not completion of
-an Issue or availability of a Runner for a later Job.
+After merged caller/source verification, init preserves the existing host
+adoption and two-slot readiness process. Core's managed repository admission
+applies to the native installation. Init enables the shared pool only after
+host identity, adoption and both online Runner identities are verified.
+Fresh setup installs no notification timer or artifact-polling service.
 
-## Existing installations
+## Installation and continuation results
 
-Ordinary upgrade preserves the installed Issue transport, including managed
-callers. Init refuses edited or legacy callers instead of overwriting them.
-For a verified **inactive** legacy installation, preview an explicit proposal:
+`NATIVE_ROUTING_CONFIGURED` reports `installation: ready` independently of
+`continuation`. Credential configuration remains `configured_unverified`:
+metadata is not evidence of a successful live dispatch or protected delivery.
 
-```sh
-gh nibfin upgrade --repo OWNER/REPO --managed-issue
-gh nibfin upgrade --repo OWNER/REPO --managed-issue --apply
-```
+Once host and caller readiness are observed, CLI invokes Core's fixed installed
+administrator operation `complete-installed-lifecycle` with no inputs. Core
+owns current Issue discovery, Pause/dependency admission and reuse of confirmed
+continuation effects. CLI does not scan Issues or maintain a work queue.
 
-This uses the existing verified official release/source and PR process. If a
-compatible released source is unavailable, the proposal remains unavailable.
-After review and merge, rerun managed init. Core refreshes only the Issue caller
-binding and independently preserves the original Action workflow and Runner
-identities. The original CLI-1 installation intent remains available.
+Continuation statuses are `dispatched`, `paused` and `pending`. `dispatched`
+means Core completed its current scan and confirmed any requested dispatches;
+it does not mean protected delivery completed. `paused` preserves the pause and
+is distinct from installation failure. A missing, malformed or lost response
+leaves continuation pending (exit 2), while the result still reports the
+observed installation readiness.
 
-An active legacy route or existing Wake token secret requires explicit local
-migration and reconciliation. Neither ordinary init nor the proposal command
-disables that route, removes its secret, or migrates outstanding effects.
-There is no automatic active-route migration command.
+Rerun the same init after an interrupted PR wait, partial service start or
+continuation response loss. It observes provider and host state, retains the
+same installation PR and slots, and reuses confirmed configuration writes.
+Core receives the same completion operation again and reconciles its effects.
+A lost local installation record permits normal provider observation; it does
+not authorize replacing an existing secret.
+An already active native route with matching caller, destination, adopted host
+and two online Runner identities can request completion without that record.
+The credential remains `configured_unverified`; this recovery neither replaces
+the secret nor claims to verify its contents.
 
-## Pending results and inspection
+## Conflicts and uncertain secret writes
 
-Pending codes distinguish missing compatible sources, changed bindings,
-credentials/readiness that cannot be verified, local configuration conflicts,
-paused state and uncertain writes. No configured result is emitted for these
-states. Existing compatible origins and all Core recovery receipts are retained.
+`NATIVE_SECRET_CONFLICT` means an existing secret cannot be attributed to a
+confirmed setup operation. Init preserves it. A changed destination, account,
+repository identity or permissions also prevents unsafe activation.
 
-A local administrator can use the installed pinned Node executable with
-`/opt/nibfin/core/bin/nibfin-notification-relay.mjs inspect`. The same fixed entry
-supports `pause` and `resume`; Core owns their admission and recovery semantics.
-A busy pause is not a completed pause. Never edit or remove relay control,
-journal or unknown-effect receipts to retry a dispatch. Credential inspection
-and reauthorization remain in Core's existing `managed-credentials` interface;
-repeating init on an adopted host does not replace those credentials.
+`NATIVE_SECRET_EFFECT_UNKNOWN` means a write may have occurred without a
+confirmed response or readback. The private intent stores only nonsecret
+operation observations. Repeating init reads provider state first. A present
+secret after an uncertain write remains pending; metadata cannot establish
+its contents, and init never blindly replaces it. Reconcile the actual secret
+operation before retrying; do not delete private state to bypass uncertainty.
 
-Configuration reconciliation uses a root-owned lock directory at
-`/etc/nibfin/notification-relay.cli-lock` and an atomic private configuration at
-`/etc/nibfin/notification-relay.json`. An interrupted writer can leave the lock
-for administrator inspection. Do not remove it while another init is running.
-An existing paused relay is never silently resumed by init. Inspect the relay
-and reconcile any uncertain effects through Core's supported administration
-before explicitly resuming and rerunning init. A failed first activation can
-require this inspection even when the variable write succeeded.
+## Existing installations and manual setup
 
-Linux/systemd and the installed compatible Core remain prerequisites. These
-local and simulated checks do not certify a live installation, provider
-notification delivery or a release. Those checks belong to independent
-Acceptance and the later native installation/E2E stages.
+Existing relay callers, peers, explicit service/Wake options and upgrade
+consumers retain their existing behavior. This fresh-installation path does
+not migrate, disable or retire their resources. Existing-installation and
+upgrade/rebuild migration have separate ownership. Init refuses edited or
+incompatible callers rather than overwriting them.
+
+These controlled development checks do not certify a live installation,
+provider dispatch or release. Independent Acceptance, native integration CI
+and installation/E2E verification supply those later results.
