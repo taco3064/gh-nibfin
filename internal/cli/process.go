@@ -110,6 +110,9 @@ func runResolvedNativeProcess(ctx context.Context, name, path string, args []str
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	err := cmd.Run()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		// Only the official gh HTTP diagnostic is classified; never disclose it.
 		if name == "gh" && githubRateLimited(stderr.String()) {
 			return nil, errors.New("RATE_LIMITED")
@@ -121,6 +124,13 @@ func runResolvedNativeProcess(ctx context.Context, name, path string, args []str
 			return nil, errors.New("PERMISSION_DENIED")
 		}
 		if retainFailureOutput {
+			var maintenanceExit *exec.ExitError
+			if ctx.Err() == nil && errors.As(err, &maintenanceExit) &&
+				maintenanceExit.ExitCode() == 1 {
+				if safe, ok := maintenanceFailureOutput(name, args, out.Bytes()); ok {
+					return safe, errors.New("CORE_OPERATION_UNSUPPORTED_OR_DENIED")
+				}
+			}
 			var diagnosisExit *exec.ExitError
 			if ctx.Err() == nil && errors.As(err, &diagnosisExit) &&
 				diagnosisExit.ExitCode() == 1 && len(args) == 2 &&

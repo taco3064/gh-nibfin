@@ -19,16 +19,36 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 		*version != "latest" && !versionPattern.MatchString(*version) {
 		return errors.New("INVALID_UPGRADE_ARGUMENTS")
 	}
-	host, err := discoverSharedHost(a.Process)
+	if *managed {
+		// Retain historical plan decoding without publishing a withdrawn route.
+		return errors.New("MANAGED_ARTIFACT_ROUTE_RETIRED_USE_NATIVE_UPGRADE")
+	}
+	ops := a.upgradeCommandOperations()
+	host, err := ops.discover()
 	if err != nil {
 		return err
 	}
 	if host != nil {
-		if _, err := verifySharedHost(a.API, *host); err != nil {
+		if err := ops.verify(*host); err != nil {
 			return err
 		}
 	}
-	plan, err := planUpgrade(a.API, *name, *version, *managed)
+	repo, _, err := repository(a.API, *name, false)
+	if err != nil {
+		return err
+	}
+	installed := host != nil && host.adoptionStatus(repo.ID) == "observed"
+	nativeLifecycle := installed && *version == "latest"
+	var plan upgradePlan
+	if nativeLifecycle {
+		var target upgradeSource
+		target, err = ops.selectSource(*host, *version)
+		if err == nil {
+			plan, err = planNativeUpgradeTarget(a.API, *name, *version, target)
+		}
+	} else {
+		plan, err = planNativeUpgrade(a.API, *name, *version)
+	}
 	if err != nil {
 		return err
 	}
@@ -44,8 +64,11 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
+	if nativeLifecycle {
+		return ops.applyNative(*host, *version, out)
+	}
 	if host != nil {
-		if err := recheckSharedHost(a.Process, a.API, *host); err != nil {
+		if err := ops.recheck(*host); err != nil {
 			return err
 		}
 	}

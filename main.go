@@ -20,8 +20,13 @@ func run(args []string, out io.Writer) error {
 }
 
 func runApp(app cli.App, args []string, out io.Writer) error {
-	if len(args) > 0 && args[0] == "dashboard" {
-		ctx, stop := signal.NotifyContext(context.Background(),
+	if len(args) > 0 && (args[0] == "dashboard" || args[0] == "init" ||
+		args[0] == "upgrade" || args[0] == "runner") {
+		parent := app.Context
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, stop := signal.NotifyContext(parent,
 			os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		app.Context = ctx

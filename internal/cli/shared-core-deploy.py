@@ -21,6 +21,27 @@ def trusted(path):
             raise ValueError("Untrusted installation directory")
 
 
+def extract_core(archive, stage):
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as package:
+        count, length = 0, 0
+        for entry in package:
+            count += 1
+            length += entry.size
+            parts = entry.name.split("/")
+            if (count > 1000 or length > 40 * 1024 * 1024 or not entry.isfile()
+                    or not re.fullmatch(r"[A-Za-z0-9._/-]+", entry.name)
+                    or any(part in ("", ".", "..", ".git") for part in parts)
+                    or entry.mode not in (0o644, 0o755)):
+                raise ValueError("Invalid Core archive entry")
+            path = stage.joinpath(*parts)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with package.extractfile(entry) as source, path.open("xb") as output:
+                shutil.copyfileobj(source, output)
+                os.fchmod(output.fileno(), entry.mode)
+                output.flush()
+                os.fsync(output.fileno())
+
+
 def install(archive, expected, parent):
     if not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise ValueError("Invalid Core digest")
@@ -42,24 +63,7 @@ def install(archive, expected, parent):
             return "existing"
         stage = pathlib.Path(tempfile.mkdtemp(prefix=".core-install-", dir=parent))
         try:
-            with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as package:
-                count, length = 0, 0
-                for entry in package:
-                    count += 1
-                    length += entry.size
-                    parts = entry.name.split("/")
-                    if (count > 1000 or length > 40 * 1024 * 1024 or not entry.isfile()
-                            or not re.fullmatch(r"[A-Za-z0-9._/-]+", entry.name)
-                            or any(part in ("", ".", "..", ".git") for part in parts)
-                            or entry.mode not in (0o644, 0o755)):
-                        raise ValueError("Invalid Core archive entry")
-                    path = stage.joinpath(*parts)
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    with package.extractfile(entry) as source, path.open("xb") as output:
-                        shutil.copyfileobj(source, output)
-                        os.fchmod(output.fileno(), entry.mode)
-                        output.flush()
-                        os.fsync(output.fileno())
+            extract_core(archive, stage)
             stage.chmod(0o755)
             os.rename(stage, target)
             directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -164,11 +168,15 @@ def install_runtime(archive, expected, binary_hash, name, arch):
                 shutil.rmtree(stage)
 
 
+# CORE_MAINTENANCE_EXTENSION
+
 if __name__ == "__main__":
     if os.geteuid() != 0:
         raise SystemExit("Host administrator required")
     os.umask(0o022)
-    if len(sys.argv) == 6 and sys.argv[1] == "node":
+    if len(sys.argv) == 3 and sys.argv[1] == "bootstrap":
+        bootstrap_maintenance(sys.stdin.buffer.read(32 * 1024 * 1024 + 1), sys.argv[2])
+    elif len(sys.argv) == 6 and sys.argv[1] == "node":
         data = sys.stdin.buffer.read(64 * 1024 * 1024 + 1)
         print(install_runtime(data, sys.argv[2], sys.argv[3],
                               sys.argv[4], sys.argv[5]))

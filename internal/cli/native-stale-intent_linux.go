@@ -10,7 +10,8 @@ import (
 
 func (a App) reuseObservedNativeIntent(plan InitPlan, path string,
 	ops managedHostOperations) (*managedInstallIntent, error) {
-	replacement := managedInstallIntent{Plan: plan, Pins: Pins(), Native: &nativeWakeSetup{}}
+	replacement := managedInstallIntent{Plan: plan, Pins: managedPlanProducers(plan),
+		Native: &nativeWakeSetup{}}
 	err := recoverNativeConfiguration(a.API, plan, ops.discover, replacement.Native,
 		func() error { return saveManagedIntent(path, replacement) })
 	if err != nil || replacement.Native.SecretState != "observed" {
@@ -89,8 +90,7 @@ func (a App) resumeStaleNativeIntent(ctx context.Context, plan InitPlan, token [
 func (a App) continueCompletedNativePR(ctx context.Context, plan InitPlan, token []byte,
 	out io.Writer, ops managedHostOperations, path string,
 	intent managedInstallIntent) error {
-	current, err := planInitRecipe(a.API, plan.Repository.FullName,
-		plan.Execution.Repository, "issue")
+	current, err := refreshNativeInitPlan(a.API, plan)
 	if err != nil {
 		if strings.Contains(err.Error(), "EXISTING_FILE_CONFLICT") ||
 			strings.Contains(err.Error(), "REQUIRES_EXPLICIT_UPGRADE") {
@@ -109,11 +109,12 @@ func (a App) continueCompletedNativePR(ctx context.Context, plan InitPlan, token
 			return a.continueNativeManagedInit(ctx, replacement.Plan, token, out, ops,
 				path, *replacement)
 		}
-		if sameProducerSources(intent.Pins, Pins()) {
+		if sameProducerSources(intent.Pins, managedPlanProducers(current)) {
 			// The original PR is confirmed and current callers/source agree. Only
 			// retrieval metadata changed; enter the unfinished host stage using the
 			// current authorized plan, never old metadata as root authorization.
-			replacement := managedInstallIntent{Plan: current, Pins: Pins(), Native: intent.Native}
+			replacement := managedInstallIntent{Plan: current,
+				Pins: managedPlanProducers(current), Native: intent.Native}
 			if err := saveManagedIntent(path, replacement); err != nil {
 				return err
 			}

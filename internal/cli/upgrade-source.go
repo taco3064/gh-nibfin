@@ -14,14 +14,28 @@ var versionPattern = regexp.MustCompile(
 	`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type upgradeSource struct {
-	Version   string    `json:"version"`
-	CLI       SourcePin `json:"cli"`
-	Producers Producers `json:"producers"`
-	recipes   map[string][]string
+	Kind            string           `json:"kind,omitempty"`
+	Execution       *SharedExecution `json:"execution,omitempty"`
+	Version         string           `json:"version"`
+	CLI             SourcePin        `json:"cli"`
+	Producers       Producers        `json:"producers"`
+	recipes         map[string][]string
+	maintained      bool
+	nativeLatest    bool
+	nativeExecution *SharedExecution
 }
 
 // A release is a locator. Only the peeled, read-back official commit supplies pins.
 func resolveUpgrade(api API, version string) (upgradeSource, error) {
+	result, err := resolveUpgradeMetadata(api, version)
+	if err != nil {
+		return result, err
+	}
+	result.recipes, err = upgradeRecipes(api, result.Producers)
+	return result, err
+}
+
+func resolveUpgradeMetadata(api API, version string) (upgradeSource, error) {
 	result := upgradeSource{}
 	if version != "latest" && !versionPattern.MatchString(version) {
 		return result, errors.New("UNSUPPORTED_UPGRADE_VERSION")
@@ -106,10 +120,9 @@ func resolveUpgrade(api API, version string) (upgradeSource, error) {
 	if err := decodeUpgradePins(data, &result.Producers); err != nil {
 		return result, err
 	}
-	result.recipes, err = upgradeRecipes(api, result.Producers)
 	result.Version = release.Tag
 	result.CLI = SourcePin{Repository: officialCLI, Commit: commit.SHA}
-	return result, err
+	return result, verifyProducers(api, result.Producers)
 }
 
 func upgradeRecipes(api API, pins Producers) (map[string][]string, error) {

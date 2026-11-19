@@ -17,23 +17,24 @@ const fixtureRetirementID = "12345678-1234-1234-1234-123456789abc"
 // Controlled operation seams simulate Core settlement, provider setup, native
 // registrations and relay. No fixture reaches credentials or a live host.
 type rebuildDriver struct {
-	api            *fakeAPI
-	old            sharedHost
-	host           *sharedHost
-	repositories   []preparationRepository
-	retirement     *rebuildRetirement
-	binding        agentBinding
-	runners        []RunnerInfo
-	paths          []string
-	calls          []string
-	deletes        []int64
-	pending        bool
-	denied         bool
-	incompatible   bool
-	lostRemoval    bool
-	lostAdoption   bool
-	lostActivation bool
-	failure        string
+	api                 *fakeAPI
+	old                 sharedHost
+	host                *sharedHost
+	repositories        []preparationRepository
+	retirement          *rebuildRetirement
+	binding             agentBinding
+	runners             []RunnerInfo
+	paths               []string
+	calls               []string
+	deletes             []int64
+	pending             bool
+	denied              bool
+	incompatible        bool
+	lostRemoval         bool
+	lostAdoption        bool
+	lostActivation      bool
+	continuationPending bool
+	failure             string
 }
 
 func newRebuildDriver(t *testing.T) *rebuildDriver {
@@ -118,6 +119,13 @@ func (d *rebuildDriver) Call(method, path string, input, output any) error {
 
 func (d *rebuildDriver) core(operation string) ([]byte, error) {
 	d.calls = append(d.calls, operation)
+	if operation == "complete-installed-lifecycle" {
+		if d.continuationPending {
+			return []byte(`{"status":"pending","results":[]}`),
+				errors.New("CORE_PENDING_RESULT")
+		}
+		return []byte(`{"status":"dispatched","results":[]}`), nil
+	}
 	if operation == "activate-shared-replacement" {
 		if d.failure == "activate" || len(d.host.AdoptedRepositoryIDs) != 2 {
 			return nil, errors.New("synthetic activation failure")
@@ -131,6 +139,11 @@ func (d *rebuildDriver) core(operation string) ([]byte, error) {
 		var result map[string]any
 		_ = json.Unmarshal(pool, &result)
 		result["status"], result["retirementId"] = "active", fixtureRetirementID
+		status := "dispatched"
+		if d.continuationPending {
+			status = "pending"
+		}
+		result["continuation"] = map[string]any{"status": status, "results": []any{}}
 		return jsonRelay(result), nil
 	}
 	if d.retirement == nil {

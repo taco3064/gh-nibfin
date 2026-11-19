@@ -10,27 +10,79 @@ import (
 )
 
 func (a App) rebuildOperations() rebuildOperations {
+	var selected *upgradeSource
+	var migration nativeMigrationOperations
 	host := a.managedHostOperations()
-	host.activate = a.activateReplacementRelay
+	host.activate = a.activateReplacementNative
+	host.adopt = func(plan InitPlan, runners []sharedRegistration) (*sharedHost, error) {
+		pins, err := currentRepositoryProducers(a.API, plan.Repository.FullName)
+		if err != nil {
+			return nil, err
+		}
+		return adoptInitialSharedHostWithPins(a.Process, plan, runners, pins)
+	}
+	host.adoptPeer = func(shared sharedHost, plan InitPlan) error {
+		pins, err := currentRepositoryProducers(a.API, plan.Repository.FullName)
+		if err != nil {
+			return err
+		}
+		return adoptSharedPeerWithAction(a.Process, shared, plan, pins.Action.Commit)
+	}
 	return rebuildOperations{
 		snapshot:   func() (rebuildSnapshot, error) { return readRebuildSnapshot(a.Process) },
 		compatible: a.requireRebuildProducers,
 		capability: a.agentCapability,
+		maintenance: func() error {
+			host, err := discoverSharedHost(a.Process)
+			if err != nil || host == nil {
+				return errors.New("REBUILD_ADOPTED_MANAGED_POOL_REQUIRED")
+			}
+			target, err := a.selectManagedNativeSource(*host, "latest")
+			if err != nil {
+				return err
+			}
+			selected = &target
+			if err := a.prepareCoreMaintenance(target.Producers); err != nil {
+				return err
+			}
+			migration, err = a.preparedNativeMigrationOperations(target)
+			return err
+		},
+		source: func(pins Producers) error {
+			if err := a.maintainNativeCoreSource(pins); err != nil {
+				return err
+			}
+			var err error
+			migration, err = a.preparedNativeMigrationOperations(*selected)
+			return err
+		},
 		core: func(operation string) ([]byte, error) {
 			// Advertised commands are compared, never executed as input.
 			if operation != "retire-shared-host" &&
-				operation != "activate-shared-replacement" {
+				operation != "activate-shared-replacement" &&
+				operation != "complete-installed-lifecycle" {
 				return nil, errors.New("INVALID_REBUILD_CORE_OPERATION")
 			}
 			return runInstalledSharedAdmin(rebuildResultProcess(a.Process), nil, operation)
+		},
+		migrate: func(host sharedHost) error {
+			_, _, err := migrateNativeConsumers(a.API, host, "latest",
+				migration, false)
+			return err
 		},
 		plan: func(target preparationRepository, intent *rebuildIntent) (InitPlan, error) {
 			repo, user, err := repository(a.API, target.Repository, true)
 			if err != nil || repo.ID != target.ID || user.ID != intent.Old.MemberID {
 				return InitPlan{}, errors.New("REBUILD_REPOSITORY_AUTHORIZATION_REQUIRED")
 			}
-			plan, err := planInitRecipe(a.API, repo.FullName, intent.Old.Repository,
-				"issue-managed")
+			plan, err := planCurrentInitRecipe(a.API, repo.FullName, intent.Old.Repository,
+				"issue")
+			if err != nil && strings.HasPrefix(err.Error(), "EXISTING_FILE_CONFLICT:") {
+				// Preview recognizes a migratable artifact installation. Apply runs
+				// migration before it obtains any destructive retirement authority.
+				plan, err = planCurrentInitRecipe(a.API, repo.FullName, intent.Old.Repository,
+					"issue-managed")
+			}
 			if err != nil || len(plan.Files) != 0 || plan.Execution == nil ||
 				*plan.Execution != intent.Old.SharedExecution {
 				return plan, errors.New("REBUILD_VERIFIED_MANAGED_INSTALLATION_REQUIRED")
@@ -118,7 +170,7 @@ func replacementPackageParent(plan InitPlan, app RunnerApplication,
 }
 
 func (a App) stageReplacementSlots(plan InitPlan, i rebuildIntent) ([]string, error) {
-	target, err := sharedTargetFromProducer(a.API)
+	target, err := trustedSharedTarget()
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +215,7 @@ func removePrivateRebuildIntent(path string) error {
 }
 
 func (a App) verifyReplacementPackages(plan InitPlan, i rebuildIntent) error {
-	target, err := sharedTargetFromProducer(a.API)
+	target, err := trustedSharedTarget()
 	if err != nil {
 		return err
 	}

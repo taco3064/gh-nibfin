@@ -12,17 +12,60 @@ var upgradeMessagePattern = regexp.MustCompile(
 		`(?:Sources: ([^\n]+)\n)?$`)
 
 func sameUpgradeIntent(a, b upgradePlan) bool {
+	native := a.Target.Kind == "installed-current" || b.Target.Kind == "installed-current" ||
+		a.Target.nativeLatest || b.Target.nativeLatest
+	current := reflect.DeepEqual(a.Current, b.Current)
+	changes := reflect.DeepEqual(a.Changes, b.Changes)
+	if native {
+		current = sameProducerSources(a.Current, b.Current)
+		changes = sameNativeUpgradeChanges(a.Changes, b.Changes)
+	}
 	return a.Repository.ID == b.Repository.ID &&
 		a.Repository.FullName == b.Repository.FullName &&
 		a.Repository.Owner.ID == b.Repository.Owner.ID &&
 		a.Repository.DefaultBranch == b.Repository.DefaultBranch &&
 		a.MemberID == b.MemberID && a.ManagedIssue == b.ManagedIssue &&
-		reflect.DeepEqual(a.Current, b.Current) &&
-		reflect.DeepEqual(a.Target, b.Target) && reflect.DeepEqual(a.Changes, b.Changes)
+		a.DesiredRecipe == b.DesiredRecipe &&
+		current && sameUpgradeTarget(a.Target, b.Target) && changes
+}
+
+func sameUpgradeTarget(a, b upgradeSource) bool {
+	if reflect.DeepEqual(a, b) {
+		return true
+	}
+	if a.Kind == "installed-current" && b.Kind == "installed-current" &&
+		!sameSharedExecution(a.Execution, b.Execution) {
+		return false
+	}
+	return (a.Kind == "installed-current" || b.Kind == "installed-current" ||
+		a.maintained || b.maintained) && sameProducerSources(a.Producers, b.Producers)
+}
+
+func sameNativeUpgradeChanges(a, b []upgradeChange) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index, first := range a {
+		second := b[index]
+		if first.Path != second.Path || first.Kind != second.Kind {
+			return false
+		}
+		if first.Content == second.Content {
+			continue
+		}
+		var left, right Producers
+		if first.Path != ".nibfin/producer-pins.json" ||
+			decodeUpgradePins([]byte(first.Content), &left) != nil ||
+			decodeUpgradePins([]byte(second.Content), &right) != nil ||
+			!sameProducerSources(left, right) {
+			return false
+		}
+	}
+	return true
 }
 
 func refreshUpgrade(api API, plan upgradePlan, version string) (upgradePlan, error) {
-	current, err := planUpgrade(api, plan.Repository.FullName, version, plan.ManagedIssue)
+	current, err := replanUpgrade(api, plan, version, "")
 	if err != nil {
 		return current, err
 	}
@@ -100,12 +143,18 @@ func observeUpgradeProposal(api API, plan upgradePlan, version,
 		return proposal, errors.New("UPGRADE_BRANCH_CONFLICT_INSPECT_BEFORE_RETRY")
 	}
 	proposal.PlanID = metadata[1]
+	retained := plan.Target
 	if metadata[2] != "" && metadata[2] != upgradeSourceMetadata(plan.Target) {
-		return proposal, errors.New("UPGRADE_BRANCH_CONFLICT_SOURCE_INTENT_CHANGED")
+		var err error
+		retained, err = retainedNativeProposalSource(api, plan.Target, metadata[2])
+		if err != nil {
+			return proposal, err
+		}
 	}
 	parent := commit.Parents[0].SHA
-	historical, err := planUpgradeAt(api, plan.Repository.FullName, version,
-		plan.ManagedIssue, parent)
+	original := plan
+	original.Target = retained
+	historical, err := replanUpgrade(api, original, version, parent)
 	if err != nil {
 		return proposal, err
 	}

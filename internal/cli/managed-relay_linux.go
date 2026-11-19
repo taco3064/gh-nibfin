@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"strconv"
 )
 
 type managedRelayOperations struct {
@@ -61,22 +60,7 @@ func (a App) activateManagedRelayMode(plan InitPlan,
 		},
 		system: func(args ...string) error { return runRelaySystemd(a.Process, args...) },
 		refresh: func() error {
-			output, err := runInstalledSharedAdmin(a.Process, nil,
-				"refresh-managed-issue-caller", plan.Repository.FullName,
-				strconv.FormatInt(plan.Repository.ID, 10))
-			var receipt struct {
-				Status       string          `json:"status"`
-				RepositoryID int64           `json:"repositoryId"`
-				Runners      json.RawMessage `json:"runners"`
-			}
-			pool, _ := json.Marshal(host.Runners)
-			if err != nil || json.Unmarshal(output, &receipt) != nil ||
-				(receipt.Status != "adopted" && receipt.Status != "unchanged") ||
-				receipt.RepositoryID != plan.Repository.ID ||
-				!equalRelayJSON(pool, receipt.Runners) {
-				return errors.New("MANAGED_CALLER_REFRESH_REQUIRES_READBACK")
-			}
-			return recheckSharedHost(a.Process, a.API, *host)
+			return a.refreshManagedCaller(plan, *host)
 		},
 		recheck: func() error {
 			current, err := planInitRecipe(a.API, plan.Repository.FullName,

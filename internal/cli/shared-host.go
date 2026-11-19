@@ -53,11 +53,16 @@ type sharedRegistration struct {
 }
 
 func adoptSharedPeer(process Process, host sharedHost, plan InitPlan) error {
+	return adoptSharedPeerWithAction(process, host, plan, Pins().Action.Commit)
+}
+
+func adoptSharedPeerWithAction(process Process, host sharedHost, plan InitPlan,
+	action string) error {
 	if plan.Execution == nil || plan.Repository.ID == host.RepositoryID {
 		return errors.New("INVALID_SHARED_PEER_INSTALLATION")
 	}
 	out, err := runSharedHostAdmin(process, "adopt-shared-peer", plan.Repository.FullName,
-		strconv.FormatInt(plan.Repository.ID, 10), Pins().Action.Commit)
+		strconv.FormatInt(plan.Repository.ID, 10), action)
 	if err != nil {
 		return errors.New("SHARED_PEER_ADOPTION_REQUIRES_ADMIN_OR_READBACK")
 	}

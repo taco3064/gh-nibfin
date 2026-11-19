@@ -11,16 +11,19 @@ import (
 )
 
 type rebuildOperations struct {
-	snapshot   func() (rebuildSnapshot, error)
-	compatible func() error
-	capability func(string) (agentBinding, error)
-	core       func(string) ([]byte, error)
-	plan       func(preparationRepository, *rebuildIntent) (InitPlan, error)
-	prepare    func(InitPlan) error
-	packages   func(InitPlan, rebuildIntent) error
-	stage      func(InitPlan, rebuildIntent) ([]string, error)
-	register   func(InitPlan, rebuildIntent, func([]sharedRegistration) error) error
-	host       managedHostOperations
+	snapshot    func() (rebuildSnapshot, error)
+	compatible  func() error
+	capability  func(string) (agentBinding, error)
+	core        func(string) ([]byte, error)
+	migrate     func(sharedHost) error
+	maintenance func() error
+	source      func(Producers) error
+	plan        func(preparationRepository, *rebuildIntent) (InitPlan, error)
+	prepare     func(InitPlan) error
+	packages    func(InitPlan, rebuildIntent) error
+	stage       func(InitPlan, rebuildIntent) ([]string, error)
+	register    func(InitPlan, rebuildIntent, func([]sharedRegistration) error) error
+	host        managedHostOperations
 }
 
 func (a App) runRebuild(args []string, out io.Writer) error {
@@ -113,6 +116,9 @@ func previewRebuild(repo Repository, user User, provider string,
 		return empty, nil, errors.New("REBUILD_REPOSITORY_MEMBER_CHANGED")
 	}
 	unmet := []string{}
+	if releasedRebuild(*intent, snapshot) {
+		return *intent, unmet, nil
+	}
 	binding, err := ops.capability(provider)
 	if err != nil || !binding.valid() || binding.Provider != provider {
 		unmet = append(unmet, "AGENT_COMPOSITION_UNAVAILABLE")
@@ -137,6 +143,40 @@ func previewRebuild(repo Repository, user User, provider string,
 
 func (a App) applyRebuild(repo Repository, user User, provider string, token []byte,
 	encoder installResultEncoder, ops rebuildOperations) error {
+	if ops.maintenance != nil && !rebuildContinuationOnly(ops) {
+		if err := ops.maintenance(); err != nil {
+			encodeCoreOperationFailure(encoder, err)
+			return err
+		}
+	}
+	err := a.applyRebuildAdmitted(repo, user, provider, token, encoder, ops)
+	var source *nativeSourceRequired
+	if !errors.As(err, &source) || ops.source == nil {
+		return err
+	}
+	if err := ops.source(source.Producers); err != nil {
+		encodeCoreOperationFailure(encoder, err)
+		return err
+	}
+	return a.applyRebuildAdmitted(repo, user, provider, token, encoder, ops)
+}
+
+func rebuildContinuationOnly(ops rebuildOperations) bool {
+	path, err := sharedMutationPath()
+	if err != nil {
+		return false
+	}
+	intent, err := readRebuildIntent(path)
+	if err != nil || intent == nil {
+		return false
+	}
+	snapshot, err := ops.snapshot()
+	return err == nil && reconcileRebuildSnapshot(*intent, snapshot) == nil &&
+		releasedRebuild(*intent, snapshot)
+}
+
+func (a App) applyRebuildAdmitted(repo Repository, user User, provider string,
+	token []byte, encoder installResultEncoder, ops rebuildOperations) error {
 	unlock, err := sharedMutationLock()
 	if err != nil {
 		return err
@@ -158,9 +198,18 @@ func (a App) applyRebuild(repo Repository, user User, provider string, token []b
 		return err
 	}
 	if err := a.resumeRebuild(&intent, token, ops, save, encoder); err != nil {
+		var source *nativeSourceRequired
+		if errors.As(err, &source) {
+			return err
+		}
 		_ = encoder.Encode(map[string]any{"status": "pending",
 			"code":         "REBUILD_INCOMPLETE_RESUME_SAME_COMMAND",
-			"retirementId": intent.RetirementID, "activation": "unverified"})
+			"retirementId": intent.RetirementID, "activation": "unverified",
+			"cause": coreOperationCause(err)})
+		var command *CommandError
+		if errors.As(err, &command) {
+			return err
+		}
 		return &CommandError{Code: err.Error(), Exit: 2}
 	}
 	// Intent is retained through successful activation and output. Removing it

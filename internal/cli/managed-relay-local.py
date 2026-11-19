@@ -88,6 +88,8 @@ def snapshot():
 def execute(request):
     trusted(ROOT)
     operation = request["operation"]
+    if operation == "bindings":
+        return {"bindings": bindings()}
     if operation == "lock":
         os.mkdir(LOCK, 0o700)
         return {"status": "locked"}

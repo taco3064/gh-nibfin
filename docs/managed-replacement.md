@@ -10,7 +10,9 @@ unavailable; positive Claude orchestration tests use private controlled fixtures
 The CLI owns durable orchestration intent and official GitHub registration
 operations. Core owns provider validation, adoption validation, settlement,
 resource cleanup, admission and final activation. Rebuild never edits Core
-retirement or drain files and never changes shared caller recipes or pins.
+retirement or drain files. Before destructive retirement, it prepares native
+dispatch for every actual adopted consumer through the existing upgrade PR
+route. Pending proposals preserve the old pool and shared notification resources.
 
 | Interruption | Recovery on the same apply command |
 | --- | --- |
@@ -22,6 +24,12 @@ retirement or drain files and never changes shared caller recipes or pins.
 | During peer adoption | Re-adopt missing historical peers using Core's maintained operation. |
 | During service or wake setup | Reuse verified installer and routing readback; admission remains held. |
 | During activation | Repeat `activate-shared-replacement` through rebuild; local phases and online listeners do not establish release. |
+| After confirmed release | Resume fixed lifecycle completion using the same observed pool, provider, peers and fresh IDs; do not reread removed staged credentials, register or start replacement slots again. |
+
+Successful replacement activation and lifecycle continuation are distinct. A
+valid activation response may contain a pending continuation. Rebuild retains
+its private intent until continuation is observed as dispatched or Owner-paused.
+It never installs or enables the obsolete notification timer for the new pool.
 
 A pending result is incomplete. Preserve private intent and resolve the reported
 prerequisite; do not unregister unrelated Runners, revoke original logins, remove
