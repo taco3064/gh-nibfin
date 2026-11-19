@@ -128,14 +128,8 @@ func upgradeRecipes(api API, pins Producers) (map[string][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	manifestFound := false
-	for _, file := range files {
-		if sha256Hash(file.data) == pins.Core.ManifestHash {
-			manifestFound = true
-		}
-	}
-	if !manifestFound {
-		return nil, errors.New("CORE_MANIFEST_HASH_MISMATCH")
+	if err := verifyCoreArchiveManifest(files, pins.Core); err != nil {
+		return nil, err
 	}
 	data, _, err := content(api, pins.Core.Repository,
 		"src/caller-recipes.json", pins.Core.Commit)
