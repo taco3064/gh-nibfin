@@ -135,7 +135,7 @@ func runUpgradeHandoff(plans []upgradePlan, execReady bool, recipe upgradeHandof
 	for _, plan := range plans {
 		if len(plan.Changes) == 0 {
 			if merged := mergedProposal(progress, plan.Repository); merged != nil {
-				retry := progress.Continuation == "pending"
+				retry := upgradeConsumerNeedsRecovery(progress, plan.Repository)
 				observed, err := ports.recover(plan, *merged, retry)
 				if observed.RunURL != "" {
 					result.Recovery = append(result.Recovery, observed)
@@ -174,6 +174,18 @@ func runUpgradeHandoff(plans []upgradePlan, execReady bool, recipe upgradeHandof
 		}
 	}
 	return result, firstErr
+}
+
+func upgradeConsumerNeedsRecovery(progress managedUpgradeProgress, repo Repository) bool {
+	if progress.Continuation == "pending" || progress.Readiness == "pending" {
+		return true
+	}
+	for _, consumer := range progress.Consumers {
+		if consumer.RepositoryID == repo.ID && consumer.Repository == repo.FullName {
+			return consumer.Installation == "pending"
+		}
+	}
+	return progress.Installation == "pending"
 }
 
 func mergedProposal(p managedUpgradeProgress, repo Repository) *managedUpgradeProposal {

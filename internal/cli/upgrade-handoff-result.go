@@ -34,23 +34,25 @@ type upgradeExecutionRunRef struct {
 	URL string `json:"url"`
 }
 
-type managedUpgradeProgress struct {
-	OperationID  string                   `json:"operationId"`
-	Execution    string                   `json:"executionRepository"`
-	ExecutionID  int64                    `json:"executionRepositoryId"`
-	Proposals    []managedUpgradeProposal `json:"proposals"`
-	Handoff      string                   `json:"handoff"`
+type managedUpgradeConsumer struct {
+	Repository   string                   `json:"repository"`
+	RepositoryID int64                    `json:"repositoryId"`
 	Installation string                   `json:"installation"`
-	Readiness    string                   `json:"readiness"`
-	Continuation string                   `json:"continuation"`
-	CoreRunID    int64                    `json:"coreRunId,omitempty"`
-	Consumers    []struct {
-		Repository   string                   `json:"repository"`
-		RepositoryID int64                    `json:"repositoryId"`
-		Installation string                   `json:"installation"`
-		Handoff      string                   `json:"handoff"`
-		Cause        *coreOperationDiagnostic `json:"cause,omitempty"`
-	} `json:"consumers"`
+	Handoff      string                   `json:"handoff"`
+	Cause        *coreOperationDiagnostic `json:"cause,omitempty"`
+}
+
+type managedUpgradeProgress struct {
+	OperationID         string                   `json:"operationId"`
+	Execution           string                   `json:"executionRepository"`
+	ExecutionID         int64                    `json:"executionRepositoryId"`
+	Proposals           []managedUpgradeProposal `json:"proposals"`
+	Handoff             string                   `json:"handoff"`
+	Installation        string                   `json:"installation"`
+	Readiness           string                   `json:"readiness"`
+	Continuation        string                   `json:"continuation"`
+	CoreRunID           int64                    `json:"coreRunId,omitempty"`
+	Consumers           []managedUpgradeConsumer `json:"consumers"`
 	ReadinessCause      *coreOperationDiagnostic `json:"readinessCause,omitempty"`
 	InstallationCause   *coreOperationDiagnostic `json:"installationCause,omitempty"`
 	HandoffCause        *coreOperationDiagnostic `json:"handoffCause,omitempty"`
