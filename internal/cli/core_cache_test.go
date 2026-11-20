@@ -40,10 +40,21 @@ func testArchiveMode(t *testing.T, names []string, mode int64) []byte {
 	return buffer.Bytes()
 }
 
+// Production resolves the cache namespace before reserving a source. Windows
+// temporary paths may contain short-name aliases, so fixtures must do so too.
+func canonicalCacheFixtureParent(t *testing.T) string {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parent
+}
+
 func TestFailedFreshCacheRemovedAndExistingDataPreserved(t *testing.T) {
 	archive := testArchive(t, []string{"bin/nibfin-core.mjs", ".node-version"})
 	for _, existing := range []bool{false, true} {
-		target := filepath.Join(t.TempDir(), "candidate")
+		target := filepath.Join(canonicalCacheFixtureParent(t), "candidate")
 		if existing {
 			if os.Mkdir(target, 0700) != nil ||
 				os.WriteFile(filepath.Join(target, "user-data"), []byte("keep"), 0600) != nil {
@@ -51,7 +62,7 @@ func TestFailedFreshCacheRemovedAndExistingDataPreserved(t *testing.T) {
 			}
 		}
 		_, err := verifyCache(failingVerifier{}, archive, target, "trusted-verifier",
-			"approved-pin", Pins().Core)
+			"approved-pin", Pins().Core, nil, unusedCache)
 		if err == nil {
 			t.Fatal("failed verification must not succeed")
 		}

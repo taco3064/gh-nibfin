@@ -72,7 +72,12 @@ func candidateArchive(api API, pins Producers) ([]byte, error) {
 	return files["nibfin-core.tar.gz"], nil
 }
 
-func installCoreCache(api API, process Process) (directory string, err error) {
+func installCoreCache(api API, process Process) (string, error) {
+	return installCoreCacheReporting(api, process, nil)
+}
+
+func installCoreCacheReporting(api API, process Process,
+	publish func(cacheCleanupReport)) (directory string, err error) {
 	pins := Pins()
 	cache, err := os.UserCacheDir()
 	if err != nil {
@@ -100,9 +105,6 @@ func installCoreCache(api API, process Process) (directory string, err error) {
 	if err != nil {
 		return "", err
 	}
-	if err := sweepEmptyVerifierDirectories(parent); err != nil {
-		return "", err
-	}
 	archive, err := candidateArchive(api, pins)
 	if err != nil {
 		return "", err
@@ -111,12 +113,21 @@ func installCoreCache(api API, process Process) (directory string, err error) {
 	if err != nil {
 		return "", errors.New("CANDIDATE_DIRECTORY_UNAVAILABLE")
 	}
+	reserved, statErr := os.Lstat(root)
+	if statErr != nil {
+		return "", statErr
+	}
+	scratch := map[string]coreArchiveFile{}
 	defer func() {
-		if cleanupErr := os.RemoveAll(root); cleanupErr != nil {
-			directory = ""
-			err = errors.Join(err, errors.New("CANDIDATE_TEMPORARY_CLEANUP_INCOMPLETE"))
-		}
+		cleanupReservedReport(root, reserved, scratch, publish, nativeCacheUse)
 	}()
+	files, archiveErr := readCoreArchive(archive)
+	if archiveErr != nil {
+		return "", archiveErr
+	}
+	for name, file := range files {
+		scratch["bootstrap/"+name] = file
+	}
 	bootstrap := filepath.Join(root, "bootstrap")
 	if err := unpackCore(archive, bootstrap); err != nil {
 		return "", err
@@ -135,22 +146,27 @@ func installCoreCache(api API, process Process) (directory string, err error) {
 	}
 	pinPath := filepath.Join(root, "pin.json")
 	pinJSON, _ := json.Marshal(pins.Core)
+	scratch["pin.json"] = coreArchiveFile{data: pinJSON, mode: 0644}
 	if os.WriteFile(pinPath, pinJSON, 0600) != nil {
 		return "", errors.New("CANDIDATE_FILE_UNAVAILABLE")
 	}
 	target := filepath.Join(parent, pins.Core.Commit)
 	entry := filepath.Join(bootstrap, "bin", "nibfin-core.mjs")
-	return verifyCache(process, archive, target, entry, pinPath, pins.Core)
+	return verifyCache(process, archive, target, entry, pinPath,
+		pins.Core, publish, nativeCacheUse)
 }
 
 func verifyCache(process Process, archive []byte, target, entry, pinPath string,
-	pin SourcePin) (directory string, err error) {
-	fresh := false
+	pin SourcePin, publish func(cacheCleanupReport), observe cacheUseObserver) (
+	directory string, err error) {
+	var reserved os.FileInfo
+	files, archiveErr := readCoreArchive(archive)
+	if archiveErr != nil {
+		return "", archiveErr
+	}
 	defer func() {
-		if err != nil && fresh {
-			if cleanupErr := os.RemoveAll(target); cleanupErr != nil {
-				err = errors.Join(err, errors.New("CANDIDATE_FAILED_CACHE_CLEANUP_INCOMPLETE"))
-			}
+		if err != nil && reserved != nil {
+			cleanupReservedReport(target, reserved, files, publish, observe)
 		}
 	}()
 	if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
@@ -159,7 +175,10 @@ func verifyCache(process Process, archive []byte, target, entry, pinPath string,
 		if err := os.Mkdir(target, 0700); err != nil {
 			return "", errors.New("CANDIDATE_CACHE_CHANGED_INSPECT_BEFORE_RETRY")
 		}
-		fresh = true
+		reserved, err = os.Lstat(target)
+		if err != nil {
+			return "", err
+		}
 		if err := unpackCore(archive, target); err != nil {
 			return "", err
 		}
