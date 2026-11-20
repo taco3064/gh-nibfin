@@ -113,8 +113,9 @@ is new, review and merge the execution repository proposal first.
 
 The final output lists each read-back PR URL and shows whether its review and
 merge are pending. The nested `upgrade` object reports `handoff`, `installation`,
-`readiness` and `continuation` separately. When Core confirms handoff, the CLI
-can close and Core continues from the native merge event. Owner pause remains
+`readiness` and `continuation` separately. `core_run_url` links to the native
+maintenance workflow when source installation is queued. After Core confirms
+handoff, the CLI can close and Core continues from the native merge event. Owner pause remains
 effective. An unchanged repository can complete directly without a proposal,
 including when another adopted repository is still awaiting review. A separate
 cleanup result reports any remaining shared-resource retirement.
@@ -141,6 +142,13 @@ Core administrator denial or an unsupported operation retains exit 1 and its
 specific code. Optional GitHub API diagnostics include only their kind and HTTP
 status, without response bodies or credential information. Management operations
 respect the command's cancellation and caller deadline without an added duration.
+
+When an existing managed installation needs a Core source update during `init`,
+Core can hand it to the adopted execution repository's native maintenance
+workflow. `UPGRADE_CORE_ACTIVATION_QUEUED` identifies pending installation and
+includes its Actions run under `cause.coreRunURL`. The workflow deploys Core and
+continues the installed lifecycle. If `init` still has work, rerun the same apply
+after successful maintenance to continue from verified host state.
 Changed repository ownership, revoked permission, changed installed managed
 content or changed source intent remains pending with a specific cause. Repeat
 explicit apply after resolving that cause; preview remains read-only.

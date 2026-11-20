@@ -19,8 +19,8 @@ func (a App) readPreparedMaintenance() (maintenanceReceipt, error) {
 	return decodeMaintenanceReceipt(output, callErr)
 }
 
-// This runs outside CLI host admission. The root entry owns the existing gate;
-// normal admission is acquired only after its result and actual host readback.
+// This runs outside CLI host admission. Normal admission is acquired only after
+// the root preparation result and actual host readback.
 func (a App) prepareCoreMaintenance(pins Producers) error {
 	host, err := discoverSharedHost(a.Process)
 	if err != nil || host == nil {
@@ -141,15 +141,22 @@ func sharedDeploymentSource(values []string) string {
 	return sharedCoreDeploy
 }
 
-func (a App) maintainNativeCoreSource(pins Producers) error {
-	current, err := installedSharedPin()
-	if err != nil {
-		return err
-	}
+func (a App) maintainNativeCoreSource(pins Producers, execution SharedExecution) error {
 	if err := a.prepareCoreMaintenance(pins); err != nil {
 		return err
 	}
 	receipt, err := a.readPreparedMaintenance()
+	if err != nil {
+		return err
+	}
+	return completeCoreSourceMaintenance(a.API, pins, execution, receipt, installedSharedPin,
+		a.runMaintenanceBridge)
+}
+
+func completeCoreSourceMaintenance(api API, pins Producers, execution SharedExecution,
+	receipt maintenanceReceipt, readInstalled func() (SourcePin, error),
+	bridge func(any) ([]byte, error)) error {
+	current, err := readInstalled()
 	if err != nil {
 		return err
 	}
@@ -159,16 +166,16 @@ func (a App) maintainNativeCoreSource(pins Producers) error {
 	}
 	// An admitted matching operation resumes its finish after apply without
 	// demanding another archive/CD proof; other targets use native readback.
-	target, err := selectNativeOperationTarget(a.API, pins, receipt)
+	target, err := selectNativeOperationTarget(api, pins, receipt)
 	if err != nil {
 		return err
 	}
-	output, callErr := a.runMaintenanceBridge(map[string]any{
+	output, callErr := bridge(map[string]any{
 		"kind": "administrator", "coreOnly": true, "target": target})
-	if err := decodeCoreSourceMaintenance(output, callErr); err != nil {
+	if err := decodeMaintenanceForExecution(output, callErr, execution); err != nil {
 		return err
 	}
-	current, err = installedSharedPin()
+	current, err = readInstalled()
 	if err != nil || !nativeCoreSourcesMatch(current, pins.Core) {
 		return errors.New("CORE_SOURCE_MAINTENANCE_REQUIRES_READBACK")
 	}
