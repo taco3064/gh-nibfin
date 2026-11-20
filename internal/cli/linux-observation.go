@@ -6,14 +6,15 @@ import (
 )
 
 type linuxTargetObservation struct {
-	Distribution      string       `json:"distribution"`
-	Version           string       `json:"version"`
-	KernelArch        string       `json:"kernel_arch"`
-	RuntimeArch       string       `json:"runtime_arch"`
-	ExecutableMachine uint16       `json:"executable_elf_machine"`
-	Architecture      string       `json:"architecture,omitempty"`
-	Checks            []capability `json:"checks"`
-	Readiness         string       `json:"protected_execution"`
+	Reclamation       *linuxReclamation `json:"reclamation,omitempty"`
+	Distribution      string            `json:"distribution"`
+	Version           string            `json:"version"`
+	KernelArch        string            `json:"kernel_arch"`
+	RuntimeArch       string            `json:"runtime_arch"`
+	ExecutableMachine uint16            `json:"executable_elf_machine"`
+	Architecture      string            `json:"architecture,omitempty"`
+	Checks            []capability      `json:"checks"`
+	Readiness         string            `json:"protected_execution"`
 }
 
 // os-release is data, never shell input. Only the two finite identity fields

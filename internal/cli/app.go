@@ -50,6 +50,8 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Shared execution: init --repo OWNER/REPO --execution-repo OWNER/REPO.\n"+
 			"Shared host setup: init --repo OWNER/REPO --apply --start-shared-services.\n"+
 			"Desktop targets: --target PROVIDER:NAME; --consent-open-target to open.\n"+
+			"Windows sparse VHD is experimental: --reclamation enable (default) or unchanged.\n"+
+			"Windows apply: --consent-experimental-sparse or --reclamation unchanged.\n"+
 			"Desktop preview discovers existing WSL 2 or Multipass Ubuntu guests.\n"+
 			"Optional Runner setup: --runner-directory PATH --runner-name NAME.\n"+
 			"Member handoff: init --quick request/issue/register/confirm/reconcile\n"+

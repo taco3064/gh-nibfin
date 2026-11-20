@@ -145,8 +145,12 @@ func (a App) runInit(args []string, out io.Writer) error {
 	encoder.SetIndent("", "  ")
 	preview := map[string]any{"status": "preview", "plan": plan,
 		"protected_execution": "unverified"}
-	if nativeLinuxTarget() && plan.Execution != nil {
-		preview["linux_target"] = managedTargetPreview(a.API, a.Process)
+	if nativeLinuxTarget() {
+		if plan.Execution != nil {
+			preview["linux_target"] = managedTargetPreview(a.API, a.Process)
+		} else {
+			preview["reclamation"] = localLinuxReclamation()
+		}
 	}
 	if legacyHost {
 		preview["shared_host_adoption"] = "installed_core_upgrade_required"

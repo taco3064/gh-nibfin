@@ -18,6 +18,7 @@ func sanitizedDesktopLinux(o linuxTargetObservation) *linuxTargetObservation {
 		KernelArch: o.KernelArch, RuntimeArch: o.RuntimeArch, Architecture: o.Architecture,
 		ExecutableMachine: o.ExecutableMachine, Readiness: "unverified"}
 
+	result.Reclamation = sanitizedReclamation(o.Reclamation)
 	result.Checks = sanitizedDesktopChecks(o.Checks, linuxPrerequisiteChecks, true)
 	optional := []string{"docker_endpoint", "dedicated_engine", "producer_platform",
 		"docker.service", "nibfin-engine.service"}
