@@ -12,6 +12,7 @@ import (
 func (a App) rebuildOperations() rebuildOperations {
 	var selected *upgradeSource
 	var migration nativeMigrationOperations
+	var execution SharedExecution
 	host := a.managedHostOperations()
 	host.activate = a.activateReplacementNative
 	host.adopt = func(plan InitPlan, runners []sharedRegistration) (*sharedHost, error) {
@@ -37,6 +38,7 @@ func (a App) rebuildOperations() rebuildOperations {
 			if err != nil || host == nil {
 				return errors.New("REBUILD_ADOPTED_MANAGED_POOL_REQUIRED")
 			}
+			execution = host.SharedExecution
 			target, err := a.selectManagedNativeSource(*host, "latest")
 			if err != nil {
 				return err
@@ -49,7 +51,7 @@ func (a App) rebuildOperations() rebuildOperations {
 			return err
 		},
 		source: func(pins Producers) error {
-			if err := a.maintainNativeCoreSource(pins); err != nil {
+			if err := a.maintainNativeCoreSource(pins, execution); err != nil {
 				return err
 			}
 			var err error

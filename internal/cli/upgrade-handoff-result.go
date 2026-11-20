@@ -52,6 +52,7 @@ type managedUpgradeProgress struct {
 	Readiness           string                   `json:"readiness"`
 	Continuation        string                   `json:"continuation"`
 	CoreRunID           int64                    `json:"coreRunId,omitempty"`
+	CoreRunURL          string                   `json:"coreRunURL,omitempty"`
 	Consumers           []managedUpgradeConsumer `json:"consumers"`
 	ReadinessCause      *coreOperationDiagnostic `json:"readinessCause,omitempty"`
 	InstallationCause   *coreOperationDiagnostic `json:"installationCause,omitempty"`
@@ -84,7 +85,7 @@ func validUpgradeProposal(p managedUpgradeProposal, execution string) bool {
 		return false
 	}
 	return p.ExecutionRun == nil || p.ExecutionRun.ID > 0 && p.ExecutionRun.URL ==
-		fmt.Sprintf("https://github.com/%s/actions/runs/%d", execution, p.ExecutionRun.ID)
+		nativeActionsRunURL(execution, p.ExecutionRun.ID)
 }
 
 func decodeManagedUpgrade(data []byte, callErr error, execution SharedExecution,
@@ -102,6 +103,10 @@ func decodeManagedUpgrade(data []byte, callErr error, execution SharedExecution,
 		return result.Progress, pendingCoreOperation(data, "UPGRADE_HANDOFF_PENDING")
 	}
 	p := result.Progress
+	if p.CoreRunURL != "" && (p.CoreRunID <= 0 ||
+		p.CoreRunURL != nativeActionsRunURL(execution.Repository, p.CoreRunID)) {
+		return managedUpgradeProgress{}, errors.New("UPGRADE_CORE_RUN_UNVERIFIED")
+	}
 	if !upgradeOperationID.MatchString(p.OperationID) || operation != "" &&
 		p.OperationID != operation || p.Execution != execution.Repository ||
 		p.ExecutionID != execution.RepositoryID || !handoffState(p.Handoff) ||
@@ -142,6 +147,7 @@ func sanitizeUpgradeCause(entry *coreOperationDiagnostic) {
 		entry.Status = ""
 	}
 	entry.Installation = ""
+	entry.CoreRunID, entry.CoreRunURL = 0, ""
 	data, _ := json.Marshal(entry.GitHubAPI)
 	entry.GitHubAPI = nativeGitHubCause(data)
 }

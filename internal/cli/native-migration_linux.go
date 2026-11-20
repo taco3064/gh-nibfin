@@ -168,7 +168,7 @@ func (a App) continueNativeUpgrade(host sharedHost, version string, out io.Write
 				migration, true)
 		},
 		maintain: func(pins Producers) error {
-			if err := a.maintainNativeCoreSource(pins); err != nil {
+			if err := a.maintainNativeCoreSource(pins, host.SharedExecution); err != nil {
 				return err
 			}
 			var err error

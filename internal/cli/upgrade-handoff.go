@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -241,8 +240,10 @@ func reportUpgradeHandoff(out io.Writer, result upgradeHandoffOutcome, err error
 		result.Continuation = nativeUpgradeContinuation(*result.Upgrade)
 	}
 	if result.Upgrade != nil && result.Upgrade.CoreRunID > 0 {
-		result.CoreRunURL = fmt.Sprintf("https://github.com/%s/actions/runs/%d",
-			officialCore, result.Upgrade.CoreRunID)
+		result.CoreRunURL = result.Upgrade.CoreRunURL
+		if result.CoreRunURL == "" {
+			result.CoreRunURL = nativeActionsRunURL(officialCore, result.Upgrade.CoreRunID)
+		}
 	}
 	if hasUpgradeReview(result.Migration) {
 		result.Message = "Upgrade pull requests were created or reused. " +
@@ -271,6 +272,11 @@ func reportUpgradeHandoff(out io.Writer, result upgradeHandoffOutcome, err error
 			code = "CORE_ONLY_MAINTENANCE_REQUIRED"
 		} else if len(result.Migration) > 0 {
 			code = "NATIVE_MIGRATION_PR_PENDING"
+		} else if result.Upgrade != nil && result.CoreRunURL != "" &&
+			result.Upgrade.Installation == "pending" &&
+			result.Upgrade.InstallationCause != nil &&
+			result.Upgrade.InstallationCause.Code == coreActivationQueued {
+			code = coreActivationQueued
 		}
 		err = &CommandError{Code: code, Exit: 2}
 	}

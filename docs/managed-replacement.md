@@ -14,6 +14,12 @@ retirement or drain files. Before destructive retirement, it prepares native
 dispatch for every actual adopted consumer through the existing upgrade PR
 route. Pending proposals preserve the old pool and shared notification resources.
 
+If the serving pool needs a Core source update first, Core can queue it through
+the adopted execution repository. `UPGRADE_CORE_ACTIVATION_QUEUED` includes the
+native Actions run under `cause.coreRunURL`. After that run completes, rerun the
+same authorized rebuild apply to continue before retirement using verified host
+state. This preserves the separate administrator operation for an offline pool.
+
 | Interruption | Recovery on the same apply command |
 | --- | --- |
 | Before settlement | Request fresh Core retirement readback; no removal on unknown settlement. |
