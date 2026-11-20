@@ -1,10 +1,42 @@
 package cli
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestNativeUpgradePreservesMaintainedUntitledCallers(t *testing.T) {
+	api := upgradeFixture(t, true, true)
+	for _, pins := range []Producers{api.old, api.target} {
+		recipes, err := callerRecipes(api, pins.Core)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, kind := range []string{"issue", "action-dispatch"} {
+			lines := recipes[kind]
+			prefix := []string{lines[0], "run-name: >-", "  Native issue operation"}
+			recipes[kind] = append(prefix, lines[1:]...)
+		}
+		data, _ := json.Marshal(recipes)
+		path := "repos/" + pins.Core.Repository + "/contents/src/caller-recipes.json?ref="
+		api.data[path+pins.Core.Commit] = encoded(data)
+	}
+	plan, err := planNativeUpgradeTarget(api, "example/project", "latest",
+		upgradeSource{Producers: api.target, maintained: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range plan.Changes {
+		if strings.Contains(change.Content, "run-name:") {
+			t.Fatal("upgrade changed the existing caller title layout", change.Path)
+		}
+	}
+	if err := revalidateUpgrade(api, plan, "latest"); err != nil {
+		t.Fatal("read back compatible historical layout", err)
+	}
+}
 
 func TestUpgradeRecognizesAdoptedIssueOnlyExecutionWithoutLegacyChanges(t *testing.T) {
 	api := upgradeFixture(t, false, true)

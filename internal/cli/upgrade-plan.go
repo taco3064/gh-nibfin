@@ -166,7 +166,9 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 	if err != nil {
 		return plan, err
 	}
-	recipe := recognizeIssueRecipe(plan.Current, plan.MemberID, recipes, issue)
+	allowUntitled := selected != nil && selected.maintained
+	recipe := recognizeIssueRecipeVariant(plan.Current, plan.MemberID, recipes,
+		issue, allowUntitled)
 	if recipe == "" {
 		return plan, errors.New("INSTALLED_ISSUE_CALLER_NOT_RECOGNIZED")
 	}
@@ -181,12 +183,17 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 		return finishUpgradePlan(api, plan)
 	}
 	old := templatesForRecipe(plan.Current, plan.MemberID, recipes, recipe)
+	untitled := map[string]bool{}
 	for path, expected := range old {
 		observed, err := installedUpgradeFile(api, plan, path)
 		if err != nil {
 			return plan, err
 		}
-		if observed != expected {
+		if observed != expected && allowUntitled &&
+			(path == managedIssueWorkflow || path == ".github/workflows/nibfin-wake.yml") &&
+			observed == untitledCaller(expected) {
+			old[path], untitled[path] = observed, true
+		} else if observed != expected {
 			return plan, fmt.Errorf("INSTALLED_MANAGED_FILE_CHANGED: %s", path)
 		}
 	}
@@ -216,6 +223,11 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 	}
 	next := templatesForRecipe(plan.Target.Producers, plan.MemberID,
 		plan.Target.recipes, recipe)
+	for path := range untitled {
+		if desired, exists := next[path]; exists {
+			next[path] = untitledCaller(desired)
+		}
+	}
 	paths := map[string]bool{}
 	for path := range old {
 		paths[path] = true
