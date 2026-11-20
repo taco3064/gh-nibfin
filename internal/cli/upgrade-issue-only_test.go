@@ -7,6 +7,26 @@ import (
 	"testing"
 )
 
+func TestManagedUpgradePreservesEquivalentProducerJSON(t *testing.T) {
+	api := upgradeFixture(t, true, true)
+	const path = ".nibfin/producer-pins.json"
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(api.installed[path]), &fields); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaceInstalledFile(t, api, path, string(data), "100644")
+	target := upgradeSource{Kind: "installed-current", Producers: api.old,
+		Execution: &SharedExecution{"example/project", 100}, maintained: true}
+	plan, err := planNativeUpgradeTarget(api, "example/project", "latest", target)
+	if err != nil || len(plan.Changes) != 0 {
+		t.Fatal("equivalent pins should not be rewritten", plan.Changes, err)
+	}
+}
+
 func TestNativeUpgradePreservesMaintainedUntitledCallers(t *testing.T) {
 	api := upgradeFixture(t, true, true)
 	for _, pins := range []Producers{api.old, api.target} {
