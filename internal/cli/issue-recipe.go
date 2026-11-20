@@ -4,6 +4,11 @@ import "strings"
 
 const managedIssueWorkflow = ".github/workflows/nibfin-issue.yml"
 
+func matchesUntitledCaller(path, maintained, observed string, allowed bool) bool {
+	return allowed && (path == managedIssueWorkflow ||
+		path == ".github/workflows/nibfin-wake.yml") && observed == untitledCaller(maintained)
+}
+
 func initIssueRecipe(plan InitPlan) string {
 	if plan.IssueRecipe == "" {
 		return "issue"
@@ -23,7 +28,8 @@ func recognizeIssueRecipeVariant(pins Producers, member int64,
 			continue
 		}
 		expected := templatesForRecipe(pins, member, recipes, recipe)[managedIssueWorkflow]
-		if observed == expected || allowUntitled && observed == untitledCaller(expected) {
+		if observed == expected ||
+			matchesUntitledCaller(managedIssueWorkflow, expected, observed, allowUntitled) {
 			return recipe
 		}
 	}

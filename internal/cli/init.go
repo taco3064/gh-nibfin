@@ -23,6 +23,7 @@ type InitPlan struct {
 	Files         []Change         `json:"files"`
 	Labels        []string         `json:"labels"`
 	Execution     *SharedExecution `json:"shared_execution,omitempty"`
+	allowUntitled bool
 }
 
 type reference struct {
@@ -46,6 +47,11 @@ func planInitRecipe(api API, name, execution, recipe string) (InitPlan, error) {
 
 func planInitRecipeWithPins(api API, name, execution, recipe string,
 	pins Producers) (InitPlan, error) {
+	return planInitRecipeLayout(api, name, execution, recipe, pins, false)
+}
+
+func planInitRecipeLayout(api API, name, execution, recipe string,
+	pins Producers, allowUntitled bool) (InitPlan, error) {
 	repo, user, err := repository(api, name, false)
 	plan := InitPlan{Repository: repo, Member: user, Files: []Change{}, Labels: []string{}}
 	if err != nil {
@@ -92,7 +98,8 @@ func planInitRecipeWithPins(api API, name, execution, recipe string,
 		}
 		if err == nil {
 			if !initFileMatches(path, files[path], data, pins,
-				recipe == "issue" && execution != "") {
+				recipe == "issue" && execution != "") &&
+				!matchesUntitledCaller(path, files[path], string(data), allowUntitled) {
 				if path == managedIssueWorkflow && recipe == "issue-managed" &&
 					recognizeIssueRecipe(pins, user.ID, recipes, string(data)) == "issue" {
 					return plan, &CommandError{

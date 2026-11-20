@@ -20,7 +20,7 @@ func (a App) applyUpgradeHandoff(previous sharedHost, name, version string,
 	ports := upgradeHandoffPorts{
 		bridge: a.runMaintenanceBridge,
 		publish: func(plan upgradePlan) (InitResult, error) {
-			return a.publishUpgradeHandoff(previous, version, target, plan, selection.recipe)
+			return a.publishUpgradeHandoff(previous, version, plan, selection.recipe)
 		},
 		ready: func(plan upgradePlan, proposal managedUpgradeProposal) error {
 			unlock, err := sharedMutationLock()
@@ -130,7 +130,7 @@ func (a App) previewUpgradeHandoff(host sharedHost, name, version string,
 }
 
 func (a App) publishUpgradeHandoff(previous sharedHost, version string,
-	target upgradeSource, plan upgradePlan, recipe upgradeHandoffRecipe) (
+	plan upgradePlan, recipe upgradeHandoffRecipe) (
 	InitResult, error) {
 	var result InitResult
 	unlock, err := sharedMutationLock()
@@ -153,7 +153,7 @@ func (a App) publishUpgradeHandoff(previous sharedHost, version string,
 		return result, err
 	}
 	ops := a.nativeMigrationOperations()
-	ops.selected = &target
+	ops.selected = &plan.Target
 	state, save, release, err := ops.state(installation)
 	if err != nil {
 		return result, err
