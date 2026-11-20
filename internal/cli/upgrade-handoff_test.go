@@ -260,6 +260,44 @@ func TestUpgradeHandoffUnknownBindingDoesNotReleaseDraft(t *testing.T) {
 	}
 }
 
+func TestMatchedConsumerCanRetryAfterOtherPeerDispatched(t *testing.T) {
+	recipe := handoffTestRecipe()
+	ready := Repository{FullName: recipe.execution.Repository, ID: 10}
+	pending := Repository{FullName: "example/peer", ID: 20}
+	progress := handoffTestProgress(recipe)
+	progress.Installation = "pending"
+	progress.Readiness = "ready"
+	progress.Continuation = "dispatched"
+	progress.Consumers = []managedUpgradeConsumer{
+		{Repository: ready.FullName, RepositoryID: ready.ID, Installation: "installed",
+			Handoff: "confirmed"},
+		{Repository: pending.FullName, RepositoryID: pending.ID, Installation: "pending",
+			Handoff: "confirmed"},
+	}
+	progress.Proposals = []managedUpgradeProposal{
+		{Repository: ready.FullName, RepositoryID: ready.ID, Pull: 4, ID: 99,
+			Node: "PR_first", URL: "https://github.com/example/project/pull/4",
+			Merged: true, Handoff: "confirmed"},
+		{Repository: pending.FullName, RepositoryID: pending.ID, Pull: 7, ID: 100,
+			Node: "PR_second", URL: "https://github.com/example/peer/pull/7",
+			Merged: true, Handoff: "confirmed"},
+	}
+	observed := map[int64]bool{}
+	ports := upgradeHandoffPorts{
+		bridge: func(any) ([]byte, error) { return handoffTestResponse(progress) },
+		recover: func(plan upgradePlan, _ managedUpgradeProposal, retry bool) (
+			upgradeRecoveryObservation, error) {
+			observed[plan.Repository.ID] = retry
+			return upgradeRecoveryObservation{}, nil
+		},
+	}
+	plans := []upgradePlan{{Repository: ready}, {Repository: pending}}
+	_, err := runUpgradeHandoff(plans, true, recipe, SourcePin{}, nil, ports)
+	if err != nil || !reflect.DeepEqual(observed, map[int64]bool{10: false, 20: true}) {
+		t.Fatal("expected only the unfinished consumer to retry", observed, err)
+	}
+}
+
 func TestUpgradeHandoffReusesNativeDraftAndReadsBackLostReadyResponse(t *testing.T) {
 	api := upgradeFixture(t, true, true)
 	recipe := handoffTestRecipe()
