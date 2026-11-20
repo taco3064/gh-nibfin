@@ -35,14 +35,24 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	}
 	nativeLifecycle := installed && *version == "latest"
 	var plan upgradePlan
+	var managedPlans []upgradePlan
+	executionReady := true
 	if nativeLifecycle {
 		var target upgradeSource
 		target, err = ops.selectSource(*host, *version)
-		if err == nil && ops.handoff {
+		if err == nil && ops.previewHandoff != nil {
 			target.handoff, err = readUpgradeHandoffRecipe(a.API, target.Producers.Core,
 				host.SharedExecution)
 		}
-		if err == nil {
+		if err == nil && target.handoff != nil {
+			managedPlans, executionReady, err = ops.previewHandoff(*host, repo.FullName,
+				*version, target)
+			for _, candidate := range managedPlans {
+				if candidate.Repository.ID == repo.ID {
+					plan = candidate
+				}
+			}
+		} else if err == nil {
 			plan, err = planNativeUpgradeTarget(a.API, *name, *version, target)
 		}
 	} else {
@@ -54,11 +64,17 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	status := "preview"
-	if len(plan.Changes) == 0 {
+	if len(plan.Changes) == 0 && !managedUpgradeChanges(managedPlans) {
 		status = "no_change"
 	}
 	preview := map[string]any{"status": status, "plan": plan}
-	if nativeLifecycle && ops.handoff && plan.Target.handoff == nil {
+	if len(managedPlans) > 0 {
+		preview["managed_plans"] = managedPlans
+		if !executionReady {
+			preview["execution_merge_first"] = host.Repository
+		}
+	}
+	if nativeLifecycle && ops.previewHandoff != nil && plan.Target.handoff == nil {
 		preview["upgrade_continuation"] = "CORE_UPGRADE_RECEIVER_REQUIRED"
 	}
 	if err := encoder.Encode(preview); err != nil {
@@ -71,6 +87,9 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 		return err
 	}
 	if nativeLifecycle {
+		if ops.applyHandoff != nil {
+			return ops.applyHandoff(*host, repo.FullName, *version, out)
+		}
 		return ops.applyNative(*host, *version, out)
 	}
 	if host != nil {
@@ -88,4 +107,13 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 		return &CommandError{Code: "OUTPUT_UNAVAILABLE_AFTER_UPGRADE", Exit: 2}
 	}
 	return nil
+}
+
+func managedUpgradeChanges(plans []upgradePlan) bool {
+	for _, plan := range plans {
+		if len(plan.Changes) != 0 {
+			return true
+		}
+	}
+	return false
 }

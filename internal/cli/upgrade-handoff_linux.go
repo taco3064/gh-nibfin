@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-func (a App) applyUpgradeHandoff(previous sharedHost, version string,
+func (a App) applyUpgradeHandoff(previous sharedHost, name, version string,
 	out io.Writer) error {
 	finish := beginCacheCleanup(out, "", reconcileCLIInvocation)
 	defer finish()
@@ -13,7 +13,7 @@ func (a App) applyUpgradeHandoff(previous sharedHost, version string,
 	if err != nil {
 		return reportUpgradeHandoff(out, pendingUpgradeHandoff(), err)
 	}
-	selection, err := a.prepareUpgradeHandoff(previous, version, target)
+	selection, err := a.prepareUpgradeHandoff(previous, name, version, target)
 	if err != nil {
 		return reportUpgradeHandoff(out, pendingUpgradeHandoff(), err)
 	}
@@ -36,6 +36,13 @@ func (a App) applyUpgradeHandoff(previous sharedHost, version string,
 			}
 			return readyBoundUpgradeProposal(a.API, plan, version, proposal)
 		},
+		recover: func(plan upgradePlan, proposal managedUpgradeProposal) (
+			upgradeRecoveryObservation, error) {
+			if _, err := a.readNativeUpgradeHost(previous); err != nil {
+				return upgradeRecoveryObservation{}, err
+			}
+			return recoverMergedUpgrade(a.API, plan, proposal, selection.recipe)
+		},
 	}
 	result, err := runUpgradeHandoff(selection.plans, selection.executionReady,
 		selection.recipe, target.Producers.Core, selection.activation, ports)
@@ -53,7 +60,7 @@ func pendingUpgradeHandoff() upgradeHandoffOutcome {
 	return upgradeHandoffOutcome{Status: "pending", Migration: []nativeMigrationResult{}}
 }
 
-func (a App) prepareUpgradeHandoff(host sharedHost, version string,
+func (a App) prepareUpgradeHandoff(host sharedHost, name, version string,
 	target upgradeSource) (upgradeHandoffSelection, error) {
 	var choice upgradeHandoffSelection
 	if err := requireNoReplacement(); err != nil {
@@ -72,11 +79,12 @@ func (a App) prepareUpgradeHandoff(host sharedHost, version string,
 	if err != nil {
 		return choice, err
 	}
-	choice.plans, choice.executionReady, err = upgradeHandoffPlans(a.API, host, version,
-		target, adopted)
+	choice.plans, choice.executionReady, err = upgradeHandoffPlans(a.API, host,
+		name, version, target, adopted)
 	if err != nil {
 		return choice, err
 	}
+	choice.recipe = *choice.plans[0].Target.handoff
 	// The existing administrator bridge owns host admission. Never call it
 	// while the CLI holds the same host directory's mutation lease.
 	if err := a.prepareCoreMaintenance(target.Producers); err != nil {
@@ -104,6 +112,15 @@ func (a App) prepareUpgradeHandoff(host sharedHost, version string,
 	return choice, nil
 }
 
+func (a App) previewUpgradeHandoff(host sharedHost, name, version string,
+	target upgradeSource) ([]upgradePlan, bool, error) {
+	adopted, err := a.nativeMigrationOperations().bindings()
+	if err != nil {
+		return nil, false, err
+	}
+	return upgradeHandoffPlans(a.API, host, name, version, target, adopted)
+}
+
 func (a App) publishUpgradeHandoff(previous sharedHost, version string,
 	target upgradeSource, plan upgradePlan, recipe upgradeHandoffRecipe) (
 	InitResult, error) {
@@ -127,9 +144,6 @@ func (a App) publishUpgradeHandoff(previous sharedHost, version string,
 	if err != nil {
 		return result, err
 	}
-	if err := prepareUpgradeRoute(a.API, installation, recipe); err != nil {
-		return result, err
-	}
 	ops := a.nativeMigrationOperations()
 	ops.selected = &target
 	state, save, release, err := ops.state(installation)
@@ -139,6 +153,10 @@ func (a App) publishUpgradeHandoff(previous sharedHost, version string,
 	defer release()
 	if state == nil || save == nil {
 		return result, errors.New("NATIVE_MIGRATION_STATE_UNAVAILABLE")
+	}
+	if err := prepareUpgradeRoute(a.API, installation, plan, version, recipe,
+		&state.Upgrade, save); err != nil {
+		return result, err
 	}
 	if err := prepareNativeConsumerWake(a.API, host, version, ops, installation,
 		plan, state, save); err != nil {

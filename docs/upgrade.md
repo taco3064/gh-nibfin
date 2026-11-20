@@ -71,6 +71,11 @@ are rejected before mutation. Unrelated tree entries remain unchanged.
 The ordered JSON preview includes repository/base/tree identity, original member,
 current and target immutable sources, compatibility, exact added/modified/deleted
 paths and replacement bytes. It also reports host-adoption obligations separately.
+Managed latest includes `managed_plans` for each repository apply would change
+or complete. The original `plan` still describes the selected repository. A
+same-source operation leaves unrelated consumers alone unless the execution
+repository needs its first upgrade workflow. A shared Core transition plans
+the full adopted set for that single source change.
 Identical verified inputs yield the same plan ID and output. Preview performs no
 GitHub writes, filesystem/cache installation, Runner or service operation. A
 current repository returns `no_change`. Managed latest apply still completes
@@ -125,6 +130,9 @@ required, and eligible Issue dispatch. An incompatible VM or host reports its
 maintenance requirement and preserves confirmed progress. Retry the existing
 operation when a reported observation or unfinished step needs recovery. The
 CLI reuses confirmed provider effects without starting a second upgrade.
+If a verified merged proposal has no active or successful native notification
+or execution, an explicit retry can recover its native notification. It
+reports the observed Actions run URL and preserves unknown read results.
 
 ## Pending and unknown results
 

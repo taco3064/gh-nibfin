@@ -22,6 +22,7 @@ type nativeMigrationOperations struct {
 type nativeMigrationResult struct {
 	Repository string      `json:"repository"`
 	Status     string      `json:"status"`
+	Review     string      `json:"review,omitempty"`
 	Proposal   *InitResult `json:"proposal,omitempty"`
 }
 
