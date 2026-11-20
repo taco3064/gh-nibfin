@@ -12,6 +12,7 @@ type upgradePull struct {
 	NodeID string `json:"node_id"`
 	Number int    `json:"number"`
 	State  string `json:"state"`
+	Draft  bool   `json:"draft"`
 	URL    string `json:"html_url"`
 	Body   string `json:"body"`
 	Head   struct {
@@ -32,7 +33,11 @@ func upgradeProposalBody(planID string) string {
 
 func readUpgradePulls(api API, plan upgradePlan, branch string) ([]upgradePull, error) {
 	owner := strings.Split(plan.Repository.FullName, "/")[0]
-	query := "?state=all&per_page=100&head=" + url.QueryEscape(owner+":"+branch)
+	state := "all"
+	if plan.Target.handoff != nil {
+		state = "open"
+	}
+	query := "?state=" + state + "&per_page=100&head=" + url.QueryEscape(owner+":"+branch)
 	var raw json.RawMessage
 	if err := api.Call("GET", "repos/"+plan.Repository.FullName+"/pulls"+query,
 		nil, &raw); err != nil {
@@ -74,9 +79,14 @@ func upgradePR(api API, plan upgradePlan, version, branch, sha string) (string, 
 			return "", err
 		}
 		body := upgradeProposalBody(proposal.PlanID)
-		_ = api.Call("POST", "repos/"+plan.Repository.FullName+"/pulls", map[string]any{
+		request := map[string]any{
 			"title": "Upgrade verified Nibfin managed sources", "head": branch,
-			"base": plan.Repository.DefaultBranch, "body": body}, nil)
+			"base": plan.Repository.DefaultBranch, "body": body}
+		if plan.Target.handoff != nil {
+			// Core must bind this specific PR before it can be merged.
+			request["draft"] = true
+		}
+		_ = api.Call("POST", "repos/"+plan.Repository.FullName+"/pulls", request, nil)
 		pulls, err = readUpgradePulls(api, plan, branch)
 		if err != nil {
 			return "", err

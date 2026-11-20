@@ -80,6 +80,10 @@ func selectedLogin(ctx context.Context, user User) (*selectedGitHub, error) {
 }
 
 func (g *selectedGitHub) publishNativeWakeSecret(repo string) error {
+	return g.publishRouteSecret(repo, nativeWakeSecret)
+}
+
+func (g *selectedGitHub) publishRouteSecret(repo, name string) error {
 	if !repoPattern.MatchString(repo) {
 		return errors.New("INVALID_REPOSITORY")
 	}
@@ -87,7 +91,7 @@ func (g *selectedGitHub) publishNativeWakeSecret(repo string) error {
 	if err != nil {
 		return err
 	}
-	cmd := nativeSecretCommand(g.ctx, path, repo, g.token)
+	cmd := routeSecretCommand(g.ctx, path, repo, name, g.token)
 	if cmd.Run() != nil {
 		return errors.New("NATIVE_WAKE_SECRET_WRITE_UNKNOWN")
 	}
@@ -95,7 +99,12 @@ func (g *selectedGitHub) publishNativeWakeSecret(repo string) error {
 }
 
 func nativeSecretCommand(ctx context.Context, path, repo string, token []byte) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, path, "secret", "set", nativeWakeSecret,
+	return routeSecretCommand(ctx, path, repo, nativeWakeSecret, token)
+}
+
+func routeSecretCommand(ctx context.Context, path, repo, name string,
+	token []byte) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, path, "secret", "set", name,
 		"--app", "actions", "--repo", repo)
 	// gh encrypts with the repository public key. The selected credential stays
 	// in private stdin and the child's private environment, never command args.

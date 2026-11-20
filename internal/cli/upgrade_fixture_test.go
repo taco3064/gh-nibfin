@@ -52,7 +52,16 @@ func (f *upgradeAPI) Call(method, path string, input, output any) error {
 	}
 	switch path {
 	case "graphql":
-		if err := f.nativeRebase(input, output); err != nil {
+		body, _ := input.(map[string]any)
+		if body["query"] == readyUpgradeMutation {
+			pull := f.data[upgradeRepo+"/pulls/9"].(upgradePull)
+			if body["variables"].(map[string]string)["id"] != pull.NodeID || !pull.Draft {
+				return errors.New("UNVERIFIED_DRAFT")
+			}
+			pull.Draft = false
+			f.data[upgradeRepo+"/pulls/9"] = pull
+			f.data[pullListPath(pull.Head.Ref, "open")] = []upgradePull{pull}
+		} else if err := f.nativeRebase(input, output); err != nil {
 			return err
 		}
 	case upgradeRepo + "/git/trees":
@@ -111,6 +120,7 @@ func (f *upgradeAPI) Call(method, path string, input, output any) error {
 		body := input.(map[string]any)
 		pull := upgradePull{Number: 9, NodeID: "PR_fixture9", State: "open",
 			URL: "https://github.com/example/project/pull/9", Body: body["body"].(string)}
+		pull.Draft, _ = body["draft"].(bool)
 		pull.Head.Ref = body["head"].(string)
 		ref := f.data[upgradeRepo+"/git/ref/heads/"+
 			url.PathEscape(pull.Head.Ref)].(reference)
@@ -128,6 +138,9 @@ func (f *upgradeAPI) Call(method, path string, input, output any) error {
 		pull.Head.Repository, pull.Base.Repository = repo, repo
 		f.data[upgradeRepo+"/pulls/9"] = pull
 		f.data[pullListPath(pull.Head.Ref)] = []upgradePull{pull}
+		if pull.Draft {
+			f.data[pullListPath(pull.Head.Ref, "open")] = []upgradePull{pull}
+		}
 	default:
 		return errors.New("UNEXPECTED_MUTATION")
 	}
@@ -141,8 +154,12 @@ func (f *upgradeAPI) Call(method, path string, input, output any) error {
 	return nil
 }
 
-func pullListPath(branch string) string {
-	return upgradeRepo + "/pulls?state=all&per_page=100&head=" +
+func pullListPath(branch string, filter ...string) string {
+	state := "all"
+	if len(filter) != 0 {
+		state = filter[0]
+	}
+	return upgradeRepo + "/pulls?state=" + state + "&per_page=100&head=" +
 		url.QueryEscape("example:"+branch)
 }
 

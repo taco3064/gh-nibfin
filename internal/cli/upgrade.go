@@ -38,6 +38,10 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	if nativeLifecycle {
 		var target upgradeSource
 		target, err = ops.selectSource(*host, *version)
+		if err == nil && ops.handoff {
+			target.handoff, err = readUpgradeHandoffRecipe(a.API, target.Producers.Core,
+				host.SharedExecution)
+		}
 		if err == nil {
 			plan, err = planNativeUpgradeTarget(a.API, *name, *version, target)
 		}
@@ -53,7 +57,11 @@ func (a App) runUpgrade(args []string, out io.Writer) error {
 	if len(plan.Changes) == 0 {
 		status = "no_change"
 	}
-	if err := encoder.Encode(map[string]any{"status": status, "plan": plan}); err != nil {
+	preview := map[string]any{"status": status, "plan": plan}
+	if nativeLifecycle && ops.handoff && plan.Target.handoff == nil {
+		preview["upgrade_continuation"] = "CORE_UPGRADE_RECEIVER_REQUIRED"
+	}
+	if err := encoder.Encode(preview); err != nil {
 		return errors.New("OUTPUT_UNAVAILABLE")
 	}
 	if !*apply {

@@ -251,6 +251,11 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 			plan.Changes = append(plan.Changes, upgradeChange{path, "modified", after})
 		}
 	}
+	if plan.Target.handoff != nil {
+		if err := composeUpgradeHandoff(api, &plan); err != nil {
+			return plan, err
+		}
+	}
 	plan.Compatibility = "verified immutable sources and recognized managed layout"
 	data, _ := json.Marshal(plan)
 	plan.ID = sha256Hash(data)
