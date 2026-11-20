@@ -11,8 +11,11 @@ type upgradeHandoffPorts struct {
 	bridge  func(any) ([]byte, error)
 	publish func(upgradePlan) (InitResult, error)
 	ready   func(upgradePlan, managedUpgradeProposal) error
-	recover func(upgradePlan, managedUpgradeProposal) (upgradeRecoveryObservation, error)
+	recover upgradeHandoffRecovery
 }
+
+type upgradeHandoffRecovery func(upgradePlan, managedUpgradeProposal, bool) (
+	upgradeRecoveryObservation, error)
 
 type upgradeHandoffInput struct {
 	Kind         string              `json:"kind"`
@@ -132,10 +135,12 @@ func runUpgradeHandoff(plans []upgradePlan, execReady bool, recipe upgradeHandof
 	for _, plan := range plans {
 		if len(plan.Changes) == 0 {
 			if merged := mergedProposal(progress, plan.Repository); merged != nil {
-				observed, err := ports.recover(plan, *merged)
-				if err == nil {
+				retry := progress.Continuation == "pending"
+				observed, err := ports.recover(plan, *merged, retry)
+				if observed.RunURL != "" {
 					result.Recovery = append(result.Recovery, observed)
-				} else if firstErr == nil {
+				}
+				if err != nil && firstErr == nil {
 					firstErr = err
 				}
 			} else {
@@ -259,6 +264,11 @@ func reportUpgradeHandoff(out io.Writer, result upgradeHandoffOutcome, err error
 	if err != nil {
 		result.Code = err.Error()
 		result.Cause = coreOperationCause(err)
+		var provider *selectedProviderFailure
+		if result.Cause == nil && errors.As(err, &provider) {
+			result.Cause = &coreOperationDiagnostic{Code: provider.Code,
+				GitHubAPI: &provider.Diagnostic}
+		}
 	}
 	if json.NewEncoder(out).Encode(result) != nil {
 		return &CommandError{Code: "OUTPUT_UNAVAILABLE_AFTER_UPGRADE", Exit: 2}
