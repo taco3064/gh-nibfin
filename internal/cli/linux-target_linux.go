@@ -117,6 +117,7 @@ func probeLinuxTarget(c sharedPlatform, process Process) linuxTargetObservation 
 		return boundedLinuxFile(path)
 	}
 	o := observeLinuxTarget(c, read, kernel, runtime.GOARCH, machine)
+	o.Reclamation = localLinuxReclamation()
 	o.Checks = append(o.Checks, observeDedicatedDocker(process, c, o.Architecture)...)
 	o.Checks = append(o.Checks, observeDockerServices(process)...)
 	return o

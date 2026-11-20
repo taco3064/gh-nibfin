@@ -28,7 +28,8 @@ to opening an existing guest in unattended use:
 
 ```sh
 gh nibfin init --repo OWNER/REPO --apply \
-  --target wsl:Ubuntu-24.04 --consent-open-target
+  --target wsl:Ubuntu-24.04 --consent-open-target \
+  --consent-experimental-sparse
 # Apple Silicon:
 gh nibfin init --repo OWNER/REPO --apply \
   --target multipass:nibfin --consent-open-target
@@ -141,3 +142,41 @@ private observation. Core/Node still require their existing root-owned manifest
 and architecture verification. Updating an incompatible guest CLI is an operator
 action. See [the Dashboard boundary](dashboard.md#windows-overview-through-an-existing-wsl-2-installation)
 for bootstrap locations, transport limits and platform evidence limitations.
+
+## Experimental Windows sparse reclamation
+
+Windows selected-target init normally proposes `--reclamation enable`. Preview and
+preflight inspect the selected existing WSL 2 registration, backing-file sparse
+metadata and native command capability without opening a stopped guest. Unknown or
+ambiguous metadata stays unknown; it is never treated as disabled or enabled.
+
+Opening consent is separate from experimental sparse conversion consent. Interactive
+apply asks for that choice. Unattended apply must supply either
+`--consent-experimental-sparse` or `--reclamation unchanged`. Host-only options are
+not forwarded to Linux. The shown Windows resume command preserves the choice.
+
+After fresh identity and stopped-state checks, consented supported setup invokes
+`wsl.exe --manage NAME --set-sparse true`, without unsafe forcing flags. It reads
+back the same registration and backing file before reporting enabled. Already
+enabled state is reused, including after a lost command response. Replaced targets
+invalidate the binding. Missing observations do not authorize a conversion retry.
+
+Running guests are deferred; the CLI never stops or terminates them. Resume the
+same Windows selected-target init after the guest naturally stops. Unsupported,
+permission-denied, failed operation and unknown read-back results are reported
+separately. These reclamation gaps do not prevent an otherwise valid installation.
+Continue guest-only setup or choose unchanged, and retry normal Windows setup when
+appropriate. Do not interrupt admitted Jobs to reclaim space.
+
+Direct Linux init/preflight detects WSL from kernel observations, even with Windows
+interop disabled. It cannot configure the Windows host setting and never invokes
+Windows executables. Use the Windows selected-target route for host configuration;
+guest installation remains usable. Linux reports root mount filesystem, backing
+block-device discard capability and `fstrim` tool availability as separate,
+read-only facts. Unknown observations are informational, not installation gates.
+
+Sparse configuration, Linux discard support and measured physical Windows disk
+recovery are different facts. Neither fewer Linux files nor `fstrim` output proves
+physical recovery. This flow does not run discard, schedule cleanup, alter global
+`.wslconfig`, create distributions or broaden interop. Native Windows operation and
+physical recovery still require their corresponding platform evidence.

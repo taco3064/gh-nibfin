@@ -269,6 +269,18 @@ deferred general upgrade feature. Installed package files are retained for reuse
 and provenance; dispose of them only after registration/service/process use is
 retired and no recovery evidence remains necessary.
 
+Windows selected-target setup proposes experimental sparse-VHD reclamation for
+existing WSL 2 guests. Opening consent alone does not authorize conversion: use
+`--consent-experimental-sparse` to opt in, or `--reclamation unchanged` to continue
+without changing it. Running guests defer conversion until naturally stopped;
+unsupported or unknown results leave otherwise valid installation usable. Linux
+WSL setup reports the Windows authority boundary and separate root-device discard
+observations. See [desktop setup][sparse-setup].
+
+Sparse configuration and discard capability do not prove physical Windows recovery.
+
+[sparse-setup]: docs/desktop-targets.md#experimental-windows-sparse-reclamation
+
 ## Read-only environment inspection
 
 ```text

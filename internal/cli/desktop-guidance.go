@@ -63,8 +63,15 @@ func desktopResume(t desktopTarget, o desktopOptions) []string {
 	for i, arg := range resume {
 		quoted[i] = "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
 	}
+	sparse := ""
+	if t.Provider == "wsl" {
+		sparse = " --reclamation " + o.Reclamation
+		if o.SparseConsent {
+			sparse += " --consent-experimental-sparse"
+		}
+	}
 	return []string{entry, "gh nibfin preflight --repo " + repo,
 		"gh nibfin " + strings.Join(quoted, " "),
 		"Desktop resume: gh nibfin " + strings.Join(quoted, " ") + " --target '" +
-			t.Provider + ":" + t.Name + "' --consent-open-target"}
+			t.Provider + ":" + t.Name + "' --consent-open-target" + sparse}
 }

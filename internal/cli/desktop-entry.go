@@ -13,15 +13,18 @@ import (
 )
 
 type desktopOptions struct {
-	Repo    string
-	Target  string
-	Consent bool
-	Apply   bool
-	Forward []string
+	Repo          string
+	Target        string
+	Consent       bool
+	Apply         bool
+	Forward       []string
+	Reclamation   string
+	SparseConsent bool
+	Sparse        sparseObservation
 }
 
 func parseDesktopOptions(args []string) (desktopOptions, error) {
-	var o desktopOptions
+	o := desktopOptions{Reclamation: "enable"}
 	invalid := errors.New("INVALID_DESKTOP_ARGUMENTS_USE_HELP")
 	if len(args) == 0 {
 		return o, invalid
@@ -36,6 +39,24 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 		}
 		seen[key] = true
 		switch key {
+		case "--reclamation":
+			if !assigned {
+				i++
+				if i == len(args) {
+					return o, invalid
+				}
+				value = args[i]
+			}
+			if value != "enable" && value != "unchanged" {
+				return o, invalid
+			}
+			o.Reclamation = value
+		case "--consent-experimental-sparse":
+			if assigned && value != "true" && value != "false" {
+				return o, invalid
+			}
+			o.SparseConsent = !assigned || value == "true"
+
 		case "--runner-directory", "--handoff-directory", "--directory", "--quick":
 			return o, errors.New("DESKTOP_PATH_OPTIONS_USE_GUEST_LINUX_CLI")
 		case "--repo", "--target", "--execution-repo", "--runner-name", "--agent":
@@ -89,7 +110,7 @@ func parseDesktopOptions(args []string) (desktopOptions, error) {
 	if !repoPattern.MatchString(o.Repo) || len(o.Repo) > 200 {
 		return o, invalid
 	}
-	if args[0] == "preflight" && (o.Apply || o.Consent) {
+	if args[0] == "preflight" && (o.Apply || o.Consent || o.SparseConsent) {
 		return o, invalid
 	}
 	return o, nil
@@ -137,6 +158,11 @@ func desktopInteractive() bool {
 }
 
 func (a App) runDesktop(args []string, host string, out io.Writer) error {
+	return a.runDesktopInput(args, host, out, os.Stdin, desktopInteractive())
+}
+
+func (a App) runDesktopInput(args []string, host string, out io.Writer,
+	input io.Reader, interactive bool) error {
 	o, err := parseDesktopOptions(args)
 	if err != nil {
 		return err
@@ -152,6 +178,10 @@ func (a App) runDesktop(args []string, host string, out io.Writer) error {
 		plan["selection"] = selectionErr.Error()
 	}
 	if index >= 0 {
+		o.Sparse = observeSparse(a.Process, targets[index])
+		if targets[index].Provider == "wsl" {
+			plan["reclamation"] = sparsePlan(targets[index], o)
+		}
 		plan["selected_target"] = targets[index].Provider + ":" + targets[index].Name
 		plan["handoff"] = desktopResume(targets[index], o)
 	}
@@ -169,17 +199,21 @@ func (a App) runDesktop(args []string, host string, out io.Writer) error {
 	if discoveryErr != nil {
 		return discoveryErr
 	}
-	reader := bufio.NewReader(io.LimitReader(os.Stdin, 4096))
+	reader := bufio.NewReader(io.LimitReader(input, 4096))
 	if index < 0 && selectionErr != nil &&
-		selectionErr.Error() == "SELECT_TARGET_WITH_TARGET_OPTION" && desktopInteractive() {
+		selectionErr.Error() == "SELECT_TARGET_WITH_TARGET_OPTION" && interactive {
 		fmt.Fprintln(out, "Enter the provider:name target shown above:")
 		choice, _ := reader.ReadString('\n')
 		index, selectionErr = chooseDesktopTarget(targets, strings.TrimSpace(choice))
 		if selectionErr == nil {
+			o.Sparse = observeSparse(a.Process, targets[index])
 			selected := map[string]any{
 				"selected_target":     targets[index].Provider + ":" + targets[index].Name,
 				"handoff":             desktopResume(targets[index], o),
 				"protected_execution": "unverified",
+			}
+			if targets[index].Provider == "wsl" {
+				selected["reclamation"] = sparsePlan(targets[index], o)
 			}
 			if encoder.Encode(selected) != nil {
 				return errors.New("OUTPUT_UNAVAILABLE")
@@ -191,7 +225,7 @@ func (a App) runDesktop(args []string, host string, out io.Writer) error {
 	}
 	target := targets[index]
 	if !o.Consent {
-		if !desktopInteractive() {
+		if !interactive {
 			return errors.New("TARGET_CONSENT_REQUIRED_USE_TARGET_AND_CONSENT_OPEN_TARGET")
 		}
 		fmt.Fprintln(out, "Open this guest and delegate init? Type yes to consent:")
@@ -199,6 +233,28 @@ func (a App) runDesktop(args []string, host string, out io.Writer) error {
 		if strings.TrimSpace(answer) != "yes" {
 			return errors.New("TARGET_OPEN_NOT_CONSENTED")
 		}
+	}
+	if target.Provider == "wsl" && o.Reclamation == "enable" && !o.SparseConsent {
+		if !interactive {
+			return errors.New("SPARSE_CHOICE_REQUIRED_CONSENT_OR_RECLAMATION_UNCHANGED")
+		}
+		fmt.Fprintln(out, "Enable experimental sparse VHD when supported? "+
+			"Type yes to consent, or unchanged to continue without changing it:")
+		answer, _ := reader.ReadString('\n')
+		switch strings.TrimSpace(answer) {
+		case "yes":
+			o.SparseConsent = true
+		case "unchanged":
+			o.Reclamation = "unchanged"
+		default:
+			return errors.New("SPARSE_CHOICE_REQUIRED")
+		}
+	}
+	if target.Provider == "wsl" && encoder.Encode(map[string]any{
+		"selected_target": target.Provider + ":" + target.Name,
+		"handoff":         desktopResume(target, o),
+	}) != nil {
+		return errors.New("OUTPUT_UNAVAILABLE")
 	}
 	return a.handoffDesktop(target, o, host, out)
 }
@@ -212,6 +268,13 @@ func (a App) handoffDesktop(target desktopTarget, o desktopOptions,
 	// Inventory and any already-observed machine identity must still match.
 	current, err := recheckDesktop(a.Process, target, host, o.Repo)
 	if err != nil {
+		return err
+	}
+	ctx := a.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := applySparse(ctx, a.Process, current, o, out); err != nil {
 		return err
 	}
 	if !current.Running {
@@ -244,10 +307,7 @@ func (a App) handoffDesktop(target desktopTarget, o desktopOptions,
 	command = append(command, "--linux-target-identity", final.Identity,
 		"--linux-target-arch", final.Linux.Architecture)
 	tool, argv := guestCommand(final, command...)
-	ctx := a.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
+
 	if err := terminal.EnterGuest(ctx, tool, argv, out); err != nil {
 		return errors.New("GUEST_DISCONNECTED_READ_BACK_REQUIRED_USE_SHOWN_RESUME")
 	}
