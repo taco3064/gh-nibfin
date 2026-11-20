@@ -114,7 +114,8 @@ func (a App) refreshManagedCaller(plan InitPlan, host sharedHost) error {
 	return recheckSharedHost(a.Process, a.API, host)
 }
 
-func (a App) applyNativeUpgrade(host sharedHost, version string, out io.Writer) error {
+func (a App) applyNativeUpgrade(host sharedHost, name, version string,
+	out io.Writer) error {
 	ctx := a.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -133,7 +134,7 @@ func (a App) applyNativeUpgrade(host sharedHost, version string, out io.Writer) 
 	defer clear(api.token)
 	a.API = api
 	a.Process = onboardingProcess{ctx: ctx, process: NativeProcess{}}
-	return a.applyUpgradeHandoff(host, version, out)
+	return a.applyUpgradeHandoff(host, name, version, out)
 }
 
 func (a App) continueNativeUpgrade(host sharedHost, version string, out io.Writer) error {

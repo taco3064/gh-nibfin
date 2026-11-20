@@ -11,6 +11,7 @@ type upgradeHandoffPorts struct {
 	bridge  func(any) ([]byte, error)
 	publish func(upgradePlan) (InitResult, error)
 	ready   func(upgradePlan, managedUpgradeProposal) error
+	recover func(upgradePlan, managedUpgradeProposal) (upgradeRecoveryObservation, error)
 }
 
 type upgradeHandoffInput struct {
@@ -27,26 +28,53 @@ type upgradeHandoffPin struct {
 }
 
 type upgradeHandoffOutcome struct {
-	Status         string                   `json:"status"`
-	Message        string                   `json:"message,omitempty"`
-	Migration      []nativeMigrationResult  `json:"migration"`
-	Continuation   *nativeContinuation      `json:"continuation"`
-	Upgrade        *managedUpgradeProgress  `json:"upgrade,omitempty"`
-	ExecutionFirst string                   `json:"execution_merge_first,omitempty"`
-	CoreRunURL     string                   `json:"core_run_url,omitempty"`
-	Code           string                   `json:"code,omitempty"`
-	Cause          *coreOperationDiagnostic `json:"cause,omitempty"`
+	Status         string                       `json:"status"`
+	Message        string                       `json:"message,omitempty"`
+	Migration      []nativeMigrationResult      `json:"migration"`
+	Continuation   *nativeContinuation          `json:"continuation"`
+	Upgrade        *managedUpgradeProgress      `json:"upgrade,omitempty"`
+	ExecutionFirst string                       `json:"execution_merge_first,omitempty"`
+	CoreRunURL     string                       `json:"core_run_url,omitempty"`
+	Code           string                       `json:"code,omitempty"`
+	Cause          *coreOperationDiagnostic     `json:"cause,omitempty"`
+	Recovery       []upgradeRecoveryObservation `json:"recovery,omitempty"`
 }
 
-func upgradeHandoffPlans(api API, host sharedHost, version string,
+func upgradeHandoffPlans(api API, host sharedHost, name, version string,
 	target upgradeSource, adopted relayAdoptions) ([]upgradePlan, bool, error) {
 	if err := nativeMigrationBindings(adopted, host); err != nil {
 		return nil, false, err
 	}
+	if target.handoff == nil {
+		return nil, false, errors.New("CORE_UPGRADE_RECEIVER_REQUIRED")
+	}
+	sharedChange := !nativeCoreSourcesMatch(adopted.Pin, target.Producers.Core)
+	if sharedChange {
+		// The serving Core must recognize the event transport before it can
+		// authorize a promotion. Other managed files use the selected source.
+		known, err := readUpgradeHandoffRecipe(api, adopted.Pin, host.SharedExecution)
+		if err != nil {
+			return nil, false, err
+		}
+		if known == nil {
+			return nil, false, errors.New("CORE_UPGRADE_RECEIVER_REQUIRED")
+		}
+		target.handoff = known
+	}
+	executionReady, err := upgradeExecutionRoute(api, host, *target.handoff)
+	if err != nil {
+		return nil, false, err
+	}
 	plans := make([]upgradePlan, 0, len(adopted.Origins))
-	executionObserved := false
-	executionReady := false
+	executionObserved, selected := false, false
 	for _, origin := range adopted.Origins {
+		isExecution := origin.RepositoryID == host.RepositoryID
+		isSelected := origin.Repository == name
+		executionObserved = executionObserved || isExecution
+		selected = selected || isSelected
+		if !sharedChange && !isSelected && !(isExecution && !executionReady) {
+			continue
+		}
 		plan, err := planNativeUpgradeTarget(api, origin.Repository, version, target)
 		if err != nil {
 			return nil, false, err
@@ -54,19 +82,17 @@ func upgradeHandoffPlans(api API, host sharedHost, version string,
 		if plan.Repository.ID != origin.RepositoryID || plan.MemberID != host.MemberID {
 			return nil, false, errors.New("NATIVE_MIGRATION_IDENTITY_CHANGED")
 		}
-		if origin.RepositoryID == host.RepositoryID {
-			executionObserved = true
-			executionReady, err = upgradeExecutionRoute(api, plan, *target.handoff)
-			if err != nil {
-				return nil, false, err
-			}
+		if isExecution {
 			plans = append([]upgradePlan{plan}, plans...)
 		} else {
 			plans = append(plans, plan)
 		}
 	}
-	if !executionObserved {
+	if !executionObserved && !executionReady {
 		return nil, false, errors.New("UPGRADE_EXECUTION_REPOSITORY_NOT_ADOPTED")
+	}
+	if !selected {
+		return nil, false, errors.New("REQUESTED_REPOSITORY_NOT_ADOPTED")
 	}
 	return plans, executionReady, nil
 }
@@ -102,13 +128,20 @@ func runUpgradeHandoff(plans []upgradePlan, execReady bool, recipe upgradeHandof
 		// A recorded proposal may still need its first native route. Retrying its
 		// existing publisher and bind can establish the route without a new PR.
 	}
-	needsDirect := false
+	var direct []int64
 	for _, plan := range plans {
 		if len(plan.Changes) == 0 {
-			if !operationHasMergedProposal(progress, plan) {
+			if merged := mergedProposal(progress, plan.Repository); merged != nil {
+				observed, err := ports.recover(plan, *merged)
+				if err == nil {
+					result.Recovery = append(result.Recovery, observed)
+				} else if firstErr == nil {
+					firstErr = err
+				}
+			} else {
 				// Prepare routing for already-current callers without publishing a PR.
 				if _, err := ports.publish(plan); err == nil {
-					needsDirect = true
+					direct = append(direct, plan.Repository.ID)
 				} else if firstErr == nil {
 					firstErr = err
 				}
@@ -120,9 +153,13 @@ func runUpgradeHandoff(plans []upgradePlan, execReady bool, recipe upgradeHandof
 			firstErr = err
 		}
 	}
-	if needsDirect {
-		data, err = ports.bridge(map[string]any{"kind": recipe.complete,
-			"operationId": progress.OperationID})
+	if len(direct) > 0 {
+		request := map[string]any{"kind": recipe.complete,
+			"operationId": progress.OperationID}
+		if len(progress.Consumers) > len(plans) {
+			request["repositories"] = direct
+		}
+		data, err = ports.bridge(request)
 		completed, err := decodeManagedUpgrade(data, err, recipe.execution,
 			progress.OperationID)
 		if err == nil {
@@ -134,14 +171,14 @@ func runUpgradeHandoff(plans []upgradePlan, execReady bool, recipe upgradeHandof
 	return result, firstErr
 }
 
-func operationHasMergedProposal(progress managedUpgradeProgress, plan upgradePlan) bool {
-	for _, p := range progress.Proposals {
-		if p.RepositoryID == plan.Repository.ID && p.Repository == plan.Repository.FullName &&
-			p.Merged {
-			return true
+func mergedProposal(p managedUpgradeProgress, repo Repository) *managedUpgradeProposal {
+	for _, proposal := range p.Proposals {
+		if proposal.RepositoryID == repo.ID && proposal.Repository == repo.FullName &&
+			proposal.Merged {
+			return &proposal
 		}
 	}
-	return false
+	return nil
 }
 
 func handoffUpgradeProposal(result *upgradeHandoffOutcome, plan upgradePlan,
@@ -174,7 +211,7 @@ func handoffUpgradeProposal(result *upgradeHandoffOutcome, plan upgradePlan,
 				return err
 			}
 			proposal.Code = "UPGRADE_PR_CREATED_OR_REUSED_REVIEW_AND_MERGE_PENDING"
-			result.Migration[len(result.Migration)-1].Status = "review_pending"
+			result.Migration[len(result.Migration)-1].Review = "review_pending"
 			return nil
 		}
 	}

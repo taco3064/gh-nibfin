@@ -18,6 +18,7 @@ type nativeSecretMetadata struct {
 type nativeWakeSetup struct {
 	SecretState string               `json:"secret_state"`
 	Secret      nativeSecretMetadata `json:"secret"`
+	Upgrade     upgradeRouteSetup    `json:"upgrade_route,omitzero"`
 }
 
 type nativeSecretPublisher interface {

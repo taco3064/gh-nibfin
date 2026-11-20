@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -30,25 +31,7 @@ func handoffTestRecipe() upgradeHandoffRecipe {
 func TestUpgradeHandoffPlansUseMaintainedCoreRecipes(t *testing.T) {
 	api := upgradeFixture(t, false, true)
 	recipe := handoffTestRecipe()
-	base := "repos/" + officialCore + "/contents/"
-	ref := "?ref=" + api.target.Core.Commit
-	manifest, err := json.Marshal(map[string]any{
-		"schemaVersion": 1, "bridge": maintenanceBridge, "proposalBranch": upgradeBranchName,
-		"recipes": map[string]string{"source": "src/upgrade-continuation-recipes.json",
-			"notification": recipe.noticePath, "execution": recipe.execPath},
-		"notification": map[string]string{"destinationVariable": recipe.variable,
-			"dispatchSecret": recipe.secret},
-		"administrator": map[string]string{"input": "private-json-stdin",
-			"prepare": recipe.prepare, "bind": recipe.bind, "observe": recipe.observe,
-			"complete": recipe.complete},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	api.data[base+upgradeHandoffContract+ref] = encoded(manifest)
-	api.data[base+"src/upgrade-continuation-recipes.json"+ref] = encoded([]byte(
-		`{"notification":["name: notification",""],` +
-			`"execution":["name: executor for MEMBER_ID",""]}`))
+	registerHandoffFixture(t, api, api.target.Core, recipe)
 	loaded, err := readUpgradeHandoffRecipe(api, api.target.Core, recipe.execution)
 	if err != nil || loaded == nil || *loaded != recipe {
 		t.Fatal("selected Core contract was not decoded", loaded, err)
@@ -70,6 +53,105 @@ func TestUpgradeHandoffPlansUseMaintainedCoreRecipes(t *testing.T) {
 	}
 	if len(wanted) != 0 || len(api.writes) != 0 {
 		t.Fatal("read-only preview did not compose both callers", wanted, api.writes)
+	}
+}
+
+func registerHandoffFixture(t *testing.T, api *upgradeAPI, pin SourcePin,
+	recipe upgradeHandoffRecipe) {
+	t.Helper()
+	base := "repos/" + officialCore + "/contents/"
+	ref := "?ref=" + pin.Commit
+	manifest, err := json.Marshal(map[string]any{
+		"schemaVersion": 1, "bridge": maintenanceBridge, "proposalBranch": upgradeBranchName,
+		"recipes": map[string]string{"source": "src/upgrade-continuation-recipes.json",
+			"notification": recipe.noticePath, "execution": recipe.execPath},
+		"notification": map[string]string{"destinationVariable": recipe.variable,
+			"dispatchSecret": recipe.secret},
+		"administrator": map[string]string{"input": "private-json-stdin",
+			"prepare": recipe.prepare, "bind": recipe.bind, "observe": recipe.observe,
+			"complete": recipe.complete},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.data[base+upgradeHandoffContract+ref] = encoded(manifest)
+	api.data[base+"src/upgrade-continuation-recipes.json"+ref] = encoded([]byte(
+		`{"notification":["name: notification",""],` +
+			`"execution":["name: executor for MEMBER_ID",""]}`))
+}
+
+func TestUpgradeHandoffPreviewMatchesSelectedAndBootstrapApply(t *testing.T) {
+	for _, installed := range []bool{true, false} {
+		api, host, migration, _ := nativeConsumersFixture(t)
+		adopted, _ := migration.bindings()
+		const selected = "taco3064/nibfin-e2e"
+		const unrelated = "taco3064/nibfin-act"
+		api.apis[unrelated].denyRead = "repos/" + unrelated + "/git/ref/heads/main"
+		recipe := handoffTestRecipe()
+		recipe.execution = host.SharedExecution
+		target := upgradeSource{Producers: api.first.old, Kind: "installed-current",
+			Execution: &host.SharedExecution, maintained: true, handoff: &recipe}
+		registerHandoffFixture(t, api.first.upgradeAPI, adopted.Pin, recipe)
+		if installed {
+			base := "repos/" + host.Repository
+			var ref reference
+			if err := api.Call("GET", base+"/git/ref/heads/main", nil, &ref); err != nil {
+				t.Fatal(err)
+			}
+			api.first.data[base+"/actions/workflows/nibfin-upgrade-execute.yml"] =
+				map[string]any{"id": 8, "path": recipe.execPath, "state": "active"}
+			asset := base + "/contents/" + recipe.execPath + "?ref=" + ref.Object.SHA
+			data := []byte(strings.ReplaceAll(recipe.executor, "MEMBER_ID", "42"))
+			api.first.data[asset] = encoded(data)
+		}
+		var applied []upgradePlan
+		app := App{API: api, Process: upgradeNoProcess{t}, upgrade: &upgradeCommandOperations{
+			discover: func() (*sharedHost, error) { return &host, nil },
+			verify:   func(sharedHost) error { return nil },
+			selectSource: func(sharedHost, string) (upgradeSource, error) {
+				return target, nil
+			},
+			previewHandoff: func(host sharedHost, name, version string, source upgradeSource) (
+				[]upgradePlan, bool, error) {
+				return upgradeHandoffPlans(api, host, name, version, source, adopted)
+			},
+			applyHandoff: func(host sharedHost, name, version string, _ io.Writer) error {
+				var err error
+				applied, _, err = upgradeHandoffPlans(api, host, name, version, target, adopted)
+				return err
+			},
+		}}
+		var out bytes.Buffer
+		err := app.runUpgrade([]string{"--repo", selected, "--apply"}, &out)
+		if err != nil {
+			t.Fatal("unrelated consumer blocked managed apply", err)
+		}
+		var preview struct {
+			Plan  upgradePlan   `json:"plan"`
+			Plans []upgradePlan `json:"managed_plans"`
+			First string        `json:"execution_merge_first"`
+		}
+		if err := json.NewDecoder(&out).Decode(&preview); err != nil {
+			t.Fatal(err)
+		}
+		wanted := []string{selected}
+		if !installed {
+			wanted = []string{host.Repository, selected}
+			if preview.First != host.Repository {
+				t.Fatal("first installation did not expose merge order", preview.First)
+			}
+		}
+		if preview.Plan.Repository.FullName != selected || len(preview.Plans) != len(wanted) ||
+			len(applied) != len(wanted) {
+			t.Fatal("unexpected public preview/apply scope", preview, len(applied))
+		}
+		for index, repo := range wanted {
+			if preview.Plans[index].Repository.FullName != repo ||
+				preview.Plans[index].Repository.ID != applied[index].Repository.ID ||
+				!reflect.DeepEqual(preview.Plans[index].Changes, applied[index].Changes) {
+				t.Fatal("preview differed from apply planning", repo)
+			}
+		}
 	}
 }
 
@@ -209,5 +291,33 @@ func TestUpgradeHandoffReusesNativeDraftAndReadsBackLostReadyResponse(t *testing
 	if err != nil || second.PR != first.PR || countWrite(api.writes, "POST graphql") != 1 ||
 		countWrite(api.writes, "POST "+upgradeRepo+"/pulls") != 1 {
 		t.Fatal("confirmed proposal was repeated", second, err, api.writes)
+	}
+}
+
+func TestUpgradeHandoffDoesNotAdoptUnboundExistingDispatchSecret(t *testing.T) {
+	api := upgradeFixture(t, false, true)
+	recipe := handoffTestRecipe()
+	plan := fixtureUpgradePlan(t, api)
+	user := User{ID: plan.MemberID, Login: "maintainer", Type: "User"}
+	api.data["user"] = user
+	installation := InitPlan{NativeManaged: true, IssueRecipe: "issue",
+		Repository: plan.Repository, Member: user, Execution: &recipe.execution}
+	base := upgradeRepo + "/actions/"
+	api.data[base+"variables/"+recipe.variable] = actionsVariable{
+		Name: recipe.variable, Value: recipe.execution.Repository}
+	secret := nativeSecretMetadata{Name: recipe.secret, CreatedAt: "created",
+		UpdatedAt: "updated"}
+	api.data[base+"secrets/"+recipe.secret] = secret
+	save := func() error { t.Fatal("unexpected write to intent"); return nil }
+	err := prepareUpgradeRoute(api, installation, plan, "latest", recipe,
+		&upgradeRouteSetup{}, save)
+	if err == nil || err.Error() != "UPGRADE_NOTIFICATION_SECRET_OWNERSHIP_UNVERIFIED" ||
+		len(api.writes) != 0 {
+		t.Fatal("unowned credential was treated as managed", err, api.writes)
+	}
+	confirmed := upgradeRouteSetup{SecretState: "confirmed", Secret: secret}
+	err = prepareUpgradeRoute(api, installation, plan, "latest", recipe, &confirmed, save)
+	if err != nil || len(api.writes) != 0 {
+		t.Fatal("owned credential was not reused", err, api.writes)
 	}
 }

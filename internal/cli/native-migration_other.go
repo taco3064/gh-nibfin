@@ -7,8 +7,13 @@ import (
 	"io"
 )
 
-func (a App) applyNativeUpgrade(host sharedHost, version string, out io.Writer) error {
+func (a App) applyNativeUpgrade(_ sharedHost, _, _ string, _ io.Writer) error {
 	return errors.New("NATIVE_MIGRATION_REQUIRES_MANAGED_LINUX")
+}
+
+func (a App) previewUpgradeHandoff(_ sharedHost, _, _ string, _ upgradeSource) (
+	[]upgradePlan, bool, error) {
+	return nil, false, errors.New("NATIVE_MIGRATION_REQUIRES_MANAGED_LINUX")
 }
 
 func (a App) selectManagedNativeSource(host sharedHost,

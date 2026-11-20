@@ -10,7 +10,13 @@ type upgradeRoutePublisher interface {
 	publishRouteSecret(repository, name string) error
 }
 
-func prepareUpgradeRoute(api API, plan InitPlan, recipe upgradeHandoffRecipe) error {
+type upgradeRouteSetup struct {
+	SecretState string               `json:"secret_state"`
+	Secret      nativeSecretMetadata `json:"secret"`
+}
+
+func prepareUpgradeRoute(api API, plan InitPlan, upgrade upgradePlan, version string,
+	recipe upgradeHandoffRecipe, state *upgradeRouteSetup, save func() error) error {
 	if err := nativeWakeAuthority(api, plan); err != nil {
 		return err
 	}
@@ -25,12 +31,31 @@ func prepareUpgradeRoute(api API, plan InitPlan, recipe upgradeHandoffRecipe) er
 	if !missing && current != variable {
 		return errors.New("UPGRADE_NOTIFICATION_DESTINATION_CONFLICT")
 	}
-	secret, err := observeUpgradeSecret(api, base, recipe.secret)
+	secret, exists, err := observeUpgradeSecret(api, base, recipe.secret)
 	if err != nil {
 		return err
 	}
-	if missing && secret {
+	if missing && exists {
 		return errors.New("UPGRADE_NOTIFICATION_SECRET_DESTINATION_UNVERIFIED")
+	}
+	if exists {
+		switch state.SecretState {
+		case "confirmed":
+			if secret != state.Secret {
+				return errors.New("UPGRADE_NOTIFICATION_SECRET_CHANGED")
+			}
+			return nil
+		case "published":
+			state.SecretState, state.Secret = "confirmed", secret
+			return save()
+		case "pending":
+			// An unresolved write can re-enter its authorized upsert. Metadata
+			// alone cannot attribute the old effect or show token equality.
+		default:
+			if err := verifyUpgradeRouteOwnership(api, upgrade, version, recipe); err != nil {
+				return err
+			}
+		}
 	}
 	if missing {
 		_ = api.Call("POST", base+"variables", variable, nil)
@@ -42,9 +67,6 @@ func prepareUpgradeRoute(api API, plan InitPlan, recipe upgradeHandoffRecipe) er
 			return errors.New("UPGRADE_NOTIFICATION_DESTINATION_REQUIRES_READBACK")
 		}
 	}
-	if secret {
-		return nil
-	}
 	publisher, ok := api.(upgradeRoutePublisher)
 	if !ok {
 		return errors.New("UPGRADE_NOTIFICATION_SECRET_PUBLICATION_UNAVAILABLE")
@@ -52,33 +74,76 @@ func prepareUpgradeRoute(api API, plan InitPlan, recipe upgradeHandoffRecipe) er
 	if err := nativeWakeAuthority(api, plan); err != nil {
 		return err
 	}
+	state.SecretState = "pending"
+	if err := save(); err != nil {
+		return err
+	}
 	writeErr := publisher.publishRouteSecret(plan.Repository.FullName, recipe.secret)
-	confirmed, err := observeUpgradeSecret(api, base, recipe.secret)
+	if writeErr != nil {
+		return writeErr
+	}
+	state.SecretState = "published"
+	if err := save(); err != nil {
+		return err
+	}
+	currentSecret, confirmed, err := observeUpgradeSecret(api, base, recipe.secret)
 	if err != nil {
 		return err
 	}
 	if !confirmed {
-		if writeErr != nil {
-			return writeErr
-		}
 		return errors.New("UPGRADE_NOTIFICATION_SECRET_REQUIRES_READBACK")
 	}
-	return nil
+	state.SecretState, state.Secret = "confirmed", currentSecret
+	return save()
 }
 
-func observeUpgradeSecret(api API, base, name string) (bool, error) {
+func verifyUpgradeRouteOwnership(api API, plan upgradePlan, version string,
+	recipe upgradeHandoffRecipe) error {
+	if _, present := plan.entries[recipe.noticePath]; present {
+		source, err := installedUpgradeFile(api, plan, recipe.noticePath)
+		if err != nil {
+			return err
+		}
+		if strings.ReplaceAll(source, "\r\n", "\n") == recipe.notice {
+			return nil
+		}
+	}
+	head, err := readUpgradeRef(api, plan)
+	if err != nil {
+		if err.Error() == "NOT_FOUND" {
+			return errors.New("UPGRADE_NOTIFICATION_SECRET_OWNERSHIP_UNVERIFIED")
+		}
+		return err
+	}
+	proposal, err := observeUpgradeProposal(api, plan, version, head)
+	if err != nil {
+		return err
+	}
+	pulls, err := readUpgradePulls(api, plan, upgradeBranchName)
+	if err != nil {
+		return err
+	}
+	if len(pulls) != 1 {
+		return errors.New("UPGRADE_NOTIFICATION_SECRET_OWNERSHIP_UNVERIFIED")
+	}
+	_, err = readUpgradePull(api, plan, pulls[0].Number, proposal)
+	return err
+}
+
+func observeUpgradeSecret(api API, base, name string) (
+	nativeSecretMetadata, bool, error) {
 	var metadata nativeSecretMetadata
 	err := api.Call("GET", base+"secrets/"+name, nil, &metadata)
 	if err != nil {
 		if err.Error() == "NOT_FOUND" {
-			return false, nil
+			return metadata, false, nil
 		}
-		return false, err
+		return metadata, false, err
 	}
 	if metadata.Name != name || metadata.CreatedAt == "" || metadata.UpdatedAt == "" {
-		return false, errors.New("UPGRADE_NOTIFICATION_SECRET_UNVERIFIED")
+		return metadata, false, errors.New("UPGRADE_NOTIFICATION_SECRET_UNVERIFIED")
 	}
-	return true, nil
+	return metadata, true, nil
 }
 
 func upgradePullNumber(repo, url string) (int, error) {

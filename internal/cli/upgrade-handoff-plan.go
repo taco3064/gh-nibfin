@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -143,17 +144,21 @@ func composeUpgradeHandoff(api API, plan *upgradePlan) error {
 	return nil
 }
 
-func upgradeExecutionRoute(api API, plan upgradePlan, recipe upgradeHandoffRecipe) (
+func upgradeExecutionRoute(api API, host sharedHost, recipe upgradeHandoffRecipe) (
 	bool, error) {
-	if _, exists := plan.entries[recipe.execPath]; !exists {
-		return false, nil
+	repo, _, err := repository(api, host.Repository, false)
+	if err != nil {
+		return false, err
+	}
+	if repo.ID != host.RepositoryID || repo.DefaultBranch == "" {
+		return false, errors.New("UPGRADE_EXECUTION_REPOSITORY_CHANGED")
 	}
 	var observed struct {
 		ID    int64
 		Path  string
 		State string
 	}
-	endpoint := "repos/" + plan.Repository.FullName + "/actions/workflows/" +
+	endpoint := "repos/" + repo.FullName + "/actions/workflows/" +
 		path.Base(recipe.execPath)
 	if err := api.Call("GET", endpoint, nil, &observed); err != nil {
 		if err.Error() == "NOT_FOUND" {
@@ -164,10 +169,22 @@ func upgradeExecutionRoute(api API, plan upgradePlan, recipe upgradeHandoffRecip
 	if observed.ID <= 0 || observed.Path != recipe.execPath || observed.State != "active" {
 		return false, errors.New("UPGRADE_EXECUTION_WORKFLOW_CONFLICT")
 	}
-	actual, err := installedUpgradeFile(api, plan, recipe.execPath)
-	if err != nil {
+	var ref reference
+	path := "repos/" + repo.FullName + "/git/ref/heads/" + url.PathEscape(repo.DefaultBranch)
+	if err := api.Call("GET", path, nil, &ref); err != nil {
 		return false, err
 	}
-	return strings.ReplaceAll(actual, "\r\n", "\n") ==
-		recipe.files(plan.Repository.ID, plan.MemberID)[recipe.execPath], nil
+	if ref.Ref != "refs/heads/"+repo.DefaultBranch ||
+		!commitPattern.MatchString(ref.Object.SHA) {
+		return false, errors.New("UPGRADE_EXECUTION_DEFAULT_BRANCH_UNVERIFIED")
+	}
+	actual, _, err := content(api, repo.FullName, recipe.execPath, ref.Object.SHA)
+	if err != nil {
+		if err.Error() == "NOT_FOUND" {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.ReplaceAll(string(actual), "\r\n", "\n") ==
+		recipe.files(repo.ID, host.MemberID)[recipe.execPath], nil
 }
