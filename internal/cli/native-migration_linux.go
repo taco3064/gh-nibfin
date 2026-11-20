@@ -133,7 +133,7 @@ func (a App) applyNativeUpgrade(host sharedHost, version string, out io.Writer) 
 	defer clear(api.token)
 	a.API = api
 	a.Process = onboardingProcess{ctx: ctx, process: NativeProcess{}}
-	return a.continueNativeUpgrade(host, version, out)
+	return a.applyUpgradeHandoff(host, version, out)
 }
 
 func (a App) continueNativeUpgrade(host sharedHost, version string, out io.Writer) error {

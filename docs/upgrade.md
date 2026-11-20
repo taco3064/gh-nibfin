@@ -7,6 +7,7 @@ Upgrade does not change those policies or request extra grants.
 
 ```sh
 gh nibfin upgrade --repo OWNER/REPO
+gh nibfin upgrade --repo OWNER/REPO --apply
 gh nibfin upgrade --repo OWNER/REPO --version v1.2.3
 gh nibfin upgrade --repo OWNER/REPO --version v1.2.3 --apply
 ```
@@ -88,29 +89,42 @@ remain necessary. It is neither an installed upgrade nor host adoption. Core own
 separate trusted adoption and official-host coordination. This command does not
 stop a host or decide whether a delivery may continue.
 
-## Existing managed native migration
+## Managed latest handoff
 
 Managed apply reuses the selected `gh auth login` through the shared private
 credential publisher. It discovers actual adopted consumers from Core-owned host
 bindings, independently of old notification configuration or journal receipts.
-Before publishing a native caller PR, it verifies the complete recognized old
-caller, member, repository and existing execution destination. It prepares the
-native credential without disabling the working artifact route. Credential
-metadata establishes configuration only, never token equality or validity.
+The adopted host must already expose Core's fixed upgrade receiver. Core CD or
+the existing authorized source maintenance installs it. Apply reports
+`CORE_UPGRADE_RECEIVER_REQUIRED` when that prerequisite is unfinished.
 
-Repeat the same apply while proposals await normal review and merge. The existing
-upgrade publisher owns PR recovery and native rebase. Confirmed secret writes
-are reused; an unknown write re-enters its normal upsert, while a successful
-publication followed by failed metadata observation retries only the read.
+The CLI reads the selected Core's maintained notification and execution recipes.
+It prepares the native route from the selected `gh auth login` and combines
+required caller files and pins in one verified proposal per changed repository.
+Each proposal is initially a draft. After Core records its actual native PR
+identity, the CLI makes it ready for ordinary review and merge. A PR URL alone
+confirms neither automatic routing nor installation. When the execution caller
+is new, review and merge the execution repository proposal first.
 
-After main contains the verified native caller, apply refreshes its adoption
-through Core. A true Core source transition requires the supported host source
-upgrade; caller refresh does not deploy code. Only after every actual consumer
-is ready does CLI request Core's fixed notification retirement operation. Core
-decides which owned obsolete resources are removable. CLI then calls the same
-fixed lifecycle completion used by native init. Owner pauses remain authoritative.
-A pending continuation re-enters completion on retry without registering Runners
-or publishing completed work again. No timer or CLI Issue queue is introduced.
+The final output lists each read-back PR URL and shows whether its review and
+merge are pending. The nested `upgrade` object reports `handoff`, `installation`,
+`readiness` and `continuation` separately. When Core confirms handoff, the CLI
+can close and Core continues from the native merge event. Owner pause remains
+effective. An unchanged repository can complete directly without a proposal,
+including when another adopted repository is still awaiting review. A separate
+cleanup result reports any remaining shared-resource retirement.
+
+GitHub suppresses `pull_request: closed` runs for merges made with a workflow's
+`GITHUB_TOKEN`. A managed merger using that token must read back the successful
+merge and explicitly dispatch the notification workflow on the repository's
+default branch with `pull_number` and effective Actions write permission. The
+same Core receiver validates both routes. See [GitHub token event behavior](https://docs.github.com/en/actions/concepts/security/github_token).
+
+Core owns supported source maintenance, model-free Writer VM readiness when
+required, and eligible Issue dispatch. An incompatible VM or host reports its
+maintenance requirement and preserves confirmed progress. Retry the existing
+operation when a reported observation or unfinished step needs recovery. The
+CLI reuses confirmed provider effects without starting a second upgrade.
 
 ## Pending and unknown results
 

@@ -23,6 +23,7 @@ type upgradeSource struct {
 	maintained      bool
 	nativeLatest    bool
 	nativeExecution *SharedExecution
+	handoff         *upgradeHandoffRecipe
 }
 
 // A release is a locator. Only the peeled, read-back official commit supplies pins.

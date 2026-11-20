@@ -167,34 +167,9 @@ func migrateNativeConsumer(api API, host sharedHost, name, version string,
 	if state == nil || save == nil {
 		return result, errors.New("NATIVE_MIGRATION_STATE_UNAVAILABLE")
 	}
-	recipes, err := upgradeRecipes(api, upgrade.Current)
-	if err != nil {
+	if err := prepareNativeConsumerWake(api, host, version, ops, plan, upgrade,
+		state, save); err != nil {
 		return result, err
-	}
-	body, err := installedUpgradeFile(api, upgrade, managedIssueWorkflow)
-	if err != nil {
-		return result, err
-	}
-	recipe := recognizeIssueRecipe(upgrade.Current, plan.Member.ID, recipes, body)
-	if recipe == "issue-managed" {
-		publisher, ok := api.(nativeSecretPublisher)
-		if !ok {
-			return result, errors.New("NATIVE_WAKE_SECRET_PUBLICATION_UNAVAILABLE")
-		}
-		route := func() error {
-			return observeMigrationArtifact(api, host, plan, version, ops)
-		}
-		if err := prepareNativeWakeWithRoute(api, plan, state, save,
-			publisher.publishNativeWakeSecret, route); err != nil {
-			return result, err
-		}
-	} else if recipe != "issue" {
-		return result, errors.New("NATIVE_MIGRATION_CALLER_NOT_RECOGNIZED")
-	} else {
-		if err := prepareMigrationNativeWake(api, host, plan, version, ops,
-			state, save); err != nil {
-			return result, err
-		}
 	}
 	if len(upgrade.Changes) != 0 {
 		proposal, err := applyUpgrade(api, upgrade, version)
@@ -234,6 +209,35 @@ func migrateNativeConsumer(api API, host sharedHost, name, version string,
 	}
 	result.Status = "ready"
 	return result, nil
+}
+
+func prepareNativeConsumerWake(api API, host sharedHost, version string,
+	ops nativeMigrationOperations, plan InitPlan, upgrade upgradePlan,
+	state *nativeWakeSetup, save func() error) error {
+	recipes, err := upgradeRecipes(api, upgrade.Current)
+	if err != nil {
+		return err
+	}
+	body, err := installedUpgradeFile(api, upgrade, managedIssueWorkflow)
+	if err != nil {
+		return err
+	}
+	switch recognizeIssueRecipe(upgrade.Current, plan.Member.ID, recipes, body) {
+	case "issue-managed":
+		publisher, ok := api.(nativeSecretPublisher)
+		if !ok {
+			return errors.New("NATIVE_WAKE_SECRET_PUBLICATION_UNAVAILABLE")
+		}
+		route := func() error {
+			return observeMigrationArtifact(api, host, plan, version, ops)
+		}
+		return prepareNativeWakeWithRoute(api, plan, state, save,
+			publisher.publishNativeWakeSecret, route)
+	case "issue":
+		return prepareMigrationNativeWake(api, host, plan, version, ops, state, save)
+	default:
+		return errors.New("NATIVE_MIGRATION_CALLER_NOT_RECOGNIZED")
+	}
 }
 
 // Full recognized source, adopted native identities and the same destination

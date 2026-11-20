@@ -8,6 +8,7 @@ type upgradeCommandOperations struct {
 	selectSource func(sharedHost, string) (upgradeSource, error)
 	applyNative  func(sharedHost, string, io.Writer) error
 	recheck      func(sharedHost) error
+	handoff      bool
 }
 
 func (a App) upgradeCommandOperations() upgradeCommandOperations {
@@ -22,6 +23,7 @@ func (a App) upgradeCommandOperations() upgradeCommandOperations {
 		},
 		selectSource: a.selectManagedNativeSource,
 		applyNative:  a.applyNativeUpgrade,
+		handoff:      true,
 		recheck: func(host sharedHost) error {
 			return recheckSharedHost(a.Process, a.API, host)
 		},
