@@ -175,3 +175,50 @@ layout changes, races, lost responses and isolation. They do not certify live
 release availability, protected GitHub E2E, released-version A-to-B host adoption
 or native platform support. Those remain separate native acceptance/release
 checks. Unavailable live evidence must remain Unverified.
+
+## Windows transport to an adopted WSL installation
+
+Linux continues to run upgrade directly. On Windows, the same public command
+selects an existing WSL 2 installation adopted for the requested repository and
+invokes its installed Linux CLI from the guest home directory:
+
+```sh
+gh nibfin upgrade --repo OWNER/REPO --target wsl:Ubuntu
+gh nibfin upgrade --repo OWNER/REPO --target wsl:Ubuntu --apply
+```
+
+A uniquely eligible running installation can be selected automatically. Apply
+remembers a nonsecret repository/target/machine/architecture/pool selection hint
+in the user configuration directory (`nibfin/upgrade-targets.json`). Each use
+reobserves the installation; this preference grants no permission and records no
+operation state. A confirmed replacement requires explicit target selection.
+Preview never writes this hint or starts a stopped guest. To open an explicitly
+selected stopped guest, use `--apply --consent-open-target`; opening is followed
+by fresh adoption and identity checks before delegation. Multiple eligible
+installations require `--target`. Docker Desktop distributions and WSL 1 are
+excluded. No guest is provisioned or converted.
+
+The guest must have an installed CLI supporting upgrade observation, its existing
+Core inspection capability, and guest-local login and administration permissions.
+Unavailable observation differs from confirmed non-adoption and unsupported
+installed CLI capability. Missing adoption requires the normal init flow; a
+running unadopted guest is never a fallback upgrade destination. The desktop
+checkout, desktop tokens and Dashboard credentials are not used for mutation.
+Public repository identity discovery uses a credential-free GitHub read; an
+unavailable read is not proof of missing adoption.
+
+Guest output and exit status, including pending exit 2, are relayed unchanged.
+Repository-specific proposal URLs, review/merge pending, Actions references,
+installation/readiness failures, Owner pauses and continuation remain guest
+results. Transport does not certify VM readiness or manufacture native handoff.
+Only actual guest confirmation establishes that closing the CLI leaves the
+original operation continuing after merge. Explicit stable releases retain their
+PR-only behavior; Windows creates no additional proposal or lifecycle ledger.
+
+For cancellation, launch failure or lost transport before confirmed handoff,
+use the emitted `resume_argv` with the same repository, target, version and
+preview/apply intent. The guest operation owns provider read-back, reuse of
+confirmed proposals and guarded recovery when main advances. A missing target
+preference does not prove external work is absent. Never infer automatic
+completion from process launch, a PR URL or transport exit alone. Windows/WSL
+E2E and VM/platform certification require their own native evidence.

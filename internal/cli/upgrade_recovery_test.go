@@ -291,16 +291,18 @@ func TestUpgradePublicContinuationKeepsPreviewReadOnly(t *testing.T) {
 	original := fixtureUpgradePlan(t, f)
 	app := App{API: f, Process: upgradeNoProcess{t}}
 	args := []string{"upgrade", "--repo", "example/project"}
-	if err := app.Run(append(args, "--apply"), &bytes.Buffer{}); err != nil {
+	if err := runLinuxUpgradeFixture(app, append(args, "--apply"),
+		&bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	advanceUpgradeBase(t, f, original)
 	writes := len(f.writes)
-	if err := app.Run(args, &bytes.Buffer{}); err != nil || len(f.writes) != writes {
+	err := runLinuxUpgradeFixture(app, args, &bytes.Buffer{})
+	if err != nil || len(f.writes) != writes {
 		t.Fatal("preview must remain read-only for a behind proposal", err, f.writes)
 	}
 	var out bytes.Buffer
-	if err := app.Run(append(args, "--apply"), &out); err != nil {
+	if err := runLinuxUpgradeFixture(app, append(args, "--apply"), &out); err != nil {
 		t.Fatal(out.String(), err)
 	}
 	if !strings.Contains(out.String(), "https://github.com/example/project/pull/9") ||

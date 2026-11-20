@@ -5,21 +5,24 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"time"
 )
 
 type App struct {
-	agents         *agentOperations
-	handoffCheck   func() error
-	upgrade        *upgradeCommandOperations
-	Context        context.Context
-	StartDashboard DashboardStart
-	OpenDashboard  func(context.Context, string) error
-	API            API
-	Process        Process
-	Runner         RunnerHost
-	Download       RunnerDownload
-	Clock          func() time.Time
+	agents                *agentOperations
+	handoffCheck          func() error
+	upgrade               *upgradeCommandOperations
+	upgradePreferencePath func() (string, error)
+	upgradeObservation    func(string) (upgradeGuestObservation, error)
+	Context               context.Context
+	StartDashboard        DashboardStart
+	OpenDashboard         func(context.Context, string) error
+	API                   API
+	Process               Process
+	Runner                RunnerHost
+	Download              RunnerDownload
+	Clock                 func() time.Time
 }
 
 type CommandError struct {
@@ -46,6 +49,7 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Fresh managed init defaults to Codex; existing pools retain their Agent.\n"+
 			"Agent availability requires verified Core composition; Claude is fixture-only.\n"+
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
+			"Windows upgrade uses an adopted WSL 2 guest; Linux runs directly.\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
 			"Shared execution: init --repo OWNER/REPO --execution-repo OWNER/REPO.\n"+
 			"Shared host setup: init --repo OWNER/REPO --apply --start-shared-services.\n"+
@@ -73,8 +77,11 @@ func (a App) Run(args []string, out io.Writer) error {
 	if args[0] == "dashboard" {
 		return a.runDashboard(args[1:], out)
 	}
+	if args[0] == upgradeObserveCommand {
+		return a.runUpgradeObservation(args[1:], out)
+	}
 	if args[0] == "upgrade" {
-		return a.runUpgrade(args[1:], out)
+		return a.routeUpgrade(args[1:], runtime.GOOS, out)
 	}
 	if args[0] == "runner" {
 		return a.runRunner(args[1:], out)
