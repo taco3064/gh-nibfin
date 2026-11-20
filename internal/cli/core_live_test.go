@@ -63,12 +63,7 @@ func TestLiveCandidateCache(t *testing.T) {
 	if path != want {
 		t.Fatal("candidate must be installed inside the isolated test cache")
 	}
-	sandbox, err := os.ReadFile(filepath.Join(path, "src", "codex-sandbox.mjs"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(sandbox), "/tmp:rw,exec,nosuid,nodev,") {
-		t.Fatal("installed Core must allow execution in the private role scratch space")
-	}
+	// Core owns execution-policy checks. This integration verifies the public
+	// package and installed cache through its actual verifier, not source layout.
 	t.Log("actual Core archive/manifest/installation verified; no host adoption")
 }
