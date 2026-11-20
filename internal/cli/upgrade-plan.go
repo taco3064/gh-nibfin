@@ -194,9 +194,8 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 		if err != nil {
 			return plan, err
 		}
-		if observed != expected && allowUntitled &&
-			(path == managedIssueWorkflow || path == ".github/workflows/nibfin-wake.yml") &&
-			observed == untitledCaller(expected) {
+		if observed != expected && matchesUntitledCaller(path, expected, observed,
+			allowUntitled) {
 			old[path], untitled[path] = observed, true
 		} else if observed != expected {
 			return plan, fmt.Errorf("INSTALLED_MANAGED_FILE_CHANGED: %s", path)

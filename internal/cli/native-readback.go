@@ -15,8 +15,8 @@ func readNativeInstallationWithPins(api API, plan InitPlan,
 	if err := nativeWakeAuthority(api, plan); err != nil {
 		return nil, nil, err
 	}
-	current, err := planInitRecipeWithPins(api, plan.Repository.FullName,
-		plan.Execution.Repository, "issue", pins)
+	current, err := planInitRecipeLayout(api, plan.Repository.FullName,
+		plan.Execution.Repository, "issue", pins, plan.allowUntitled)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -139,7 +139,8 @@ func nativeMigrationPlan(api API, host sharedHost,
 	}
 	plan := InitPlan{NativeManaged: true, IssueRecipe: "issue", Repository: repo,
 		Member: user, Head: upgrade.Base, Execution: &host.SharedExecution,
-		Files: []Change{}, Labels: []string{}, Agent: host.Agent}
+		Files: []Change{}, Labels: []string{}, Agent: host.Agent,
+		allowUntitled: upgrade.Target.maintained}
 	if err := nativeWakeAuthority(api, plan); err != nil {
 		return plan, err
 	}
@@ -215,15 +216,9 @@ func migrateNativeConsumer(api API, host sharedHost, name, version string,
 func prepareNativeConsumerWake(api API, host sharedHost, version string,
 	ops nativeMigrationOperations, plan InitPlan, upgrade upgradePlan,
 	state *nativeWakeSetup, save func() error) error {
-	recipes, err := upgradeRecipes(api, upgrade.Current)
-	if err != nil {
-		return err
-	}
-	body, err := installedUpgradeFile(api, upgrade, managedIssueWorkflow)
-	if err != nil {
-		return err
-	}
-	switch recognizeIssueRecipe(upgrade.Current, plan.Member.ID, recipes, body) {
+	// The upgrade planner verified the installed caller against its maintained
+	// recipe. Each credential route independently re-observes current main.
+	switch upgrade.issueRecipe {
 	case "issue-managed":
 		publisher, ok := api.(nativeSecretPublisher)
 		if !ok {
@@ -259,12 +254,13 @@ func observeMigrationArtifact(api API, host sharedHost, plan InitPlan, version s
 	if _, err := nativeMigrationPlan(api, host, current); err != nil {
 		return err
 	}
-	recipes, err := upgradeRecipes(api, current.Current)
+	if current.issueRecipe != "issue-managed" {
+		return errors.New("NATIVE_MIGRATION_CALLER_NOT_RECOGNIZED")
+	}
+	expected, err := installedUpgradeFile(api, current, managedIssueWorkflow)
 	if err != nil {
 		return err
 	}
-	expected := templatesForRecipe(current.Current, plan.Member.ID, recipes,
-		"issue-managed")[managedIssueWorkflow]
 	for _, origin := range adopted.Origins {
 		if origin.RepositoryID != plan.Repository.ID {
 			continue
