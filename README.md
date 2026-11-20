@@ -162,6 +162,21 @@ archive; an existing cache cannot replace that verifier. The selected `node`
 must match Core's own `.node-version`. For an fnm-managed installation, for example,
 run the CLI inside the corresponding `fnm exec --using VERSION -- ...` environment.
 
+Apply/retry and operation exit reconcile the CLI source-cache namespace without
+requiring another download or privileged maintenance. Recognized private source
+trees are retired only when current process and retained installation facts allow
+it. The selected source stays protected until the invoking operation exits.
+Active consumers, retained recovery sources, foreign contents and uncertain
+observations keep the affected entry. Unsupported native use observation defers
+retirement; directory age is never proof that a verifier has stopped.
+
+Housekeeping reports removed and retained/deferred entries separately from source
+verification and installation results. A cleanup or cleanup-output failure does
+not invalidate a verified source or replay a completed installation. Interrupted
+removal resumes from eligible remaining contents; ambiguous legacy or partial
+trees remain untouched. This covers CLI candidate sources only, not privileged
+Core installations or rollout packages.
+
 Core's current host installer uses a directory replacement operation that returns
 `EPERM` on Windows. CLI source caching instead reserves a new directory, safely
 extracts the hash-verified archive and delegates content verification to Core.

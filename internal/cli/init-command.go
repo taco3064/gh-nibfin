@@ -176,6 +176,12 @@ func (a App) runInit(args []string, out io.Writer) error {
 	if !*apply {
 		return nil
 	}
+	selectedSource := ""
+	if !plan.NativeManaged {
+		selectedSource = Pins().Core.Commit
+	}
+	finishCleanup := beginCacheCleanup(out, selectedSource, reconcileCLIInvocation)
+	defer finishCleanup()
 	if err := guardHandoff(); err != nil {
 		return err
 	}
@@ -198,7 +204,8 @@ func (a App) runInit(args []string, out io.Writer) error {
 			return err
 		}
 	}
-	cache, err := installCoreCache(a.API, cacheProcess)
+	cache, err := installCoreCacheReporting(a.API, cacheProcess,
+		func(report cacheCleanupReport) { reportCacheCleanup(out, report) })
 	if err != nil {
 		return err
 	}

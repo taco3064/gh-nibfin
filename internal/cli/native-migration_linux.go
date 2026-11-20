@@ -137,6 +137,8 @@ func (a App) applyNativeUpgrade(host sharedHost, version string, out io.Writer) 
 }
 
 func (a App) continueNativeUpgrade(host sharedHost, version string, out io.Writer) error {
+	finishCleanup := beginCacheCleanup(out, "", reconcileCLIInvocation)
+	defer finishCleanup()
 	var selected upgradeSource
 	var migration nativeMigrationOperations
 	results, continuation, callErr := nativeUpgradeLifecycle(nativeUpgradeOperations{
