@@ -10,19 +10,28 @@ import (
 
 var upgradeOperationID = regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`)
 
+type selectedProviderFailure struct {
+	Code       string
+	Diagnostic nativeGitHubDiagnostic
+}
+
+func (failure *selectedProviderFailure) Error() string { return failure.Code }
+
 type managedUpgradeProposal struct {
-	Repository   string `json:"repository"`
-	RepositoryID int64  `json:"repositoryId"`
-	Pull         int    `json:"pullNumber"`
-	ID           int64  `json:"pullId"`
-	Node         string `json:"pullNodeId"`
-	URL          string `json:"proposalUrl"`
-	Merged       bool   `json:"merged"`
-	Handoff      string `json:"handoff"`
-	ExecutionRun *struct {
-		ID  int64  `json:"runId"`
-		URL string `json:"url"`
-	} `json:"executionRun,omitempty"`
+	Repository   string                  `json:"repository"`
+	RepositoryID int64                   `json:"repositoryId"`
+	Pull         int                     `json:"pullNumber"`
+	ID           int64                   `json:"pullId"`
+	Node         string                  `json:"pullNodeId"`
+	URL          string                  `json:"proposalUrl"`
+	Merged       bool                    `json:"merged"`
+	Handoff      string                  `json:"handoff"`
+	ExecutionRun *upgradeExecutionRunRef `json:"executionRun,omitempty"`
+}
+
+type upgradeExecutionRunRef struct {
+	ID  int64  `json:"runId"`
+	URL string `json:"url"`
 }
 
 type managedUpgradeProgress struct {

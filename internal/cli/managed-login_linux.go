@@ -85,21 +85,24 @@ func (g *selectedGitHub) Call(method, path string, input, output any) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return errors.New("MANAGED_GITHUB_RESPONSE_UNKNOWN")
+		return &selectedProviderFailure{"MANAGED_GITHUB_RESPONSE_UNKNOWN",
+			nativeGitHubDiagnostic{Kind: "network"}}
 	}
 	defer resp.Body.Close()
+	status := resp.StatusCode
+	providerCause := nativeGitHubDiagnostic{Kind: "http", HTTPStatus: &status}
 	if resp.StatusCode == 404 {
 		return errors.New("NOT_FOUND")
 	}
 	if resp.StatusCode == 429 || resp.StatusCode == 403 &&
 		resp.Header.Get("X-RateLimit-Remaining") == "0" {
-		return errors.New("RATE_LIMITED")
+		return &selectedProviderFailure{"RATE_LIMITED", providerCause}
 	}
 	if resp.StatusCode == 403 {
-		return errors.New("PERMISSION_DENIED")
+		return &selectedProviderFailure{"PERMISSION_DENIED", providerCause}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.New("MANAGED_GITHUB_RESPONSE_UNKNOWN")
+		return &selectedProviderFailure{"MANAGED_GITHUB_RESPONSE_UNKNOWN", providerCause}
 	}
 	if path == "user" {
 		g.scopes = resp.Header.Get("X-OAuth-Scopes")

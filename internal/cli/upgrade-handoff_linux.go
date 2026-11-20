@@ -36,12 +36,20 @@ func (a App) applyUpgradeHandoff(previous sharedHost, name, version string,
 			}
 			return readyBoundUpgradeProposal(a.API, plan, version, proposal)
 		},
-		recover: func(plan upgradePlan, proposal managedUpgradeProposal) (
+		recover: func(plan upgradePlan, proposal managedUpgradeProposal, retry bool) (
 			upgradeRecoveryObservation, error) {
+			unlock, err := sharedMutationLock()
+			if err != nil {
+				return upgradeRecoveryObservation{}, err
+			}
+			defer unlock()
+			if err := requireNoReplacement(); err != nil {
+				return upgradeRecoveryObservation{}, err
+			}
 			if _, err := a.readNativeUpgradeHost(previous); err != nil {
 				return upgradeRecoveryObservation{}, err
 			}
-			return recoverMergedUpgrade(a.API, plan, proposal, selection.recipe)
+			return recoverMergedUpgrade(a.API, plan, proposal, selection.recipe, retry)
 		},
 	}
 	result, err := runUpgradeHandoff(selection.plans, selection.executionReady,

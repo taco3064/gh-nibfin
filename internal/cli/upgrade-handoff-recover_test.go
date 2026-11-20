@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"net/url"
 	"path"
@@ -12,6 +13,7 @@ type upgradeReplayAPI struct {
 	onDispatch func()
 	dispatch   string
 	denyRead   string
+	writeErr   error
 }
 
 func (api upgradeReplayAPI) Call(method, endpoint string, input, output any) error {
@@ -20,8 +22,10 @@ func (api upgradeReplayAPI) Call(method, endpoint string, input, output any) err
 	}
 	if method == "POST" && endpoint == api.dispatch {
 		api.writes = append(api.writes, endpoint)
-		api.onDispatch()
-		return errors.New("LOST_RESPONSE")
+		if api.onDispatch != nil {
+			api.onDispatch()
+		}
+		return api.writeErr
 	}
 	return api.fakeAPI.Call(method, endpoint, input, output)
 }
@@ -70,18 +74,68 @@ func TestUpgradeHandoffRecoversExactNativeNotificationAndReusesIt(t *testing.T) 
 			fixture.data[noticeRuns] = map[string]any{
 				"total_count": 1, "workflow_runs": []upgradeWorkflowRun{run}}
 		}}
-	if _, err := recoverMergedUpgrade(api, plan, known, recipe); err == nil ||
+	if _, err := recoverMergedUpgrade(api, plan, known, recipe, true); err == nil ||
 		len(api.writes) != 0 {
 		t.Fatal("failed native read allowed dispatch", err, api.writes)
 	}
 	api.denyRead = ""
+	dispatched := api.onDispatch
+	api.onDispatch = nil
+	status := 422
+	failedPost := &selectedProviderFailure{"MANAGED_GITHUB_RESPONSE_UNKNOWN",
+		nativeGitHubDiagnostic{Kind: "http", HTTPStatus: &status}}
+	api.writeErr = failedPost
+	if _, err := recoverMergedUpgrade(api, plan, known, recipe, true); err != failedPost {
+		t.Fatal("confirmed absent dispatch lost original typed failure", err)
+	} else {
+		var out bytes.Buffer
+		_ = reportUpgradeHandoff(&out, upgradeHandoffOutcome{Status: "pending"}, err)
+		if !bytes.Contains(out.Bytes(), []byte(`"httpStatus":422`)) {
+			t.Fatal("typed failure was not propagated to command output", out.String())
+		}
+	}
+	api.writes = nil
+	api.onDispatch, api.writeErr = dispatched, errors.New("LOST_RESPONSE")
 	for range 2 {
-		result, err := recoverMergedUpgrade(api, plan, known, recipe)
+		result, err := recoverMergedUpgrade(api, plan, known, recipe, true)
 		if err != nil || result.RunURL != run.URL || result.State != "queued" {
 			t.Fatal("exact native dispatch was not observed", result, err)
 		}
 	}
 	if len(api.writes) != 1 || api.writes[0] != api.dispatch {
 		t.Fatal("confirmed notification dispatch repeated", api.writes)
+	}
+	stored := upgradeWorkflowRun{ID: 87, WorkflowID: 2, URL: run.URL,
+		Title: "Legacy Core execution", Repository: plan.Repository,
+		HeadRepo: plan.Repository, Attempt: 1, Status: "completed", Conclusion: "failure",
+		Event: "workflow_dispatch", HeadBranch: plan.Repository.DefaultBranch}
+	stored.URL = "https://github.com/example/project/actions/runs/87"
+	known.ExecutionRun = &upgradeExecutionRunRef{ID: stored.ID, URL: stored.URL}
+	storedPath := upgradeRepo + "/actions/runs/87"
+	fixture.data[storedPath] = stored
+	api.dispatch, api.writes = storedPath+"/rerun", nil
+	api.onDispatch, api.writeErr = nil, failedPost
+	result, err := recoverMergedUpgrade(api, plan, known, recipe, false)
+	if err != nil || result.RunURL != stored.URL || result.State != "completed" ||
+		len(api.writes) != 0 {
+		t.Fatal("known completed lifecycle was re-entered", result, err, api.writes)
+	}
+	result, err = recoverMergedUpgrade(api, plan, known, recipe, true)
+	if err != failedPost || result.RunURL != stored.URL {
+		t.Fatal("known failed run did not retain its native rerun cause", result, err)
+	}
+	api.onDispatch = func() {
+		stored.Attempt, stored.Status, stored.Conclusion = 2, "queued", ""
+		fixture.data[storedPath] = stored
+	}
+	for range 2 {
+		result, err := recoverMergedUpgrade(api, plan, known, recipe, true)
+		if err != nil || result.RunURL != stored.URL || result.State != "queued" {
+			t.Fatal("actual retry of known failed run was not reconciled", result, err)
+		}
+	}
+	if len(api.writes) != 2 || api.writes[0] != api.dispatch ||
+		api.writes[1] != api.dispatch {
+		t.Fatal("failed or already queued native retry was not reconciled", api.writes)
 	}
 }
