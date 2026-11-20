@@ -39,6 +39,7 @@ type upgradePlan struct {
 	ID            string          `json:"id"`
 	entries       map[string]upgradeEntry
 	issueRecipe   string
+	issueOnly     bool
 	frozenTarget  bool
 }
 
@@ -86,7 +87,7 @@ func planUpgradeRecipeAt(api API, name, version string, managed bool,
 func planNativeUpgradeTarget(api API, name, version string,
 	target upgradeSource) (upgradePlan, error) {
 	current, err := planUpgradeSourceAt(api, name, version, false, "", "", &target)
-	if err != nil || current.issueRecipe == "issue" {
+	if err != nil || current.issueRecipe == "issue" || current.issueOnly {
 		return current, err
 	}
 	return planUpgradeSourceAt(api, name, version, false, "issue", "", &target)
@@ -158,17 +159,8 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 	if err != nil {
 		return plan, err
 	}
-	wake, err := installedUpgradeFile(api, plan, ".github/workflows/nibfin-wake.yml")
-	if err != nil {
+	if err := selectUpgradeMember(api, &plan, selected); err != nil {
 		return plan, err
-	}
-	members := memberBindingPattern.FindAllStringSubmatch(wake, -1)
-	if len(members) == 0 {
-		return plan, errors.New("INSTALLED_MEMBER_BINDING_REQUIRED")
-	}
-	plan.MemberID, err = strconv.ParseInt(members[0][1], 10, 64)
-	if err != nil || plan.MemberID > 9007199254740991 {
-		return plan, errors.New("INVALID_INSTALLED_MEMBER_BINDING")
 	}
 	issue, err := installedUpgradeFile(api, plan, managedIssueWorkflow)
 	if err != nil {
@@ -179,6 +171,15 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 		return plan, errors.New("INSTALLED_ISSUE_CALLER_NOT_RECOGNIZED")
 	}
 	plan.issueRecipe = recipe
+	if plan.issueOnly {
+		plan.Target = *selected
+		plan.Target.recipes, err = readRecipes(api, selected.Producers)
+		if err != nil {
+			return plan, err
+		}
+		plan.Compatibility = "verified adopted Issue-only execution; upgrade transport only"
+		return finishUpgradePlan(api, plan)
+	}
 	old := templatesForRecipe(plan.Current, plan.MemberID, recipes, recipe)
 	for path, expected := range old {
 		observed, err := installedUpgradeFile(api, plan, path)
@@ -251,15 +252,48 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 			plan.Changes = append(plan.Changes, upgradeChange{path, "modified", after})
 		}
 	}
+	plan.Compatibility = "verified immutable sources and recognized managed layout"
+	return finishUpgradePlan(api, plan)
+}
+
+func finishUpgradePlan(api API, plan upgradePlan) (upgradePlan, error) {
 	if plan.Target.handoff != nil {
 		if err := composeUpgradeHandoff(api, &plan); err != nil {
 			return plan, err
 		}
 	}
-	plan.Compatibility = "verified immutable sources and recognized managed layout"
 	data, _ := json.Marshal(plan)
 	plan.ID = sha256Hash(data)
 	return plan, nil
+}
+
+func selectUpgradeMember(api API, plan *upgradePlan, selected *upgradeSource) error {
+	const wakePath = ".github/workflows/nibfin-wake.yml"
+	if _, present := plan.entries[wakePath]; !present && selected != nil &&
+		selected.issueOnly != nil {
+		binding := selected.issueOnly
+		if binding.execution.Repository == plan.Repository.FullName &&
+			binding.execution.RepositoryID == plan.Repository.ID && binding.memberID > 0 {
+			if _, exists := plan.entries[".github/workflows/nibfin-stage.yml"]; exists {
+				return errors.New("UNRECOGNIZED_ISSUE_ONLY_LAYOUT")
+			}
+			plan.MemberID, plan.issueOnly = binding.memberID, true
+			return nil
+		}
+	}
+	wake, err := installedUpgradeFile(api, *plan, wakePath)
+	if err != nil {
+		return err
+	}
+	members := memberBindingPattern.FindAllStringSubmatch(wake, -1)
+	if len(members) == 0 {
+		return errors.New("INSTALLED_MEMBER_BINDING_REQUIRED")
+	}
+	plan.MemberID, err = strconv.ParseInt(members[0][1], 10, 64)
+	if err != nil || plan.MemberID > 9007199254740991 {
+		return errors.New("INVALID_INSTALLED_MEMBER_BINDING")
+	}
+	return nil
 }
 
 func installedUpgradeFile(api API, plan upgradePlan, path string) (string, error) {

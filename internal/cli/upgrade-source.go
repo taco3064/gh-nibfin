@@ -24,6 +24,12 @@ type upgradeSource struct {
 	nativeLatest    bool
 	nativeExecution *SharedExecution
 	handoff         *upgradeHandoffRecipe
+	issueOnly       *issueOnlyUpgradeBinding
+}
+
+type issueOnlyUpgradeBinding struct {
+	execution SharedExecution
+	memberID  int64
 }
 
 // A release is a locator. Only the peeled, read-back official commit supplies pins.

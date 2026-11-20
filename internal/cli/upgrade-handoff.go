@@ -48,6 +48,7 @@ func upgradeHandoffPlans(api API, host sharedHost, name, version string,
 	if err := nativeMigrationBindings(adopted, host); err != nil {
 		return nil, false, err
 	}
+	target.issueOnly = &issueOnlyUpgradeBinding{host.SharedExecution, host.MemberID}
 	if target.handoff == nil {
 		return nil, false, errors.New("CORE_UPGRADE_RECEIVER_REQUIRED")
 	}

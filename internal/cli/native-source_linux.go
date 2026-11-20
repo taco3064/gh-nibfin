@@ -37,6 +37,7 @@ func (a App) selectManagedNativeSource(host sharedHost,
 	}
 	current := upgradeSource{Kind: "installed-current", Execution: &actual.SharedExecution,
 		Producers: pins, recipes: recipes, maintained: true, nativeLatest: true}
+	current.issueOnly = &issueOnlyUpgradeBinding{actual.SharedExecution, actual.MemberID}
 	plan, err := planUpgradeSourceAt(a.API, actual.Repository, "latest", false,
 		"", "", &current)
 	if err != nil {
@@ -49,16 +50,18 @@ func (a App) selectManagedNativeSource(host sharedHost,
 	if _, err := nativeMigrationPlan(a.API, actual, plan); err != nil {
 		return upgradeSource{}, err
 	}
-	present, err := readSharedWakeDestination(a.API, actual.Repository,
-		actual.SharedExecution)
-	if err != nil {
-		return upgradeSource{}, err
-	}
-	if !present {
-		return upgradeSource{}, errors.New("NATIVE_MIGRATION_EXISTING_DESTINATION_REQUIRED")
-	}
-	if _, _, err := managedPool(a.API, actual.Repository); err != nil {
-		return upgradeSource{}, err
+	if !plan.issueOnly {
+		present, err := readSharedWakeDestination(a.API, actual.Repository,
+			actual.SharedExecution)
+		if err != nil {
+			return upgradeSource{}, err
+		}
+		if !present {
+			return upgradeSource{}, errors.New("NATIVE_MIGRATION_EXISTING_DESTINATION_REQUIRED")
+		}
+		if _, _, err := managedPool(a.API, actual.Repository); err != nil {
+			return upgradeSource{}, err
+		}
 	}
 	release, err := resolveUpgradeMetadata(a.API, version)
 	if err != nil {
@@ -76,5 +79,6 @@ func (a App) selectManagedNativeSource(host sharedHost,
 	}
 	selected.maintained, selected.nativeLatest = true, true
 	selected.nativeExecution = &actual.SharedExecution
+	selected.issueOnly = current.issueOnly
 	return selected, err
 }

@@ -151,6 +151,7 @@ func observeUpgradeProposal(api API, plan upgradePlan, version,
 			return proposal, err
 		}
 		retained.handoff = plan.Target.handoff
+		retained.issueOnly = plan.Target.issueOnly
 	}
 	parent := commit.Parents[0].SHA
 	original := plan

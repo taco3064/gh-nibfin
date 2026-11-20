@@ -166,9 +166,11 @@ func (a App) publishUpgradeHandoff(previous sharedHost, version string,
 		&state.Upgrade, save); err != nil {
 		return result, err
 	}
-	if err := prepareNativeConsumerWake(a.API, host, version, ops, installation,
-		plan, state, save); err != nil {
-		return result, err
+	if !plan.issueOnly {
+		if err := prepareNativeConsumerWake(a.API, host, version, ops, installation,
+			plan, state, save); err != nil {
+			return result, err
+		}
 	}
 	return applyUpgrade(a.API, plan, version)
 }
