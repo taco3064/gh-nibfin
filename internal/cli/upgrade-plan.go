@@ -183,6 +183,11 @@ func planUpgradeSourceAt(api API, name, version string, managed bool,
 		return finishUpgradePlan(api, plan)
 	}
 	old := templatesForRecipe(plan.Current, plan.MemberID, recipes, recipe)
+	if selected != nil && selected.maintained {
+		// The installed JSON was decoded strictly and its sources verified above.
+		// Preserve its bytes rather than requiring Go's field order on disk.
+		old[".nibfin/producer-pins.json"] = pins
+	}
 	untitled := map[string]bool{}
 	for path, expected := range old {
 		observed, err := installedUpgradeFile(api, plan, path)
