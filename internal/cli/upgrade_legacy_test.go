@@ -2,12 +2,31 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"net/url"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestUpgradeLegacyRebasePublicContinuation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("public Linux upgrade; Windows delegates through WSL")
+	}
+	checkUpgradeLegacyContinuation(t, func(a App, args []string, out io.Writer) error {
+		return a.Run(args, out)
+	})
+}
+
+func TestUpgradeLegacyRebaseLinuxContinuation(t *testing.T) {
+	checkUpgradeLegacyContinuation(t, func(a App, args []string, out io.Writer) error {
+		return a.routeUpgrade(args[1:], "linux", out)
+	})
+}
+
+func checkUpgradeLegacyContinuation(t *testing.T,
+	run func(App, []string, io.Writer) error) {
+	t.Helper()
 	modes := []string{"response", "lost-response", "lost-observation",
 		"merge-response", "merge-lost-response", "merge-lost-observation",
 		"member-response", "member-lost-response", "member-lost-observation"}
@@ -38,7 +57,7 @@ func TestUpgradeLegacyRebasePublicContinuation(t *testing.T) {
 			args := []string{"upgrade", "--repo", "example/project", "--apply"}
 			writes := len(f.writes)
 			var out bytes.Buffer
-			err := app.Run(args, &out)
+			err := run(app, args, &out)
 			if (err != nil) != (strings.HasSuffix(mode, "lost-observation")) {
 				t.Fatal(out.String(), err)
 			}
@@ -47,7 +66,7 @@ func TestUpgradeLegacyRebasePublicContinuation(t *testing.T) {
 			}
 			f.denyRead = ""
 			out.Reset()
-			if err := app.Run(args, &out); err != nil {
+			if err := run(app, args, &out); err != nil {
 				t.Fatal("confirmed legacy rebase must remain recoverable", out.String(), err)
 			}
 			if !strings.Contains(out.String(), pull.URL) || len(f.writes) != writes+1 {
@@ -56,12 +75,12 @@ func TestUpgradeLegacyRebasePublicContinuation(t *testing.T) {
 			// An unavailable original binding is pending, never presumed verified.
 			f.denyRead = upgradeRepo + "/git/commits/" + plan.Base
 			out.Reset()
-			if err := app.Run(args, &out); err == nil ||
+			if err := run(app, args, &out); err == nil ||
 				!strings.Contains(out.String(), "READ_BACK_UNAVAILABLE") {
 				t.Fatal("missing ancestry must remain pending", out.String(), err)
 			}
 			f.denyRead = ""
-			if err := app.Run(args, &bytes.Buffer{}); err != nil ||
+			if err := run(app, args, &bytes.Buffer{}); err != nil ||
 				len(f.writes) != writes+1 {
 				t.Fatal("restored observation must reuse confirmed effect", err, f.writes)
 			}

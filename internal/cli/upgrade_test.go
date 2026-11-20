@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -34,6 +36,16 @@ func TestUpgradeArgumentsAndHelp(t *testing.T) {
 	}
 }
 
+// Linux lifecycle fixtures use the public entry on Linux. On Windows, select
+// the Linux route explicitly so these fixtures do not invoke WSL discovery.
+// Public parsing and Windows transport have separate boundary regressions.
+func runLinuxUpgradeFixture(a App, args []string, out io.Writer) error {
+	if runtime.GOOS == "windows" {
+		return a.routeUpgrade(args[1:], "linux", out)
+	}
+	return a.Run(args, out)
+}
+
 func TestUpgradePreviewDeterministicAndNoExternalEffects(t *testing.T) {
 	for _, oldUnified := range []bool{false, true} {
 		for _, nextUnified := range []bool{false, true} {
@@ -44,10 +56,10 @@ func TestUpgradePreviewDeterministicAndNoExternalEffects(t *testing.T) {
 			app := App{API: f, Process: upgradeNoProcess{t}}
 			var first, second bytes.Buffer
 			args := []string{"upgrade", "--repo", "example/project"}
-			if err := app.Run(args, &first); err != nil {
+			if err := runLinuxUpgradeFixture(app, args, &first); err != nil {
 				t.Fatal(err)
 			}
-			if err := app.Run(args, &second); err != nil {
+			if err := runLinuxUpgradeFixture(app, args, &second); err != nil {
 				t.Fatal(err)
 			}
 			if first.String() != second.String() {
@@ -147,7 +159,8 @@ func TestUpgradeCommandApplyIsExplicitAndNoChangeHasNoWrites(t *testing.T) {
 			args = append(args, "--apply")
 		}
 		var out bytes.Buffer
-		if err := (App{API: f, Process: upgradeNoProcess{t}}).Run(args, &out); err != nil {
+		app := App{API: f, Process: upgradeNoProcess{t}}
+		if err := runLinuxUpgradeFixture(app, args, &out); err != nil {
 			t.Fatal(err)
 		}
 		if len(f.writes) != 0 || !strings.Contains(out.String(), "no_change") {
@@ -156,7 +169,7 @@ func TestUpgradeCommandApplyIsExplicitAndNoChangeHasNoWrites(t *testing.T) {
 	}
 	f := upgradeFixture(t, false, true)
 	fixtureUpgradePlan(t, f)
-	err := (App{API: f, Process: upgradeNoProcess{t}}).Run([]string{
+	err := runLinuxUpgradeFixture(App{API: f, Process: upgradeNoProcess{t}}, []string{
 		"upgrade", "--repo", "example/project", "--apply"}, &bytes.Buffer{})
 	if err != nil || len(f.writes) != 4 {
 		t.Fatal("explicit apply", err, f.writes)
@@ -238,7 +251,7 @@ func (upgradeBrokenOutput) Write([]byte) (int, error) {
 func TestUpgradeOutputFailureAndPendingResult(t *testing.T) {
 	f := upgradeFixture(t, false, true)
 	args := []string{"upgrade", "--repo", "example/project", "--apply"}
-	err := (App{API: f}).Run(args, upgradeBrokenOutput{})
+	err := runLinuxUpgradeFixture(App{API: f}, args, upgradeBrokenOutput{})
 	if err == nil || err.Error() != "OUTPUT_UNAVAILABLE" || len(f.writes) != 0 {
 		t.Fatal("cannot mutate before reviewable preview output", err, f.writes)
 	}
@@ -246,7 +259,7 @@ func TestUpgradeOutputFailureAndPendingResult(t *testing.T) {
 	f.lost = upgradeRepo + "/pulls"
 	f.denyAfterWrite = pullListPath(upgradeBranchName)
 	var out bytes.Buffer
-	err = (App{API: f, Process: upgradeNoProcess{t}}).Run(args, &out)
+	err = runLinuxUpgradeFixture(App{API: f, Process: upgradeNoProcess{t}}, args, &out)
 	command, ok := err.(*CommandError)
 	if !ok || command.Exit != 2 || !strings.Contains(out.String(), "pending") ||
 		!strings.Contains(out.String(), "READ_BACK_UNAVAILABLE") {

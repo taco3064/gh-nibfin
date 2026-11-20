@@ -180,3 +180,22 @@ recovery are different facts. Neither fewer Linux files nor `fstrim` output prov
 physical recovery. This flow does not run discard, schedule cleanup, alter global
 `.wslconfig`, create distributions or broaden interop. Native Windows operation and
 physical recovery still require their corresponding platform evidence.
+
+## Upgrade on Windows
+
+`gh nibfin upgrade --repo OWNER/REPO` uses the installed CLI in an existing,
+repository-adopted WSL 2 guest. Linux upgrade remains direct. Upgrade has its
+own option and installation-binding contract; init-only options are rejected.
+Use `--target wsl:NAME` when selection is ambiguous, or to explicitly select a
+replacement installation. Preview discovers only running guests and delegates
+the same guest preview without writing preferences. A stopped guest requires
+explicit selection and `--apply --consent-open-target` before opening and fresh
+inspection. No WSL default, Docker Desktop distribution or running unadopted
+guest is used as an implicit upgrade destination.
+
+Apply stores only a nonsecret selection hint in the user configuration directory.
+It does not store an operation ledger or replace guest authorization. Guest output,
+proposal URLs, native handoff/readiness state and exit status remain authoritative;
+launch success alone proves no completed upgrade. Cancellation or transport loss
+uses the displayed Windows resume argv, preserving the original intent and target.
+See [upgrade recovery and transport](upgrade.md#windows-transport-to-an-adopted-wsl-installation).

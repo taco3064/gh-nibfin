@@ -67,11 +67,11 @@ func TestUpgradeRetainedSourceIntentRefusesChangedCLIWithoutManagedChanges(t *te
 				t.Fatal("changed source must remain pending without writes", result,
 					err, f.writes[writes:])
 			}
-			// Exercise the real public argument and pending-result boundary too.
+			// Exercise the Linux command argument and pending-result boundary too.
 			app := App{API: f, Process: upgradeNoProcess{t}}
 			var out bytes.Buffer
-			err = app.Run([]string{"upgrade", "--repo", "example/project", "--apply"},
-				&out)
+			args := []string{"upgrade", "--repo", "example/project", "--apply"}
+			err = runLinuxUpgradeFixture(app, args, &out)
 			if err == nil || !strings.Contains(out.String(), "SOURCE_INTENT") ||
 				len(f.writes) != writes {
 				t.Fatal(out.String(), err, f.writes[writes:])
