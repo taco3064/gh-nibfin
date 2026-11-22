@@ -47,7 +47,7 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Version: gh nibfin version (or --version)\n"+
 			"Usage: gh nibfin init --repo OWNER/REPO [--agent codex|claude] [--apply]\n"+
 			"Fresh managed init defaults to Codex; existing pools retain their Agent.\n"+
-			"Agent availability requires verified Core composition; Claude is fixture-only.\n"+
+			"Fresh init is Codex-only; switch a pool with runner rebuild --agent claude.\n"+
 			"Upgrade: gh nibfin upgrade --repo OWNER/REPO [--version VERSION] [--apply]\n"+
 			"Windows upgrade uses an adopted WSL 2 guest; Linux runs directly.\n"+
 			"Default: preview only. Plain init --apply opens a PR; never merges it.\n"+
@@ -64,6 +64,7 @@ func (a App) Run(args []string, out io.Writer) error {
 			"Management issues/confirms; members use their own GitHub login.\n"+
 			"Rebuild: runner rebuild --repo OWNER/REPO --agent codex|claude\n"+
 			"Rebuild previews by default; --apply --consent-rebuild applies or resumes.\n"+
+			"Claude rebuild asks once on the terminal for its token (hidden input).\n"+
 			"Rebuild requires local admin and GitHub authorization for adopted repos.\n"+
 			"Only Core activation confirms replacement release; retry uncertain results.\n"+
 			"Runner: create/register/list/unregister/remove --repo OWNER/REPO\n"+

@@ -51,9 +51,8 @@ try {
   if (JSON.stringify(await readRetirementFile(retirementPath)) !==
       JSON.stringify(state)) throw new Error();
   const draining = await readRetirementFile(drainPath) !== null;
-  process.stdout.write(JSON.stringify({ draining, host: { ...pool, agent: {
-    provider: binding.provider, model: binding.modelProfile.model,
-    profile: binding.components.hostProfile } }, repositories, retirement }));
+  process.stdout.write(JSON.stringify({ draining, host: { ...pool, agent: {` +
+	installedAgentProjection + ` } }, repositories, retirement }));
 } catch { process.exitCode = 1; }
 `
 

@@ -59,7 +59,7 @@ func TestNativeMigrationMissingSecretRequiresFreshCompleteNativeAuthority(t *tes
 					case "adoptions":
 						copy.AdoptedRepositoryIDs = []int64{10, 11}
 					case "provider":
-						copy.Agent = &agentBinding{"codex", "changed", "changed"}
+						copy.Agent = &agentBinding{"codex", "changed", "changed", ""}
 					case "runners":
 						runners[0].ID++
 					}

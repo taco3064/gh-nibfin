@@ -407,28 +407,49 @@ selection, official prerequisite routes and guest-local login instructions.
 ### Managed Agent selection and pool replacement
 
 On a compatible Linux managed host, fresh initialization accepts
-`gh nibfin init --repo OWNER/REPO --agent codex` (or `--agent claude`). Omission
-selects Codex only for a fresh pool. Both slots use the same provider and
-model/profile. Existing initialization, peer adoption, preflight and upgrade
-retain the adopted pool and binding. An explicit conflicting selection fails
-before host mutation and directs the operator to `runner rebuild`.
+`gh nibfin init --repo OWNER/REPO --agent codex`. Omission selects Codex only for
+a fresh pool. Both slots use the same provider and model/profile. Existing
+initialization, peer adoption, preflight and upgrade retain the adopted pool and
+binding. An explicit conflicting selection fails before host mutation and
+directs the operator to `runner rebuild`.
 Agent selection cannot be combined with quick handoffs or legacy Runner/service
 setup options. Desktop initialization validates and forwards the selection to
 its managed Linux target; rebuild runs directly in that target.
 
 Provider composition and replacement support must come from verified Core
-sources. The current production Core composes **Codex only**. Its Claude model
-component does not establish installable Claude support. `--agent claude` is
-rejected before credential intake, retirement or registration removal. Controlled
-Claude fixtures verify orchestration offline; live Claude authentication,
-production composition and end-to-end switching remain unverified and outside
-this implementation. No CLI flag, environment setting or module-path override
-can enable a fixture provider.
+sources. Fresh `init --agent claude` is still refused before credential intake;
+a Claude pool is created by replacing an adopted pool with
+`runner rebuild --agent claude`. That rebuild requires the Claude advertisement
+in Core's consumer contract twice: in the pinned Core archive, where Core's own
+Claude binding factory is probed once per advertised credential kind, and in the
+installed host Core before any retirement. Upgrade the host Core first with
+`gh nibfin upgrade --repo OWNER/REPO --apply` when the preview reports
+`REBUILD_COMPATIBLE_VERIFIED_PRODUCERS_REQUIRED`. Rebuild then prepares the
+resources with `--agent=claude` and requires the Claude Agent image.
+
+Claude rebuild asks once for the Claude credential on the controlling terminal:
+a subscription token from the official `claude setup-token` (`sk-ant-oat…`) or an
+Anthropic API key (`sk-ant-api…`). Input is hidden. The CLI names the kind
+locally and shows only the kind, the first 12 characters and the length for
+confirmation. Without a terminal it refuses with
+`REBUILD_CLAUDE_CREDENTIAL_REQUIRES_TERMINAL` and never reads standard input.
+The value stays in memory, is sent once through Core's private credential pipe
+and is never written to disk; the private intent records only its kind. When the
+host holds Codex credentials or another Claude kind, rebuild runs Core's
+`managed-credentials disconnect` and then `intake`; the same kind is a
+`replace`. A pending disconnect settlement returns
+`MANAGED_CREDENTIAL_SETTLEMENT_PENDING_RESUME_SAME_COMMAND`. A resumed rebuild
+asks again and requires the same kind; a rerun that only completes an already
+released replacement does not ask. Read-back checks the adopted Claude binding,
+including its model and credential kind. Live Claude authentication and real
+Claude pool operation are verified on the host, not by this repository's tests.
+No CLI flag, environment setting or module-path override can enable a fixture
+provider.
 
 Preview the separate replacement operation from an adopted repository:
 
 ```sh
-gh nibfin runner rebuild --repo OWNER/REPO --agent codex
+gh nibfin runner rebuild --repo OWNER/REPO --agent codex   # or --agent claude
 ```
 
 Preview reads the pool, requested binding, all adopted repositories and unmet

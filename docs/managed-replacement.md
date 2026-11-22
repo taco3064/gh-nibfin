@@ -1,11 +1,14 @@
 # Managed replacement recovery
 
-Use `gh nibfin runner rebuild --repo OWNER/REPO --agent codex` to preview.
+Use `gh nibfin runner rebuild --repo OWNER/REPO --agent codex` (or
+`--agent claude`) to preview.
 Applying requires `--apply --consent-rebuild`, the installing user's stored
 GitHub login, repository administration rights for all adopted repositories,
 and independent local administrator access. Run inside the managed Linux host.
-See the README for provider support limits: production Claude composition is
-unavailable; positive Claude orchestration tests use private controlled fixtures.
+A Claude rebuild also requires the Claude advertisement in both the pinned and
+the installed Core, and asks once for the Claude credential on the terminal with
+hidden input before applying; see the README for the token step, the
+disconnect-then-intake switch and the remaining host-only verification.
 
 The CLI owns durable orchestration intent and official GitHub registration
 operations. Core owns provider validation, adoption validation, settlement,

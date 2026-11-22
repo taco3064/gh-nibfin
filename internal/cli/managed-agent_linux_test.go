@@ -12,7 +12,7 @@ import (
 
 func TestControlledClaudeSetupUsesPrivateProviderBoundary(t *testing.T) {
 	api, plan, _ := managedResumeFixture(t)
-	binding := agentBinding{"claude", "fixture-model", "fixture-profile"}
+	binding := agentBinding{"claude", "fixture-model", "fixture-profile", ""}
 	plan.Agent = &binding
 	var adopted *sharedHost
 	host, err := decodeSharedHost([]byte(`{
@@ -159,7 +159,7 @@ func TestActiveSuccessorSupersedesOldInstallationIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan.Agent = &agentBinding{"codex", "gpt-6.1", "linux-rootful-docker-v1"}
+	plan.Agent = &agentBinding{"codex", "gpt-6.1", "linux-rootful-docker-v1", ""}
 	path, _ := managedIntentPath(plan.Repository)
 	unlock, err := installIntentLock(path)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestActiveSuccessorSupersedesOldInstallationIntent(t *testing.T) {
 	}
 	unlock()
 	managedResumePull(api, plan)()
-	binding := agentBinding{"claude", "fixture-model", "fixture-profile"}
+	binding := agentBinding{"claude", "fixture-model", "fixture-profile", ""}
 	plan.Agent = &binding
 	host, err := decodeSharedHost([]byte(`{
  "schemaVersion":1,"repository":"example/project","repositoryId":10,"memberId":7,

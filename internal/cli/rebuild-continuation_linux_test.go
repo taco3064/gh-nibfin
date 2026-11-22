@@ -18,7 +18,7 @@ func TestRebuildContinuationRetrySkipsCompletedReplacementAndStaging(t *testing.
 		}
 		d.continuationPending = false
 		ops := d.operations()
-		ops.compatible = func() error {
+		ops.compatible = func(string) error {
 			t.Fatal("completed replacement reverified")
 			return nil
 		}

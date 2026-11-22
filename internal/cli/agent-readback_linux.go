@@ -19,11 +19,17 @@ try {
   const binding = installedProvider(host);
   const pool = await inspectSharedHost();
   if (await boundedHostFile(hostFile, 262144) !== before) throw new Error();
-  process.stdout.write(JSON.stringify({ ...pool, agent: {
-    provider: binding.provider, model: binding.modelProfile.model,
-    profile: binding.components.hostProfile } }));
+  process.stdout.write(JSON.stringify({ ...pool, agent: {` +
+	installedAgentProjection + ` } }));
 } catch { process.exitCode = 1; }
 `
+
+// The non-secret binding fields both host read-backs project. A Claude pool adds
+// its stored credential kind; the Codex projection keeps its original fields.
+const installedAgentProjection = `
+    provider: binding.provider, model: binding.modelProfile.model,
+    profile: binding.components.hostProfile,
+    ...binding.provider === 'claude' && { credentialKind: binding.credentialKind }`
 
 func readInstalledAgent(process Process, host *sharedHost) error {
 	node, _, err := trustedSharedCore()
