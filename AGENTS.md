@@ -43,7 +43,11 @@ requirement that users must not manually handle credentials means automating
 supported setup from their existing GitHub CLI login; it does not require
 credentials to remain only on the local host. Verify actual permissions and
 preserve confidential handling without requiring manual token creation,
-copying or pasting.
+copying or pasting. The one exception is a model provider that documents no supported
+way for a tool to obtain its credential (Claude: `claude setup-token` only prints a token
+for the user to supply). Then the command may ask once for that credential through
+hidden terminal input, validate it, keep it only in memory and echo only its kind,
+prefix and length; never store, log or re-ask for it on continuation.
 
 The Owner has rejected the notification-relay.timer design. Do not extend that
 timer or its artifact-polling route, or make it a prerequisite for installation,
