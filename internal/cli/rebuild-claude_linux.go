@@ -22,12 +22,18 @@ func rebuildAgentSetup(codex func(InitPlan, []byte) error, admin managedCredenti
 // except through Core's private credential pipe.
 func (ops *rebuildOperations) bindClaudeCredential(process Process,
 	credential *claudeCredential) {
-	ops.credentialKind = credential.kind
-	admin := func(input []byte, operation string) ([]byte, error) {
+	ops.bindClaudeCredentialAdmin(func(input []byte, operation string) ([]byte, error) {
 		// Core's pending result is retained so disconnect can be resumed.
 		return runInstalledSharedAdmin(rebuildResultProcess(process), input,
 			"managed-credentials", operation)
-	}
+	}, credential)
+}
+
+// The installed Core administrator is the production admin; controlled tests
+// supply a fixture admin through this same binding.
+func (ops *rebuildOperations) bindClaudeCredentialAdmin(admin managedCredentialAdmin,
+	credential *claudeCredential) {
+	ops.credentialKind = credential.kind
 	ops.host.setupAgent = rebuildAgentSetup(ops.host.setupAgent, admin, credential)
 }
 
