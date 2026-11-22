@@ -48,9 +48,9 @@ func newRebuildDriver(t *testing.T) *rebuildDriver {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host.Agent = &agentBinding{"codex", "gpt-6.1", "linux-rootful-docker-v1"}
+	host.Agent = &agentBinding{"codex", "gpt-6.1", "linux-rootful-docker-v1", ""}
 	d := &rebuildDriver{api: initFixture(), old: *host, host: host,
-		binding: agentBinding{"claude", "fixture-model", "fixture-profile"},
+		binding: agentBinding{"claude", "fixture-model", "fixture-profile", ""},
 		repositories: []preparationRepository{
 			{"example/project", 10}, {"example/peer", 11},
 		}}
@@ -186,7 +186,7 @@ func (d *rebuildDriver) operations() rebuildOperations {
 				Draining:   d.retirement != nil && d.retirement.Release != "released",
 				Retirement: d.retirement}, nil
 		},
-		compatible: func() error {
+		compatible: func(string) error {
 			if d.incompatible {
 				return errors.New("synthetic incompatible producer")
 			}

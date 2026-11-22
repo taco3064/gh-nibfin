@@ -12,7 +12,7 @@ import (
 
 type rebuildOperations struct {
 	snapshot    func() (rebuildSnapshot, error)
-	compatible  func() error
+	compatible  func(string) error
 	capability  func(string) (agentBinding, error)
 	core        func(string) ([]byte, error)
 	migrate     func(sharedHost) error
@@ -24,6 +24,8 @@ type rebuildOperations struct {
 	stage       func(InitPlan, rebuildIntent) ([]string, error)
 	register    func(InitPlan, rebuildIntent, func([]sharedRegistration) error) error
 	host        managedHostOperations
+	// The kind of the owner's Claude credential for this run; never the value.
+	credentialKind string
 }
 
 func (a App) runRebuild(args []string, out io.Writer) error {
@@ -82,7 +84,17 @@ func (a App) runRebuild(args []string, out io.Writer) error {
 	defer clear(api.token)
 	a.API = api
 	a.Process = onboardingProcess{ctx: ctx, process: NativeProcess{}}
-	return a.applyRebuild(repo, user, *agent, api.token, encoder, a.rebuildOperations())
+	ops = a.rebuildOperations()
+	// A released replacement only resumes Core's lifecycle and needs no credential.
+	if *agent == "claude" && !rebuildContinuationOnly(ops) {
+		credential, err := promptRebuildClaudeCredential()
+		if err != nil {
+			return err
+		}
+		defer credential.clear()
+		ops.bindClaudeCredential(a.Process, credential)
+	}
+	return a.applyRebuild(repo, user, *agent, api.token, encoder, ops)
 }
 
 func previewRebuild(repo Repository, user User, provider string,
@@ -125,11 +137,15 @@ func previewRebuild(repo Repository, user User, provider string,
 		// Preview still reports the requested provider without inventing a model.
 		binding = agentBinding{Provider: provider}
 	}
-	if intent.Agent.valid() && binding != intent.Agent {
-		return empty, nil, errors.New("REBUILD_TARGET_BINDING_CHANGED")
+	if intent.Agent.valid() {
+		// A saved Claude credential kind is intent, not probe output; keep it.
+		if binding != intent.Agent.composition() {
+			return empty, nil, errors.New("REBUILD_TARGET_BINDING_CHANGED")
+		}
+		binding.CredentialKind = intent.Agent.CredentialKind
 	}
 	intent.Agent = binding
-	if ops.compatible() != nil {
+	if ops.compatible(provider) != nil {
 		unmet = append(unmet, "REBUILD_COMPATIBLE_VERIFIED_PRODUCERS_REQUIRED")
 	}
 	for _, target := range intent.Repositories {
@@ -188,6 +204,9 @@ func (a App) applyRebuildAdmitted(repo Repository, user User, provider string,
 	}
 	if len(unmet) != 0 {
 		return errors.New("REBUILD_PREREQUISITES_UNMET")
+	}
+	if err := bindRebuildCredentialKind(&intent, ops.credentialKind); err != nil {
+		return err
 	}
 	path, err := sharedMutationPath()
 	if err != nil {

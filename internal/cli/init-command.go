@@ -124,7 +124,7 @@ func (a App) runInit(args []string, out io.Writer) error {
 		if host != nil && installed == nil {
 			return errors.New("INSTALLED_AGENT_READBACK_REQUIRED")
 		}
-		binding, err := selectAgent(*agent, explicitAgent, installed, a.agentCapability)
+		binding, err := selectAgent(*agent, explicitAgent, installed, a.initAgentCapability)
 		if err != nil {
 			return err
 		}

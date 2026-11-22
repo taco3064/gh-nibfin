@@ -15,6 +15,8 @@ func (a App) rebuildOperations() rebuildOperations {
 	var execution SharedExecution
 	host := a.managedHostOperations()
 	host.activate = a.activateReplacementNative
+	// Without the owner's credential for this run, a Claude setup refuses.
+	host.setupAgent = rebuildAgentSetup(host.setupAgent, nil, nil)
 	host.adopt = func(plan InitPlan, runners []sharedRegistration) (*sharedHost, error) {
 		pins, err := currentRepositoryProducers(a.API, plan.Repository.FullName)
 		if err != nil {
@@ -92,7 +94,13 @@ func (a App) rebuildOperations() rebuildOperations {
 			plan.Agent = &intent.Agent
 			return plan, nil
 		},
-		prepare:  func(InitPlan) error { return prepareReplacementResources(a.Process) },
+		prepare: func(plan InitPlan) error {
+			provider := "codex"
+			if plan.Agent != nil {
+				provider = plan.Agent.Provider
+			}
+			return prepareReplacementResources(a.Process, provider)
+		},
 		stage:    a.stageReplacementSlots,
 		packages: a.verifyReplacementPackages,
 		register: a.registerReplacementSlots,
@@ -100,7 +108,7 @@ func (a App) rebuildOperations() rebuildOperations {
 	}
 }
 
-func prepareReplacementResources(process Process) error {
+func prepareReplacementResources(process Process, provider string) error {
 	node, _, err := trustedSharedCore()
 	if err != nil {
 		return err
@@ -112,17 +120,24 @@ func prepareReplacementResources(process Process) error {
 			return err
 		}
 	}
-	output, err := runSharedAdministrator(process, env, []string{
-		"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8", node, entry,
-		"--consent-resource-preparation",
-	}, nil)
+	args := append([]string{"-i", "PATH=/usr/bin:/bin", "LANG=C.UTF-8", node, entry},
+		replacementPreparationArguments(provider)...)
+	output, err := runSharedAdministrator(process, env, args, nil)
 	if err != nil {
 		return errors.New("REBUILD_RESOURCE_PREPARATION_UNVERIFIED")
 	}
-	return decodeReplacementPreparation(output)
+	return decodeReplacementPreparation(output, provider)
 }
 
-func decodeReplacementPreparation(output []byte) error {
+// Claude sends Core's advertised Claude vector, checked before any retirement.
+func replacementPreparationArguments(provider string) []string {
+	if provider == "claude" {
+		return slices.Clone(claudePreparationArguments)
+	}
+	return []string{"--consent-resource-preparation"}
+}
+
+func decodeReplacementPreparation(output []byte, provider string) error {
 	var result struct {
 		Status        string `json:"status"`
 		Code          string `json:"code"`
@@ -130,8 +145,9 @@ func decodeReplacementPreparation(output []byte) error {
 		Adoption      *bool  `json:"adoption"`
 		ServicesReady *bool  `json:"servicesReady"`
 		Images        struct {
-			Agent string `json:"agent"`
-			Hooks string `json:"hooks"`
+			Agent       string `json:"agent"`
+			Hooks       string `json:"hooks"`
+			ClaudeAgent string `json:"claudeAgent"`
 		} `json:"images"`
 	}
 	if len(output) > 16384 || json.Unmarshal(output, &result) != nil ||
@@ -141,7 +157,12 @@ func decodeReplacementPreparation(output []byte) error {
 		result.ServicesReady == nil || *result.ServicesReady {
 		return errors.New("REBUILD_RESOURCE_PREPARATION_UNVERIFIED")
 	}
-	for _, image := range []string{result.Images.Agent, result.Images.Hooks} {
+	images := []string{result.Images.Agent, result.Images.Hooks}
+	if provider == "claude" {
+		// Codex keeps ignoring this key; a Claude result must carry it.
+		images = append(images, result.Images.ClaudeAgent)
+	}
+	for _, image := range images {
 		if !strings.HasPrefix(image, "sha256:") ||
 			!digestPattern.MatchString(strings.TrimPrefix(image, "sha256:")) {
 			return errors.New("REBUILD_RESOURCE_PREPARATION_UNVERIFIED")

@@ -8,8 +8,8 @@ import (
 )
 
 func TestAgentSelectionPreservesBindingBeforeFreshDefault(t *testing.T) {
-	codex := agentBinding{"codex", "gpt-6.1", "linux-rootful-docker-v1"}
-	claude := agentBinding{"claude", "fixture-model", "fixture-profile"}
+	codex := agentBinding{"codex", "gpt-6.1", "linux-rootful-docker-v1", ""}
+	claude := agentBinding{"claude", "fixture-model", "fixture-profile", ""}
 	calls := 0
 	capability := func(provider string) (agentBinding, error) {
 		calls++
@@ -38,8 +38,8 @@ func TestAgentSelectionPreservesBindingBeforeFreshDefault(t *testing.T) {
 
 func TestAgentSelectionRejectsIncompleteCapability(t *testing.T) {
 	cases := []agentBinding{
-		{}, {"claude", "fixture-model", ""},
-		{"codex", "gpt-6.1", "linux-rootful-docker-v1"},
+		{}, {"claude", "fixture-model", "", ""},
+		{"codex", "gpt-6.1", "linux-rootful-docker-v1", ""},
 	}
 	for _, binding := range cases {
 		_, err := selectAgent("claude", true, nil, func(string) (agentBinding, error) {

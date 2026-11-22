@@ -115,13 +115,13 @@ func TestRebuildCapabilityAllowsOnlyFixedActivation(t *testing.T) {
 		data := jsonRelay(map[string]any{"schemaVersion": 1,
 			"managedPoolReplacement": map[string]string{
 				"kind": "managed-pool-replacement-v1", "activationCommand": command}})
-		err := requireRebuildCapability(data)
+		err := requireRebuildCapability(data, "codex")
 		if (err == nil) != (command == "activate-shared-replacement") {
 			t.Fatal(command, err)
 		}
 	}
-	if _, err := (App{}).agentCapability("claude"); err == nil {
-		t.Fatal("production Claude must fail before credential or host effects")
+	if _, err := (App{}).initAgentCapability("claude"); err == nil {
+		t.Fatal("production init must refuse Claude before credential or host effects")
 	}
 }
 
@@ -151,18 +151,18 @@ func TestReplacementResourcesRequireCompleteNativeReceipt(t *testing.T) {
 	receipt := map[string]any{"status": "prepared", "code": "MANAGED_RESOURCES_PREPARED",
 		"profile": "/etc/nibfin/shared-host-profile.json", "adoption": false,
 		"servicesReady": false, "images": map[string]string{"agent": image, "hooks": image}}
-	if err := decodeReplacementPreparation(jsonRelay(receipt)); err != nil {
+	if err := decodeReplacementPreparation(jsonRelay(receipt), "codex"); err != nil {
 		t.Fatal(err)
 	}
 	for key, value := range receipt {
 		delete(receipt, key)
-		if decodeReplacementPreparation(jsonRelay(receipt)) == nil {
+		if decodeReplacementPreparation(jsonRelay(receipt), "codex") == nil {
 			t.Fatal("incomplete preparation accepted", key)
 		}
 		receipt[key] = value
 	}
 	receipt["adoption"] = true
-	if decodeReplacementPreparation(jsonRelay(receipt)) == nil {
+	if decodeReplacementPreparation(jsonRelay(receipt), "codex") == nil {
 		t.Fatal("preparation cannot assert adoption or release")
 	}
 }

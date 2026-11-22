@@ -6,17 +6,28 @@ import (
 )
 
 // Only bounded, non-secret provider identity crosses the CLI orchestration boundary.
+// CredentialKind names a Claude pool's one stored credential; Codex omits it.
 type agentBinding struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Profile  string `json:"profile"`
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	Profile        string `json:"profile"`
+	CredentialKind string `json:"credentialKind,omitempty"`
 }
 
 var agentField = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 
 func (b agentBinding) valid() bool {
-	return (b.Provider == "codex" || b.Provider == "claude") &&
+	kind := b.CredentialKind == "" ||
+		b.Provider == "claude" && knownClaudeCredentialKind(b.CredentialKind)
+	return (b.Provider == "codex" || b.Provider == "claude") && kind &&
 		agentField.MatchString(b.Model) && agentField.MatchString(b.Profile)
+}
+
+// composition is the provider identity a capability probe can establish.
+// The credential kind comes from the owner's credential, never from a probe.
+func (b agentBinding) composition() agentBinding {
+	b.CredentialKind = ""
+	return b
 }
 
 func validateAgentOption(value string, explicit bool) error {
@@ -56,6 +67,15 @@ func selectAgent(value string, explicit bool, existing *agentBinding,
 			"AGENT_COMPOSITION_UNAVAILABLE_USE_COMPATIBLE_CORE_OR_CODEX")
 	}
 	return binding, nil
+}
+
+// Fresh init stays Codex-only in production: Claude replaces an existing pool
+// through runner rebuild, which owns the Claude credential step.
+func (a App) initAgentCapability(provider string) (agentBinding, error) {
+	if a.agents == nil && provider != "codex" {
+		return agentBinding{}, errors.New("AGENT_COMPOSITION_UNAVAILABLE")
+	}
+	return a.agentCapability(provider)
 }
 
 func sameAgent(a, b *agentBinding) bool {

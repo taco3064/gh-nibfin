@@ -105,7 +105,7 @@ func TestNativeStaleIntentReusesVerifiedCurrentInstallation(t *testing.T) {
 func TestNativeStaleIntentAgentSelectionAndIdentityUseTheSameRules(t *testing.T) {
 	_, plan, _ := managedResumeFixture(t)
 	plan.NativeManaged = true
-	plan.Agent = &agentBinding{"codex", "fixture-model", "fixture-profile"}
+	plan.Agent = &agentBinding{"codex", "fixture-model", "fixture-profile", ""}
 	old := Pins()
 	old.Artifact.ID++
 	intent := managedInstallIntent{Plan: historicalNativePlan(plan, old), Pins: old}
@@ -120,7 +120,7 @@ func TestNativeStaleIntentAgentSelectionAndIdentityUseTheSameRules(t *testing.T)
 		"json", "unknown", "duplicate", "permissions"} {
 		t.Run(change, func(t *testing.T) {
 			copy := intent
-			copy.Plan.Agent = &agentBinding{"codex", "fixture-model", "fixture-profile"}
+			copy.Plan.Agent = &agentBinding{"codex", "fixture-model", "fixture-profile", ""}
 			copy.Plan.Execution = &SharedExecution{plan.Execution.Repository,
 				plan.Execution.RepositoryID}
 			switch change {

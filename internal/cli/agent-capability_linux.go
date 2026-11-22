@@ -54,8 +54,11 @@ func (a App) agentCapability(provider string) (binding agentBinding, err error) 
 	if a.agents != nil {
 		return a.agents.capability(provider)
 	}
-	// No installed Claude composition/setup interface exists in the producer.
-	// In particular a component advertisement cannot authorize credential intake.
+	// A Claude component advertisement alone cannot authorize credential intake:
+	// Claude also needs Core's preparation and credential advertisement.
+	if provider == "claude" {
+		return a.claudeCapability()
+	}
 	if provider != "codex" {
 		return binding, errors.New("AGENT_COMPOSITION_UNAVAILABLE")
 	}
