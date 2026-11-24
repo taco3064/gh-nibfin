@@ -298,6 +298,11 @@ func TestRenderDeterministic(t *testing.T) {
 	if !maps.EqualFunc(a, b, bytes.Equal) {
 		t.Error("the same input renders different bytes")
 	}
+	for name, body := range a {
+		if bytes.ContainsRune(body, '\r') {
+			t.Errorf("%s has a carriage return; the templates must be checked out with LF endings", name)
+		}
+	}
 }
 
 func TestRenderRejects(t *testing.T) {
