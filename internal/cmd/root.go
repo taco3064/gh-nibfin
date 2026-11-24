@@ -77,7 +77,21 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		return nil
 	}
 
-	runner := &cobra.Command{Use: "runner", Short: "Add or remove local Runners"}
+	runner := &cobra.Command{
+		Use:   "runner",
+		Short: "Add or remove local Runners",
+		// Without RunE cobra shows help and exits 0 for an unknown
+		// subcommand, so both a missing and an unknown one fail here.
+		Args: func(c *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return op.Errorf(op.CodeInvalidArgument, "unknown command %q for %q", args[0], c.CommandPath())
+			}
+			return nil
+		},
+		RunE: func(c *cobra.Command, _ []string) error {
+			return op.Errorf(op.CodeInvalidArgument, "%q requires a subcommand: add or remove", c.CommandPath())
+		},
+	}
 
 	var addCount int
 	var addYes bool
