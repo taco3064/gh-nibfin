@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/cli/go-gh/v2/pkg/api"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
@@ -52,11 +54,10 @@ type fileContent struct {
 // pull_request_target or merge_group. repo is HOST/OWNER/REPO; client must be
 // a client for HOST.
 func CIWorkflows(ctx context.Context, client RESTClient, repo string) ([]string, error) {
-	parts := strings.Split(repo, "/")
-	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
-		return nil, op.Errorf(op.CodeInvalidRepo, "repository %q is not HOST/OWNER/REPO", repo)
+	base, err := repoBase(repo)
+	if err != nil {
+		return nil, err
 	}
-	base := "repos/" + url.PathEscape(parts[1]) + "/" + url.PathEscape(parts[2])
 
 	var names []string
 	seen := 0
@@ -96,20 +97,12 @@ func candidate(p string) bool {
 // triggersCI reads the workflow file from the default branch and reports
 // whether its on: has one of ciEvents.
 func triggersCI(ctx context.Context, client RESTClient, base, p string) (bool, error) {
-	segs := strings.Split(p, "/")
-	for i, s := range segs {
-		segs[i] = url.PathEscape(s)
-	}
-	var c fileContent
-	if err := client.DoWithContext(ctx, http.MethodGet, base+"/contents/"+strings.Join(segs, "/"), nil, &c); err != nil {
+	raw, found, err := readFile(ctx, client, base, p, "")
+	if err != nil {
 		return false, err
 	}
-	if c.Encoding != "base64" {
-		return false, fmt.Errorf("unexpected content encoding %q", c.Encoding)
-	}
-	raw, err := base64.StdEncoding.DecodeString(strings.NewReplacer("\n", "", "\r", "").Replace(c.Content))
-	if err != nil {
-		return false, fmt.Errorf("decode the content: %w", err)
+	if !found {
+		return false, fmt.Errorf("%s was not found", p)
 	}
 	events, err := triggers(raw)
 	if err != nil {
@@ -121,6 +114,54 @@ func triggersCI(ctx context.Context, client RESTClient, base, p string) (bool, e
 		}
 	}
 	return false, nil
+}
+
+// ReadFile reads the file at path p of repo through the contents API. ref
+// names a branch, tag or commit; empty means the default branch. A missing
+// file gives found=false and no error. repo is HOST/OWNER/REPO; client must
+// be a client for HOST.
+func ReadFile(ctx context.Context, client RESTClient, repo, p, ref string) (data []byte, found bool, err error) {
+	base, err := repoBase(repo)
+	if err != nil {
+		return nil, false, err
+	}
+	return readFile(ctx, client, base, p, ref)
+}
+
+func readFile(ctx context.Context, client RESTClient, base, p, ref string) ([]byte, bool, error) {
+	segs := strings.Split(p, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	u := base + "/contents/" + strings.Join(segs, "/")
+	if ref != "" {
+		u += "?ref=" + url.QueryEscape(ref)
+	}
+	var c fileContent
+	if err := client.DoWithContext(ctx, http.MethodGet, u, nil, &c); err != nil {
+		var h *api.HTTPError
+		if errors.As(err, &h) && h.StatusCode == http.StatusNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if c.Encoding != "base64" {
+		return nil, false, fmt.Errorf("unexpected content encoding %q", c.Encoding)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.NewReplacer("\n", "", "\r", "").Replace(c.Content))
+	if err != nil {
+		return nil, false, fmt.Errorf("decode the content: %w", err)
+	}
+	return raw, true, nil
+}
+
+// repoBase turns HOST/OWNER/REPO into the REST path repos/OWNER/REPO.
+func repoBase(repo string) (string, error) {
+	parts := strings.Split(repo, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", op.Errorf(op.CodeInvalidRepo, "repository %q is not HOST/OWNER/REPO", repo)
+	}
+	return "repos/" + url.PathEscape(parts[1]) + "/" + url.PathEscape(parts[2]), nil
 }
 
 // triggers returns the event names of a workflow's on:, which may be a

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cli/go-gh/v2/pkg/api"
+
 	"github.com/taco3064/gh-nibfin/internal/op"
 )
 
@@ -58,7 +60,7 @@ func (f *fakeREST) DoWithContext(_ context.Context, method, p string, _ io.Reade
 		}
 		content, ok := f.files[name]
 		if !ok {
-			return errors.New("HTTP 404: Not Found")
+			return &api.HTTPError{StatusCode: 404, Message: "Not Found"}
 		}
 		enc := base64.StdEncoding.EncodeToString([]byte(content))
 		// GitHub wraps the base64 content in lines.
@@ -195,5 +197,41 @@ func TestTriggers(t *testing.T) {
 		if err != nil || !slices.Equal(got, want) {
 			t.Errorf("triggers(%q) = %q, %v; want %q", in, got, err, want)
 		}
+	}
+}
+
+func TestReadFile(t *testing.T) {
+	ctx := context.Background()
+	f := &fakeREST{files: map[string]string{".github/workflows/nibfin-issue.yml": "name: x\n"}}
+	data, found, err := ReadFile(ctx, f, "github.com/o/r", ".github/workflows/nibfin-issue.yml", "nibfin/upgrade")
+	if err != nil || !found || string(data) != "name: x\n" {
+		t.Fatalf("ReadFile = %q, %v, %v", data, found, err)
+	}
+	if want := "GET repos/o/r/contents/.github/workflows/nibfin-issue.yml?ref=nibfin%2Fupgrade"; f.requests[0] != want {
+		t.Errorf("request %q, want %q", f.requests[0], want)
+	}
+	// A 404 is a missing file, not an error.
+	data, found, err = ReadFile(ctx, f, "github.com/o/r", ".github/workflows/nibfin-job.yml", "")
+	if err != nil || found || data != nil {
+		t.Errorf("missing file = %q, %v, %v", data, found, err)
+	}
+	if want := "GET repos/o/r/contents/.github/workflows/nibfin-job.yml"; f.requests[1] != want {
+		t.Errorf("request %q, want %q", f.requests[1], want)
+	}
+	// Any other failure is returned as it is.
+	cause := &api.HTTPError{StatusCode: 403, Message: "Forbidden"}
+	f.failFile = map[string]error{".github/workflows/nibfin-issue.yml": cause}
+	if _, found, err := ReadFile(ctx, f, "github.com/o/r", ".github/workflows/nibfin-issue.yml", ""); found || !errors.Is(err, cause) {
+		t.Errorf("403 = %v, %v", found, err)
+	}
+	if _, _, err := ReadFile(ctx, f, "o/r", "x", ""); op.Code(err) != op.CodeInvalidRepo {
+		t.Errorf("bad repo: %v", err)
+	}
+}
+
+func TestCIWorkflowsMissingFile(t *testing.T) {
+	f := &fakeREST{workflows: []wf{{"CI", ".github/workflows/ci.yml", "active"}}}
+	if _, err := CIWorkflows(context.Background(), f, "github.com/o/r"); op.Code(err) != op.CodeWorkflowsUnreadable {
+		t.Errorf("missing workflow file: %v", err)
 	}
 }
