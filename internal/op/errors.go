@@ -35,6 +35,12 @@ const (
 	CodeGitHubError          = "github_error"
 	CodeAuthUnavailable      = "auth_unavailable"
 	CodeNotApplied           = "not_applied"
+	CodeNoRunners            = "no_runners"
+	CodeRunnerRepoConflict   = "runner_repo_conflict"
+	CodeGitHubAPIFailed      = "github_api_failed"
+	CodeRunnerDownloadFailed = "runner_download_failed"
+	CodeRunnerInstallFailed  = "runner_install_failed"
+	CodeRunnerMissing        = "runner_missing"
 )
 
 // Error is an error with a machine-readable cause code.

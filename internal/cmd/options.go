@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/prompter"
-	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/cli/go-gh/v2/pkg/term"
 	"github.com/spf13/cobra"
 
@@ -18,22 +17,7 @@ import (
 
 // repoResolver turns the -R value into HOST/OWNER/REPO. An empty value means
 // the current directory's repository. Tests replace it.
-var repoResolver = resolveRepo
-
-func resolveRepo(value string) (string, error) {
-	if value != "" {
-		r, err := repository.Parse(value)
-		if err != nil {
-			return "", op.Errorf(op.CodeInvalidRepo, "invalid repository %q: %w", value, err)
-		}
-		return r.Host + "/" + r.Owner + "/" + r.Name, nil
-	}
-	r, err := repository.Current()
-	if err != nil {
-		return "", op.Errorf(op.CodeRepoUnresolved, "cannot resolve the current repository: %w", err)
-	}
-	return r.Host + "/" + r.Owner + "/" + r.Name, nil
-}
+var repoResolver = op.ResolveRepo
 
 // addRepoFlag adds -R, --repo.
 func addRepoFlag(c *cobra.Command, v *string) {
@@ -91,6 +75,15 @@ func terminal(stdin io.Reader, stdout, stderr io.Writer) *op.Terminal {
 		errOut = out
 	}
 	return &op.Terminal{In: in, Out: out, Err: errOut}
+}
+
+// loginIO picks how a provider login talks to the user: the TTY when on a
+// terminal, otherwise structured steps on stderr and a code from stdin.
+func loginIO(stdin io.Reader, stdout, stderr io.Writer) (*op.Terminal, op.Interactor) {
+	if t := terminal(stdin, stdout, stderr); t != nil {
+		return t, nil
+	}
+	return nil, &interactor{in: bufio.NewReader(stdin), out: stderr}
 }
 
 // interactor is the CLI side of a structured login: steps go to stderr and

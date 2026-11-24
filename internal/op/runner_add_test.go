@@ -1,0 +1,641 @@
+package op
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/taco3064/gh-nibfin/internal/runners"
+)
+
+// fakeSlot is one slot on the fake runner host.
+type fakeSlot struct {
+	configured, unit, enabled, active bool
+	name, url                         string
+}
+
+type shellCall struct {
+	script string
+	args   []string
+}
+
+const (
+	slotDir = "/home/u/.local/share/nibfin/runners"
+	unitDir = "/home/u/.config/systemd/user"
+	// defaultProbe is a Linux host with every controller delegated.
+	defaultProbe = "arch x86_64\nnode my.host_01\nmachine 0123abcd\nlinger 0\ncgroup cpuset cpu io memory pids\nmemkb 16000000\n"
+)
+
+var scriptNames = map[string]string{
+	runners.ListScript: "list",
+	probeScript:        "probe",
+	lingerScript:       "linger",
+	extractScript:      "extract",
+	configureScript:    "configure",
+	unitScript:         "unit",
+}
+
+// shellHelper is the child of a fake Shell: it checks its stdin against
+// HELPER_STDIN_SHA when set, prints HELPER_STDOUT (base64) and HELPER_STDERR
+// and exits with HELPER_EXIT.
+func shellHelper() {
+	if want := os.Getenv("HELPER_STDIN_SHA"); want != "" {
+		in, _ := io.ReadAll(os.Stdin)
+		sum := sha256.Sum256(in)
+		if hex.EncodeToString(sum[:]) != want {
+			fmt.Fprint(os.Stderr, "unexpected stdin")
+			os.Exit(3)
+		}
+	}
+	out, _ := base64.StdEncoding.DecodeString(os.Getenv("HELPER_STDOUT"))
+	os.Stdout.Write(out)
+	fmt.Fprint(os.Stderr, os.Getenv("HELPER_STDERR"))
+	exit, _ := strconv.Atoi(os.Getenv("HELPER_EXIT"))
+	os.Exit(exit)
+}
+
+func (f *fakeHost) Local() bool { return !f.vm }
+func (f *fakeHost) WSL() bool   { return f.wsl }
+
+func shaHex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func (f *fakeHost) listing() string {
+	b := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	out := "dirs " + b(slotDir) + " " + b(unitDir) + "\n"
+	for name, s := range f.slots {
+		r := "-"
+		if s.configured {
+			r = "b64:" + b(fmt.Sprintf(`{"AgentName":%q,"GitHubUrl":%q}`, s.name, s.url))
+		}
+		u, e, a := "0", "disabled", "inactive"
+		if s.unit {
+			u = "1"
+		}
+		if s.enabled {
+			e = "enabled"
+		}
+		if s.active {
+			a = "active"
+		}
+		out += fmt.Sprintf("slot %s %s %s %s %s\n", name, r, u, e, a)
+	}
+	return out
+}
+
+func flag(args []string, name string) string {
+	for i, a := range args {
+		if a == name && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+// Shell simulates the runner-host scripts. Their effect on the fake host
+// happens when the command is built.
+func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *exec.Cmd {
+	name, ok := scriptNames[script]
+	if !ok {
+		name = "unknown"
+	}
+	f.shells = append(f.shells, shellCall{name, args})
+	stdout, stdinSHA := "", ""
+	exit := f.shellExit[name]
+	slot := ""
+	if len(args) > 0 {
+		slot = strings.TrimPrefix(args[0], slotDir+"/")
+	}
+	switch name {
+	case "list":
+		stdout = f.listing()
+	case "probe":
+		stdout = f.probe
+		if stdout == "" {
+			stdout = defaultProbe
+		}
+	case "linger":
+		f.events = append(f.events, "linger")
+		f.linger = true
+	case "extract":
+		f.events = append(f.events, "extract "+slot)
+		stdinSHA = f.archiveSHA
+		if _, has := f.slots[slot]; has && args[1] == "new" {
+			exit = 1
+		}
+		if f.slots[slot] == nil {
+			f.slots[slot] = &fakeSlot{}
+		}
+	case "configure":
+		f.events = append(f.events, "configure "+slot)
+		stdinSHA = shaHex(f.token + "\n")
+		if exit == 0 {
+			s := f.slots[slot]
+			s.configured, s.name, s.url = true, flag(args, "--name"), flag(args, "--url")
+		}
+	case "unit":
+		f.events = append(f.events, "unit "+args[1])
+		if exit == 0 {
+			s := f.slots[strings.TrimSuffix(strings.TrimPrefix(args[1], "nibfin-runner-"), ".service")]
+			s.unit, s.enabled, s.active = true, true, true
+		}
+	}
+	c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
+	c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=shell",
+		"HELPER_STDOUT="+base64.StdEncoding.EncodeToString([]byte(stdout)),
+		"HELPER_STDERR="+f.shellErr[name], "HELPER_EXIT="+strconv.Itoa(exit), "HELPER_STDIN_SHA="+stdinSHA)
+	return c
+}
+
+type fakeRunnerAPI struct {
+	host      *fakeHost
+	user      int64
+	downloads []runnerDownload
+	tokens    int
+	unlisted  bool
+	err       error
+}
+
+func (g *fakeRunnerAPI) User(context.Context) (int64, error) { return g.user, g.err }
+func (g *fakeRunnerAPI) Downloads(_ context.Context, repo string) ([]runnerDownload, error) {
+	return g.downloads, nil
+}
+func (g *fakeRunnerAPI) RegistrationToken(_ context.Context, repo string) (string, error) {
+	g.tokens++
+	g.host.events = append(g.host.events, "token")
+	return g.host.token, nil
+}
+func (g *fakeRunnerAPI) ListRunners(context.Context, string) ([]ghRunner, error) {
+	var out []ghRunner
+	if g.unlisted {
+		return out, nil
+	}
+	for _, s := range g.host.slots {
+		if s.configured {
+			out = append(out, ghRunner{Name: s.name, Status: "online"})
+		}
+	}
+	return out, nil
+}
+
+const archive = "fake runner archive"
+
+type addFixture struct {
+	host *fakeHost
+	gh   *fakeRunnerAPI
+	auth *[]string
+	// hosts records the hosts newGitHub was asked for.
+	hosts *[]string
+}
+
+// useRunnerHost installs the fakes: the host, GitHub, a TLS server serving
+// the archive, and the current repository github.com/cur/repo.
+func useRunnerHost(t *testing.T, f *fakeHost) addFixture {
+	t.Helper()
+	if f.token == "" {
+		f.token = "AABBREGTOKEN"
+	}
+	f.archiveSHA = shaHex(archive)
+	useHost(t, f)
+	auth := &[]string{}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*auth = append(*auth, r.Header.Get("Authorization"))
+		io.WriteString(w, archive)
+	}))
+	t.Cleanup(srv.Close)
+	gh := &fakeRunnerAPI{host: f, user: 42, downloads: []runnerDownload{
+		{OS: "osx", Architecture: "x64", DownloadURL: srv.URL + "/osx", SHA256: shaHex("other")},
+		{OS: "linux", Architecture: "x64", DownloadURL: srv.URL + "/runner.tar.gz", Filename: "runner.tar.gz", SHA256: shaHex(archive)},
+	}}
+	hosts := &[]string{}
+	oldGH, oldHTTP, oldRepo := newGitHub, httpClient, currentRepo
+	t.Cleanup(func() { newGitHub, httpClient, currentRepo = oldGH, oldHTTP, oldRepo })
+	newGitHub = func(host string) (github, error) { *hosts = append(*hosts, host); return gh, nil }
+	httpClient = srv.Client()
+	currentRepo = func() (string, error) { return "github.com/cur/repo", nil }
+	tmp := t.TempDir()
+	for _, v := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(v, tmp)
+	}
+	return addFixture{f, gh, auth, hosts}
+}
+
+type yes struct{ plans []Plan }
+
+func (y *yes) Confirm(p Plan) (bool, error) { y.plans = append(y.plans, p); return true, nil }
+
+func TestRunnerAddFirstRunners(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}, loginWorks: true}
+	fx := useRunnerHost(t, f)
+	in := &recInteract{}
+	c := &yes{}
+	p, r, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2, Interact: in}), c)
+	if err != nil {
+		t.Fatalf("Run: %v (events %v)", err, f.events)
+	}
+	want := []string{"enable linger fake", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "add runner claude-1", "add runner claude-2"}
+	if !reflect.DeepEqual(steps(p), want) || !p.Confirm || p.Repo != "github.com/cur/repo" || len(c.plans) != 1 {
+		t.Fatalf("plan = %v, %+v", steps(p), p)
+	}
+	if d := p.Steps[4].Detail; d != "github.com/cur/repo, labels nibfin,nibfin-42-claude" {
+		t.Errorf("detail = %q", d)
+	}
+	wantEvents := []string{"linger", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "token",
+		"extract claude-1", "configure claude-1", "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "unit nibfin-runner-claude-2.service"}
+	if !reflect.DeepEqual(f.events, wantEvents) {
+		t.Errorf("events = %v", f.events)
+	}
+	if fx.gh.tokens != 1 || !reflect.DeepEqual(*fx.auth, []string{""}) {
+		t.Errorf("tokens %d, download auth %q", fx.gh.tokens, *fx.auth)
+	}
+	for _, h := range *fx.hosts {
+		if h != "github.com" {
+			t.Errorf("gh host %q", h)
+		}
+	}
+	var configure []string
+	for _, s := range f.shells {
+		for _, a := range s.args {
+			if strings.Contains(a, f.token) {
+				t.Errorf("token in the argv of %s: %q", s.script, s.args)
+			}
+		}
+		if s.script == "configure" && configure == nil {
+			configure = s.args
+		}
+		if s.script == "extract" && s.args[1] != "new" {
+			t.Errorf("extract mode = %q", s.args)
+		}
+	}
+	name := "my-host-01-" + shaHex("gh-nibfin runner\n0123abcd")[:8] + "-claude-1"
+	wantConf := []string{slotDir + "/claude-1", "--unattended", "--url", "https://github.com/cur/repo", "--name", name, "--labels", "nibfin,nibfin-42-claude", "--replace"}
+	if !reflect.DeepEqual(configure, wantConf) {
+		t.Errorf("configure = %q\nwant %q", configure, wantConf)
+	}
+	b, _ := json.Marshal(r)
+	var got struct {
+		Host, Repo string
+		Runners    []map[string]any
+		Login      map[string]map[string]bool
+		Advice     []string
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Host != "fake" || got.Repo != "github.com/cur/repo" || len(got.Runners) != 2 || !got.Login["claude"]["loggedIn"] || got.Advice == nil || len(got.Advice) != 0 {
+		t.Errorf("result = %s", b)
+	}
+	if r0 := got.Runners[0]; r0["slot"] != "claude-1" || r0["status"] != "online" || r0["active"] != true || r0["listed"] != true || r0["repo"] != "github.com/cur/repo" {
+		t.Errorf("runner = %v", r0)
+	}
+	if strings.Contains(string(b), f.token) {
+		t.Error("result has the token")
+	}
+	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), "nibfin-runner-*")); len(left) != 0 {
+		t.Errorf("archive left behind: %v", left)
+	}
+}
+
+func TestRunnerAddPlanNoLoginNoLinger(t *testing.T) {
+	f := &fakeHost{probe: strings.Replace(defaultProbe, "linger 0", "linger 1", 1),
+		volumes: map[string]bool{"nibfin-tools": true, "claude": true}, loggedIn: map[string]bool{"claude": true}}
+	f.slots = map[string]*fakeSlot{
+		"claude-1": {configured: true, unit: true, enabled: true, name: "a", url: "https://ghe.example/o/r"},
+		"claude-3": {configured: true, name: "b", url: "https://ghe.example/o/r"},
+		"codex-7":  {configured: true, unit: true, enabled: true, name: "c", url: "https://ghe.example/O/R"},
+	}
+	fx := useRunnerHost(t, f)
+	fx.gh.user = 9
+	p, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2}).Plan(context.Background())
+	want := []string{"add runner claude-3", "add runner claude-4"}
+	if err != nil || !reflect.DeepEqual(steps(p), want) || p.Repo != "ghe.example/o/r" {
+		t.Fatalf("plan = %v, %+v, %v", steps(p), p, err)
+	}
+	if (*fx.hosts)[0] != "ghe.example" {
+		t.Errorf("gh host = %v", *fx.hosts)
+	}
+	for _, e := range f.events {
+		t.Errorf("plan changed something: %s", e)
+	}
+
+	// Only claude-3 is needed: it has .runner, so nothing is downloaded and
+	// no token is fetched; its unit is written.
+	f.events = nil
+	_, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if err != nil || !reflect.DeepEqual(f.events, []string{"unit nibfin-runner-claude-3.service"}) || fx.gh.tokens != 0 || len(*fx.auth) != 0 {
+		t.Errorf("Run: %v, events %v, tokens %d", err, f.events, fx.gh.tokens)
+	}
+	for _, s := range f.shells {
+		if s.script == "unit" && !reflect.DeepEqual(s.args, []string{unitDir, "nibfin-runner-claude-3.service"}) {
+			t.Errorf("unit args = %q", s.args)
+		}
+	}
+}
+
+func TestRunnerAddRepoRules(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{
+		"claude-1": {configured: true, unit: true, enabled: true, name: "a", url: "https://github.com/o/one"},
+		"codex-1":  {configured: true, unit: true, enabled: true, name: "b", url: "https://github.com/o/two"},
+	}}
+	useRunnerHost(t, f)
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerRepoConflict || !strings.Contains(err.Error(), "github.com/o/one") || !strings.Contains(err.Error(), "github.com/o/two") || len(f.events) != 0 {
+		t.Errorf("conflict: %v, events %v", err, f.events)
+	}
+
+	f = &fakeHost{slots: map[string]*fakeSlot{}}
+	useRunnerHost(t, f)
+	currentRepo = func() (string, error) { return "", Errorf(CodeRepoUnresolved, "not a repository") }
+	if _, err := RunnerAdd(RunnerAddParams{Provider: "codex", Count: 1}).Plan(context.Background()); Code(err) != CodeRepoUnresolved {
+		t.Errorf("unresolved: %v", err)
+	}
+
+	// Later runners use the runners' repository, not the current one.
+	f = &fakeHost{slots: map[string]*fakeSlot{"codex-1": {configured: true, unit: true, enabled: true, name: "b", url: "https://github.com/o/two"}}}
+	useRunnerHost(t, f)
+	currentRepo = func() (string, error) { t.Error("resolved the current repository"); return "", nil }
+	p, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background())
+	if err != nil || p.Repo != "github.com/o/two" {
+		t.Errorf("reuse: %+v, %v", p, err)
+	}
+
+	// A plan for another repository is refused at Apply.
+	p.Repo = "github.com/evil/repo"
+	if err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Apply(context.Background(), p); Code(err) != CodeRunnerRepoConflict {
+		t.Errorf("stale plan: %v", err)
+	}
+}
+
+func TestRunnerAddInvalid(t *testing.T) {
+	useRunnerHost(t, &fakeHost{})
+	for _, p := range []RunnerAddParams{{Provider: "gemini", Count: 1}, {Provider: "claude", Count: 0}} {
+		if _, err := RunnerAdd(p).Plan(context.Background()); Code(err) != CodeInvalidArgument {
+			t.Errorf("%+v: %v", p, err)
+		}
+	}
+	// Apply refuses steps it did not plan.
+	f := &fakeHost{}
+	useRunnerHost(t, f)
+	p := Plan{Repo: "github.com/o/r", Steps: []Step{{Action: actAddRunner, Target: "codex-1"}}}
+	if err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Apply(context.Background(), p); Code(err) != CodeInvalidArgument {
+		t.Errorf("foreign slot: %v", err)
+	}
+}
+
+func TestRunnerAddStoppedMachine(t *testing.T) {
+	f := &fakeHost{stopped: true, vm: true, slots: map[string]*fakeSlot{}, loginWorks: true,
+		volumes: map[string]bool{"claude": true}, loggedIn: map[string]bool{"claude": true}}
+	fx := useRunnerHost(t, f)
+	o := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2, Interact: &recInteract{}})
+	p, err := o.Plan(context.Background())
+	want := []string{"start fake", "enable linger fake", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "add runners claude ×2"}
+	if err != nil || !reflect.DeepEqual(steps(p), want) {
+		t.Fatalf("plan = %v, %v", steps(p), err)
+	}
+	if len(f.calls) != 0 || len(f.shells) != 0 {
+		t.Errorf("plan touched a stopped machine: %v %v", f.calls, f.shells)
+	}
+	if err := o.Apply(context.Background(), p); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	// After the start: logged in already, so no login; two new slots.
+	wantEvents := []string{"linger", "create volume nibfin-tools", "token",
+		"extract claude-1", "configure claude-1", "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "unit nibfin-runner-claude-2.service"}
+	if f.starts != 1 || !reflect.DeepEqual(f.events, wantEvents) || fx.gh.tokens != 1 {
+		t.Errorf("starts %d, events %v", f.starts, f.events)
+	}
+	if _, err := o.ReadBack(context.Background(), p); err != nil {
+		t.Errorf("ReadBack: %v", err)
+	}
+}
+
+func TestRunnerAddChecksumMismatch(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}, loggedIn: map[string]bool{"claude": true}, volumes: map[string]bool{"claude": true}}
+	fx := useRunnerHost(t, f)
+	fx.gh.downloads[1].SHA256 = shaHex("tampered")
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerDownloadFailed || !strings.Contains(err.Error(), "does not match") {
+		t.Errorf("err = %v", err)
+	}
+	for _, e := range f.events {
+		if strings.HasPrefix(e, "extract") || e == "token" {
+			t.Errorf("went on after a mismatch: %v", f.events)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), "nibfin-runner-*")); len(left) != 0 {
+		t.Errorf("archive left behind: %v", left)
+	}
+}
+
+func TestRunnerAddScrubsToken(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}, loggedIn: map[string]bool{"claude": true}, volumes: map[string]bool{"claude": true}, token: "SECRETTOKEN"}
+	f.shellExit = map[string]int{"configure": 1}
+	f.shellErr = map[string]string{"configure": "Http response code: Forbidden for token SECRETTOKEN"}
+	useRunnerHost(t, f)
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerInstallFailed || strings.Contains(err.Error(), "SECRETTOKEN") || !strings.Contains(err.Error(), "Forbidden") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestRunnerAddStdinReachesScripts(t *testing.T) {
+	// A wrong archive on stdin makes the fake extract exit 3.
+	f := &fakeHost{slots: map[string]*fakeSlot{}, loggedIn: map[string]bool{"claude": true}, volumes: map[string]bool{"claude": true}}
+	useRunnerHost(t, f)
+	f.archiveSHA = shaHex("something else")
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "unexpected stdin") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestRunnerAddSSHFailure(t *testing.T) {
+	f := &fakeHost{vm: true, slots: map[string]*fakeSlot{}}
+	f.shellExit = map[string]int{"probe": 125}
+	useRunnerHost(t, f)
+	if _, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background()); Code(err) != CodePodmanFailed {
+		t.Errorf("err = %v", err)
+	}
+	f.shellExit = map[string]int{"list": 255}
+	if _, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background()); Code(err) != CodePodmanFailed {
+		t.Errorf("list: %v", err)
+	}
+}
+
+func TestRunnerAddGitHubError(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}}
+	fx := useRunnerHost(t, f)
+	fx.gh.err = Errorf(CodeGitHubAPIFailed, "HTTP 401")
+	if _, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background()); Code(err) != CodeGitHubAPIFailed {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestRunnerAddAdvice(t *testing.T) {
+	f := &fakeHost{probe: strings.Replace(defaultProbe, "cgroup cpuset cpu io memory pids", "cgroup memory pids", 1)}
+	useRunnerHost(t, f)
+	p, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := p.Steps[len(p.Steps)-1]
+	if last.Action != actAdvise || !strings.Contains(last.Detail, "cpu are not delegated") || !strings.Contains(last.Detail, "Delegate=cpu cpuset io memory pids") || !strings.Contains(last.Detail, "NIBFIN_CONTAINER_LIMITS=off") {
+		t.Errorf("advice = %+v", last)
+	}
+
+	f = &fakeHost{vm: true, wsl: true, probe: strings.Replace(defaultProbe, "memkb 16000000", "memkb 8000000", 1)}
+	useRunnerHost(t, f)
+	p, err = RunnerAdd(RunnerAddParams{Provider: "codex", Count: 2}).Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var advice []string
+	for _, s := range p.Steps {
+		if s.Action == actAdvise {
+			advice = append(advice, s.Detail)
+		}
+	}
+	// Two existing runners and two new ones: 12 GB.
+	if len(advice) != 2 || !strings.Contains(advice[0], "NIBFIN_CONTAINER_LIMITS=off") ||
+		!strings.Contains(advice[1], `%UserProfile%\.wslconfig, leaving at least 12 GB for 4 runners`) ||
+		!strings.Contains(advice[1], "the VM has 7.6 GB, below that minimum") || !strings.Contains(advice[1], "wsl --shutdown") {
+		t.Errorf("advice = %q", advice)
+	}
+
+	// No advice on a non-WSL machine.
+	f = &fakeHost{vm: true, probe: "arch aarch64\nnode n\nmachine ab\nlinger 1\ncgroup ?\nmemkb 1\n"}
+	useRunnerHost(t, f)
+	p, _ = RunnerAdd(RunnerAddParams{Provider: "codex", Count: 1}).Plan(context.Background())
+	for _, s := range p.Steps {
+		if s.Action == actAdvise {
+			t.Errorf("advice on applehv: %v", s)
+		}
+	}
+}
+
+func TestRunnerAddReadBackMissing(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}, loggedIn: map[string]bool{"claude": true}, volumes: map[string]bool{"claude": true}}
+	fx := useRunnerHost(t, f)
+	fx.gh.unlisted = true
+	_, r, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerMissing || !strings.Contains(err.Error(), "claude-1") || r == nil {
+		t.Errorf("unlisted: %v", err)
+	}
+	// A planned slot that does not exist is missing too.
+	o := RunnerAdd(RunnerAddParams{Provider: "codex", Count: 1})
+	_, err = o.ReadBack(context.Background(), Plan{Steps: []Step{{Action: actAddRunner, Target: "codex-9"}}})
+	if Code(err) != CodeRunnerMissing || !strings.Contains(err.Error(), "codex-9") {
+		t.Errorf("absent: %v", err)
+	}
+}
+
+func TestRunnerAddArch(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}, probe: strings.Replace(defaultProbe, "x86_64", "riscv64", 1), loggedIn: map[string]bool{"claude": true}, volumes: map[string]bool{"claude": true}}
+	useRunnerHost(t, f)
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeUnsupportedHost {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestRunnerName(t *testing.T) {
+	pr := hostProbe{node: "..weird.Host_name.." + strings.Repeat("x", 40), machine: "abc"}
+	n, err := pr.runnerName("codex-3")
+	want := "weird-Host-name-xxxxxxxxxxxxxxxx-" + shaHex("gh-nibfin runner\nabc")[:8] + "-codex-3"
+	if err != nil || n != want {
+		t.Errorf("name = %q, want %q (%v)", n, want, err)
+	}
+	if _, err := (hostProbe{node: "x"}).runnerName("claude-1"); Code(err) != CodeRunnerInstallFailed {
+		t.Errorf("no machine-id: %v", err)
+	}
+}
+
+func TestUnitText(t *testing.T) {
+	u, err := unitText("claude-2", "/home/u/.local/share/nibfin/runners/claude-2")
+	want := "[Unit]\nDescription=Nibfin GitHub Actions runner claude-2\nAfter=network.target\n\n" +
+		"[Service]\nExecStart=/home/u/.local/share/nibfin/runners/claude-2/runsvc.sh\nWorkingDirectory=/home/u/.local/share/nibfin/runners/claude-2\n" +
+		"KillMode=process\nKillSignal=SIGTERM\nTimeoutStopSec=5min\n\n[Install]\nWantedBy=default.target\n"
+	if err != nil || u != want {
+		t.Errorf("unit = %q, %v", u, err)
+	}
+	if u, _ := unitText("c-1", "/a%b/c-1"); !strings.Contains(u, "ExecStart=/a%%b/c-1/runsvc.sh") {
+		t.Errorf("escape: %q", u)
+	}
+	for _, d := range []string{"/home/a b/x", "/x\ny", `/x"y`} {
+		if _, err := unitText("c-1", d); Code(err) != CodeRunnerInstallFailed {
+			t.Errorf("%q accepted", d)
+		}
+	}
+}
+
+func TestRunnerAddParamsJSON(t *testing.T) {
+	b, err := json.Marshal(RunnerAddParams{Provider: "claude", Count: 2, Terminal: &Terminal{}, Interact: &recInteract{}})
+	if err != nil || string(b) != `{"provider":"claude","count":2}` {
+		t.Errorf("json = %s, %v", b, err)
+	}
+}
+
+func TestDownloadArchive(t *testing.T) {
+	tmp := t.TempDir()
+	for _, v := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(v, tmp)
+	}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/missing" {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, archive)
+	}))
+	defer srv.Close()
+	old := httpClient
+	t.Cleanup(func() { httpClient = old })
+	httpClient = srv.Client()
+	path, cleanup, err := downloadArchive(context.Background(), runnerDownload{DownloadURL: srv.URL + "/a", SHA256: strings.ToUpper(shaHex(archive))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != archive {
+		t.Errorf("content = %q", b)
+	}
+	cleanup()
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("not removed: %v", err)
+	}
+	for _, d := range []runnerDownload{
+		{DownloadURL: "http://example.com/a", SHA256: shaHex(archive)},
+		{DownloadURL: srv.URL + "/a", SHA256: ""},
+		{DownloadURL: srv.URL + "/missing", SHA256: shaHex(archive)},
+	} {
+		if _, _, err := downloadArchive(context.Background(), d); Code(err) != CodeRunnerDownloadFailed {
+			t.Errorf("%+v: %v", d, err)
+		}
+	}
+	if left, _ := os.ReadDir(tmp); len(left) != 0 {
+		t.Errorf("left %v", left)
+	}
+}
+
+func TestRepoPath(t *testing.T) {
+	if repoPath("ghe.example/o/r") != "repos/o/r" || repoHost("ghe.example/o/r") != "ghe.example" {
+		t.Error("repo path")
+	}
+}

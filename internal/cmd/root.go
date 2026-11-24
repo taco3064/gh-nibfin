@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -99,18 +98,24 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	var addCount int
 	var addYes bool
 	runnerAdd := &cobra.Command{
-		Use:       "add <claude|codex>",
-		Short:     "Add Runners for a provider to the current directory's repository",
+		Use:   "add <claude|codex>",
+		Short: "Add Runners for a provider on this host",
+		Long: "Add Runners for a provider on this host (the Linux host, or the podman machine VM).\n\n" +
+			"The first Runner on the host registers to the current directory's repository; later\n" +
+			"Runners reuse the repository the existing Runners use. Each Runner carries the labels\n" +
+			"nibfin and nibfin-<user id>-<provider>, and runs as a systemd user service.",
 		Args:      providerArgs(1, 1),
 		ValidArgs: providers,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := checkCount(addCount); err != nil {
 				return err
 			}
-			return run(c, ops.RunnerAdd(op.RunnerAddParams{Provider: args[0], Count: addCount}), addYes)
+			p := op.RunnerAddParams{Provider: args[0], Count: addCount}
+			p.Terminal, p.Interact = loginIO(stdin, stdout, stderr)
+			return run(c, ops.RunnerAdd(p), addYes)
 		},
 	}
-	runnerAdd.Flags().IntVar(&addCount, "count", 1, "number of Runners")
+	runnerAdd.Flags().IntVar(&addCount, "count", 2, "number of Runners")
 	addYesFlag(runnerAdd, &addYes)
 
 	var removeCount int
@@ -142,11 +147,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			if len(args) == 1 {
 				p.Provider = args[0]
 			}
-			if t := terminal(stdin, stdout, stderr); t != nil {
-				p.Terminal = t
-			} else {
-				p.Interact = &interactor{in: bufio.NewReader(stdin), out: stderr}
-			}
+			p.Terminal, p.Interact = loginIO(stdin, stdout, stderr)
 			return run(c, ops.Login(p), false)
 		},
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/taco3064/gh-nibfin/internal/host"
+	"github.com/taco3064/gh-nibfin/internal/runners"
 )
 
 // LoginImage is the released image the Jobs run; login runs the provider CLI
@@ -88,12 +89,36 @@ type LoginStep struct {
 	Message  string `json:"message,omitempty"`
 }
 
-// runnerHost is the part of host.Host login uses; tests replace detectHost.
+func providerNames() []string {
+	out := make([]string, len(providerTable))
+	for i, p := range providerTable {
+		out[i] = p.name
+	}
+	return out
+}
+
+// runnerHost is the part of host.Host the operations use; tests replace
+// detectHost.
 type runnerHost interface {
 	NeedsStart() bool
 	Start(ctx context.Context) error
 	Podman(ctx context.Context, args ...string) *exec.Cmd
+	Shell(ctx context.Context, script string, args ...string) *exec.Cmd
+	Local() bool
+	WSL() bool
 	Describe() string
+}
+
+// listRunners discovers the runners on the host.
+func listRunners(ctx context.Context, h runnerHost) (*runners.Inventory, error) {
+	inv, err := runners.List(ctx, h, providerNames())
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, Errorf(CodeCancelled, "cancelled")
+		}
+		return nil, Errorf(CodePodmanFailed, "%s: %w", h.Describe(), err)
+	}
+	return inv, nil
 }
 
 var detectHost = func(ctx context.Context) (runnerHost, error) {
@@ -134,6 +159,43 @@ const (
 type login struct {
 	p    LoginParams
 	host runnerHost
+	// ifNeeded is runner add's login: a named provider logs in only when its
+	// check says it is not logged in, and the runner rule does not apply.
+	ifNeeded bool
+}
+
+// allowed returns the providers that have runners on the host, which are
+// the only ones login acts on; nil when the rule does not apply. A named
+// provider without runners, or no runners at all, is no_runners.
+func (l *login) allowed(ctx context.Context) (map[string]bool, error) {
+	if l.ifNeeded {
+		return nil, nil
+	}
+	inv, err := listRunners(ctx, l.host)
+	if err != nil {
+		return nil, err
+	}
+	have := inv.Providers()
+	if l.p.Provider != "" && !have[l.p.Provider] {
+		return nil, Errorf(CodeNoRunners, "no %s runners on %s; add runners first: gh nibfin runner add %s", l.p.Provider, l.host.Describe(), l.p.Provider)
+	}
+	if len(have) == 0 {
+		return nil, Errorf(CodeNoRunners, "no runners on %s; add runners first: gh nibfin runner add <claude|codex>", l.host.Describe())
+	}
+	return have, nil
+}
+
+func filterProviders(ps []provider, have map[string]bool) []provider {
+	if have == nil {
+		return ps
+	}
+	var out []provider
+	for _, p := range ps {
+		if have[p.name] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (l *login) detect(ctx context.Context) error {
@@ -175,11 +237,17 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 	stopped := l.host.NeedsStart()
 	if stopped {
 		plan.Steps = append(plan.Steps, Step{Action: actStart, Target: where})
+	} else {
+		have, err := l.allowed(ctx)
+		if err != nil {
+			return plan, err
+		}
+		targets = filterProviders(targets, have)
 	}
 	for _, p := range targets {
 		has := false
 		if !stopped {
-			if has, err = l.volumeExists(ctx, p); err != nil {
+			if has, err = volumeExists(ctx, l.host, p.volume()); err != nil {
 				return plan, err
 			}
 		}
@@ -187,8 +255,8 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 			plan.Steps = append(plan.Steps, Step{Action: actCreateVolume, Target: p.volume(), Detail: where})
 		}
 		// A named provider always logs in: the request may re-login or
-		// switch accounts.
-		need := l.p.Provider != "" || !has
+		// switch accounts. Runner add's login is only done when needed.
+		need := (l.p.Provider != "" && !l.ifNeeded) || !has
 		if !need {
 			in, err := l.check(ctx, p)
 			if err != nil {
@@ -209,25 +277,50 @@ func (l *login) Apply(ctx context.Context, plan Plan) error {
 		return err
 	}
 	recheck := false
+	// The runner rule is applied once the host runs, before any volume or
+	// login step.
+	var have map[string]bool
+	ruled := false
+	rule := func() error {
+		if ruled {
+			return nil
+		}
+		var err error
+		have, err = l.allowed(ctx)
+		ruled = err == nil
+		return err
+	}
 	for _, s := range plan.Steps {
 		switch s.Action {
 		case actStart:
 			if err := l.host.Start(ctx); err != nil {
 				return hostError(err)
 			}
-			recheck = l.p.Provider == ""
+			recheck = l.p.Provider == "" || l.ifNeeded
 		case actCreateVolume:
 			p, ok := providerOfVolume(s.Target)
 			if !ok {
 				return Errorf(CodeInvalidArgument, "unknown login volume %q", s.Target)
 			}
-			if err := l.createVolume(ctx, p); err != nil {
+			if err := rule(); err != nil {
+				return err
+			}
+			if have != nil && !have[p.name] {
+				continue
+			}
+			if err := createVolume(ctx, l.host, p.volume()); err != nil {
 				return err
 			}
 		case actLogIn:
 			p, ok := lookupProvider(s.Target)
 			if !ok {
 				return Errorf(CodeInvalidArgument, "unknown provider %q", s.Target)
+			}
+			if err := rule(); err != nil {
+				return err
+			}
+			if have != nil && !have[p.name] {
+				continue
 			}
 			if recheck {
 				in, err := l.check(ctx, p)
@@ -259,6 +352,11 @@ func (l *login) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if l.host.NeedsStart() {
 		return nil, Errorf(CodePodmanFailed, "%s is not running", l.host.Describe())
 	}
+	have, err := l.allowed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	targets = filterProviders(targets, have)
 	planned := map[string]bool{}
 	for _, s := range plan.Steps {
 		if s.Action == actLogIn {
@@ -268,7 +366,7 @@ func (l *login) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	states := map[string]any{}
 	var missing []string
 	for _, p := range targets {
-		has, err := l.volumeExists(ctx, p)
+		has, err := volumeExists(ctx, l.host, p.volume())
 		if err != nil {
 			return nil, err
 		}
@@ -342,11 +440,11 @@ func stderrText(err error, stderr *bytes.Buffer) string {
 	return err.Error()
 }
 
-// quiet runs a podman command with its output discarded and stderr kept for
+// quiet runs a podman command on h with its output discarded and stderr kept for
 // the error message. It returns the exit status.
-func (l *login) quiet(ctx context.Context, args ...string) (int, *bytes.Buffer, error) {
+func quiet(ctx context.Context, h runnerHost, args ...string) (int, *bytes.Buffer, error) {
 	var stderr bytes.Buffer
-	c := l.host.Podman(ctx, args...)
+	c := h.Podman(ctx, args...)
 	c.Stdout = io.Discard
 	c.Stderr = &stderr
 	err := c.Run()
@@ -354,7 +452,7 @@ func (l *login) quiet(ctx context.Context, args ...string) (int, *bytes.Buffer, 
 		return 0, &stderr, nil
 	}
 	if ctx.Err() != nil {
-		return -1, &stderr, Errorf(CodeCancelled, "login cancelled")
+		return -1, &stderr, Errorf(CodeCancelled, "cancelled")
 	}
 	code := exitCode(err)
 	if code < 0 {
@@ -363,8 +461,8 @@ func (l *login) quiet(ctx context.Context, args ...string) (int, *bytes.Buffer, 
 	return code, &stderr, nil
 }
 
-func (l *login) volumeExists(ctx context.Context, p provider) (bool, error) {
-	code, stderr, err := l.quiet(ctx, "volume", "exists", p.volume())
+func volumeExists(ctx context.Context, h runnerHost, volume string) (bool, error) {
+	code, stderr, err := quiet(ctx, h, "volume", "exists", volume)
 	switch {
 	case err != nil:
 		return false, err
@@ -373,16 +471,16 @@ func (l *login) volumeExists(ctx context.Context, p provider) (bool, error) {
 	case code == 1:
 		return false, nil
 	}
-	return false, Errorf(CodePodmanFailed, "podman volume exists %s exited with status %d: %s", p.volume(), code, strings.TrimSpace(stderr.String()))
+	return false, Errorf(CodePodmanFailed, "podman volume exists %s exited with status %d: %s", volume, code, strings.TrimSpace(stderr.String()))
 }
 
-func (l *login) createVolume(ctx context.Context, p provider) error {
-	code, stderr, err := l.quiet(ctx, "volume", "create", "--ignore", p.volume())
+func createVolume(ctx context.Context, h runnerHost, volume string) error {
+	code, stderr, err := quiet(ctx, h, "volume", "create", "--ignore", volume)
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return Errorf(CodePodmanFailed, "podman volume create %s exited with status %d: %s", p.volume(), code, strings.TrimSpace(stderr.String()))
+		return Errorf(CodePodmanFailed, "podman volume create %s exited with status %d: %s", volume, code, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
@@ -390,7 +488,7 @@ func (l *login) createVolume(ctx context.Context, p provider) error {
 // check runs the provider CLI's own login check. Only its exit status is
 // used; its output can carry account fields and is discarded.
 func (l *login) check(ctx context.Context, p provider) (bool, error) {
-	code, stderr, err := l.quiet(ctx, checkArgs(p)...)
+	code, stderr, err := quiet(ctx, l.host, checkArgs(p)...)
 	switch {
 	case err != nil:
 		return false, err
