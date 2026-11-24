@@ -2,6 +2,3 @@
 /gh-nibfin.exe
 /dist/
 /coverage.out
-/.core-fixture/
-/.deliver-test-tmp/
-/.nibfin-cache/
