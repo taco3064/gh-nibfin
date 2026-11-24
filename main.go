@@ -1,46 +1,10 @@
+// Command gh-nibfin is the GitHub CLI extension for Nibfin.
+//
+// The redesigned commands are being rebuilt; see the open scope Issues.
 package main
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-	"os/signal"
-	"syscall"
-
-	"github.com/taco3064/gh-nibfin/internal/cli"
-)
-
-func run(args []string, out io.Writer) error {
-	process := cli.NativeProcess{}
-	app := cli.App{API: cli.GitHub{Process: process}, Process: process,
-		Runner: cli.NativeRunnerHost{}, Download: cli.OfficialRunnerDownload}
-	return runApp(app, args, out)
-}
-
-func runApp(app cli.App, args []string, out io.Writer) error {
-	if len(args) > 0 && (args[0] == "dashboard" || args[0] == "init" ||
-		args[0] == "upgrade" || args[0] == "runner") {
-		parent := app.Context
-		if parent == nil {
-			parent = context.Background()
-		}
-		ctx, stop := signal.NotifyContext(parent,
-			os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		app.Context = ctx
-	}
-	return app.Run(args, out)
-}
+import "fmt"
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		var commandError *cli.CommandError
-		if errors.As(err, &commandError) {
-			os.Exit(commandError.Exit)
-		}
-		os.Exit(1)
-	}
+	fmt.Println("gh nibfin is being rebuilt; no commands are available yet.")
 }
