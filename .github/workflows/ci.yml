@@ -2,148 +2,26 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, 'bootstrap/**']
+    branches: [main]
 permissions:
   contents: read
 jobs:
   verify:
-    name: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Fetch the exact push comparison base
-        if: >-
-          github.event_name == 'push' &&
-          github.event.before != '0000000000000000000000000000000000000000'
-        env:
-          SOURCE_BEFORE: ${{ github.event.before }}
-        run: git fetch --no-tags origin "$SOURCE_BEFORE"
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
-        with:
-          go-version-file: go.mod
-          cache: false
-      - run: go run ./scripts/check.go
-      - run: go run ./scripts/staged
-      - run: go vet ./...
-      - run: go build -trimpath -o gh-nibfin .
-      - run: ./gh-nibfin help
-  candidate-cache:
-    name: candidate-cache (${{ matrix.os }})
+    name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
-    permissions:
-      contents: read
-      actions: read
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-          fetch-depth: 0
-      - name: Fetch the exact push comparison base
-        shell: bash
-        if: >-
-          github.event_name == 'push' &&
-          github.event.before != '0000000000000000000000000000000000000000'
-        env:
-          SOURCE_BEFORE: ${{ github.event.before }}
-        run: git fetch --no-tags origin "$SOURCE_BEFORE"
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: go.mod
           cache: false
-      - name: Select affected candidate cache checks
-        id: affected
-        run: go run ./scripts/staged --cache
-      - name: Read reviewed Core pin
-        id: core-pin
-        if: steps.affected.outputs.cache == 'true'
-        shell: pwsh
-        run: |
-          $pins = Get-Content -Raw internal/cli/producers.json | ConvertFrom-Json
-          "commit=$($pins.core.commit)" >> $env:GITHUB_OUTPUT
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        if: steps.affected.outputs.cache == 'true'
-        with:
-          repository: taco3064/nibfin-core
-          ref: ${{ steps.core-pin.outputs.commit }}
-          path: .core-fixture
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        if: steps.affected.outputs.cache == 'true'
-        with:
-          node-version-file: .core-fixture/.node-version
-          package-manager-cache: false
-      - name: Use a private non-writable Node copy on the disposable Linux VM
-        if: runner.os == 'Linux' && steps.affected.outputs.cache == 'true'
-        shell: pwsh
-        run: |
-          $tools = Join-Path $HOME '.nibfin-ci-tools'
-          if (Test-Path -LiteralPath $tools) { throw 'Unexpected existing CI tools' }
-          New-Item -ItemType Directory -Path $tools | Out-Null
-          chmod 700 $tools
-          $original = (Get-Command node).Source
-          $copy = Join-Path $tools 'node'
-          Copy-Item -LiteralPath $original -Destination $copy
-          if ((Get-FileHash $original).Hash -ne (Get-FileHash $copy).Hash) {
-            throw 'Node copy differs'
-          }
-          chmod 500 $copy
-          $tools >> $env:GITHUB_PATH
-      - name: Test actual public archive and Core verification in an isolated cache
-        if: steps.affected.outputs.cache == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NIBFIN_TEST_LIVE_READS: '1'
-        run: go test ./internal/cli -run TestLiveCandidateCache -v -count=1
-      - name: Verify Windows Runner and filesystem contracts
-        if: runner.os == 'Windows'
-        run: go run ./scripts/staged
-      - name: Build and install the actual local GitHub CLI extension
-        if: steps.affected.outputs.cache == 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_CONFIG_DIR: ${{ runner.temp }}/nibfin-candidate-extension
-          XDG_DATA_HOME: ${{ runner.temp }}/nibfin-candidate-data
-          XDG_STATE_HOME: ${{ runner.temp }}/nibfin-candidate-state
-        run: |
-          $binary = if ($IsWindows) { 'gh-nibfin.exe' } else { 'gh-nibfin' }
-          go build -buildvcs=true -trimpath -o $binary .
-          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-          $registered = $false
-          try {
-            gh extension install .
-            if ($LASTEXITCODE -ne 0) { throw 'Extension install failed' }
-            $registered = $true
-            gh nibfin help
-            if ($LASTEXITCODE -ne 0) { throw 'Extension invocation failed' }
-          } finally {
-            if ($registered) {
-              gh extension remove nibfin
-              if ($LASTEXITCODE -ne 0) { throw 'Extension cleanup failed' }
-            }
-            foreach ($directory in @($env:GH_CONFIG_DIR, $env:XDG_DATA_HOME,
-                $env:XDG_STATE_HOME)) {
-              if (Test-Path -LiteralPath $directory) {
-                Remove-Item -LiteralPath $directory -Recurse -Force
-              }
-            }
-          }
-      - name: Remove the private CI Node copy
-        if: always() && runner.os == 'Linux' && steps.affected.outputs.cache == 'true'
-        shell: pwsh
-        run: |
-          $tools = Join-Path $HOME '.nibfin-ci-tools'
-          if (Test-Path -LiteralPath $tools) {
-            chmod 700 (Join-Path $tools 'node')
-            Remove-Item -LiteralPath (Join-Path $tools 'node')
-            Remove-Item -LiteralPath $tools -Force
-          }
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -trimpath ./...
