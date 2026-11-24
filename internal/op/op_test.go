@@ -137,7 +137,6 @@ func TestEntryPointsAreNotImplemented(t *testing.T) {
 	entries := map[string]Operation{
 		"runner add":    RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}),
 		"runner remove": RunnerRemove(RunnerRemoveParams{Provider: "codex", Count: 1}),
-		"login":         Login(LoginParams{}),
 		"init":          Init(RepoParams{Repo: "github.com/o/r"}),
 		"upgrade":       Upgrade(RepoParams{Repo: "github.com/o/r"}),
 		"status":        Status(RepoParams{Repo: "github.com/o/r"}),
