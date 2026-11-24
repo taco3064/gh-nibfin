@@ -195,14 +195,28 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	addJSONFlag(status, jsonOut)
 
 	issuesCmd := func(use, short string, entry func(op.IssuesParams) op.Operation) *cobra.Command {
-		return &cobra.Command{
+		var repo string
+		c := &cobra.Command{
 			Use:   use + " <issue>...",
 			Short: short,
-			Args:  wrapArgs(cobra.MinimumNArgs(1)),
+			Long: short + ".\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\n" +
+				"Several issues can be given at once; there is no confirmation step.",
+			Args: wrapArgs(cobra.MinimumNArgs(1)),
 			RunE: func(c *cobra.Command, args []string) error {
-				return run(c, entry(op.IssuesParams{Issues: args}), false)
+				// Only numbers need a repository, so URL-only calls work
+				// outside a checkout.
+				var r string
+				if repo != "" || op.HasIssueNumber(args) {
+					var err error
+					if r, err = repoResolver(repo); err != nil {
+						return err
+					}
+				}
+				return run(c, entry(op.IssuesParams{Repo: r, Issues: args}), false)
 			},
 		}
+		addRepoFlag(c, &repo)
+		return c
 	}
 	pause := issuesCmd("pause", "Pause Nibfin work on Issues", func(p op.IssuesParams) op.Operation { return ops.Pause(p) })
 	resume := issuesCmd("resume", "Resume Nibfin work on Issues", func(p op.IssuesParams) op.Operation { return ops.Resume(p) })

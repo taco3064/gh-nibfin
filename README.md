@@ -14,12 +14,17 @@ gh nibfin login [claude|codex]
 gh nibfin init [-R OWNER/REPO] [--yes]
 gh nibfin upgrade [-R OWNER/REPO] [--yes]
 gh nibfin status [-R OWNER/REPO] [--json]
-gh nibfin pause <issue>...
-gh nibfin resume <issue>...
+gh nibfin pause <issue>... [-R OWNER/REPO]
+gh nibfin resume <issue>... [-R OWNER/REPO]
 gh nibfin dashboard [--port N] [--no-browser]
 ```
 
-`login` and `upgrade` are implemented; every other command currently reports
+`pause` adds the `pause` label to each Issue; `resume` removes `pause` and
+`pending`. An `<issue>` is a number (`N` or `#N`, in the `-R` repository) or
+an Issue URL, and several can be given at once. Both commands write all
+changes in one GraphQL mutation, read them back, and ask no confirmation.
+
+`login` and `upgrade` are also implemented. Every other command currently reports
 `not_implemented`. The behaviour of each command is tracked as a scope Issue
 in this repository.
 

@@ -52,8 +52,6 @@ func TestEveryCommandIsNotImplemented(t *testing.T) {
 		{"init", "-R", "o/r", "--yes"},
 		{"status"},
 		{"status", "-R", "o/r"},
-		{"pause", "1", "2"},
-		{"resume", "3"},
 		{"dashboard", "--port", "8080", "--no-browser"},
 	} {
 		code, stdout, stderr := execute(t, args...)
@@ -103,9 +101,15 @@ func TestBadInvocationsFail(t *testing.T) {
 			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
 		}
 	}
-	code, _, stderr := execute(t, "status", "-R", "bad")
-	if code == 0 || !strings.HasPrefix(stderr, "invalid_repo: ") {
-		t.Errorf("bad -R: exit %d, stderr %q", code, stderr)
+	for _, args := range [][]string{
+		{"status", "-R", "bad"},
+		{"pause", "1", "-R", "bad"},
+		{"resume", "https://github.com/o/r/issues/1", "-R", "bad"},
+	} {
+		code, _, stderr := execute(t, args...)
+		if code == 0 || !strings.HasPrefix(stderr, "invalid_repo: ") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
+		}
 	}
 }
 
@@ -131,8 +135,8 @@ func TestFlagPlacement(t *testing.T) {
 		"init":          {"repo", "yes"},
 		"upgrade":       {"repo", "yes"},
 		"status":        {"json", "repo"},
-		"pause":         {},
-		"resume":        {},
+		"pause":         {"repo"},
+		"resume":        {"repo"},
 		"dashboard":     {"no-browser", "port"},
 	}
 	for path, flags := range want {
@@ -183,8 +187,8 @@ func TestHandlersPassArguments(t *testing.T) {
 	ops.Init = func(p op.RepoParams) op.Operation { return rec("init:" + p.Repo) }
 	ops.Upgrade = func(p op.RepoParams) op.Operation { return rec("upgrade:" + p.Repo) }
 	ops.Status = func(p op.RepoParams) op.Operation { return rec("status:" + p.Repo) }
-	ops.Pause = func(p op.IssuesParams) op.Operation { return rec("pause:" + strings.Join(p.Issues, ",")) }
-	ops.Resume = func(p op.IssuesParams) op.Operation { return rec("resume:" + strings.Join(p.Issues, ",")) }
+	ops.Pause = func(p op.IssuesParams) op.Operation { return rec(p) }
+	ops.Resume = func(p op.IssuesParams) op.Operation { return rec(p) }
 
 	for _, args := range [][]string{
 		{"runner", "add", "codex", "--count", "3"},
@@ -195,7 +199,9 @@ func TestHandlersPassArguments(t *testing.T) {
 		{"upgrade"},
 		{"status", "--repo", "x/y"},
 		{"pause", "4", "#5"},
-		{"resume", "6"},
+		{"resume", "6", "-R", "o/r"},
+		{"pause", "https://github.com/a/b/issues/7"},
+		{"resume", "https://github.com/a/b/issues/8", "--repo", "x/y"},
 	} {
 		if code, _, stderr := execute(t, args...); code == 0 || !strings.HasPrefix(stderr, "stop: ") {
 			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
@@ -209,13 +215,16 @@ func TestHandlersPassArguments(t *testing.T) {
 		"init:github.com/o/r",
 		"upgrade:github.com/cur/repo",
 		"status:github.com/x/y",
-		"pause:4,#5",
-		"resume:6",
+		op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"4", "#5"}},
+		op.IssuesParams{Repo: "github.com/o/r", Issues: []string{"6"}},
+		op.IssuesParams{Issues: []string{"https://github.com/a/b/issues/7"}},
+		op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("params = %#v\nwant %#v", got, want)
 	}
-	if !reflect.DeepEqual(*seenRepo, []string{"o/r", "", "x/y"}) {
+	if !reflect.DeepEqual(*seenRepo, []string{"o/r", "", "x/y", "", "o/r", "x/y"}) {
+		// URL-only pause without -R never resolves a repository.
 		t.Errorf("resolver saw %q", *seenRepo)
 	}
 }
@@ -282,5 +291,38 @@ func TestInteractor(t *testing.T) {
 func TestUpgradeRunsTheUpgradeOperation(t *testing.T) {
 	if reflect.ValueOf(ops.Upgrade).Pointer() != reflect.ValueOf(upgrade.New).Pointer() {
 		t.Error("upgrade does not call upgrade.New")
+	}
+}
+
+// resultOp applies without confirmation and reads back a fixed result.
+type resultOp struct{ r op.Result }
+
+func (resultOp) Plan(context.Context) (op.Plan, error)                  { return op.Plan{Operation: "pause"}, nil }
+func (resultOp) Apply(context.Context, op.Plan) error                   { return nil }
+func (o resultOp) ReadBack(context.Context, op.Plan) (op.Result, error) { return o.r, nil }
+
+type failReader struct{ t *testing.T }
+
+func (f failReader) Read([]byte) (int, error) { f.t.Error("stdin was read"); return 0, nil }
+
+func TestPauseResumeOutput(t *testing.T) {
+	fakeRepo(t)
+	old := ops
+	t.Cleanup(func() { ops = old })
+	ops.Pause = func(op.IssuesParams) op.Operation {
+		return resultOp{op.Result{"https://github.com/o/r/issues/2": "paused", "https://github.com/o/r/issues/1": "paused"}}
+	}
+	ops.Resume = func(op.IssuesParams) op.Operation {
+		return resultOp{op.Result{"https://github.com/o/r/issues/3": "resumed"}}
+	}
+	for args, want := range map[string]string{
+		"pause 1 2": "https://github.com/o/r/issues/1: paused\nhttps://github.com/o/r/issues/2: paused\n",
+		"resume 3":  "https://github.com/o/r/issues/3: resumed\n",
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Execute(strings.Fields(args), failReader{t}, &stdout, &stderr)
+		if code != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q", args, code, stdout.String(), stderr.String())
+		}
 	}
 }
