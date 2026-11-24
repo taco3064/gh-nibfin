@@ -24,3 +24,12 @@ command is tracked as a scope Issue in this repository.
 
 `-R, --repo` defaults to the current directory's repository. A changing
 command shows its plan and asks to confirm; `--yes` skips the question.
+
+## Workflow templates
+
+`internal/templates/workflows/` holds the workflows `init` and `upgrade` write
+into a repository: the execution set (`nibfin-issue.yml`,
+`nibfin-shared-runner.yml`, `nibfin-job.yml`) and the peer set
+(`nibfin-issue.yml`). They call nothing in other repositories; the Job runs
+`ghcr.io/taco3064/nibfin` pinned to the digest of the latest attested main
+image.
