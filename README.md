@@ -19,8 +19,9 @@ gh nibfin resume <issue>...
 gh nibfin dashboard [--port N] [--no-browser]
 ```
 
-Every command currently reports `not_implemented`. The behaviour of each
-command is tracked as a scope Issue in this repository.
+`login` is implemented; every other command currently reports
+`not_implemented`. The behaviour of each command is tracked as a scope Issue
+in this repository.
 
 `-R, --repo` defaults to the current directory's repository. A changing
 command shows its plan and asks to confirm; `--yes` skips the question.
@@ -33,3 +34,25 @@ into a repository: the execution set (`nibfin-issue.yml`,
 (`nibfin-issue.yml`). They call nothing in other repositories; the Job runs
 `ghcr.io/taco3064/nibfin` pinned to the digest of the latest attested main
 image.
+
+## Login
+
+`gh nibfin login [claude|codex]` logs a provider CLI in where the Runners run.
+It creates the `nibfin-home-<provider>` Podman volume when it is missing and
+runs the CLI's own login (`claude auth login`, or `codex login --device-auth`)
+in `ghcr.io/taco3064/nibfin:main` with the Jobs' user namespace and config
+home. It then reads the state back with the CLI's own check
+(`claude auth status`, `codex login status`). Without a provider it logs in
+every provider that is not logged in.
+
+On a terminal the CLI is attached to it. Otherwise the command prints the URL
+to open and the one-time code, and reads a pasted code from stdin.
+
+Host requirements:
+
+- [Podman](https://podman.io/docs/installation).
+- On Windows and macOS, a `podman machine` (`podman machine init`). A stopped
+  default machine is started, and commands use the machine's rootless
+  connection, named as the machine.
+
+gh nibfin stores no token; it uses only the exit status of the CLI's check.

@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -138,6 +139,11 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			p := op.LoginParams{}
 			if len(args) == 1 {
 				p.Provider = args[0]
+			}
+			if t := terminal(stdin, stdout, stderr); t != nil {
+				p.Terminal = t
+			} else {
+				p.Interact = &interactor{in: bufio.NewReader(stdin), out: stderr}
 			}
 			return run(c, ops.Login(p), false)
 		},

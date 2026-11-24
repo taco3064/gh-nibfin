@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -45,8 +47,6 @@ func TestEveryCommandIsNotImplemented(t *testing.T) {
 		{"runner", "add", "claude"},
 		{"runner", "add", "codex", "--count", "2", "--yes"},
 		{"runner", "remove", "claude", "--delete-login"},
-		{"login"},
-		{"login", "codex"},
 		{"init"},
 		{"init", "-R", "o/r", "--yes"},
 		{"upgrade", "--repo", "o/r"},
@@ -173,7 +173,13 @@ func TestHandlersPassArguments(t *testing.T) {
 	rec := func(p any) op.Operation { got = append(got, p); return recordingOp{} }
 	ops.RunnerAdd = func(p op.RunnerAddParams) op.Operation { return rec(p) }
 	ops.RunnerRemove = func(p op.RunnerRemoveParams) op.Operation { return rec(p) }
-	ops.Login = func(p op.LoginParams) op.Operation { return rec(p) }
+	ops.Login = func(p op.LoginParams) op.Operation {
+		// Not on a terminal, the handler hands the login an interactor.
+		if p.Terminal != nil || p.Interact == nil {
+			t.Errorf("login params = %+v", p)
+		}
+		return rec(op.LoginParams{Provider: p.Provider})
+	}
 	ops.Init = func(p op.RepoParams) op.Operation { return rec("init:" + p.Repo) }
 	ops.Upgrade = func(p op.RepoParams) op.Operation { return rec("upgrade:" + p.Repo) }
 	ops.Status = func(p op.RepoParams) op.Operation { return rec("status:" + p.Repo) }
@@ -184,6 +190,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		{"runner", "add", "codex", "--count", "3"},
 		{"runner", "remove", "claude", "--count", "2", "--delete-login"},
 		{"login", "claude"},
+		{"login"},
 		{"init", "-R", "o/r"},
 		{"upgrade"},
 		{"status", "--repo", "x/y"},
@@ -198,6 +205,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		op.RunnerAddParams{Provider: "codex", Count: 3},
 		op.RunnerRemoveParams{Provider: "claude", Count: 2, DeleteLogin: true},
 		op.LoginParams{Provider: "claude"},
+		op.LoginParams{},
 		"init:github.com/o/r",
 		"upgrade:github.com/cur/repo",
 		"status:github.com/x/y",
@@ -233,5 +241,40 @@ func TestConfirmer(t *testing.T) {
 	ok, err = confirmer{stdin: strings.NewReader("y\n"), stderr: &bytes.Buffer{}}.Confirm(p)
 	if ok || op.Code(err) != op.CodeConfirmationRequired {
 		t.Errorf("non-terminal: %v, %v", ok, err)
+	}
+}
+
+func TestTerminalNeedsTTY(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	if terminal(r, w, w) != nil || terminal(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}) != nil {
+		t.Error("a pipe or buffer counts as a terminal")
+	}
+}
+
+func TestInteractor(t *testing.T) {
+	var out bytes.Buffer
+	i := &interactor{in: bufio.NewReader(strings.NewReader("abc-123\n")), out: &out}
+	i.Step(op.LoginStep{Kind: op.StepOpenURL, URL: "https://x/y"})
+	i.Step(op.LoginStep{Kind: op.StepDeviceCode, Code: "ABCD-EFGH"})
+	i.Step(op.LoginStep{Kind: op.StepCodeRequested})
+	i.Step(op.LoginStep{Kind: op.StepSucceeded, Message: "done"})
+	if want := "open https://x/y\nenter code ABCD-EFGH\npaste the code shown in your browser: "; out.String() != want {
+		t.Errorf("steps printed %q", out.String())
+	}
+	code, err := i.Code(context.Background())
+	if code != "abc-123" || err != nil {
+		t.Errorf("Code = %q, %v", code, err)
+	}
+	if _, err := i.Code(context.Background()); op.Code(err) != op.CodeCancelled {
+		t.Errorf("EOF: %v", err)
+	}
+	i = &interactor{in: bufio.NewReader(strings.NewReader("last")), out: &out}
+	if code, err := i.Code(context.Background()); code != "last" || err != nil {
+		t.Errorf("unterminated: %q, %v", code, err)
 	}
 }
