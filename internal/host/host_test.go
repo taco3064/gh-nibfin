@@ -184,3 +184,70 @@ func TestChildEnvDropsTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestShellArgs(t *testing.T) {
+	calls := fake(t, "linux", false, "", "", false)
+	local := &Host{podman: "/fake/podman", Running: true}
+	local.Shell(context.Background(), `echo "$1"`, "a b", "it's")
+	vm := &Host{podman: "/fake/podman", Machine: "my machine", Running: true}
+	vm.Shell(context.Background(), "printf '%s\\n' \"$@\"", "it's", "two words", "line\nbreak", "")
+	want := []call{
+		{"sh", []string{"-c", `echo "$1"`, "nibfin", "a b", "it's"}},
+		{"/fake/podman", []string{"machine", "ssh", "my machine",
+			`'sh' '-c' 'printf '\''%s\n'\'' "$@"' 'nibfin' 'it'\''s' 'two words' 'line` + "\n" + `break' ''`}},
+	}
+	if !reflect.DeepEqual(*calls, want) {
+		t.Errorf("calls = %q\nwant %q", *calls, want)
+	}
+	if !local.Local() || vm.Local() {
+		t.Error("Local is wrong")
+	}
+}
+
+// TestQuoteRoundTrip runs the quoted words through a real sh where one
+// exists and checks it parses them back unchanged.
+func TestQuoteRoundTrip(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	words := []string{"plain", "it's", "a b", "line\nbreak", "", `$HOME "x" \ *`, "''"}
+	line := ""
+	for _, w := range words {
+		line += " " + Quote(w)
+	}
+	out, err := exec.Command(sh, "-c", `for a in`+line+`; do printf '%s\0' "$a"; done`).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	if !reflect.DeepEqual(got, words) {
+		t.Errorf("round trip = %q", got)
+	}
+}
+
+func TestShellEnvDropsTokens(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "secret")
+	oldCmd := command
+	t.Cleanup(func() { command = oldCmd })
+	command = exec.CommandContext
+	for _, h := range []*Host{{podman: "podman"}, {podman: "podman", Machine: "m"}} {
+		for _, kv := range h.Shell(context.Background(), "true").Env {
+			if strings.HasPrefix(kv, "GITHUB_TOKEN=") {
+				t.Errorf("child env has %s", kv)
+			}
+		}
+	}
+}
+
+func TestDetectWSL(t *testing.T) {
+	fake(t, "windows", false, `[{"Name":"m","Default":true,"Running":true,"VMType":"wsl"}]`, "", false)
+	h, err := Detect(context.Background())
+	if err != nil || h.VMType != "wsl" || !h.WSL() {
+		t.Fatalf("Detect = %+v, %v", h, err)
+	}
+	fake(t, "darwin", false, `[{"Name":"m","Default":true,"Running":true,"VMType":"applehv"}]`, "", false)
+	if h, err = Detect(context.Background()); err != nil || h.WSL() {
+		t.Errorf("applehv: %+v, %v", h, err)
+	}
+}
