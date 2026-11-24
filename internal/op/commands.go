@@ -34,9 +34,6 @@ func RunnerRemove(p RunnerRemoveParams) Operation { return notImplemented("runne
 // Init is the entry point of init.
 func Init(p RepoParams) Operation { return notImplemented("init") }
 
-// Upgrade is the entry point of upgrade.
-func Upgrade(p RepoParams) Operation { return notImplemented("upgrade") }
-
 // Status is the entry point of status.
 func Status(p RepoParams) Operation { return notImplemented("status") }
 

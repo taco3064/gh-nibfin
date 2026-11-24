@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
 
 func execute(t *testing.T, args ...string) (int, string, string) {
@@ -49,7 +50,6 @@ func TestEveryCommandIsNotImplemented(t *testing.T) {
 		{"runner", "remove", "claude", "--delete-login"},
 		{"init"},
 		{"init", "-R", "o/r", "--yes"},
-		{"upgrade", "--repo", "o/r"},
 		{"status"},
 		{"status", "-R", "o/r"},
 		{"pause", "1", "2"},
@@ -276,5 +276,11 @@ func TestInteractor(t *testing.T) {
 	i = &interactor{in: bufio.NewReader(strings.NewReader("last")), out: &out}
 	if code, err := i.Code(context.Background()); code != "last" || err != nil {
 		t.Errorf("unterminated: %q, %v", code, err)
+	}
+}
+
+func TestUpgradeRunsTheUpgradeOperation(t *testing.T) {
+	if reflect.ValueOf(ops.Upgrade).Pointer() != reflect.ValueOf(upgrade.New).Pointer() {
+		t.Error("upgrade does not call upgrade.New")
 	}
 }

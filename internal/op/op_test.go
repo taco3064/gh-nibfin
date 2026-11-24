@@ -138,7 +138,6 @@ func TestEntryPointsAreNotImplemented(t *testing.T) {
 		"runner add":    RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}),
 		"runner remove": RunnerRemove(RunnerRemoveParams{Provider: "codex", Count: 1}),
 		"init":          Init(RepoParams{Repo: "github.com/o/r"}),
-		"upgrade":       Upgrade(RepoParams{Repo: "github.com/o/r"}),
 		"status":        Status(RepoParams{Repo: "github.com/o/r"}),
 		"pause":         Pause(IssuesParams{Issues: []string{"1"}}),
 		"resume":        Resume(IssuesParams{Issues: []string{"1"}}),
