@@ -30,6 +30,11 @@ const (
 	CodeNotInitialized       = "not_initialized"
 	CodeRepoUnreadable       = "repo_unreadable"
 	CodeRepoWriteFailed      = "repo_write_failed"
+	CodeNotFound             = "not_found"
+	CodeLabelMissing         = "label_missing"
+	CodeGitHubError          = "github_error"
+	CodeAuthUnavailable      = "auth_unavailable"
+	CodeNotApplied           = "not_applied"
 )
 
 // Error is an error with a machine-readable cause code.
