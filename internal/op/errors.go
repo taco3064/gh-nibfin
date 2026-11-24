@@ -15,6 +15,10 @@ const (
 	CodeConfirmationRequired = "confirmation_required"
 	CodeCancelled            = "cancelled"
 	CodeInvalidArgument      = "invalid_argument"
+	CodeInvalidTemplateInput = "invalid_template_input"
+	CodeWorkflowsUnreadable  = "workflows_unreadable"
+	CodeImageUnresolved      = "image_unresolved"
+	CodeImageUnverified      = "image_unverified"
 )
 
 // Error is an error with a machine-readable cause code.
