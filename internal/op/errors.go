@@ -19,6 +19,14 @@ const (
 	CodeWorkflowsUnreadable  = "workflows_unreadable"
 	CodeImageUnresolved      = "image_unresolved"
 	CodeImageUnverified      = "image_unverified"
+	CodePodmanMissing        = "podman_missing"
+	CodeMachineMissing       = "machine_missing"
+	CodeMachineStartFailed   = "machine_start_failed"
+	CodeUnsupportedHost      = "unsupported_host"
+	CodePodmanFailed         = "podman_failed"
+	CodeLoginFailed          = "login_failed"
+	CodeLoginCheckFailed     = "login_check_failed"
+	CodeNotLoggedIn          = "not_logged_in"
 )
 
 // Error is an error with a machine-readable cause code.

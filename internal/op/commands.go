@@ -15,11 +15,6 @@ type RunnerRemoveParams struct {
 	DeleteLogin bool   `json:"deleteLogin"`
 }
 
-// LoginParams are the inputs of login.
-type LoginParams struct {
-	Provider string `json:"provider,omitempty"`
-}
-
 // RepoParams name the target repository as HOST/OWNER/REPO.
 type RepoParams struct {
 	Repo string `json:"repo"`
@@ -35,9 +30,6 @@ func RunnerAdd(p RunnerAddParams) Operation { return notImplemented("runner add"
 
 // RunnerRemove is the entry point of runner remove.
 func RunnerRemove(p RunnerRemoveParams) Operation { return notImplemented("runner remove") }
-
-// Login is the entry point of login.
-func Login(p LoginParams) Operation { return notImplemented("login") }
 
 // Init is the entry point of init.
 func Init(p RepoParams) Operation { return notImplemented("init") }
