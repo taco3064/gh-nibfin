@@ -82,6 +82,9 @@ func TestBadInvocationsFail(t *testing.T) {
 	fakeRepo(t)
 	for _, args := range [][]string{
 		{"nope"},
+		{"runner"},
+		{"runner", "bogus"},
+		{"runner", "bogus", "claude"},
 		{"runner", "add"},
 		{"runner", "add", "gemini"},
 		{"runner", "add", "claude", "codex"},
