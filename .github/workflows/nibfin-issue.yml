@@ -1,27 +1,29 @@
-name: Nibfin Issue wake
+name: Nibfin · Issue events
+
+run-name: >-
+  ${{ github.event.issue
+  && format('Nibfin · {0}#{1} · wake', github.repository, github.event.issue.number)
+  || format('Nibfin · {0}@{1} · wake', github.repository,
+  github.event.workflow_run && (github.event.workflow_run.event == 'pull_request'
+  && github.event.workflow_run.head_branch || github.event.workflow_run.head_sha)
+  || github.event.check_suite.head_branch || github.event.sha || github.sha) }}
+
 on:
   issues:
-    types:
-      - opened
-      - edited
-      - labeled
-      - unlabeled
-      - assigned
-      - unassigned
-      - reopened
-      - closed
-permissions:
-  contents: read
-  id-token: write
-concurrency:
-  group: nibfin-event-${{ github.repository_id }}-${{ github.event.issue.number }}
-  cancel-in-progress: false
+    types: [opened, reopened, assigned, unassigned, labeled, unlabeled]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  check_suite:
+    types: [completed]
+  status:
+  push:
+    branches: [main]
+
+permissions: {}
+
 jobs:
   wake:
-    uses: "taco3064/nibfin-core/.github/workflows/issue.yml@\
-      435d95f8e1825c662e93b86c46d9a28bde28db70"
-    with:
-      core_commit: 435d95f8e1825c662e93b86c46d9a28bde28db70
+    uses: taco3064/nibfin-core/.github/workflows/nibfin-events.yml@main
     secrets:
-      NIBFIN_WAKE_ADOPTION: ${{ secrets.NIBFIN_WAKE_ADOPTION }}
-      NIBFIN_WAKE_TOKEN: ${{ secrets.NIBFIN_WAKE_TOKEN }}
+      token: ${{ secrets.NIBFIN_GITHUB_TOKEN }}
