@@ -1,10 +1,12 @@
 // Command gh-nibfin is the GitHub CLI extension for Nibfin.
-//
-// The redesigned commands are being rebuilt; see the open scope Issues.
 package main
 
-import "fmt"
+import (
+	"os"
+
+	"github.com/taco3064/gh-nibfin/internal/cmd"
+)
 
 func main() {
-	fmt.Println("gh nibfin is being rebuilt; no commands are available yet.")
+	os.Exit(cmd.Execute(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
