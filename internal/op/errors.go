@@ -27,6 +27,9 @@ const (
 	CodeLoginFailed          = "login_failed"
 	CodeLoginCheckFailed     = "login_check_failed"
 	CodeNotLoggedIn          = "not_logged_in"
+	CodeNotInitialized       = "not_initialized"
+	CodeRepoUnreadable       = "repo_unreadable"
+	CodeRepoWriteFailed      = "repo_write_failed"
 )
 
 // Error is an error with a machine-readable cause code.
