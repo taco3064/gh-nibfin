@@ -2,12 +2,6 @@ package op
 
 import "context"
 
-// RunnerAddParams are the inputs of runner add.
-type RunnerAddParams struct {
-	Provider string `json:"provider"`
-	Count    int    `json:"count"`
-}
-
 // RunnerRemoveParams are the inputs of runner remove.
 type RunnerRemoveParams struct {
 	Provider    string `json:"provider"`
@@ -27,9 +21,6 @@ type IssuesParams struct {
 	Repo   string   `json:"repo,omitempty"`
 	Issues []string `json:"issues"`
 }
-
-// RunnerAdd is the entry point of runner add.
-func RunnerAdd(p RunnerAddParams) Operation { return notImplemented("runner add") }
 
 // RunnerRemove is the entry point of runner remove.
 func RunnerRemove(p RunnerRemoveParams) Operation { return notImplemented("runner remove") }

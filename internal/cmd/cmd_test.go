@@ -45,8 +45,6 @@ func fakeRepo(t *testing.T) *[]string {
 func TestEveryCommandIsNotImplemented(t *testing.T) {
 	fakeRepo(t)
 	for _, args := range [][]string{
-		{"runner", "add", "claude"},
-		{"runner", "add", "codex", "--count", "2", "--yes"},
 		{"runner", "remove", "claude", "--delete-login"},
 		{"init"},
 		{"init", "-R", "o/r", "--yes"},
@@ -175,7 +173,13 @@ func TestHandlersPassArguments(t *testing.T) {
 	t.Cleanup(func() { ops = old })
 	var got []any
 	rec := func(p any) op.Operation { got = append(got, p); return recordingOp{} }
-	ops.RunnerAdd = func(p op.RunnerAddParams) op.Operation { return rec(p) }
+	ops.RunnerAdd = func(p op.RunnerAddParams) op.Operation {
+		// Not on a terminal, the handler hands the login an interactor.
+		if p.Terminal != nil || p.Interact == nil {
+			t.Errorf("runner add params = %+v", p)
+		}
+		return rec(op.RunnerAddParams{Provider: p.Provider, Count: p.Count})
+	}
 	ops.RunnerRemove = func(p op.RunnerRemoveParams) op.Operation { return rec(p) }
 	ops.Login = func(p op.LoginParams) op.Operation {
 		// Not on a terminal, the handler hands the login an interactor.
@@ -192,6 +196,7 @@ func TestHandlersPassArguments(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"runner", "add", "codex", "--count", "3"},
+		{"runner", "add", "claude", "--yes"},
 		{"runner", "remove", "claude", "--count", "2", "--delete-login"},
 		{"login", "claude"},
 		{"login"},
@@ -209,6 +214,7 @@ func TestHandlersPassArguments(t *testing.T) {
 	}
 	want := []any{
 		op.RunnerAddParams{Provider: "codex", Count: 3},
+		op.RunnerAddParams{Provider: "claude", Count: 2},
 		op.RunnerRemoveParams{Provider: "claude", Count: 2, DeleteLogin: true},
 		op.LoginParams{Provider: "claude"},
 		op.LoginParams{},
@@ -230,12 +236,12 @@ func TestHandlersPassArguments(t *testing.T) {
 }
 
 func TestResolveRepoParse(t *testing.T) {
-	got, err := resolveRepo("example.com/owner/name")
+	got, err := op.ResolveRepo("example.com/owner/name")
 	if err != nil || got != "example.com/owner/name" {
 		t.Fatalf("resolveRepo = %q, %v", got, err)
 	}
 	for _, v := range []string{"a/b/c/d", "noslash"} {
-		if _, err := resolveRepo(v); op.Code(err) != op.CodeInvalidRepo {
+		if _, err := op.ResolveRepo(v); op.Code(err) != op.CodeInvalidRepo {
 			t.Errorf("%q: code %q, err %v", v, op.Code(err), err)
 		}
 	}

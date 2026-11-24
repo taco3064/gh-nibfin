@@ -42,6 +42,8 @@ func TestLoginHelper(t *testing.T) {
 		}
 	case "codex":
 		fmt.Fprint(os.Stderr, codexFixture)
+	case "shell":
+		shellHelper()
 	case "terminal":
 		fmt.Print("tty-ok")
 	}
@@ -59,6 +61,21 @@ type fakeHost struct {
 	loginWorks bool
 	want       string
 	calls      [][]string
+
+	// The runner host, for Shell (see runner_add_test.go). A nil slots
+	// map means one complete runner per provider.
+	slots      map[string]*fakeSlot
+	vm, wsl    bool
+	probe      string
+	linger     bool
+	shells     []shellCall
+	shellExit  map[string]int
+	shellErr   map[string]string
+	archiveSHA string
+	token      string
+	units      map[string]string
+	// events records the order of the changing steps.
+	events []string
 }
 
 func (f *fakeHost) NeedsStart() bool { return f.stopped }
@@ -79,6 +96,7 @@ func (f *fakeHost) Podman(ctx context.Context, args ...string) *exec.Cmd {
 		}
 	case args[0] == "volume" && args[1] == "create":
 		f.volumes[strings.TrimPrefix(args[3], "nibfin-home-")] = true
+		f.events = append(f.events, "create volume "+args[3])
 	case args[0] == "run":
 		p := args[len(args)-3]
 		if args[len(args)-1] == "status" {
@@ -92,6 +110,7 @@ func (f *fakeHost) Podman(ctx context.Context, args ...string) *exec.Cmd {
 		}
 		exit = f.loginExit
 		mode = p
+		f.events = append(f.events, "log in "+p)
 		if hasArg(args, "-t") {
 			mode = "terminal"
 		}
@@ -117,6 +136,12 @@ func useHost(t *testing.T, f *fakeHost) {
 	t.Helper()
 	if f.volumes == nil {
 		f.volumes = map[string]bool{}
+	}
+	if f.slots == nil {
+		f.slots = map[string]*fakeSlot{
+			"claude-1": {configured: true, unit: true, enabled: true, active: true, name: "h-claude-1", url: "https://github.com/o/r"},
+			"codex-1":  {configured: true, unit: true, enabled: true, active: true, name: "h-codex-1", url: "https://github.com/o/r"},
+		}
 	}
 	if f.loggedIn == nil {
 		f.loggedIn = map[string]bool{}
@@ -430,5 +455,59 @@ func TestLoginParamsJSON(t *testing.T) {
 	b, err := json.Marshal(LoginParams{Provider: "claude", Terminal: &Terminal{}, Interact: &recInteract{}})
 	if err != nil || string(b) != `{"provider":"claude"}` {
 		t.Errorf("json = %s, %v", b, err)
+	}
+}
+
+func TestLoginNeedsRunners(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{"claude-1": {}}}
+	useHost(t, f)
+	_, err := Login(LoginParams{Provider: "codex"}).Plan(context.Background())
+	if Code(err) != CodeNoRunners || !strings.Contains(err.Error(), "gh nibfin runner add codex") {
+		t.Errorf("named: %v", err)
+	}
+	// Without a provider only the providers with runners here are logged in.
+	p, err := Login(LoginParams{}).Plan(context.Background())
+	want := []string{"create volume nibfin-home-claude", "log in claude"}
+	if err != nil || !reflect.DeepEqual(steps(p), want) {
+		t.Errorf("plan = %v, %v", steps(p), err)
+	}
+	f.slots = map[string]*fakeSlot{}
+	if _, err := Login(LoginParams{}).Plan(context.Background()); Code(err) != CodeNoRunners {
+		t.Errorf("none: %v", err)
+	}
+	if _, err := Login(LoginParams{}).ReadBack(context.Background(), Plan{}); Code(err) != CodeNoRunners {
+		t.Errorf("read back: %v", err)
+	}
+}
+
+func TestLoginStoppedMachineNeedsRunners(t *testing.T) {
+	f := &fakeHost{stopped: true, slots: map[string]*fakeSlot{"claude-1": {}}, loginWorks: true}
+	useHost(t, f)
+	in := &recInteract{}
+	_, _, err := Run(context.Background(), Login(LoginParams{Provider: "codex", Interact: in}), nil)
+	if Code(err) != CodeNoRunners || f.starts != 1 || len(f.events) != 0 {
+		t.Errorf("named: %v, starts %d, events %v", err, f.starts, f.events)
+	}
+	// Without a provider the steps of providers without runners are skipped.
+	f.stopped = true
+	f.events = nil
+	_, r, err := Run(context.Background(), Login(LoginParams{Interact: in}), nil)
+	want := map[string]any{"claude": map[string]bool{"loggedIn": true}}
+	if err != nil || !reflect.DeepEqual(f.events, []string{"create volume nibfin-home-claude", "log in claude"}) || !reflect.DeepEqual(r["providers"], want) {
+		t.Errorf("all: %v, events %v, result %v", err, f.events, r)
+	}
+}
+
+func TestLoginIfNeeded(t *testing.T) {
+	f := &fakeHost{slots: map[string]*fakeSlot{}, volumes: map[string]bool{"claude": true}, loggedIn: map[string]bool{"claude": true}}
+	useHost(t, f)
+	l := &login{p: LoginParams{Provider: "claude"}, host: f, ifNeeded: true}
+	p, err := l.Plan(context.Background())
+	if err != nil || len(p.Steps) != 0 {
+		t.Errorf("logged in: %v, %v", steps(p), err)
+	}
+	f.loggedIn["claude"] = false
+	if p, err = l.Plan(context.Background()); err != nil || !reflect.DeepEqual(steps(p), []string{"log in claude"}) {
+		t.Errorf("logged out: %v, %v", steps(p), err)
 	}
 }
