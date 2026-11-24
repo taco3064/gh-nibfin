@@ -1,5 +1,6 @@
 // Package cmd is the gh nibfin command tree. Each handler maps its arguments
-// onto one entry point of the shared operation layer in internal/op.
+// onto one entry point of the shared operation layer: internal/op, or a
+// package of that layer such as internal/upgrade.
 package cmd
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
 
 // ops holds the operation entry points the handlers call. Tests replace it.
@@ -25,7 +27,7 @@ var ops = struct {
 	Status       func(op.RepoParams) op.Operation
 	Pause        func(op.IssuesParams) op.Operation
 	Resume       func(op.IssuesParams) op.Operation
-}{op.RunnerAdd, op.RunnerRemove, op.Login, op.Init, op.Upgrade, op.Status, op.Pause, op.Resume}
+}{op.RunnerAdd, op.RunnerRemove, op.Login, op.Init, upgrade.New, op.Status, op.Pause, op.Resume}
 
 var providers = []string{"claude", "codex"}
 
@@ -169,7 +171,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		return c
 	}
 	initCmd := repoCmd("init", "Set up Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Init(p) })
-	upgrade := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })
+	upgradeCmd := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })
 
 	var statusRepo string
 	status := &cobra.Command{
@@ -220,7 +222,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	dashboard.Flags().IntVar(&port, "port", 0, "port to listen on (default: any free port)")
 	dashboard.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open a browser")
 
-	root.AddCommand(runner, login, initCmd, upgrade, status, pause, resume, dashboard)
+	root.AddCommand(runner, login, initCmd, upgradeCmd, status, pause, resume, dashboard)
 	root.SetContext(context.Background())
 	return root
 }

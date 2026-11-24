@@ -19,7 +19,7 @@ gh nibfin resume <issue>...
 gh nibfin dashboard [--port N] [--no-browser]
 ```
 
-`login` is implemented; every other command currently reports
+`login` and `upgrade` are implemented; every other command currently reports
 `not_implemented`. The behaviour of each command is tracked as a scope Issue
 in this repository.
 
@@ -34,6 +34,19 @@ into a repository: the execution set (`nibfin-issue.yml`,
 (`nibfin-issue.yml`). They call nothing in other repositories; the Job runs
 `ghcr.io/taco3064/nibfin` pinned to the digest of the latest attested main
 image.
+
+## Upgrade
+
+`gh nibfin upgrade [-R OWNER/REPO]` renders the repository's Nibfin workflows
+from the current templates, pinned to the latest attested image digest. The
+set is the execution set when the default branch has `nibfin-shared-runner.yml`
+or `nibfin-job.yml`, otherwise the peer set; a repository without
+`nibfin-issue.yml` needs `gh nibfin init` first. When the result differs from
+the default branch, it writes one commit to the branch `nibfin/upgrade`
+(replacing that branch's earlier contents) and opens one PR into the default
+branch, or keeps the one already open; merging it is up to you. An already
+current repository gets no PR. Writing `.github/workflows` needs the
+`workflow` scope (`gh auth refresh -s workflow`).
 
 ## Login
 
