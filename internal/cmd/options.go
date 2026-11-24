@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -74,4 +76,45 @@ func (c confirmer) Confirm(p op.Plan) (bool, error) {
 		fmt.Fprintln(errOut, line)
 	}
 	return prompter.New(in, errOut, errOut).Confirm("Apply this plan?", false)
+}
+
+// terminal returns the TTY to attach a login to, or nil when stdin or stdout
+// is not a terminal.
+func terminal(stdin io.Reader, stdout, stderr io.Writer) *op.Terminal {
+	in, inOK := stdin.(*os.File)
+	out, outOK := stdout.(*os.File)
+	if !inOK || !outOK || !term.IsTerminal(in) || !term.IsTerminal(out) {
+		return nil
+	}
+	errOut, ok := stderr.(*os.File)
+	if !ok {
+		errOut = out
+	}
+	return &op.Terminal{In: in, Out: out, Err: errOut}
+}
+
+// interactor is the CLI side of a structured login: steps go to stderr and
+// a pasted code is read from stdin.
+type interactor struct {
+	in  *bufio.Reader
+	out io.Writer
+}
+
+func (i *interactor) Step(s op.LoginStep) {
+	switch s.Kind {
+	case op.StepOpenURL:
+		fmt.Fprintf(i.out, "open %s\n", s.URL)
+	case op.StepDeviceCode:
+		fmt.Fprintf(i.out, "enter code %s\n", s.Code)
+	case op.StepCodeRequested:
+		fmt.Fprint(i.out, "paste the code shown in your browser: ")
+	}
+}
+
+func (i *interactor) Code(context.Context) (string, error) {
+	line, err := i.in.ReadString('\n')
+	if err != nil && (err != io.EOF || line == "") {
+		return "", op.Errorf(op.CodeCancelled, "login cancelled: no code was entered")
+	}
+	return strings.TrimSpace(line), nil
 }
