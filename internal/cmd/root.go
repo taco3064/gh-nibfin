@@ -225,6 +225,17 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		"GitHub offers Issues \"Creation allowed by: Collaborators only\" only in the web UI;\n" +
 		"init prints the Settings link to set it there."
 	upgradeCmd := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })
+	upgradeCmd.Long = "Upgrade Nibfin in a repository and bring this host's Runners to the current spec.\n\n" +
+		"The repository part renders the workflows from the current templates, pinned to\n" +
+		"the latest attested image, and opens one PR on branch nibfin/upgrade when they\n" +
+		"differ from the default branch.\n\n" +
+		"The host part runs whether or not the workflows are current. Each configured\n" +
+		"Runner on this host gets what runner add sets up today: NIBFIN_PROVIDER in its\n" +
+		".env, the current systemd user unit, enabled and active, and, when the gh login\n" +
+		"is admin of the Runners' repository, the labels nibfin and nibfin-<user id>.\n" +
+		"Without admin the labels are left as they are. Runners are changed one at a\n" +
+		"time; a Runner running a Job is restarted only after the Job ends, so the\n" +
+		"others keep taking work. A stopped podman machine is not started."
 
 	var statusRepo string
 	statusCmd := &cobra.Command{

@@ -182,6 +182,24 @@ branch, or keeps the one already open; merging it is up to you. An already
 current repository gets no PR. Writing `.github/workflows` needs the
 `workflow` scope (`gh auth refresh -s workflow`).
 
+Then, whether or not the workflows are current, upgrade brings the Runners on
+this host to what `runner add` sets up today. For each configured Runner the
+plan shows its `.env` provider line (`NIBFIN_PROVIDER=<provider>`, other lines
+kept), its systemd user service (the current unit text, enabled and active)
+and, when the gh login is admin of the Runners' repository, its custom labels
+on GitHub (`nibfin` and `nibfin-<user id>`, set with GitHub's set-labels API;
+GitHub's read-only labels stay), each "no change" when already current.
+Without admin the labels are left as they are and the plan says so. Runners
+are changed one at a time, idle ones first: a Runner running a Job keeps it;
+its service is stopped only after the Job's `Runner.Worker` process ends, then
+its files are written and it starts again, while the other Runners keep taking
+Jobs. The read-back checks each Runner's files, service and (with admin) labels
+and reports its online status; a Runner offline right after its restart is
+reported, not failed. Upgrade does not start a stopped podman machine, does
+not finish incomplete slots (`runner add` does) and does not update the runner
+binary, which updates itself; the plan notes each of these. The result holds
+the Runners under `runners`.
+
 ## Runners
 
 `gh nibfin runner add <claude|codex> [--count N]` adds N Runners (default 2)
@@ -199,8 +217,9 @@ Windows and macOS.
   (`self-hosted` among them). Only an admin's Runners also get `nibfin`, which
   routing runs on, so routing never runs on a collaborator's host.
 - Each Runner's `.env` holds `NIBFIN_PROVIDER=<provider>` before its service
-  first starts; the stage Job reads the provider from it. Runners that were
-  already complete keep their labels and `.env` as they are.
+  first starts; the stage Job reads the provider from it. `runner add` leaves
+  Runners that were already complete as they are; `gh nibfin upgrade` brings
+  existing Runners to this.
 - The command takes one of two routes by the gh login's access to the
   repository:
   - **Admin**: the runner archive comes from the repository's runner
@@ -542,7 +561,8 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
 
   A read-only plan returns `{"plan", "result"}` and is read back at once:
   `status`, whose result is the object `status --json` prints, and a
-  changing command with no changing item (`upgrade` when current, `login`
+  changing command with no changing item (`upgrade` when both the workflows
+  and this host's Runners are current, `login`
   with nothing to do, `runner remove` when every item is kept). When that
   read-back fails, the response is the error body with `plan` and, when the
   read-back returned one, `result`, status `422`. Any other plan returns

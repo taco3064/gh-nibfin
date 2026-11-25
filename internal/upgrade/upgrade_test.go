@@ -264,6 +264,7 @@ func stub(t *testing.T, f *fakeGitHub) *string {
 		return f, nil
 	}
 	latestImage = func(context.Context) (string, error) { return img, nil }
+	useHostPart(t, &fakeHostPart{})
 	ciWorkflows = func(_ context.Context, c templates.RESTClient, r string) ([]string, error) {
 		if c != f || r != repo {
 			return nil, errors.New("wrong client or repo")
