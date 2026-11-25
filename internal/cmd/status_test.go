@@ -159,3 +159,29 @@ func TestStatusTextNotInitialized(t *testing.T) {
 		t.Errorf("run = %q", b.String())
 	}
 }
+
+func TestWriteAutostart(t *testing.T) {
+	for _, tc := range []struct {
+		a    op.AutostartReport
+		want string
+	}{
+		{op.AutostartReport{Kind: "task", Name: "Nibfin podman machine", Present: true, Current: true}, "autostart: task \"Nibfin podman machine\" present\n"},
+		{op.AutostartReport{Kind: "task", Name: "Nibfin podman machine", Present: true}, "autostart: task \"Nibfin podman machine\" present (outdated: run gh nibfin runner add)\n"},
+		{op.AutostartReport{Kind: "launchagent", Name: "io.github.taco3064.nibfin.podman-machine", Present: true, Current: true}, "autostart: LaunchAgent \"io.github.taco3064.nibfin.podman-machine\" present\n"},
+		{op.AutostartReport{Kind: "task", Name: "Nibfin podman machine"}, "autostart: absent\n"},
+		{op.AutostartReport{}, "autostart: not needed (systemd user services with linger)\n"},
+		{op.AutostartReport{Kind: "task", Error: &op.Error{Code: op.CodeAutostartFailed, Err: errStop}}, "autostart: autostart_failed: stop\n"},
+	} {
+		var b strings.Builder
+		writeAutostart(&b, tc.a)
+		if b.String() != tc.want {
+			t.Errorf("%+v: %q, want %q", tc.a, b.String(), tc.want)
+		}
+	}
+	h := hostReport()
+	h.Autostart = op.AutostartReport{Kind: "task", Name: "Nibfin podman machine", Present: true, Current: true}
+	out, _ := runStatus(t, []string{"status"}, op.Result{"host": h, "latestImage": status.LatestImage{}, "githubHost": "github.com", "user": "me", "repos": []status.RepoIssues{}})
+	if !strings.Contains(out, "host: podman machine m (wsl), running\nautostart: task \"Nibfin podman machine\" present\nmemory:") {
+		t.Errorf("status:\n%s", out)
+	}
+}

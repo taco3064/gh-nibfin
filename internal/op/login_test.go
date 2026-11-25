@@ -82,6 +82,17 @@ type fakeHost struct {
 	rmExit    int
 	// events records the order of the changing steps.
 	events []string
+
+	// The autostart entry (see autostart_test.go): entry is its state;
+	// autoStarts counts starts through it.
+	entry       host.Autostart
+	entryErr    error
+	registerErr error
+	staleRead   bool
+	idleSet     bool
+	idleErr     error
+	wslErr      error
+	autoStarts  int
 }
 
 func (f *fakeHost) NeedsStart() bool { return f.stopped }
