@@ -79,10 +79,17 @@ func (s statusOp) Plan(context.Context) (op.Plan, error) {
 	return op.Plan{Operation: "status", Steps: []op.Step{}, ReadOnly: true}, nil
 }
 func (s statusOp) Apply(context.Context, op.Plan) error { return nil }
-func (s statusOp) ReadBack(context.Context, op.Plan) (op.Result, error) {
+func (s statusOp) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	s.fx.mu.Lock()
 	defer s.fx.mu.Unlock()
 	s.fx.reads++
+	if sink := status.PartialFrom(ctx); sink != nil {
+		s.fx.sinks++
+		if s.fx.partials {
+			sink(op.Result{"user": json.RawMessage(`"me"`)}, []string{"repos", "host"})
+			sink(op.Result{"user": json.RawMessage(`"me"`), "repos": json.RawMessage(`[]`)}, []string{"host"})
+		}
+	}
 	if s.fx.readErr != nil {
 		return nil, s.fx.readErr
 	}
@@ -93,9 +100,13 @@ type fixture struct {
 	t  *testing.T
 	gh *fakeGH
 
-	mu       sync.Mutex
-	now      time.Time
-	reads    int
+	mu    sync.Mutex
+	now   time.Time
+	reads int
+	// sinks counts the reads given a partial sink; partials makes them
+	// send two.
+	sinks    int
+	partials bool
 	readErr  error
 	repos    []status.RepoIssues
 	issues   [][]string // ReadIssue keys, one slice per batch call order
@@ -756,5 +767,37 @@ func TestRetryAfter(t *testing.T) {
 	}
 	if ticksFor(90*time.Second) != 3 || ticksFor(0) != 1 || ticksFor(120*time.Second) != 4 {
 		t.Error("ticksFor")
+	}
+}
+
+func TestPartialBeforeFirstSnapshot(t *testing.T) {
+	fx := newFixture(t)
+	fx.partials = true
+	fx.start()
+	for i, loading := range [][]string{{"repos", "host"}, {"host"}} {
+		e := fx.next()
+		if e.Event != "partial" || e.At != stamp(t0) || !reflect.DeepEqual(e.Loading, loading) || e.Result["user"] == nil {
+			t.Fatalf("event %d = %+v", i, e)
+		}
+	}
+	if e := fx.next(); e.Event != "snapshot" || e.Loading != nil {
+		t.Fatalf("event = %+v", e)
+	}
+	b, err := json.Marshal(Event{Event: "partial", At: stamp(t0), Result: op.Result{"user": json.RawMessage(`"me"`)}, Loading: []string{"host"}})
+	if err != nil || string(b) != `{"event":"partial","at":"2026-11-25T10:00:00Z","result":{"user":"me"},"loading":["host"]}` {
+		t.Errorf("json = %s, %v", b, err)
+	}
+
+	// A later full read sends only its snapshot.
+	fx.waitPodman()
+	fx.gh.set(assignedPath, items(3))
+	fx.tick()
+	if e := fx.next(); e.Event != "snapshot" {
+		t.Fatalf("event = %+v", e)
+	}
+	fx.mu.Lock()
+	defer fx.mu.Unlock()
+	if fx.reads != 2 || fx.sinks != 1 {
+		t.Errorf("reads %d, with a sink %d", fx.reads, fx.sinks)
 	}
 }
