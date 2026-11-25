@@ -54,6 +54,21 @@ const (
 	// CodeRunnerRepoNotAdmin is a peer init from a host whose Runners serve a
 	// repository where the current gh login is not admin.
 	CodeRunnerRepoNotAdmin = "runner_repo_not_admin"
+	// CodeSSHKeyMissing is a runner request without a local SSH private key
+	// (ssh-ed25519 or ssh-rsa) whose public key is on the user's GitHub
+	// account.
+	CodeSSHKeyMissing = "ssh_key_missing"
+	// CodeSSHKeyLocked is a passphrase-protected SSH key that cannot be
+	// unlocked: no terminal to ask on, or three wrong passphrases.
+	CodeSSHKeyLocked = "ssh_key_locked"
+	// CodeRunnerRequestRefused is a runner request the user may not make
+	// (no write access) or that the request workflow refused.
+	CodeRunnerRequestRefused = "runner_request_refused"
+	// CodeRunnerRequestTimeout is a runner request with no answer in time.
+	CodeRunnerRequestTimeout = "runner_request_timeout"
+	// CodeRunnerRequestFailed is a request Issue closed without an answer,
+	// a malformed answer or one that does not decrypt.
+	CodeRunnerRequestFailed = "runner_request_failed"
 	// CodeListenFailed is a Dashboard server that cannot listen on or keep
 	// serving its port.
 	CodeListenFailed = "listen_failed"

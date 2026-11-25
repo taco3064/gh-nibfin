@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"filippo.io/age"
+
 	"github.com/taco3064/gh-nibfin/internal/host"
 	"github.com/taco3064/gh-nibfin/internal/runners"
 )
@@ -79,6 +81,19 @@ for d in "$1" "$1/default.target.wants"; do
   fi
 done
 `
+	// envScript sets NIBFIN_PROVIDER=$2 in the .env of the slot $1, which the
+	// listener reads at start: every other line is kept, earlier
+	// NIBFIN_PROVIDER lines are dropped, and the file is replaced atomically.
+	envScript = `set -e
+f="$1/.env"
+if [ -f "$f" ]; then grep -v '^NIBFIN_PROVIDER=' "$f" > "$f.tmp" || [ $? -eq 1 ]; else : > "$f.tmp"; fi
+printf 'NIBFIN_PROVIDER=%s\n' "$2" >> "$f.tmp"
+mv -f "$f.tmp" "$f"
+`
+	// envCheckScript prints yes when the .env of the slot $1 has the line
+	// NIBFIN_PROVIDER=$2, otherwise no.
+	envCheckScript = `if grep -qxF "NIBFIN_PROVIDER=$2" "$1/.env" 2>/dev/null; then echo yes; else echo no; fi
+`
 )
 
 // currentRepo resolves the current directory's repository; tests replace it.
@@ -95,6 +110,13 @@ type runnerAdd struct {
 	// wslPending is true when Apply set the .wslconfig key while the VM
 	// ran, so it takes effect after the next wsl --shutdown.
 	wslPending bool
+	// route is routeAdmin or routeRequest, as load found it.
+	route string
+	// key is the SSH key the request route uses; req is the request Issue
+	// Apply opened; registered are the runner names it configured.
+	key        *localKey
+	req        *runnerRequest
+	registered []string
 }
 
 // addEnv is what runner add learns from the host and GitHub.
@@ -103,7 +125,12 @@ type addEnv struct {
 	probe hostProbe
 	repo  string
 	gh    github
-	user  int64
+	user  ghUser
+	// admin is true when the gh login is admin of repo (the admin route);
+	// otherwise it has write access (the request route).
+	admin bool
+	// key is the matched SSH key, once the request route needs it.
+	key *localKey
 }
 
 func (a *runnerAdd) validate() error {
@@ -316,11 +343,53 @@ func (a *runnerAdd) load(ctx context.Context) (*addEnv, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &addEnv{inv: inv, probe: pr, repo: repo, gh: gh, user: user}, nil
+	perms, err := gh.RepoPermissions(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	if !perms.Admin && !perms.Push {
+		return nil, Errorf(CodeRunnerRequestRefused, "%s has no write access to %s, so it cannot add Runners there; ask the owner of %s to add %s as a collaborator with write access, then run gh nibfin runner add again",
+			user.Login, repo, repo, user.Login)
+	}
+	a.route = routeRequest
+	if perms.Admin {
+		a.route = routeAdmin
+	}
+	return &addEnv{inv: inv, probe: pr, repo: repo, gh: gh, user: user, admin: perms.Admin}, nil
 }
 
-func (a *runnerAdd) labels(user int64) string {
-	return fmt.Sprintf("nibfin,nibfin-%d-%s", user, a.prov.name)
+// labels are the custom labels of a new runner: nibfin-<user id>, which the
+// stage Job of an Issue assigned to the user runs on, and for an admin also
+// nibfin, which routing runs on. GitHub's default labels, self-hosted
+// among them, stay: --no-default-labels is never passed.
+func (a *runnerAdd) labels(env *addEnv) string {
+	if env.admin {
+		return fmt.Sprintf("nibfin,nibfin-%d", env.user.ID)
+	}
+	return fmt.Sprintf("nibfin-%d", env.user.ID)
+}
+
+// needFiles reports whether a slot needs the archive and a registration
+// token: one not configured yet.
+func needFiles(inv *runners.Inventory, slots []string) bool {
+	for _, s := range slots {
+		if r, ok := inv.Find(s); !ok || !r.Configured {
+			return true
+		}
+	}
+	return false
+}
+
+// sshKey finds the request route's SSH key once.
+func (a *runnerAdd) sshKey(ctx context.Context, env *addEnv) (*localKey, error) {
+	if env.key == nil {
+		k, err := findSSHKey(ctx, env.gh, env.user.Login)
+		if err != nil {
+			return nil, err
+		}
+		env.key, a.key = k, k
+	}
+	return env.key, nil
 }
 
 // slots picks the provider's incomplete slots first, then new ones numbered
@@ -370,7 +439,15 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 		}
 	}
 	slots, fresh := a.slots(env.inv)
-	detail := env.repo + ", labels " + a.labels(env.user)
+	request := !env.admin && needFiles(env.inv, slots)
+	if request {
+		k, err := a.sshKey(ctx, env)
+		if err != nil {
+			return nil, nil, err
+		}
+		steps = append(steps, sshKeyStep(k), requestStep(env.repo, k.id))
+	}
+	detail := env.repo + ", labels " + a.labels(env) + ", .env NIBFIN_PROVIDER=" + a.prov.name
 	for _, s := range slots {
 		st := slotStep(s)
 		st.Detail, st.Current, st.Next = detail, "absent", "configured and registered to "+env.repo
@@ -378,6 +455,9 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 			st.Current = slotCondition(r)
 		}
 		steps = append(steps, st)
+	}
+	if request {
+		steps = append(steps, requestCloseStep(env.repo))
 	}
 	return steps, a.advice(env.probe, len(env.inv.Runners)+fresh), nil
 }
@@ -455,18 +535,50 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		return err
 	}
 	steps := plan.Changes()
-	var env *addEnv
-	var err error
 	for _, s := range steps {
 		if (s.Action == actSetWSLConfig && s.Target != host.WSLConfig) || (s.Action == actRegisterAutostart && s.Target == "") {
 			return Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
+		}
+	}
+	start, stopped := findStep(steps, actStart)
+	var env *addEnv
+	var w work
+	var id age.Identity
+	// prepare loads what the items need and, on the request route, unlocks
+	// the SSH key; it only reads (and asks for the passphrase).
+	prepare := func() error {
+		var err error
+		if w, err = a.classify(steps); err != nil {
+			return err
+		}
+		if !env.admin && needFiles(env.inv, targets(w.slots)) {
+			k, err := a.sshKey(ctx, env)
+			if err != nil {
+				return err
+			}
+			if id, err = unlockSSHKey(k, a.p.Terminal); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if !stopped {
+		var err error
+		if env, err = a.load(ctx); err != nil {
+			return err
+		}
+		if !strings.EqualFold(env.repo, plan.Repo) {
+			return Errorf(CodeRunnerRepoConflict, "the plan registers to %q but the runners here use %s; plan again", plan.Repo, env.repo)
+		}
+		if err := prepare(); err != nil {
+			return err
 		}
 	}
 	// The host steps come first; none needs the VM.
 	if err := a.applyHostSteps(ctx, steps); err != nil {
 		return err
 	}
-	if start, ok := findStep(steps, actStart); ok {
+	if stopped {
 		// Started through the autostart entry, so the VM does not depend
 		// on the process that ran gh.
 		if err := Track(ctx, start, func() error {
@@ -477,6 +589,7 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		}); err != nil {
 			return err
 		}
+		var err error
 		if env, err = a.load(ctx); err != nil {
 			return err
 		}
@@ -484,32 +597,13 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 			return err
 		}
 		steps = Changes(steps)
-	} else {
-		if env, err = a.load(ctx); err != nil {
+		if err := prepare(); err != nil {
 			return err
-		}
-		if !strings.EqualFold(env.repo, plan.Repo) {
-			return Errorf(CodeRunnerRepoConflict, "the plan registers to %q but the runners here use %s; plan again", plan.Repo, env.repo)
 		}
 	}
 
 	// The order is fixed: linger, the tools volume, the login, the slots.
-	var pre, logins, slots []Step
-	slotRE := regexp.MustCompile(`^` + a.prov.name + `-[1-9][0-9]{0,5}$`)
-	for _, s := range steps {
-		switch {
-		case s.Action == actLinger, s.Action == actCreateVolume && s.Target == toolsVolume:
-			pre = append(pre, s)
-		case s.Action == actCreateVolume && s.Target == a.prov.volume(), s.Action == actLogIn && s.Target == a.prov.name:
-			logins = append(logins, s)
-		case s.Action == actAddRunner && slotRE.MatchString(s.Target):
-			slots = append(slots, s)
-		case s.Action == actSetWSLConfig, s.Action == actRegisterAutostart:
-		default:
-			return Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
-		}
-	}
-	for _, s := range pre {
+	for _, s := range w.pre {
 		if s.Action == actLinger {
 			if err := Track(ctx, s, func() error {
 				if _, err := a.script(ctx, "enable linger", lingerScript, nil, ""); err != nil {
@@ -525,12 +619,63 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 			return err
 		}
 	}
-	if len(logins) > 0 {
-		if err := a.login().Apply(ctx, Plan{Operation: "login", Steps: logins}); err != nil {
+	if len(w.logins) > 0 {
+		if err := a.login().Apply(ctx, Plan{Operation: "login", Steps: w.logins}); err != nil {
 			return err
 		}
 	}
-	return a.install(ctx, env, slots)
+	src := slotSource{
+		download: func(ctx context.Context) (runnerDownload, error) { return a.pickDownload(ctx, env) },
+		// Fetched after the login, so a long login cannot expire it.
+		token: func(ctx context.Context) (string, error) { return env.gh.RegistrationToken(ctx, env.repo) },
+	}
+	if !env.admin {
+		src.download = func(ctx context.Context) (runnerDownload, error) {
+			arch, err := runnerArch(env.probe)
+			if err != nil {
+				return runnerDownload{}, err
+			}
+			return releaseDownload(ctx, arch)
+		}
+		src.token = func(ctx context.Context) (string, error) { return a.requestToken(ctx, env, id) }
+	}
+	err := a.install(ctx, env, w.slots, src)
+	return a.finishRequest(ctx, env, err)
+}
+
+// work is the plan's runner items in the order Apply applies them.
+type work struct {
+	pre, logins, slots []Step
+}
+
+// classify sorts the changing steps into the runner items; the host items
+// and the request items are applied separately. Any other step is refused.
+func (a *runnerAdd) classify(steps []Step) (work, error) {
+	var w work
+	slotRE := regexp.MustCompile(`^` + a.prov.name + `-[1-9][0-9]{0,5}$`)
+	for _, s := range steps {
+		switch {
+		case s.Action == actLinger, s.Action == actCreateVolume && s.Target == toolsVolume:
+			w.pre = append(w.pre, s)
+		case s.Action == actCreateVolume && s.Target == a.prov.volume(), s.Action == actLogIn && s.Target == a.prov.name:
+			w.logins = append(w.logins, s)
+		case s.Action == actAddRunner && slotRE.MatchString(s.Target):
+			w.slots = append(w.slots, s)
+		case s.Action == actSetWSLConfig, s.Action == actRegisterAutostart, s.Action == actStart,
+			s.Action == actRequestRegistration, s.Action == actCloseRequest:
+		default:
+			return w, Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
+		}
+	}
+	return w, nil
+}
+
+func targets(steps []Step) []string {
+	out := make([]string, len(steps))
+	for i, s := range steps {
+		out[i] = s.Target
+	}
+	return out
 }
 
 // findStep returns the first step with action.
@@ -543,16 +688,18 @@ func findStep(steps []Step, action string) (Step, bool) {
 	return Step{}, false
 }
 
-// install installs each slot as one item: its files, its registration and
-// its service. The archive and the registration token they share are
-// fetched first; when that fails, every slot fails with it.
-func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step) error {
-	needFiles := false
-	for _, s := range slots {
-		if r, ok := env.inv.Find(s.Target); !ok || !r.Configured {
-			needFiles = true
-		}
-	}
+// slotSource supplies what new slots need: the runner archive's download
+// and the registration token, by route.
+type slotSource struct {
+	download func(context.Context) (runnerDownload, error)
+	token    func(context.Context) (string, error)
+}
+
+// install installs each slot as one item: its files, its registration, its
+// .env and its service. The archive and the registration token they share
+// are fetched first, only when a slot is not configured yet; when that
+// fails, every slot fails with it.
+func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step, src slotSource) error {
 	failAll := func(err error) error {
 		for _, s := range slots {
 			Started(ctx, s)
@@ -561,8 +708,8 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step) erro
 		return err
 	}
 	var archive, token string
-	if needFiles {
-		d, err := a.pickDownload(ctx, env)
+	if needFiles(env.inv, targets(slots)) {
+		d, err := src.download(ctx)
 		if err != nil {
 			return failAll(err)
 		}
@@ -572,13 +719,12 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step) erro
 		}
 		defer cleanup()
 		archive = path
-		// Fetched after the login, so a long login cannot expire it.
-		if token, err = env.gh.RegistrationToken(ctx, env.repo); err != nil {
+		if token, err = src.token(ctx); err != nil {
 			return failAll(err)
 		}
 	}
 	url := "https://" + env.repo
-	labels := a.labels(env.user)
+	labels := a.labels(env)
 	for _, st := range slots {
 		s := st.Target
 		err := Track(ctx, st, func() error {
@@ -608,6 +754,12 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step) erro
 				if err != nil {
 					return err
 				}
+				a.registered = append(a.registered, name)
+			}
+			// After config.sh, whose env.sh keeps the line, and before the
+			// service first starts and reads .env.
+			if _, err := a.script(ctx, "set the provider in the .env of "+s, envScript, nil, "", dir, a.prov.name); err != nil {
+				return err
 			}
 			unit, err := unitText(s, dir)
 			if err != nil {
@@ -638,10 +790,19 @@ func (a *runnerAdd) unitDir(ctx context.Context, s, dir string) error {
 	return nil
 }
 
-func (a *runnerAdd) pickDownload(ctx context.Context, env *addEnv) (runnerDownload, error) {
-	arch := map[string]string{"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}[env.probe.arch]
+// runnerArch is the GitHub runner architecture of the host.
+func runnerArch(pr hostProbe) (string, error) {
+	arch := map[string]string{"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}[pr.arch]
 	if arch == "" {
-		return runnerDownload{}, Errorf(CodeUnsupportedHost, "the runner host's architecture %q has no GitHub runner", env.probe.arch)
+		return "", Errorf(CodeUnsupportedHost, "the runner host's architecture %q has no GitHub runner", pr.arch)
+	}
+	return arch, nil
+}
+
+func (a *runnerAdd) pickDownload(ctx context.Context, env *addEnv) (runnerDownload, error) {
+	arch, err := runnerArch(env.probe)
+	if err != nil {
+		return runnerDownload{}, err
 	}
 	list, err := env.gh.Downloads(ctx, env.repo)
 	if err != nil {
@@ -685,9 +846,10 @@ type RunnerState struct {
 	Busy   bool   `json:"busy"`
 }
 
-// slotState names a slot's state as read back, and what keeps it from
-// being confirmed.
-func slotReadBack(st RunnerState) (state, missing string) {
+// slotReadBack names a slot's state as read back, and what keeps it from
+// being confirmed. On the request route GitHub's runner list needs admin
+// and is not read. env is the .env check, nil when not checked.
+func slotReadBack(st RunnerState, request bool, env *bool, provider string) (state, missing string) {
 	r := st.Runner
 	var parts, miss []string
 	if r.Configured {
@@ -700,16 +862,32 @@ func slotReadBack(st RunnerState) (state, missing string) {
 	} else {
 		miss = append(miss, "service not active")
 	}
-	if st.Listed {
+	if env != nil {
+		if *env {
+			parts = append(parts, ".env NIBFIN_PROVIDER="+provider)
+		} else {
+			miss = append(miss, ".env lacks NIBFIN_PROVIDER="+provider)
+		}
+	}
+	switch {
+	case request:
+		parts = append(parts, "GitHub's runner list needs admin and was not read")
+	case st.Listed:
 		listed := "listed on GitHub"
 		if st.Status != "" {
 			listed += " (" + st.Status + ")"
 		}
 		parts = append(parts, listed)
-	} else {
+	default:
 		miss = append(miss, "not registered on GitHub")
 	}
 	return strings.Join(parts, ", "), strings.Join(miss, ", ")
+}
+
+// envHasProvider reads back whether the slot's .env names the provider.
+func (a *runnerAdd) envHasProvider(ctx context.Context, dir string) (bool, error) {
+	out, err := a.script(ctx, "read the .env of "+dir, envCheckScript, nil, "", dir, a.prov.name)
+	return strings.TrimSpace(out) == "yes", err
 }
 
 // ReadBack reads every item back: the host, its .wslconfig key and
@@ -767,6 +945,9 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err != nil {
 		return fail(err)
 	}
+	// The .env is checked on the slots this run acted on or planned;
+	// complete runners from before keep theirs as they are.
+	checkEnv := len(planned) > 0
 	if len(planned) == 0 {
 		for _, rn := range inv.Of(a.prov.name) {
 			planned[rn.Slot] = true
@@ -778,12 +959,30 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		return fail(Wrap(CodeRunnerRepoConflict, err))
 	}
 	var list []ghRunner
+	request := false
 	if repo != "" {
 		gh, err := newGitHub(repoHost(repo))
 		if err != nil {
 			return fail(err)
 		}
-		if list, err = gh.ListRunners(ctx, repo); err != nil {
+		route := a.route
+		if route == "" {
+			perms, err := gh.RepoPermissions(ctx, repo)
+			if err != nil {
+				return fail(err)
+			}
+			if route = routeRequest; perms.Admin {
+				route = routeAdmin
+			}
+		}
+		request = route == routeRequest
+		r["route"] = route
+		if !request {
+			if list, err = gh.ListRunners(ctx, repo); err != nil {
+				return fail(err)
+			}
+		}
+		if err := a.readBackRequest(ctx, gh, repo, plan, &checks, r); err != nil {
 			return fail(err)
 		}
 	}
@@ -794,8 +993,16 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		rn := st.Runner
 		if planned[rn.Slot] {
 			delete(planned, rn.Slot)
+			var env *bool
+			if checkEnv && rn.Configured {
+				ok, err := a.envHasProvider(ctx, inv.SlotDir(rn.Slot))
+				if err != nil {
+					return fail(err)
+				}
+				env = &ok
+			}
 			// Offline right after the start is reported, not failed.
-			state, miss := slotReadBack(st)
+			state, miss := slotReadBack(st, request, env, a.prov.name)
 			checks.Set(slotStep(rn.Slot), miss == "", state, miss)
 			if miss != "" {
 				missing = append(missing, rn.Slot)

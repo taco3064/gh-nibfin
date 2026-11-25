@@ -26,6 +26,8 @@ import (
 type fakeSlot struct {
 	configured, unit, enabled, active bool
 	name, url                         string
+	// env is the NIBFIN_PROVIDER value of its .env.
+	env string
 }
 
 type shellCall struct {
@@ -48,6 +50,8 @@ var scriptNames = map[string]string{
 	configureScript:    "configure",
 	unitScript:         "unit",
 	unitDirScript:      "unitdir",
+	envScript:          "env",
+	envCheckScript:     "envcheck",
 	stopScript:         "stop",
 	purgeScript:        "purge",
 }
@@ -154,6 +158,16 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		}
 	case "unitdir":
 		f.events = append(f.events, "unitdir "+args[0])
+	case "env":
+		f.events = append(f.events, "env "+slot+" "+args[1])
+		if s := f.slots[slot]; exit == 0 && s != nil {
+			s.env = args[1]
+		}
+	case "envcheck":
+		stdout = "no\n"
+		if s := f.slots[slot]; s != nil && s.env == args[1] {
+			stdout = "yes\n"
+		}
 	case "unit":
 		f.events = append(f.events, "unit "+args[1])
 		if exit == 0 {
@@ -198,9 +212,27 @@ type fakeRunnerAPI struct {
 	keepRegs  bool
 	onStrip   func()
 	deleteErr error
+
+	// The request route (see runner_request_test.go).
+	login    string
+	perms    *repoPerms
+	permsErr error
+	req      *fakeRequest
 }
 
-func (g *fakeRunnerAPI) User(context.Context) (int64, error) { return g.user, g.err }
+func (g *fakeRunnerAPI) User(context.Context) (ghUser, error) {
+	login := g.login
+	if login == "" {
+		login = "alice"
+	}
+	return ghUser{ID: g.user, Login: login}, g.err
+}
+func (g *fakeRunnerAPI) RepoPermissions(context.Context, string) (repoPerms, error) {
+	if g.perms == nil {
+		return repoPerms{Admin: true, Push: true}, g.permsErr
+	}
+	return *g.perms, g.permsErr
+}
 func (g *fakeRunnerAPI) Downloads(_ context.Context, repo string) ([]runnerDownload, error) {
 	return g.downloads, nil
 }
@@ -287,12 +319,12 @@ func TestRunnerAddFirstRunners(t *testing.T) {
 	if !reflect.DeepEqual(steps(p), want) || !p.Confirm || p.Repo != "github.com/cur/repo" || len(c.plans) != 1 {
 		t.Fatalf("plan = %v, %+v", steps(p), p)
 	}
-	if d := p.Changes()[4].Detail; d != "github.com/cur/repo, labels nibfin,nibfin-42-claude" {
+	if d := p.Changes()[4].Detail; d != "github.com/cur/repo, labels nibfin,nibfin-42, .env NIBFIN_PROVIDER=claude" {
 		t.Errorf("detail = %q", d)
 	}
 	wantEvents := []string{"linger", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "token",
-		"extract claude-1", "configure claude-1", "unit nibfin-runner-claude-1.service",
-		"extract claude-2", "configure claude-2", "unit nibfin-runner-claude-2.service"}
+		"extract claude-1", "configure claude-1", "env claude-1 claude", "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "env claude-2 claude", "unit nibfin-runner-claude-2.service"}
 	if !reflect.DeepEqual(f.events, wantEvents) {
 		t.Errorf("events = %v", f.events)
 	}
@@ -319,7 +351,7 @@ func TestRunnerAddFirstRunners(t *testing.T) {
 		}
 	}
 	name := "my-host-01-" + shaHex("gh-nibfin runner\n0123abcd")[:8] + "-claude-1"
-	wantConf := []string{slotDir + "/claude-1", "--unattended", "--url", "https://github.com/cur/repo", "--name", name, "--labels", "nibfin,nibfin-42-claude", "--replace"}
+	wantConf := []string{slotDir + "/claude-1", "--unattended", "--url", "https://github.com/cur/repo", "--name", name, "--labels", "nibfin,nibfin-42", "--replace"}
 	if !reflect.DeepEqual(configure, wantConf) {
 		t.Errorf("configure = %q\nwant %q", configure, wantConf)
 	}
@@ -373,7 +405,7 @@ func TestRunnerAddPlanNoLoginNoLinger(t *testing.T) {
 	// no token is fetched; its unit is written.
 	f.events = nil
 	_, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
-	if err != nil || !reflect.DeepEqual(f.events, []string{"unit nibfin-runner-claude-3.service"}) || fx.gh.tokens != 0 || len(*fx.auth) != 0 {
+	if err != nil || !reflect.DeepEqual(f.events, []string{"env claude-3 claude", "unit nibfin-runner-claude-3.service"}) || fx.gh.tokens != 0 || len(*fx.auth) != 0 {
 		t.Errorf("Run: %v, events %v, tokens %d", err, f.events, fx.gh.tokens)
 	}
 	for _, s := range f.shells {
@@ -451,8 +483,8 @@ func TestRunnerAddStoppedMachine(t *testing.T) {
 	}
 	// After the start: logged in already, so no login; two new slots.
 	wantEvents := []string{"start via autostart", "linger", "create volume nibfin-tools", "token",
-		"extract claude-1", "configure claude-1", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
-		"extract claude-2", "configure claude-2", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
+		"extract claude-1", "configure claude-1", "env claude-1 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "env claude-2 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
 	if f.autoStarts != 1 || f.starts != 0 || !reflect.DeepEqual(f.events, wantEvents) || fx.gh.tokens != 1 {
 		t.Errorf("starts %d %d, events %v", f.autoStarts, f.starts, f.events)
 	}
@@ -476,20 +508,20 @@ func TestRunnerAddMachineUnitDir(t *testing.T) {
 		!strings.Contains(err.Error(), "sudo chown $(id -u):$(id -g) "+unitDir+" "+unitDir+"/default.target.wants") {
 		t.Fatalf("refused: %v", err)
 	}
-	want := []string{"token", "extract claude-1", "configure claude-1", "unitdir " + unitDir}
+	want := []string{"token", "extract claude-1", "configure claude-1", "env claude-1 claude", "unitdir " + unitDir}
 	if !reflect.DeepEqual(f.events, want) {
 		t.Errorf("events = %v", f.events)
 	}
 
 	// The rerun picks the configured claude-1 first: no download, only the
-	// unit directory step and its unit, then the new claude-2.
+	// .env, the unit directory step and its unit, then the new claude-2.
 	f.shellExit, f.shellErr, f.events, fx.gh.tokens = nil, nil, nil, 0
 	_, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2}), &yes{})
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
-	want = []string{"token", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
-		"extract claude-2", "configure claude-2", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
+	want = []string{"token", "env claude-1 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "env claude-2 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
 	if !reflect.DeepEqual(f.events, want) || fx.gh.tokens != 1 {
 		t.Errorf("rerun events = %v, tokens %d", f.events, fx.gh.tokens)
 	}
@@ -504,7 +536,7 @@ func TestRunnerAddMachineUnitDir(t *testing.T) {
 	f.events, fx.gh.tokens = nil, 0
 	downloads := len(*fx.auth)
 	_, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
-	want = []string{"unitdir " + unitDir, "unit nibfin-runner-claude-3.service"}
+	want = []string{"env claude-3 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-3.service"}
 	if err != nil || !reflect.DeepEqual(f.events, want) || fx.gh.tokens != 0 || len(*fx.auth) != downloads {
 		t.Errorf("incomplete only: %v, events %v, tokens %d", err, f.events, fx.gh.tokens)
 	}
