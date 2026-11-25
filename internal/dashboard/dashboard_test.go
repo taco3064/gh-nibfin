@@ -80,6 +80,12 @@ func start(t *testing.T) *harness { t.Helper(); return startWith(t, nil) }
 // startWith starts the server with commands as its schema.
 func startWith(t *testing.T, commands []Command) *harness {
 	t.Helper()
+	return startFull(t, commands, nil)
+}
+
+// startFull starts the server with commands and watch.
+func startFull(t *testing.T, commands []Command, watch func(context.Context, func(any)) error) *harness {
+	t.Helper()
 	h := &harness{t: t, done: make(chan error, 1)}
 	h.next = func() *fakeOp { return &fakeOp{plan: op.Plan{Operation: "x"}} }
 	entry := func(p any) op.Operation {
@@ -119,6 +125,7 @@ func startWith(t *testing.T, commands []Command) *harness {
 		h.done <- Serve(ctx, Options{
 			Ops:      ops,
 			Commands: commands,
+			Watch:    watch,
 			ResolveRepo: func(v string) (string, error) {
 				if v == "bad" {
 					return "", op.Errorf(op.CodeInvalidRepo, "invalid repository %q", v)
