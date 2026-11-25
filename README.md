@@ -317,8 +317,9 @@ in the server's memory.
 
 The page is the Dashboard UI, built from `dashboard/` and embedded in the
 binary. It removes the proof from the address bar, exchanges it and keeps the
-session in memory only. It then reads the person-view `status` once, and again
-on Refresh. It shows three views: Person (your open Issues with `scope`,
+session in memory only. It then opens the live stream below, which keeps the
+person view current without reloading (see [Live updates](#live-updates)). It
+shows three views: Person (your open Issues with `scope`,
 grouped by repository, each with whether its workflows use the latest image),
 Repositories and Runners. A freshness indicator shows the time of the data and
 turns stale after five minutes. The page opens on the Runners view, with a
@@ -408,6 +409,57 @@ are `{"error": {"code", "message"}}` with the codes the CLI prints: `400` for
 a malformed request, `401`/`403` for the checks above, `404` for an unknown
 command, route or plan, `409` for a conflict, and `422` for an error from the
 operation itself.
+
+### Live updates
+
+The page stays current by itself; nothing is pushed by GitHub and no Job ever
+connects to the Dashboard. Dispatch is unchanged: it stays event-driven in
+Core.
+
+- **Local Jobs.** The server follows `podman events` on the Runners' store
+  (the default machine's rootless store on Windows and macOS; it never starts a
+  machine). The Job template labels each Job container with
+  `io.github.taco3064.nibfin.repo` and `io.github.taco3064.nibfin.issue`;
+  `gh nibfin upgrade` brings the label to existing execution repositories.
+  When a labelled container of a listed Issue starts or ends, only that Issue
+  is read again. Jobs of Issues not in the view cause no read. While Podman is
+  missing or the machine is stopped the page says local Job events are not
+  watched, and a later check picks Podman up again.
+- **Everywhere else** (other runners, hosted CI, edits on github.com): GitHub
+  is checked every 30 seconds or more with conditional requests (`ETag`,
+  `If-None-Match`), honouring `x-poll-interval` and `Retry-After`. An
+  unchanged answer is a `304`, which does not count against the primary rate
+  limit. The checks are the open `scope` Issues assigned to you (labels,
+  state, assignment, title), the Nibfin runs (`nibfin-issue.yml` of each
+  listed repository, `nibfin-shared-runner.yml` of the execution repository)
+  and each listed repository's workflow files. A changed Issue list or
+  workflow folder reads the whole view again; newer Nibfin runs read only
+  their Issues again.
+- **Not live:** the latest image release, permissions, the Nibfin
+  repository list and blockers changed in other repositories update on the
+  next full read or on Refresh.
+
+The freshness time is the last successful check, or the last read. A failed
+check shows its error and stops the time, which turns stale after five
+minutes. When the stream ends the page shows "Live updates off" with the
+reason; Refresh reconnects it. Without a stream the page reads once, as
+Refresh does.
+
+`GET /api/live` (session header required, like every `/api/` route; the
+session never goes in the URL) answers `text/event-stream`. Each event is one
+`data: <json>` frame with `event` and, by event:
+
+- `snapshot` `{at, result}`: the whole person view, `result` being the object
+  `status --json` prints;
+- `issue` `{at, repo, issue}`: one re-read Issue of `repo`;
+- `checked` `{at}`: every check succeeded and found nothing new up to `at`;
+- `podman` `{watching, error}`: whether local Job events are followed;
+- `error` `{source, error}`: a failed GitHub check (`github`) or read
+  (`status`). A first read that fails as a command, such as no gh login, ends
+  the stream with this frame.
+
+`at` is the server's RFC 3339 time. A session has one stream: a new request
+ends the one before. The stream ends when the page leaves or the server stops.
 
 ### Building the Dashboard UI
 
