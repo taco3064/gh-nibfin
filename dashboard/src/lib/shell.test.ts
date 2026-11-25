@@ -47,7 +47,7 @@ describe('hasNoRunner', () => {
 })
 
 describe('landingView', () => {
-  const view = (h: HostReport): PersonView => ({ host: h, latestImage: {}, githubHost: 'github.com', repos: [], truncated: false })
+  const view = (h: HostReport): PersonView => ({ host: h, latestImage: {}, githubHost: 'github.com', repos: [], truncated: false, nibfinRepos: [] })
   it('opens the runner view without a Runner', () => expect(landingView(view(host([])))).toBe('runner'))
   it('opens the person view otherwise', () => {
     expect(landingView(view(host([slot()])))).toBe('person')

@@ -56,6 +56,7 @@ const view = (repos: RepoIssues[] | null): PersonView => ({
   githubHost: 'github.com',
   repos,
   truncated: false,
+  nibfinRepos: [],
 })
 
 describe('applyPersonChanges', () => {
