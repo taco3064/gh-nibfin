@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
 
@@ -26,7 +27,7 @@ var ops = struct {
 	Status       func(op.RepoParams) op.Operation
 	Pause        func(op.IssuesParams) op.Operation
 	Resume       func(op.IssuesParams) op.Operation
-}{op.RunnerAdd, op.RunnerRemove, op.Login, op.Init, upgrade.New, op.Status, op.Pause, op.Resume}
+}{op.RunnerAdd, op.RunnerRemove, op.Login, op.Init, upgrade.New, status.New, op.Pause, op.Resume}
 
 var providers = []string{"claude", "codex"}
 
@@ -175,25 +176,40 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	upgradeCmd := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })
 
 	var statusRepo string
-	status := &cobra.Command{
+	statusCmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show the repository's Nibfin labels, PRs and runs",
-		Args:  noArgs,
+		Short: "Show the runner host, logins and the Issues Nibfin works on",
+		Long: "Show the runner host, logins and the Issues Nibfin works on. It only reads.\n\n" +
+			"Always: the podman machine and its free memory, each Runner's service against\n" +
+			"GitHub's online/busy, and each provider's login.\n\n" +
+			"Without -R (the person view): your open scope Issues across repositories, with\n" +
+			"pause/pending, the pending comment and whether each repository uses the latest image.\n" +
+			"With -R (the repository view): all open Issues of that repository, its image and\n" +
+			"whether a Nibfin run succeeded after the init PR merged.",
+		Args: noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
-			r, err := repoResolver(statusRepo)
-			if err != nil {
-				return err
+			// Without -R the person view needs no repository.
+			var r string
+			if statusRepo != "" {
+				var err error
+				if r, err = repoResolver(statusRepo); err != nil {
+					return err
+				}
 			}
 			_, res, err := op.ReadBack(c.Context(), ops.Status(op.RepoParams{Repo: r}))
 			if err != nil {
 				return err
 			}
-			writeResult(stdout, res, *jsonOut)
+			if *jsonOut {
+				writeResult(stdout, res, true)
+			} else {
+				writeStatus(stdout, res)
+			}
 			return nil
 		},
 	}
-	addRepoFlag(status, &statusRepo)
-	addJSONFlag(status, jsonOut)
+	statusCmd.Flags().StringVarP(&statusRepo, "repo", "R", "", "show the repository view of [HOST/]OWNER/REPO (default: the person view)")
+	addJSONFlag(statusCmd, jsonOut)
 
 	issuesCmd := func(use, short string, entry func(op.IssuesParams) op.Operation) *cobra.Command {
 		var repo string
@@ -237,7 +253,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	dashboard.Flags().IntVar(&port, "port", 0, "port to listen on (default: any free port)")
 	dashboard.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open a browser")
 
-	root.AddCommand(runner, login, initCmd, upgradeCmd, status, pause, resume, dashboard)
+	root.AddCommand(runner, login, initCmd, upgradeCmd, statusCmd, pause, resume, dashboard)
 	root.SetContext(context.Background())
 	return root
 }

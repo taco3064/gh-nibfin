@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
 
@@ -48,29 +49,12 @@ func TestEveryCommandIsNotImplemented(t *testing.T) {
 		{"runner", "remove", "claude", "--delete-login"},
 		{"init"},
 		{"init", "-R", "o/r", "--yes"},
-		{"status"},
-		{"status", "-R", "o/r"},
 		{"dashboard", "--port", "8080", "--no-browser"},
 	} {
 		code, stdout, stderr := execute(t, args...)
 		if code == 0 || !strings.HasPrefix(stderr, "not_implemented: ") || stdout != "" {
 			t.Errorf("%v: exit %d, stdout %q, stderr %q", args, code, stdout, stderr)
 		}
-	}
-}
-
-func TestStatusJSONError(t *testing.T) {
-	fakeRepo(t)
-	code, stdout, stderr := execute(t, "status", "--json")
-	if code == 0 || !strings.HasPrefix(stderr, "not_implemented: ") {
-		t.Fatalf("exit %d, stderr %q", code, stderr)
-	}
-	var e map[string]string
-	if err := json.Unmarshal([]byte(stdout), &e); err != nil {
-		t.Fatalf("stdout is not JSON: %q", stdout)
-	}
-	if e["code"] != op.CodeNotImplemented || e["message"] != "status is not implemented" {
-		t.Errorf("JSON error = %v", e)
 	}
 }
 
@@ -203,6 +187,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		{"init", "-R", "o/r"},
 		{"upgrade"},
 		{"status", "--repo", "x/y"},
+		{"status"},
 		{"pause", "4", "#5"},
 		{"resume", "6", "-R", "o/r"},
 		{"pause", "https://github.com/a/b/issues/7"},
@@ -221,6 +206,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		"init:github.com/o/r",
 		"upgrade:github.com/cur/repo",
 		"status:github.com/x/y",
+		"status:",
 		op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"4", "#5"}},
 		op.IssuesParams{Repo: "github.com/o/r", Issues: []string{"6"}},
 		op.IssuesParams{Issues: []string{"https://github.com/a/b/issues/7"}},
@@ -330,5 +316,40 @@ func TestPauseResumeOutput(t *testing.T) {
 		if code != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Errorf("%s: exit %d, stdout %q, stderr %q", args, code, stdout.String(), stderr.String())
 		}
+	}
+}
+
+// failOp is a read-only operation whose read-back fails.
+type failOp struct{ err error }
+
+func (failOp) Plan(context.Context) (op.Plan, error) {
+	return op.Plan{Operation: "status", ReadOnly: true}, nil
+}
+func (failOp) Apply(context.Context, op.Plan) error                   { return nil }
+func (o failOp) ReadBack(context.Context, op.Plan) (op.Result, error) { return nil, o.err }
+
+func TestStatusJSONError(t *testing.T) {
+	fakeRepo(t)
+	old := ops
+	t.Cleanup(func() { ops = old })
+	ops.Status = func(op.RepoParams) op.Operation {
+		return failOp{op.Errorf(op.CodeAuthUnavailable, "no gh login")}
+	}
+	code, stdout, stderr := execute(t, "status", "--json")
+	if code == 0 || !strings.HasPrefix(stderr, "auth_unavailable: ") {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	var e map[string]string
+	if err := json.Unmarshal([]byte(stdout), &e); err != nil {
+		t.Fatalf("stdout is not JSON: %q", stdout)
+	}
+	if e["code"] != op.CodeAuthUnavailable || e["message"] != "no gh login" {
+		t.Errorf("JSON error = %v", e)
+	}
+}
+
+func TestStatusRunsTheStatusOperation(t *testing.T) {
+	if reflect.ValueOf(ops.Status).Pointer() != reflect.ValueOf(status.New).Pointer() {
+		t.Error("status does not call status.New")
 	}
 }
