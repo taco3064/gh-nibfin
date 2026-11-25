@@ -24,9 +24,9 @@ gh nibfin dashboard [--port N] [--no-browser]
 an Issue URL, and several can be given at once. Both commands write all
 changes in one GraphQL mutation, read them back, and ask no confirmation.
 
-`login`, `upgrade`, `runner add` and `status` are also implemented. Every
-other command currently reports `not_implemented`. The behaviour of each
-command is tracked as a scope Issue in this repository.
+`login`, `upgrade`, `runner add`, `runner remove` and `status` are also
+implemented. Every other command currently reports `not_implemented`. The
+behaviour of each command is tracked as a scope Issue in this repository.
 
 `-R, --repo` defaults to the current directory's repository; for `status` it
 selects the repository view instead (see [Status](#status)). A changing
@@ -92,6 +92,31 @@ The command only advises, and writes nothing, about:
 
 The registration token is fetched for each run and reaches the runner's
 `config.sh` only on its stdin; it is never stored or printed.
+
+`gh nibfin runner remove <claude|codex> [--count N] [--delete-login]` removes
+N of the provider's Runners on this host, all of them without `--count`.
+
+- Unfinished Runners (left by an interrupted `runner add` or `runner remove`)
+  go first, then idle ones, then busy ones.
+- The chosen Runners lose their custom labels first, so they take no new
+  nibfin Job. GitHub can still give them a Job whose `runs-on` uses only the
+  default labels (`self-hosted`, the OS, the architecture) in the same
+  repository; removal waits for such a Job too.
+- A busy Runner is removed after its Job ends: the command waits until no Job
+  runs on it, then stops its service. The running Job is never cancelled.
+  The wait uses GNU coreutils `tail --pid` on the host.
+- Each removal deletes the GitHub registration (this needs admin access to
+  the repository), the systemd user service and the Runner's directory. The
+  command then reads back how many Runners of the provider remain.
+- A count above the existing number is refused with that number.
+- `--delete-login` deletes the `nibfin-home-<provider>` volume only when no
+  Runner of the provider remains on this host; otherwise it is kept.
+- An interrupted removal is finished by running `runner remove` again. Do that
+  before `runner add`, which would otherwise restart a Runner whose
+  registration is already gone.
+- `runner_busy` means GitHub reports a Runner busy but no Job of it runs on
+  the host; the Runner keeps running without its nibfin labels until the next
+  `runner remove` finishes it.
 
 ## Login
 
