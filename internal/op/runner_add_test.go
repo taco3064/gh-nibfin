@@ -550,10 +550,8 @@ func TestRunnerAddAdvice(t *testing.T) {
 	f = &fakeHost{vm: true, probe: "arch aarch64\nnode n\nmachine ab\nlinger 1\ncgroup ?\nmemkb 1\n"}
 	useRunnerHost(t, f)
 	p, _ = RunnerAdd(RunnerAddParams{Provider: "codex", Count: 1}).Plan(context.Background())
-	for _, s := range p.Notes {
-		{
-			t.Errorf("advice on applehv: %v", s)
-		}
+	if len(p.Notes) != 0 {
+		t.Errorf("advice on applehv: %v", p.Notes)
 	}
 }
 
