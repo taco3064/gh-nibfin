@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -34,6 +35,10 @@ type fakeGraph struct {
 	viewerErrs        []api.GraphQLErrorItem
 	queries           []string
 	hosts             []string
+	// files answers the file-version queries from the REST contents routes
+	// of the fixture, without counting them as REST reads.
+	files  map[string]any
+	flight *inFlight
 }
 
 type graphRepo struct {
@@ -85,6 +90,7 @@ func (f *fakeGraph) model(owner, name string) *graphRepo {
 }
 
 func (f *fakeGraph) DoWithContext(_ context.Context, query string, vars map[string]any, resp any) error {
+	defer f.flight.enter()()
 	f.queries = append(f.queries, query)
 	if strings.HasPrefix(query, "mutation") {
 		f.t.Errorf("status sent a mutation")
@@ -112,6 +118,8 @@ func (f *fakeGraph) DoWithContext(_ context.Context, query string, vars map[stri
 		errs = append(errs, f.viewerErrs...)
 	case f.fail != nil:
 		return f.fail
+	case strings.Contains(query, "object(expression:"):
+		data["repository"] = f.objects(vars)
 	case strings.HasPrefix(query, "query($o: String!"):
 		r := f.model(vars["o"].(string), vars["n"].(string))
 		n, _ := strconv.Atoi(issueNumRE.FindStringSubmatch(query)[1])
@@ -588,4 +596,33 @@ func TestNibfinRepos(t *testing.T) {
 	if e := res["nibfinReposError"].(*op.Error); e.Code != op.CodeGitHubAPIFailed || !strings.Contains(e.Error(), "Bad credentials") {
 		t.Errorf("error = %v", e)
 	}
+}
+
+// objects answers a file-version query: each cN alias is the blob at the
+// expression $eN, "SHA:PATH", read from the REST contents route of that
+// ref; a missing route is no object.
+func (f *fakeGraph) objects(vars map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range vars {
+		if !strings.HasPrefix(k, "e") {
+			continue
+		}
+		sha, path, _ := strings.Cut(v.(string), ":")
+		alias := "c" + strings.TrimPrefix(k, "e")
+		route, ok := f.files[fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", vars["o"], vars["n"], path, sha)]
+		if !ok {
+			out[alias] = nil
+			continue
+		}
+		m, ok := route.(map[string]string)
+		if !ok {
+			f.t.Fatalf("file route %s@%s is %T", path, sha, route)
+		}
+		b, err := base64.StdEncoding.DecodeString(m["content"])
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		out[alias] = map[string]any{"text": string(b)}
+	}
+	return out
 }

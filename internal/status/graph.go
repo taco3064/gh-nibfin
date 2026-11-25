@@ -320,13 +320,13 @@ const reposQuery = `query($after: String) { viewer { repositories(first: 100, af
 
 // nibfinRepos lists the current gh account's repositories, owned, joined
 // as a collaborator or through an organization, whose default branch has
-// nibfin-issue.yml, in one paginated query.
+// nibfin-issue.yml, in one paginated query. Execution stays nil; the view
+// sets it from the runner report (withExecution).
 func (r *reader) nibfinRepos(ctx context.Context) ([]NibfinRepo, *op.Error) {
 	c, gerr := r.graph()
 	if gerr != nil {
 		return []NibfinRepo{}, gerr
 	}
-	exec, execKnown := r.execRepo()
 	out := []NibfinRepo{}
 	var after any
 	for {
@@ -364,12 +364,7 @@ func (r *reader) nibfinRepos(ctx context.Context) ([]NibfinRepo, *op.Error) {
 			if n == nil || n.DefaultBranchRef == nil || n.DefaultBranchRef.Target == nil || n.DefaultBranchRef.Target.File == nil {
 				continue
 			}
-			nr := NibfinRepo{Repo: n.NameWithOwner, URL: n.URL, Visibility: n.Visibility, Permission: n.ViewerPermission}
-			if execKnown {
-				is := exec != "" && strings.EqualFold(r.host+"/"+n.NameWithOwner, exec)
-				nr.Execution = &is
-			}
-			out = append(out, nr)
+			out = append(out, NibfinRepo{Repo: n.NameWithOwner, URL: n.URL, Visibility: n.Visibility, Permission: n.ViewerPermission})
 		}
 		if !rs.PageInfo.HasNextPage || rs.PageInfo.EndCursor == "" {
 			break
@@ -411,14 +406,6 @@ func missingWorkflowOnly(e *api.GraphQLError) bool {
 		}
 	}
 	return true
-}
-
-func (r *reader) setNibfinRepos(ctx context.Context, res op.Result) {
-	repos, err := r.nibfinRepos(ctx)
-	res["nibfinRepos"] = repos
-	if err != nil {
-		res["nibfinReposError"] = err
-	}
 }
 
 // execRepo is the execution repository, HOST/OWNER/REPO of this host's

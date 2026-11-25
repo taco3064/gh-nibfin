@@ -14,7 +14,9 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -207,40 +209,90 @@ func (s *status) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	if err != nil {
 		return nil, op.Errorf(op.CodeAuthUnavailable, "cannot use the gh login for %s: %v", host, err)
 	}
-	hr := readHost(ctx)
-	r := &reader{c: c, host: host, runners: hr.Runners}
+	r := &reader{c: c, host: host}
 
-	res := op.Result{"host": hr}
-	latest := LatestImage{}
-	if ref, err := latestImage(ctx); err != nil {
-		latest.Error = op.AsError(err)
-	} else {
-		latest.Ref = ref
-	}
-	res["latestImage"] = latest
-
+	var view builder
+	var pr *progress
+	var github func(wait func() op.RunnersReport)
 	if s.p.Repo == "" {
-		r.person(ctx, res, latest)
-		return res, nil
+		d := &personRead{ghHost: host}
+		pr = newProgress(ctx, d.result, "host", "latestImage", "user", "repos", "pendingComment", "image",
+			"blockedBy", "permission", "nibfinRepos", "runs")
+		github = func(wait func() op.RunnersReport) { r.person(ctx, d, pr, wait) }
+		view = func(h *op.HostReport, l *LatestImage) op.Result { return d.result(h, l) }
+	} else {
+		d := &repoRead{ghHost: host, repo: s.p.Repo}
+		pr = newProgress(ctx, d.result, "host", "latestImage", "issues", "pendingComment", "blockedBy",
+			"permission", "image", "nibfinRun", "nibfinRepos", "runs")
+		repo := parts[1] + "/" + parts[2]
+		github = func(wait func() op.RunnersReport) { r.repoView(ctx, repo, d, pr, wait) }
+		view = func(h *op.HostReport, l *LatestImage) op.Result { return d.result(h, l) }
 	}
-	repo := parts[1] + "/" + parts[2]
-	res["repo"] = s.p.Repo
-	res["image"] = r.image(ctx, repo, latest)
+
+	// The host and the latest image are read beside the GitHub reads, which
+	// stay serial in this goroutine; only the runs and the execution flag
+	// wait for the host.
+	var hr op.HostReport
+	var latest LatestImage
+	hostDone := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		defer close(hostDone)
+		hr = readHost(ctx)
+		pr.setHost(hr)
+	}()
+	go func() {
+		defer wg.Done()
+		if ref, err := latestImage(ctx); err != nil {
+			latest.Error = op.AsError(err)
+		} else {
+			latest.Ref = ref
+		}
+		pr.setLatest(latest)
+	}()
+	github(func() op.RunnersReport { <-hostDone; return hr.Runners })
+	wg.Wait()
+	return view(&hr, &latest), nil
+}
+
+// repoView reads the GitHub part of the repository view into d, the
+// sections the page shows first before the others.
+func (r *reader) repoView(ctx context.Context, repo string, d *repoRead, pr *progress, wait func() op.RunnersReport) {
 	issues, err := r.repoIssues(ctx, repo)
 	if err != nil {
-		res["issuesError"] = op.AsError(err)
+		d.issuesErr = op.AsError(err)
 		issues = []Issue{}
 	}
-	g := newGroup(repo, issues)
-	r.links(ctx, []*repoGroup{g})
-	res["issues"] = issues
-	res["nibfinRun"] = r.nibfinRun(ctx, repo)
-	res["permission"] = g.perm
-	if g.permErr != nil {
-		res["permissionError"] = g.permErr
+	d.issues, d.listed = issues, true
+	pr.step(d.clone, "issues")
+
+	for i := range issues {
+		issues[i] = r.withPending(ctx, repo, issues[i])
 	}
-	r.setNibfinRepos(ctx, res)
-	return res, nil
+	pr.step(d.clone, "pendingComment")
+
+	g := newGroup(repo, issues)
+	r.issueGraph(ctx, []*repoGroup{g})
+	d.perm, d.permErr, d.permRead = g.perm, g.permErr, true
+	pr.step(d.clone, "blockedBy", "permission")
+
+	img := r.image(ctx, repo, LatestImage{})
+	d.image = &img
+	pr.step(d.clone, "image")
+
+	run := r.nibfinRun(ctx, repo)
+	d.run = &run
+	pr.step(d.clone, "nibfinRun")
+
+	d.repos, d.reposErr = r.nibfinRepos(ctx)
+	d.reposRead = true
+	pr.step(d.clone, "nibfinRepos")
+
+	r.runners = wait()
+	r.issueRuns(ctx, []*repoGroup{g})
+	pr.step(d.clone, "runs")
 }
 
 // splitRepo checks HOST/OWNER/REPO.
@@ -314,23 +366,24 @@ func toIssue(j issueJSON) Issue {
 	return is
 }
 
-// person fills the person view: the open scope Issues assigned to the
-// current gh user, found by GitHub's search and grouped by repository.
-func (r *reader) person(ctx context.Context, res op.Result, latest LatestImage) {
-	res["githubHost"] = r.host
+// person reads the person view into d: the open scope Issues assigned to
+// the current gh user, found by GitHub's search and grouped by repository.
+// The Issues come first; their other sections follow.
+func (r *reader) person(ctx context.Context, d *personRead, pr *progress, wait func() op.RunnersReport) {
 	var user struct {
 		Login string `json:"login"`
 	}
 	if err := r.get(ctx, "user", &user); err != nil {
-		res["userError"] = apiErr(op.CodeGitHubAPIFailed, "get the gh login's user", err)
+		d.userErr = apiErr(op.CodeGitHubAPIFailed, "get the gh login's user", err)
 	} else {
-		res["user"] = user.Login
+		d.user = user.Login
 	}
+	d.userRead = true
+	pr.step(d.clone, "user")
 
-	repos := []RepoIssues{}
 	items, truncated, err := r.search(ctx)
 	if err != nil {
-		res["issuesError"] = err
+		d.issuesErr = err
 	}
 	byRepo := map[string][]Issue{}
 	for _, it := range items {
@@ -338,27 +391,49 @@ func (r *reader) person(ctx context.Context, res op.Result, latest LatestImage) 
 		if !ok {
 			continue
 		}
-		byRepo[repo] = append(byRepo[repo], r.withPending(ctx, repo, toIssue(it)))
+		byRepo[repo] = append(byRepo[repo], toIssue(it))
 	}
 	names := make([]string, 0, len(byRepo))
 	for n := range byRepo {
 		names = append(names, n)
 	}
 	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
+	repos := []RepoIssues{}
 	var groups []*repoGroup
 	for _, n := range names {
 		issues := byRepo[n]
 		sort.SliceStable(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
-		repos = append(repos, RepoIssues{Repo: n, Image: r.image(ctx, n, latest), Issues: issues})
+		repos = append(repos, RepoIssues{Repo: n, Issues: issues})
 		groups = append(groups, newGroup(n, issues))
 	}
-	r.links(ctx, groups)
+	d.repos, d.truncated, d.listed = repos, truncated, true
+	pr.step(d.clone, "repos")
+
+	for _, rp := range repos {
+		for i := range rp.Issues {
+			rp.Issues[i] = r.withPending(ctx, rp.Repo, rp.Issues[i])
+		}
+	}
+	pr.step(d.clone, "pendingComment")
+
+	for i := range repos {
+		repos[i].Image = r.image(ctx, repos[i].Repo, LatestImage{})
+	}
+	pr.step(d.clone, "image")
+
+	r.issueGraph(ctx, groups)
 	for i, g := range groups {
 		repos[i].Permission, repos[i].PermissionError = g.perm, g.permErr
 	}
-	res["repos"] = repos
-	res["truncated"] = truncated
-	r.setNibfinRepos(ctx, res)
+	pr.step(d.clone, "blockedBy", "permission")
+
+	d.nibfin, d.nibfinErr = r.nibfinRepos(ctx)
+	d.reposRead = true
+	pr.step(d.clone, "nibfinRepos")
+
+	r.runners = wait()
+	r.issueRuns(ctx, groups)
+	pr.step(d.clone, "runs")
 }
 
 // search pages through GitHub's issue search, up to its 1,000 results.
@@ -402,8 +477,8 @@ func repoOfURL(s string) (string, bool) {
 	return segs[n-2] + "/" + segs[n-1], true
 }
 
-// repoIssues lists every open Issue of repo; the Issues list includes PRs,
-// which are skipped.
+// repoIssues lists every open Issue of repo, without its pending comment;
+// the Issues list includes PRs, which are skipped.
 func (r *reader) repoIssues(ctx context.Context, repo string) ([]Issue, error) {
 	out := []Issue{}
 	for page := 1; ; page++ {
@@ -414,7 +489,7 @@ func (r *reader) repoIssues(ctx context.Context, repo string) ([]Issue, error) {
 		}
 		for _, it := range items {
 			if it.PullRequest == nil {
-				out = append(out, r.withPending(ctx, repo, toIssue(it)))
+				out = append(out, toIssue(it))
 			}
 		}
 		if len(items) < perPage {
@@ -587,14 +662,18 @@ func (r *reader) nibfinRun(ctx context.Context, repo string) NibfinRun {
 	}
 	sort.SliceStable(ds, func(i, j int) bool { return ds[i].at.Before(ds[j].at) })
 	var init *dated
-	for i := range ds {
-		data, found, err := templates.ReadFile(ctx, r.c, r.host+"/"+repo, issueFile, ds[i].sha)
-		if err != nil {
-			return fail("read "+issueFile+" at "+ds[i].sha, err)
+	for start := 0; start < len(ds) && init == nil; start += filesPerQuery {
+		chunk := ds[start:min(start+filesPerQuery, len(ds))]
+		shas := make([]string, len(chunk))
+		for i, d := range chunk {
+			shas[i] = d.sha
 		}
-		if found && strings.HasPrefix(string(data), templates.GeneratedPrefix) {
-			init = &ds[i]
-			break
+		gen, sha, err := r.generatedAt(ctx, repo, shas)
+		if err != nil {
+			return fail("read "+issueFile+" at "+sha, err)
+		}
+		if gen >= 0 {
+			init = &chunk[gen]
 		}
 	}
 	if init == nil {
@@ -652,4 +731,58 @@ func (r *reader) nibfinRun(ctx context.Context, repo string) NibfinRun {
 		}
 	}
 	return out
+}
+
+// filesPerQuery bounds the file versions one query reads: 50 blobs of a
+// few kilobytes each.
+const filesPerQuery = 50
+
+// generatedAt reads nibfin-issue.yml at each of shas, oldest first, in one
+// GraphQL query, and returns the index of the first whose file gh nibfin
+// generated, or -1. A commit without the file, or a file that is not text,
+// is not generated. On failure it returns the commit the error names, or
+// the first one.
+func (r *reader) generatedAt(ctx context.Context, repo string, shas []string) (int, string, error) {
+	c, gerr := r.graph()
+	if gerr != nil {
+		return -1, shas[0], gerr
+	}
+	owner, name, _ := strings.Cut(repo, "/")
+	vars := map[string]any{"o": owner, "n": name}
+	var decl, q strings.Builder
+	decl.WriteString("$o: String!, $n: String!")
+	for i, sha := range shas {
+		fmt.Fprintf(&decl, ", $e%d: String!", i)
+		fmt.Fprintf(&q, " c%d: object(expression: $e%d) { ... on Blob { text } }", i, i)
+		vars[fmt.Sprintf("e%d", i)] = sha + ":" + issueFile
+	}
+	query := "query(" + decl.String() + ") { repository(owner: $o, name: $n) {" + q.String() + " } }"
+	var data struct {
+		Repository map[string]*struct {
+			Text *string `json:"text"`
+		} `json:"repository"`
+	}
+	if err := c.DoWithContext(ctx, query, vars, &data); err != nil {
+		sha := shas[0]
+		var gqlErr *api.GraphQLError
+		if errors.As(err, &gqlErr) && len(gqlErr.Errors) > 0 {
+			path := op.PathAliases(gqlErr.Errors[0].Path)
+			if len(path) >= 2 && strings.HasPrefix(path[1], "c") {
+				if i, err := strconv.Atoi(path[1][1:]); err == nil && i < len(shas) {
+					sha = shas[i]
+				}
+			}
+		}
+		return -1, sha, err
+	}
+	if data.Repository == nil {
+		return -1, shas[0], errors.New("repository not returned")
+	}
+	for i := range shas {
+		b := data.Repository[fmt.Sprintf("c%d", i)]
+		if b != nil && b.Text != nil && strings.HasPrefix(*b.Text, templates.GeneratedPrefix) {
+			return i, "", nil
+		}
+	}
+	return -1, "", nil
 }

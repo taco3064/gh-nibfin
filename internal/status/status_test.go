@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -29,9 +30,29 @@ type fakeGH struct {
 	t      *testing.T
 	routes map[string]any
 	gets   []string
+	// flight counts the requests in flight on both fake clients.
+	flight *inFlight
+}
+
+// inFlight fails the test when status has two of its own GitHub requests
+// in flight at once: they stay serial.
+type inFlight struct {
+	t *testing.T
+	n atomic.Int32
+}
+
+func (f *inFlight) enter() func() {
+	if f == nil {
+		return func() {}
+	}
+	if f.n.Add(1) > 1 {
+		f.t.Error("status has two GitHub requests in flight")
+	}
+	return func() { f.n.Add(-1) }
 }
 
 func (f *fakeGH) DoWithContext(_ context.Context, method, p string, body io.Reader, out any) error {
+	defer f.flight.enter()()
 	if method != http.MethodGet || body != nil {
 		f.t.Errorf("status sent %s %s", method, p)
 		return fmt.Errorf("write")
@@ -63,7 +84,9 @@ type fixture struct {
 
 func setup(t *testing.T, routes map[string]any) *fixture {
 	t.Helper()
-	fx := &fixture{gh: &fakeGH{t: t, routes: routes}, graph: newFakeGraph(t)}
+	flight := &inFlight{t: t}
+	fx := &fixture{gh: &fakeGH{t: t, routes: routes, flight: flight}, graph: newFakeGraph(t)}
+	fx.graph.flight, fx.graph.files = flight, routes
 	oldHost, oldImage, oldREST, oldDefault, oldGraph := readHost, latestImage, newREST, defaultHost, newGraphQL
 	t.Cleanup(func() {
 		readHost, latestImage, newREST, defaultHost, newGraphQL = oldHost, oldImage, oldREST, oldDefault, oldGraph
@@ -307,7 +330,8 @@ func TestRepoView(t *testing.T) {
 		t.Errorf("hosts = %v", fx.hosts)
 	}
 	for _, g := range fx.gh.gets {
-		if strings.Contains(g, "ref=c3") || g == "user" || strings.HasPrefix(g, "search/") {
+		// The file versions come from one GraphQL query, never a contents read.
+		if strings.Contains(g, "?ref=") || g == "user" || strings.HasPrefix(g, "search/") {
 			t.Errorf("unneeded read %s", g)
 		}
 	}
