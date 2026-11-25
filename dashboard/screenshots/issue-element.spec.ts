@@ -152,7 +152,7 @@ for (const width of widths) {
       await expect(button).toBeFocused()
 
       ;({ dialog } = await openRuns(page, item(page, 'acme/app', 103)))
-      await expect(dialog.locator('[data-note=truncated]')).toContainText('GitHub lists at most 1,000 runs per scan')
+      await expect(dialog.locator('[data-note=truncated]')).toContainText('only the newest runs were read')
       await expect(dialog).not.toContainText('No Nibfin runs')
       await shot(page, `issue-runs-truncated-${theme}-${width}`, false)
       await page.keyboard.press('Escape')

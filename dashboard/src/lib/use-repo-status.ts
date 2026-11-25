@@ -1,29 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { applyChanges, type Change } from '@/lib/issue'
-import { complete, dropPartial, fillRepoView, takePartial, type Loading, type Shown } from '@/lib/partial'
+import { complete, dropPartial, fillRepoView, takePartial, type Shown } from '@/lib/partial'
 import { Sequence } from '@/lib/repo'
+import type { RepoSource } from '@/lib/repo-source'
 import { readStatus, type ApiError } from '@/lib/session'
 import type { RepoView } from '@/lib/status'
 
-export interface RepoStatus {
-  // repo is the value sent for the open repository, as entered or picked.
-  repo?: string
-  // data is the last read of repo, or the part of the first read done so
-  // far; a failed refresh keeps a complete read.
+// RepoStatus is the Dashboard's source of the repository view. data is the
+// last read of repo, or the part of the first read done so far; a failed
+// refresh keeps a complete read. readAt is when the request that read data
+// was sent, unset while data is partial.
+export interface RepoStatus extends RepoSource {
   data?: RepoView
-  // loading names what of data is still being read; empty once complete.
-  loading: Loading
-  // readAt is when the request that read data was sent, in ms; unset while
-  // data is partial.
-  readAt?: number
-  reading: boolean
-  readError?: ApiError
-  open: (repo: string) => void
-  refresh: () => void
-  // onChanged applies confirmed changes; an empty list (unknown result)
-  // reads the repository again.
-  onChanged: (changes: Change[]) => void
 }
 
 // useRepoStatus reads the repository view of status for the chosen

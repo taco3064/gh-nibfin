@@ -16,8 +16,9 @@ import type { Command } from '@/lib/operation'
 import { loadingLabels, type Loading } from '@/lib/partial'
 import { imageState } from '@/lib/person'
 import { offeredActions, runLook, type RunLook } from '@/lib/repo'
+import { useReadOnly, type RepoViewData } from '@/lib/repo-source'
 import type { Outcome } from '@/lib/session'
-import { ownerRepo, repoHost, type NibfinRun, type RepoView } from '@/lib/status'
+import { ownerRepo, repoHost, type LatestImage, type NibfinRun, type RepoImage } from '@/lib/status'
 import { formatTime } from '@/lib/utils'
 
 // The command schema is loaded once per page; a failed load is tried again
@@ -44,7 +45,7 @@ function useCommands(): Outcome<Command[]> | undefined {
 const linkClass = 'rounded-sm text-link underline-offset-4 hover:underline'
 
 export interface RepoSummaryProps {
-  data: RepoView
+  data: RepoViewData
   // onFinished reads the repository again after an init or upgrade.
   onFinished: () => void
 }
@@ -52,9 +53,14 @@ export interface RepoSummaryProps {
 // RepoSummary heads the repository view: the repository's link on its own
 // host, the image its workflows pin, whether a Nibfin run succeeded after
 // nibfin-issue.yml last changed, and init or upgrade through the operation
-// dialog. Each section still loading shows its own loading state.
+// dialog. Each section still loading shows its own loading state. A row
+// shows only when the source reads it; read-only, init and upgrade are not
+// offered.
 export function RepoSummary({ data, onFinished }: RepoSummaryProps) {
   const loading = useLoading()
+  const readOnly = useReadOnly()
+  const { image, latestImage, nibfinRun } = data
+  const hasImage = image !== undefined && latestImage !== undefined
   const name = ownerRepo(data.repo)
   const rest = loadingLabels(loading, ['permission', 'host', 'latestImage'])
   return (
@@ -70,24 +76,34 @@ export function RepoSummary({ data, onFinished }: RepoSummaryProps) {
           </h2>
           <p className="text-sm text-muted-foreground">on {repoHost(data.repo)}</p>
         </div>
-        {!loading.has('image') && <Actions data={data} onFinished={onFinished} />}
+        {!readOnly && image && !loading.has('image') && <Actions repo={data.repo} image={image} onFinished={onFinished} />}
       </CardHeader>
       <CardContent className="flex flex-col gap-3 px-4 sm:px-5">
-        <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
-          <dt className="text-muted-foreground">Image</dt>
-          <ImageState data={data} loading={loading} />
-          <dt className="text-muted-foreground">Nibfin run</dt>
-          <dd className="min-w-0" data-slot="nibfin-run">
-            {loading.has('nibfinRun') ? <SectionLoading label="Reading the Nibfin run…" data-loading="nibfinRun" /> : <RunState run={data.nibfinRun} />}
-          </dd>
-        </dl>
+        {(hasImage || nibfinRun) && (
+          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
+            {hasImage && (
+              <>
+                <dt className="text-muted-foreground">Image</dt>
+                <ImageState image={image} latestImage={latestImage} loading={loading} />
+              </>
+            )}
+            {nibfinRun && (
+              <>
+                <dt className="text-muted-foreground">Nibfin run</dt>
+                <dd className="min-w-0" data-slot="nibfin-run">
+                  {loading.has('nibfinRun') ? <SectionLoading label="Reading the Nibfin run…" data-loading="nibfinRun" /> : <RunState run={nibfinRun} />}
+                </dd>
+              </>
+            )}
+          </dl>
+        )}
         {rest.length > 0 && <SectionLoading label={`Still reading: ${rest.join(', ')}`} data-loading="summary" />}
       </CardContent>
     </Card>
   )
 }
 
-function ImageState({ data, loading }: { data: RepoView; loading: Loading }) {
+function ImageState({ image: pin, latestImage, loading }: { image: RepoImage; latestImage: LatestImage; loading: Loading }) {
   if (loading.has('image')) {
     return (
       <dd className="min-w-0">
@@ -96,8 +112,8 @@ function ImageState({ data, loading }: { data: RepoView; loading: Loading }) {
     )
   }
   // A pin is compared with the latest image once that is read.
-  const comparing = loading.has('latestImage') && data.image.set === 'execution' && data.image.ref !== null && data.image.latest === null
-  const image = imageState(data.image, data.latestImage)
+  const comparing = loading.has('latestImage') && pin.set === 'execution' && pin.ref !== null && pin.latest === null
+  const image = imageState(pin, latestImage)
   const ImageIcon = imageIcons[image.kind]
   return (
     <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-image={comparing ? 'comparing' : image.kind}>
@@ -109,7 +125,7 @@ function ImageState({ data, loading }: { data: RepoView; loading: Loading }) {
           {image.label}
         </Badge>
       )}
-      {data.image.ref && <code className="min-w-0 font-mono text-xs break-all">{data.image.ref}</code>}
+      {pin.ref && <code className="min-w-0 font-mono text-xs break-all">{pin.ref}</code>}
       {!comparing && image.detail && <span className="min-w-0 break-words text-muted-foreground">{image.detail}</span>}
     </dd>
   )
@@ -203,10 +219,10 @@ const actionLook = {
   upgrade: { label: 'Upgrade', icon: Wrench },
 }
 
-function Actions({ data, onFinished }: RepoSummaryProps) {
+function Actions({ repo, image, onFinished }: { repo: string; image: RepoImage; onFinished: () => void }) {
   const commands = useCommands()
   const [open, setOpen] = useState<'init' | 'upgrade'>()
-  const offered = offeredActions(data.image)
+  const offered = offeredActions(image)
   const missing = commands?.ok ? offered.filter((a) => !commandByApi(commands.value, a)) : []
   const reason = !commands
     ? undefined
@@ -244,7 +260,7 @@ function Actions({ data, onFinished }: RepoSummaryProps) {
             if (!o) setOpen(undefined)
           }}
           onFinished={onFinished}
-          initial={{ repo: data.repo }}
+          initial={{ repo }}
         />
       )}
     </div>
