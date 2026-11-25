@@ -54,6 +54,20 @@ const (
 	// CodeProviderAmbiguous is an execution repository whose Runners serve
 	// more than one provider while NIBFIN_PROVIDER names none.
 	CodeProviderAmbiguous = "provider_ambiguous"
+	// CodeListenFailed is a Dashboard server that cannot listen on or keep
+	// serving its port.
+	CodeListenFailed = "listen_failed"
+	// CodeForbiddenHost and CodeForbiddenOrigin are Dashboard requests whose
+	// Host or Origin header is not exactly the server's own.
+	CodeForbiddenHost   = "forbidden_host"
+	CodeForbiddenOrigin = "forbidden_origin"
+	// CodeProofInvalid is a Dashboard session exchange with a wrong, missing
+	// or already used session proof.
+	CodeProofInvalid = "proof_invalid"
+	// CodeSessionRequired is a Dashboard API request without the session.
+	CodeSessionRequired = "session_required"
+	// CodeOperationRunning is a Dashboard apply refused while another runs.
+	CodeOperationRunning = "operation_running"
 )
 
 // Error is an error with a machine-readable cause code.

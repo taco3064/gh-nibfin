@@ -47,11 +47,7 @@ func Run(ctx context.Context, o Operation, c Confirmer) (Plan, Result, error) {
 	if err != nil {
 		return p, nil, err
 	}
-	if p.ReadOnly {
-		r, err := o.ReadBack(ctx, p)
-		return p, r, err
-	}
-	if p.Confirm {
+	if p.Confirm && !p.ReadOnly {
 		ok, err := c.Confirm(p)
 		if err != nil {
 			return p, nil, err
@@ -60,12 +56,30 @@ func Run(ctx context.Context, o Operation, c Confirmer) (Plan, Result, error) {
 			return p, nil, Errorf(CodeCancelled, "%s cancelled", p.Operation)
 		}
 	}
-	if err := o.Apply(ctx, p); err != nil {
-		return p, nil, err
-	}
-	r, err := o.ReadBack(ctx, p)
+	r, err := Finish(ctx, o, p, true)
 	return p, r, err
 }
+
+// Finish runs what follows a plan: a read-only plan is read back; a plan
+// that needs confirmation and is not confirmed fails with
+// confirmation_required and nothing is applied; any other plan is applied and
+// read back. The CLI (through Run) and the Dashboard API share it.
+func Finish(ctx context.Context, o Operation, p Plan, confirmed bool) (Result, error) {
+	if p.ReadOnly {
+		return o.ReadBack(ctx, p)
+	}
+	if p.Confirm && !confirmed {
+		return nil, Errorf(CodeConfirmationRequired, "%s needs confirmation", p.Operation)
+	}
+	if err := o.Apply(ctx, p); err != nil {
+		return nil, err
+	}
+	return o.ReadBack(ctx, p)
+}
+
+// DefaultRunnerAddCount is the number of Runners runner add adds when no
+// count is given, on the CLI and in the Dashboard API alike.
+const DefaultRunnerAddCount = 2
 
 // ReadBack plans and reads back without confirming or applying. It is the
 // entry for read-only operations.

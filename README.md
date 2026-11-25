@@ -24,9 +24,9 @@ gh nibfin dashboard [--port N] [--no-browser]
 an Issue URL, and several can be given at once. Both commands write all
 changes in one GraphQL mutation, read them back, and ask no confirmation.
 
-`login`, `init`, `upgrade`, `runner add`, `runner remove` and `status` are
-also implemented. `dashboard` currently reports `not_implemented`. The
-behaviour of each command is tracked as a scope Issue in this repository.
+`login`, `init`, `upgrade`, `runner add`, `runner remove`, `status` and
+`dashboard` are also implemented (see [Dashboard](#dashboard)). The behaviour
+of each command is tracked as a scope Issue in this repository.
 
 `-R, --repo` defaults to the current directory's repository; for `status` it
 selects the repository view instead (see [Status](#status)). A changing
@@ -256,3 +256,66 @@ shows its own `<code>: <message>`, and the rest of the report is still
 printed. Only an invalid `-R` (`invalid_repo`) or no gh login
 (`auth_unavailable`) fails the command. `--json` prints the same report as a
 JSON object.
+
+## Dashboard
+
+`gh nibfin dashboard [--port N] [--no-browser]` runs a local server in the
+foreground until Ctrl-C (or SIGTERM). It listens on `127.0.0.1` only, on port
+`N` or any free port (`listen_failed` when the port is taken).
+
+It prints `Dashboard: http://127.0.0.1:<port>/` and opens your browser (gh's
+launcher: `GH_BROWSER`, the gh `browser` setting, `BROWSER`, then the system
+default) on the session URL `http://127.0.0.1:<port>/#proof=<proof>`. With
+`--no-browser`, or when no browser can be opened, it prints the session URL
+instead.
+
+The proof in the URL works once. The first page or client that exchanges it
+gets the run's only session, which gives the same access as your gh login on
+this machine; keep the URL private until then. The terminal prints
+`session opened` when that happens. If it appears when you did not open the
+URL, stop the server: that ends the session. A reload, a second tab or a
+copied URL finds the proof used (`proof_invalid`); restart the server for a
+new session URL. Nothing is stored: the proof, the session and the plans live
+in the server's memory.
+
+The page is a placeholder until the Dashboard UI. Its only script removes the
+proof from the address bar and exchanges it.
+
+### API
+
+Every request must carry `Host: 127.0.0.1:<port>` exactly (`forbidden_host`,
+also for `localhost`), and an `Origin` header, when present, must be exactly
+`http://127.0.0.1:<port>` (`forbidden_origin`). No CORS header is ever sent.
+
+- `POST /api/session` with `X-Nibfin-Proof: <proof>` returns
+  `{"session": "<value>"}` once. Every other `/api/` request needs
+  `X-Nibfin-Session: <value>` (`session_required`).
+- `POST /api/commands/<command>/plan` with the command's parameters as JSON:
+  - `runner-add` `{"provider", "count"}` (count defaults to 2);
+  - `runner-remove` `{"provider", "count", "deleteLogin"}` (count 0 removes
+    all);
+  - `login` `{"provider"}` (empty: every provider that needs it);
+  - `init`, `upgrade` `{"repo"}` (empty: the directory the server started in);
+  - `status` `{"repo"}` (empty: the person view; set: the repository view);
+  - `pause`, `resume` `{"repo", "issues"}`.
+
+  A read-only plan (`status`) returns `{"plan", "result"}`, the result being
+  the object `status --json` prints. Any other returns `{"id", "plan"}`.
+- `POST /api/plans/<id>/apply` with `{"confirm": true}` applies a stored plan
+  once. A plan with `"confirm": true` that is applied without it fails with
+  `confirmation_required`, writes nothing and stays stored. The response is
+  NDJSON: `{"event":"login_step","step":{...}}` for each login step
+  (`open_url`, `device_code`, `code_requested`, `succeeded`, `failed`), then
+  one `{"event":"result","result":{...}}` or
+  `{"event":"error","error":{"code","message"}}`. Closing the request cancels
+  the apply, as Ctrl-C cancels a command.
+- `POST /api/plans/<id>/code` with `{"code": "..."}` hands a pasted code to the
+  login that asked for it. It is accepted once the `code_requested` line has
+  been sent, and `409` means no code is requested.
+- `DELETE /api/plans/<id>` drops a stored plan.
+
+One apply runs at a time; another is refused with `operation_running`. Errors
+are `{"error": {"code", "message"}}` with the codes the CLI prints: `400` for
+a malformed request, `401`/`403` for the checks above, `404` for an unknown
+command, route or plan, `409` for a conflict, and `422` for an error from the
+operation itself.

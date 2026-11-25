@@ -8,27 +8,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"sort"
+	"strings"
+	"sync"
+	"syscall"
 
+	"github.com/cli/go-gh/v2/pkg/browser"
 	"github.com/spf13/cobra"
 
+	"github.com/taco3064/gh-nibfin/internal/dashboard"
 	"github.com/taco3064/gh-nibfin/internal/initrepo"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
 
-// ops holds the operation entry points the handlers call. Tests replace it.
-var ops = struct {
-	RunnerAdd    func(op.RunnerAddParams) op.Operation
-	RunnerRemove func(op.RunnerRemoveParams) op.Operation
-	Login        func(op.LoginParams) op.Operation
-	Init         func(op.RepoParams) op.Operation
-	Upgrade      func(op.RepoParams) op.Operation
-	Status       func(op.RepoParams) op.Operation
-	Pause        func(op.IssuesParams) op.Operation
-	Resume       func(op.IssuesParams) op.Operation
-}{op.RunnerAdd, op.RunnerRemove, op.Login, initrepo.New, upgrade.New, status.New, op.Pause, op.Resume}
+// ops holds the operation entry points the handlers and the Dashboard API
+// call. Tests replace it.
+var ops = dashboard.Ops{
+	RunnerAdd:    op.RunnerAdd,
+	RunnerRemove: op.RunnerRemove,
+	Login:        op.Login,
+	Init:         initrepo.New,
+	Upgrade:      upgrade.New,
+	Status:       status.New,
+	Pause:        op.Pause,
+	Resume:       op.Resume,
+}
 
 var providers = []string{"claude", "codex"}
 
@@ -117,7 +125,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			return run(c, ops.RunnerAdd(p), addYes)
 		},
 	}
-	runnerAdd.Flags().IntVar(&addCount, "count", 2, "number of Runners")
+	runnerAdd.Flags().IntVar(&addCount, "count", op.DefaultRunnerAddCount, "number of Runners")
 	addYesFlag(runnerAdd, &addYes)
 
 	var removeCount int
@@ -267,11 +275,42 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	dashboard := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Start the local Dashboard",
-		Args:  noArgs,
+		Long: "Start the local Dashboard server in the foreground; Ctrl-C stops it.\n\n" +
+			"It listens on 127.0.0.1 only and opens your browser on a session URL. The proof in\n" +
+			"that URL works once: the first page or client that opens it gets the run's only\n" +
+			"session, with the same access as your gh login on this machine, and the terminal\n" +
+			"prints \"session opened\". Keep the URL private until then; restart for a new one.\n" +
+			"--no-browser prints the session URL instead of opening a browser.\n\n" +
+			"The page is a placeholder until the Dashboard UI; the API is under /api/.",
+		Args: noArgs,
 		// dashboard starts the server that serves the Dashboard API, so it
 		// has no API equivalent and runs no operation through op.Run.
-		RunE: func(*cobra.Command, []string) error {
-			return op.NotImplemented("dashboard")
+		RunE: func(c *cobra.Command, _ []string) error {
+			ctx, stop := signal.NotifyContext(c.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			// Ready, the browser goroutine and SessionOpened write concurrently.
+			var mu sync.Mutex
+			out, errOut := syncWriter{&mu, stdout}, syncWriter{&mu, stderr}
+			return dashboardServe(ctx, dashboard.Options{
+				Port:        port,
+				Ops:         ops,
+				ResolveRepo: repoResolver,
+				Ready: func(sessionURL string) {
+					if noBrowser {
+						fmt.Fprintf(out, "Dashboard session URL (works once; Ctrl-C stops the server):\n%s\n", sessionURL)
+						return
+					}
+					base, _, _ := strings.Cut(sessionURL, "#")
+					fmt.Fprintf(out, "Dashboard: %s (opening your browser; Ctrl-C stops it)\n", base)
+					// The launcher is waited on; serving must not wait for it.
+					go func() {
+						if err := openBrowser(sessionURL, out, errOut); err != nil {
+							fmt.Fprintf(out, "cannot open a browser: %v\nopen the session URL (works once):\n%s\n", err, sessionURL)
+						}
+					}()
+				},
+				SessionOpened: func() { fmt.Fprintln(out, "session opened") },
+			})
 		},
 	}
 	dashboard.Flags().IntVar(&port, "port", 0, "port to listen on (default: any free port)")
@@ -339,4 +378,25 @@ func writeResult(w io.Writer, r op.Result, asJSON bool) {
 	if manual != nil {
 		fmt.Fprintf(w, "\nSet in the web UI: %s\n  %s\n", manual["url"], manual["instruction"])
 	}
+}
+
+// dashboardServe runs the Dashboard server. Tests replace it.
+var dashboardServe = dashboard.Serve
+
+// openBrowser opens url with gh's browser launcher (GH_BROWSER, the gh
+// browser setting, BROWSER, then the platform's default). Tests replace it.
+var openBrowser = func(url string, stdout, stderr io.Writer) error {
+	return browser.New("", stdout, stderr).Browse(url)
+}
+
+// syncWriter serialises writes that share mu.
+type syncWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (s syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
 }
