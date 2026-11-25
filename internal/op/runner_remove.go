@@ -88,6 +88,9 @@ systemctl --user daemon-reload
 // Slot classes, in removal order.
 const (
 	classStale = "stale"
+	// classLocal is a slot whose GitHub runner list needs admin of its
+	// repository: it is removed from the host only.
+	classLocal = "local"
 	classIdle  = "idle"
 	classBusy  = "busy"
 )
@@ -119,6 +122,11 @@ type slotState struct {
 	name string
 	// gh is its registration, nil when GitHub lists none.
 	gh *remoteRunner
+	// local is set when GitHub's runner list of the slot's repository was
+	// not read because the gh login is not admin there; localRepo names
+	// that repository. Such a slot is removed from the host only.
+	local     bool
+	localRepo string
 }
 
 // busy reports whether GitHub reports the runner running a Job. An offline
@@ -127,7 +135,11 @@ func (s slotState) busy() bool { return s.gh != nil && s.gh.Busy && s.gh.Status 
 
 func (s slotState) class() string {
 	switch {
-	case !s.Complete() || s.gh == nil || !s.gh.hasCustomLabel(nibfinLabel):
+	case !s.Complete():
+		return classStale
+	case s.local:
+		return classLocal
+	case s.gh == nil || !s.gh.hasCustomLabel(nibfinLabel):
 		return classStale
 	case s.busy():
 		return classBusy
@@ -140,8 +152,12 @@ type removeEnv struct {
 	inv *runners.Inventory
 	// all are the host's slots, mine the provider's, in slot order.
 	all, mine []slotState
-	// lists are the GitHub runners of each repository asked.
+	// lists are the GitHub runners of each repository asked whose list the
+	// gh login can read (it is admin there).
 	lists map[string][]ghRunner
+	// local are the repositories asked whose runner list needs admin, which
+	// the gh login is not there; their lists are not read.
+	local map[string]bool
 	// clients are the GitHub clients by host.
 	clients map[string]github
 }
@@ -217,6 +233,13 @@ func (r *runnerRemove) Plan(ctx context.Context) (Plan, error) {
 	}
 	plan.Steps = append(append(plan.Steps, hostStep(where, false)), steps...)
 	plan.ReadOnly = len(plan.Changes()) == 0
+	var chosen []slotState
+	for _, st := range plan.Changes() {
+		if s, ok := find(env.mine, st.Target); ok && st.Action == actRemoveRunner {
+			chosen = append(chosen, s)
+		}
+	}
+	plan.Notes = localNotes(chosen)
 	return plan, nil
 }
 
@@ -259,7 +282,7 @@ func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, er
 		}
 	}
 	sort.Strings(repos)
-	env := &removeEnv{inv: inv, lists: map[string][]ghRunner{}, clients: map[string]github{}}
+	env := &removeEnv{inv: inv, lists: map[string][]ghRunner{}, local: map[string]bool{}, clients: map[string]github{}}
 	for _, repo := range repos {
 		h := repoHost(repo)
 		gh, ok := env.clients[h]
@@ -268,6 +291,16 @@ func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, er
 				return nil, err
 			}
 			env.clients[h] = gh
+		}
+		// GitHub's runner endpoints need admin, as runner add's route
+		// does: a collaborator's runners came through the request route.
+		perms, err := gh.RepoPermissions(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
+		if !perms.Admin {
+			env.local[repo] = true
+			continue
 		}
 		if env.lists[repo], err = gh.ListRunners(ctx, repo); err != nil {
 			return nil, err
@@ -291,28 +324,35 @@ func (env *removeEnv) match(s runners.Runner, pr hostProbe, repos []string) slot
 	if st.name == "" {
 		st.name, _ = pr.runnerName(s.Slot)
 	}
-	if st.name == "" {
-		return st
-	}
 	if s.Repo != "" {
 		repos = []string{s.Repo}
 	}
-	for _, repo := range repos {
-		for _, g := range env.lists[repo] {
-			if strings.EqualFold(g.Name, st.name) {
-				st.gh = &remoteRunner{ghRunner: g, repo: repo, client: env.clients[repoHost(repo)]}
-				return st
+	if st.name != "" {
+		for _, repo := range repos {
+			for _, g := range env.lists[repo] {
+				if strings.EqualFold(g.Name, st.name) {
+					st.gh = &remoteRunner{ghRunner: g, repo: repo, client: env.clients[repoHost(repo)]}
+					return st
+				}
 			}
+		}
+	}
+	// Not found in a list read: it may be registered in a repository whose
+	// list needs admin.
+	for _, repo := range repos {
+		if env.local[repo] {
+			st.local, st.localRepo = true, repo
+			break
 		}
 	}
 	return st
 }
 
-// pick returns n slots: stale first, then idle, then busy, in slot order
+// pick returns n slots: stale first, then local, idle and busy, in slot order
 // within each class.
 func pick(slots []slotState, n int) []slotState {
 	var out []slotState
-	for _, c := range []string{classStale, classIdle, classBusy} {
+	for _, c := range []string{classStale, classLocal, classIdle, classBusy} {
 		for _, s := range slots {
 			if s.class() == c {
 				out = append(out, s)
@@ -362,8 +402,11 @@ func (r *runnerRemove) steps(ctx context.Context, env *removeEnv, as host.Autost
 		st.Detail, st.Current, st.Next = s.detail(), s.condition(), "absent"
 		steps = append(steps, st)
 		repo := s.Repo
-		if s.gh != nil {
+		switch {
+		case s.gh != nil:
 			repo = s.gh.repo
+		case s.local:
+			repo = s.localRepo
 		}
 		if repo != "" {
 			repos[strings.ToLower(repo)] = repo
@@ -404,13 +447,19 @@ func (r *runnerRemove) steps(ctx context.Context, env *removeEnv, as host.Autost
 // condition names a slot's class and registration.
 func (s slotState) condition() string {
 	reg := "not registered"
-	if s.gh != nil {
+	switch {
+	case s.gh != nil:
 		reg = "registered as " + s.gh.Name + " in " + s.gh.repo
+	case s.local:
+		reg = "GitHub not read (needs admin of " + s.localRepo + ")"
 	}
 	return s.class() + ", " + reg
 }
 
 func (s slotState) detail() string {
+	if s.local {
+		return strings.TrimSpace(s.name+", local only") + ": waits for a running Job to end; the GitHub registration stays"
+	}
 	name := s.name
 	if s.gh == nil {
 		name += " (not registered)"
@@ -420,6 +469,37 @@ func (s slotState) detail() string {
 		d += ": waits for its Job to end"
 	}
 	return d
+}
+
+// localNotes tell, per repository, that the GitHub registration of the
+// local slots stays and who removes it.
+func localNotes(slots []slotState) []string {
+	var repos []string
+	names := map[string][]string{}
+	for _, s := range slots {
+		if !s.local {
+			continue
+		}
+		if _, ok := names[s.localRepo]; !ok {
+			repos = append(repos, s.localRepo)
+		}
+		name := s.name
+		if name == "" {
+			name = s.Slot
+		}
+		names[s.localRepo] = append(names[s.localRepo], name)
+	}
+	var notes []string
+	for _, repo := range repos {
+		notes = append(notes, fmt.Sprintf("The GitHub registration of %s in %s stays: you are not admin of %s. Its owner removes it under Settings → Actions → Runners (%s). GitHub also removes a runner that has been offline for more than 14 days.",
+			strings.Join(names[repo], ", "), repo, repo, runnersSettingsURL(repo)))
+	}
+	return notes
+}
+
+// runnersSettingsURL is the repository's Settings → Actions → Runners page.
+func runnersSettingsURL(repo string) string {
+	return "https://" + repo + "/settings/actions/runners"
 }
 
 func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
@@ -652,7 +732,8 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 		}
 	}
 	res := Result{"host": where, "provider": r.prov.name}
-	fail := func(err error) (Result, error) { return checks.Fill(res, nil, err), err }
+	notes := localNotes(r.removed)
+	fail := func(err error) (Result, error) { return checks.Fill(res, notes, err), err }
 	if r.host.NeedsStart() {
 		checks.Set(hs, false, "stopped", where+" is not running")
 		return fail(Errorf(CodePodmanFailed, "%s is not running", where))
@@ -660,14 +741,25 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 	checks.Set(hs, true, "running", "")
 	var extra []string
 	for _, s := range r.removed {
-		if s.gh != nil {
+		switch {
+		case s.gh != nil:
 			extra = append(extra, s.gh.repo)
+		case s.local:
+			extra = append(extra, s.localRepo)
 		}
 	}
 	env, err := r.load(ctx, extra)
 	if err != nil {
 		return fail(err)
 	}
+	routes := map[string]string{}
+	for repo := range env.lists {
+		routes[repo] = routeAdmin
+	}
+	for repo := range env.local {
+		routes[repo] = routeRequest
+	}
+	res["routes"] = routes
 	states := []RunnerState{}
 	for _, s := range env.all {
 		st := RunnerState{Runner: s.Runner}
@@ -680,7 +772,7 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 	var left []string
 	for _, s := range r.removed {
 		removed = append(removed, s.Slot)
-		_, local := env.inv.Find(s.Slot)
+		_, onHost := env.inv.Find(s.Slot)
 		listed := false
 		if s.gh != nil {
 			for _, g := range env.lists[s.gh.repo] {
@@ -688,14 +780,18 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 			}
 		}
 		// state is what was read back; why is the reason it is not confirmed.
+		// A local slot's registration is not read: it needs admin, and the
+		// repository's owner removes it.
 		why, state := "", "absent"
 		switch {
-		case local && listed:
+		case onHost && listed:
 			why, state = "still on the host and on GitHub", "on the host and on GitHub"
-		case local:
+		case onHost:
 			why, state = "still on the host", "on the host"
 		case listed:
 			why, state = "still registered on GitHub", "registered on GitHub"
+		case s.local:
+			state = "absent from the host; GitHub registration not read (needs admin of " + s.localRepo + ")"
 		}
 		if why != "" {
 			left = append(left, s.Slot+" ("+why+")")
@@ -747,7 +843,7 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 			checks.Set(keepWSLStep(), true, keepWSLConfig, "")
 		}
 	}
-	checks.Fill(res, nil, nil)
+	checks.Fill(res, notes, nil)
 	if len(left) > 0 {
 		return res, Errorf(CodeNotApplied, "runners not removed: %s", strings.Join(left, ", "))
 	}

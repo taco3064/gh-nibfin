@@ -148,6 +148,10 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"Runner loses its nibfin labels, so it takes no new nibfin Job, and is removed after its\n" +
 			"Job ends; the command waits for it. Each removal deletes the GitHub registration, the\n" +
 			"service and the Runner's directory. A count above the number of Runners is refused.\n\n" +
+			"When you are not admin of the Runners' repository (a collaborator's Runners), the removal\n" +
+			"is local: it waits for a running Job, then deletes the service and the directory only.\n" +
+			"The GitHub registration stays; the repository's owner deletes it under Settings → Actions →\n" +
+			"Runners, and GitHub removes a runner offline for more than 14 days.\n\n" +
 			"--delete-login deletes the provider's login (the nibfin-home-<provider> volume) only\n" +
 			"when no Runner of the provider remains on this host.",
 		RunE: func(c *cobra.Command, args []string) error {
