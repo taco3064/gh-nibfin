@@ -729,8 +729,11 @@ The same project holds the public site, an Astro and Starlight site in
 `src/dashboard/`). `npm run build` also writes it to the ignored
 `dashboard/dist-site/`, under the base path `WEBSITE_BASE` (default
 `/gh-nibfin/`) of the origin `WEBSITE_SITE` (default
-`https://taco3064.github.io`). `npm run build` and `npm run typecheck` first
-run `astro sync`, which generates the ignored `dashboard/.astro/` types that
+`https://taco3064.github.io`). Its Live page and the live summary on Home
+read the public live data Worker, read-only, at `WEBSITE_LIVE_URL` (default
+`wss://nibfin-live.tabacotaco.workers.dev/live`); the Live page reuses the
+Dashboard's repository view with its operations removed. `npm run build` and
+`npm run typecheck` first run `astro sync`, which generates the ignored `dashboard/.astro/` types that
 `tsc` checks the site with. `.github/workflows/website.yml` builds and deploys
 it to GitHub Pages.
 

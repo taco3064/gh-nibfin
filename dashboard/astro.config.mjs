@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url'
 import react from '@astrojs/react'
 import starlight from '@astrojs/starlight'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'astro/config'
+import { defineConfig, envField } from 'astro/config'
 
 const site = process.env.WEBSITE_SITE || 'https://taco3064.github.io'
 const base = process.env.WEBSITE_BASE || '/gh-nibfin/'
+// The public live data Worker the Live page and the Home summary read.
+const liveUrl = process.env.WEBSITE_LIVE_URL || 'wss://nibfin-live.tabacotaco.workers.dev/live'
 
 const origin = new URL(site)
 if (!/^https?:$/.test(origin.protocol) || origin.origin !== site.replace(/\/$/, '')) {
@@ -18,6 +20,9 @@ if (!/^https?:$/.test(origin.protocol) || origin.origin !== site.replace(/\/$/, 
 }
 if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base)) {
   throw new Error('WEBSITE_BASE must start and end with / and contain only path segments.')
+}
+if (!URL.canParse(liveUrl) || !/^wss?:$/.test(new URL(liveUrl).protocol)) {
+  throw new Error('WEBSITE_LIVE_URL must be a ws: or wss: URL.')
 }
 
 export default defineConfig({
@@ -28,6 +33,11 @@ export default defineConfig({
   outDir: './dist-site',
   output: 'static',
   trailingSlash: 'always',
+  env: {
+    schema: {
+      WEBSITE_LIVE_URL: envField.string({ context: 'client', access: 'public', default: liveUrl }),
+    },
+  },
   vite: {
     plugins: [tailwindcss()],
     resolve: {

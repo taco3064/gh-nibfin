@@ -1,0 +1,15 @@
+---
+title: Live
+description: The live, read-only view of Nibfin's own repositories.
+tableOfContents: false
+---
+
+import { LivePage } from '../../components/live/LivePage'
+
+Nibfin develops itself. This page shows its own public repositories,
+nibfin-core, gh-nibfin and nibfin-e2e, as Nibfin works on them: how many
+Issues it has delivered, which runners are busy and on what, and every open
+Issue with its stage, blockers and runs. A Worker checks GitHub and pushes
+each change here, so the page updates without a reload. It is read-only.
+
+<LivePage client:load />

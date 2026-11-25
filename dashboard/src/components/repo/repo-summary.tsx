@@ -78,27 +78,29 @@ export function RepoSummary({ data, onFinished }: RepoSummaryProps) {
         </div>
         {!readOnly && image && !loading.has('image') && <Actions repo={data.repo} image={image} onFinished={onFinished} />}
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 sm:px-5">
-        {(hasImage || nibfinRun) && (
-          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
-            {hasImage && (
-              <>
-                <dt className="text-muted-foreground">Image</dt>
-                <ImageState image={image} latestImage={latestImage} loading={loading} />
-              </>
-            )}
-            {nibfinRun && (
-              <>
-                <dt className="text-muted-foreground">Nibfin run</dt>
-                <dd className="min-w-0" data-slot="nibfin-run">
-                  {loading.has('nibfinRun') ? <SectionLoading label="Reading the Nibfin run…" data-loading="nibfinRun" /> : <RunState run={nibfinRun} />}
-                </dd>
-              </>
-            )}
-          </dl>
-        )}
-        {rest.length > 0 && <SectionLoading label={`Still reading: ${rest.join(', ')}`} data-loading="summary" />}
-      </CardContent>
+      {(hasImage || nibfinRun || rest.length > 0) && (
+        <CardContent className="flex flex-col gap-3 px-4 sm:px-5">
+          {(hasImage || nibfinRun) && (
+            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
+              {hasImage && (
+                <>
+                  <dt className="text-muted-foreground">Image</dt>
+                  <ImageState image={image} latestImage={latestImage} loading={loading} />
+                </>
+              )}
+              {nibfinRun && (
+                <>
+                  <dt className="text-muted-foreground">Nibfin run</dt>
+                  <dd className="min-w-0" data-slot="nibfin-run">
+                    {loading.has('nibfinRun') ? <SectionLoading label="Reading the Nibfin run…" data-loading="nibfinRun" /> : <RunState run={nibfinRun} />}
+                  </dd>
+                </>
+              )}
+            </dl>
+          )}
+          {rest.length > 0 && <SectionLoading label={`Still reading: ${rest.join(', ')}`} data-loading="summary" />}
+        </CardContent>
+      )}
     </Card>
   )
 }

@@ -14,7 +14,34 @@
 /* Generate the classes of the site and of the shared components only. */
 @source '..';
 @source '../../components/ui';
-@source '../../components/issue/tones.ts';
+@source '../../components/issue';
+@source '../../components/repo';
+@source '../../components/shell';
+
+/* Without preflight, buttons keep the browser's face. Reset only those of
+   the shared components (islands and their dialogs), in the base layer so
+   every utility still wins. */
+@layer base {
+  :where(.not-content, [role='dialog']) :where(button) {
+    background-color: transparent;
+    border: 0 solid;
+    color: inherit;
+    font: inherit;
+  }
+}
+
+/* The flowing strip of a busy runner card (motion-safe only). */
+@theme {
+  --animate-flow: nf-flow 1.6s linear infinite;
+  @keyframes nf-flow {
+    from {
+      background-position: -100% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+}
 
 /* Unlayered, so these win over Starlight's and starlight-tailwind's defaults
    in both themes; tokens.css switches the --nf- values by data-theme. */
