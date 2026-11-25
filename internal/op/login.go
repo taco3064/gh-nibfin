@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/taco3064/gh-nibfin/internal/host"
 	"github.com/taco3064/gh-nibfin/internal/runners"
@@ -503,8 +504,26 @@ func runArgs(p provider, pull, name string, interactive, tty bool, argv []string
 	return append(a, argv...)
 }
 
+// loginName is the container name of a provider's login.
+func loginName(p provider) string { return "nibfin-login-" + p.name }
+
 func loginArgs(p provider, tty bool) []string {
-	return runArgs(p, pullNewer, "nibfin-login-"+p.name, true, tty, p.login)
+	return runArgs(p, pullNewer, loginName(p), true, tty, p.login)
+}
+
+// removeTimeout bounds the removal of a cancelled login's container, so a
+// hung podman cannot keep the server from stopping.
+const removeTimeout = 30 * time.Second
+
+// removeLogin removes a cancelled structured login's container. Killing the
+// podman client is not documented to end the container, and on a machine
+// host the client is remote, so it is removed by name. The outcome is
+// ignored: the login's own error stays the result, and the next login's
+// --replace removes a container this left.
+func removeLogin(parent context.Context, h runnerHost, p provider) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), removeTimeout)
+	defer cancel()
+	_, _, _ = quiet(ctx, h, "rm", "--force", "--ignore", "--time", "0", loginName(p))
 }
 
 func checkArgs(p provider) []string {
@@ -675,6 +694,11 @@ func (l *login) structured(parent context.Context, p provider) error {
 	}
 	stdin.Close()
 	werr := c.Wait()
+	// A cancelled login (the request closed, Ctrl-C or the code wait ended)
+	// removes its container.
+	if ctx.Err() != nil {
+		removeLogin(parent, l.host, p)
+	}
 
 	if codeErr == nil {
 		codeErr = loginExit(parent, p, werr)

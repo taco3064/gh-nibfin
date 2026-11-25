@@ -323,6 +323,33 @@ func TestLoginCodeCancelled(t *testing.T) {
 	if Code(err) != CodeCancelled || kinds(in.steps)[len(in.steps)-1] != StepFailed {
 		t.Errorf("err = %v, steps %v", err, kinds(in.steps))
 	}
+	rm := []string{"rm", "--force", "--ignore", "--time", "0", "nibfin-login-claude"}
+	at, run := -1, -1
+	for i, c := range f.calls {
+		if reflect.DeepEqual(c, rm) {
+			at = i
+		}
+		if c[0] == "run" && c[len(c)-1] == "login" {
+			run = i
+		}
+	}
+	if at < 0 || run < 0 || at < run {
+		t.Errorf("rm at %d, login run at %d; calls %v", at, run, f.calls)
+	}
+}
+
+func TestLoginSucceededRemovesNothing(t *testing.T) {
+	f := &fakeHost{loginWorks: true, want: "the-code"}
+	useHost(t, f)
+	in := &recInteract{code: "the-code"}
+	if _, _, err := Run(context.Background(), Login(LoginParams{Provider: "claude", Interact: in}), nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.calls {
+		if c[0] == "rm" {
+			t.Errorf("unexpected %v", c)
+		}
+	}
 }
 
 func TestLoginWrongCodeFails(t *testing.T) {
