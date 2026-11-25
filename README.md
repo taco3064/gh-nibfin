@@ -44,10 +44,71 @@ and the exit code is 1. These lines come from the same items the
 
 `internal/templates/workflows/` holds the workflows `init` and `upgrade` write
 into a repository: the execution set (`nibfin-issue.yml`,
-`nibfin-shared-runner.yml`, `nibfin-job.yml`) and the peer set
-(`nibfin-issue.yml`). They call nothing in other repositories; the Job runs
-`ghcr.io/taco3064/nibfin` pinned to the digest of the latest attested main
-image.
+`nibfin-shared-runner.yml`, `nibfin-job.yml`, `nibfin-runner-request.yml`)
+and the peer set (`nibfin-issue.yml`). They call nothing in other
+repositories; the Job runs `ghcr.io/taco3064/nibfin` pinned to the digest of
+the latest attested main image.
+
+- The stage Job runs on any Runner labelled `nibfin-<user id>` of the Issue's
+  first Assignee and takes the provider from that Runner: its `.env` sets
+  `NIBFIN_PROVIDER` to `claude` or `codex` (the runner reads it when it
+  starts). Without a valid value the Job stops before any container starts.
+  No repository variable or input chooses the provider; an old
+  `NIBFIN_PROVIDER` repository variable is unused and can be deleted.
+- Event text, inputs and repository variables reach every script only as
+  quoted environment variables, never as `${{ }}` inside a `run:` script.
+
+### Runner request
+
+`nibfin-runner-request.yml` gives a collaborator of the execution repository
+a runner registration token for it. Making someone a collaborator with write
+access approves their Runners. It runs on a GitHub-hosted runner when an
+Issue is opened and answers only Issues whose body has the request marker.
+
+The request is an Issue opened by the requester with:
+
+- the title `Nibfin runner request`;
+- a body with the line `<!-- nibfin:runner-request -->` and exactly one line
+  `ssh-key-id: <id>`, the id of one of the author's SSH keys in
+  `GET /users/{login}/keys` (`ssh-ed25519` or `ssh-rsa`). Other text is
+  ignored. The requester is always the Issue's author.
+
+When the author is a user with write or admin permission, the workflow
+creates a registration token with `NIBFIN_GITHUB_TOKEN`, masks it, encrypts it
+with [age](https://github.com/FiloSottile/age) to that SSH key and comments:
+
+````text
+<!-- nibfin:runner-registration -->
+requester: <login>
+ssh-key-id: <id>
+expires-at: <time>
+
+<a sentence>
+
+```text
+-----BEGIN AGE ENCRYPTED FILE-----
+…
+-----END AGE ENCRYPTED FILE-----
+```
+````
+
+Otherwise (another title, zero or several `ssh-key-id` lines, an unknown key
+or another key type, read or no permission, a non-user author) and when the
+workflow fails, it comments
+
+```text
+<!-- nibfin:runner-request-refused -->
+reason: <why>
+
+<what to do next>
+```
+
+and closes the Issue as not planned. Both comments are written by the
+workflow's `GITHUB_TOKEN`; a rerun updates the workflow's earlier comment of
+the same kind instead of adding one, and stops when the Issue is closed. Only
+`opened` starts the workflow, so editing a request does nothing. The token
+expires after an hour. `internal/templates/runnerrequest.go` holds the same
+contract for `gh nibfin runner add`.
 
 ## Init
 
@@ -59,7 +120,10 @@ write and asks for `gh auth refresh -s workflow`.
 It reads this host's Runners first. Without Runners it stops and points to
 `gh nibfin runner add`. When the Runners serve the target repository it uses
 the execution set; otherwise the peer set, which wakes the Runners'
-repository. A stopped podman machine is started (through the autostart entry
+repository. For the peer set the current gh login must be admin of the
+Runners' repository too; otherwise (Runners of a collaborator) init stops
+before any write (`runner_repo_not_admin`), so it never stores your login as
+another repository's Secret. A stopped podman machine is started (through the autostart entry
 when one is registered); init registers no entry, installs no Runner, logs
 nothing in and creates no volume.
 
@@ -76,10 +140,10 @@ It then sets, only where they differ:
   manages this policy and GitHub refuses the change, init stops before the
   variables, the Secret and the PR; require approval there and run init again;
 - "Automatically delete head branches" off;
-- the variable `NIBFIN_EXECUTION_REPO` (the Runners' repository) and, in the
-  execution repository, `NIBFIN_PROVIDER` (kept when it is `claude` or
-  `codex`, otherwise the one provider of the Runners; with Runners of both
-  providers set it yourself with `gh variable set NIBFIN_PROVIDER`);
+- the variable `NIBFIN_EXECUTION_REPO` (the Runners' repository). Init
+  neither writes nor reads `NIBFIN_PROVIDER`; each Runner names its provider
+  (see [Workflow templates](#workflow-templates)), and an existing variable is
+  left as it is;
 - the Secret `NIBFIN_GITHUB_TOKEN` from the current gh login, every time. The
   token goes to `gh secret set` on its standard input and is never printed.
 
@@ -95,8 +159,10 @@ UI, so init prints the repository's Settings link and asks you to set it there.
 
 `gh nibfin upgrade [-R OWNER/REPO]` renders the repository's Nibfin workflows
 from the current templates, pinned to the latest attested image digest. The
-set is the execution set when the default branch has `nibfin-shared-runner.yml`
-or `nibfin-job.yml`, otherwise the peer set; a repository without
+set is the execution set when the default branch has `nibfin-shared-runner.yml`,
+`nibfin-job.yml` or `nibfin-runner-request.yml`, otherwise the peer set (an
+execution repository set up before `nibfin-runner-request.yml` existed gets it
+in the upgrade PR); a repository without
 `nibfin-issue.yml` needs `gh nibfin init` first. When the result differs from
 the default branch, it writes one commit to the branch `nibfin/upgrade`
 (replacing that branch's earlier contents) and opens one PR into the default
