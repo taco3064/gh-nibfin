@@ -10,6 +10,14 @@ import { defineConfig, type Plugin } from 'vite'
 // in Git without a build, so it must survive every build.
 const outDir = fileURLToPath(new URL('../internal/dashboard/dist', import.meta.url))
 
+// The screenshot harness builds here, never into outDir, so no product
+// binary embeds it. The Go server reads it only with -tags dashboardscreenshots.
+const screenshotsDir = fileURLToPath(new URL('./.screenshots-dist', import.meta.url))
+
+// The server replaces this placeholder with a fresh nonce per response; see
+// noncePlaceholder in internal/dashboard/assets.go.
+const cspNonce = 'NIBFIN_CSP_NONCE'
+
 // cleanDist empties outDir like Vite's emptyOutDir, but keeps .gitignore.
 function cleanDist(): Plugin {
   return {
@@ -23,17 +31,29 @@ function cleanDist(): Plugin {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), cleanDist()],
-  resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
-  },
-  build: {
-    outDir,
-    emptyOutDir: false,
-  },
-  test: {
-    include: ['src/**/*.test.{ts,tsx}'],
-    environment: 'node',
-  },
+export default defineConfig(({ mode }) => {
+  const screenshots = mode === 'screenshots'
+  return {
+    plugins: [react(), tailwindcss(), ...(screenshots ? [] : [cleanDist()])],
+    resolve: {
+      alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
+    html: { cspNonce },
+    build: screenshots
+      ? {
+          outDir: screenshotsDir,
+          emptyOutDir: true,
+          rollupOptions: {
+            input: {
+              index: fileURLToPath(new URL('./index.html', import.meta.url)),
+              screenshots: fileURLToPath(new URL('./screenshots.html', import.meta.url)),
+            },
+          },
+        }
+      : { outDir, emptyOutDir: false },
+    test: {
+      include: ['src/**/*.test.{ts,tsx}'],
+      environment: 'node',
+    },
+  }
 })
