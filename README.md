@@ -195,10 +195,10 @@ its service is stopped only after the Job's `Runner.Worker` process ends, then
 its files are written and it starts again, while the other Runners keep taking
 Jobs. The read-back checks each Runner's files, service and (with admin) labels
 and reports its online status; a Runner offline right after its restart is
-reported, not failed. Upgrade does not start a stopped podman machine, does
-not finish incomplete slots (`runner add` does) and does not update the runner
-binary, which updates itself; the plan notes each of these. The result holds
-the Runners under `runners`.
+reported, not failed. Upgrade does not start a stopped podman machine or finish
+incomplete slots (`runner add` does); the plan notes both. It does not update
+the runner binary, which updates itself. The result holds the Runners under
+`runners`.
 
 ## Runners
 
