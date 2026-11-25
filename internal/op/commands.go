@@ -28,9 +28,6 @@ func RunnerRemove(p RunnerRemoveParams) Operation { return notImplemented("runne
 // Init is the entry point of init.
 func Init(p RepoParams) Operation { return notImplemented("init") }
 
-// Status is the entry point of status.
-func Status(p RepoParams) Operation { return notImplemented("status") }
-
 // Pause is the entry point of pause: it adds the pause label to each Issue.
 func Pause(p IssuesParams) Operation {
 	return &labelOp{name: "pause", add: "pause", done: "paused", params: p}
