@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, type Page, type Response } from '@playwright/test'
 
+import { frame, mockLive, type LiveMock } from './live-mock'
 import { personView } from './person-fixtures'
 
 // Shared checks of the screenshot specs: the API is mocked with fictional
@@ -25,7 +26,10 @@ export interface Watch {
   // statusReads counts the status requests.
   statusReads: number
   // status is the answer of the next status reads; a test may replace it.
+  // A live stream opens with it too: a result is its snapshot, which counts
+  // as a status read, and an error ends the stream with an error frame.
   status: StatusAnswer
+  live: LiveMock
 }
 
 // prepare mocks the API and records CSP violations and console errors. The
@@ -37,7 +41,14 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
     consoleErrors: [],
     statusReads: 0,
     status,
+    live: undefined as unknown as LiveMock,
   }
+  w.live = await mockLive(page, () => {
+    w.statusReads++
+    const a = w.status
+    if ('error' in a) return { frames: [frame({ event: 'error', source: 'status', error: a.error })], open: false }
+    return { frames: [frame({ event: 'snapshot', at: new Date().toISOString(), result: a.result })], open: true }
+  })
   let exchanges = 0
   await page.route('**/api/session', (route) => {
     exchanges++

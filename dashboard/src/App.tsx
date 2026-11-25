@@ -4,6 +4,7 @@ import { FolderGit2, LoaderCircle, RefreshCw, Server, UserRound, type LucideIcon
 import { PersonView } from '@/components/person/person-view'
 import { ConnectionCard } from '@/components/shell/connection-card'
 import { FreshnessIndicator } from '@/components/shell/freshness-indicator'
+import { LiveBadge, LiveNotes } from '@/components/shell/live-status'
 import { Note } from '@/components/shell/note'
 import { RepoView } from '@/components/shell/repo-view'
 import { RunnerView } from '@/components/shell/runner-view'
@@ -46,6 +47,7 @@ export function App() {
                 })}
               </TabsList>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <LiveBadge live={status.live} />
                 <FreshnessIndicator readAt={status.readAt} />
                 <Button variant="outline" size="sm" onClick={status.refresh} disabled={status.reading} data-action="refresh">
                   {status.reading ? (
@@ -71,6 +73,13 @@ function Shell({ status }: { status: Status }) {
   const { data, readError } = status
   return (
     <>
+      <LiveNotes
+        live={status.live}
+        podman={status.podman}
+        checkError={status.checkError}
+        liveReadError={status.liveReadError}
+        data={data}
+      />
       {readError && (
         <Note tone="danger" data-note="read-error">
           {data ? 'Refresh failed' : 'Status could not be read'}: {readError.code}: {readError.message}
