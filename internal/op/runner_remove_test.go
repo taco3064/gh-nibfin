@@ -734,3 +734,123 @@ func TestRemoveScriptsUnderSh(t *testing.T) {
 		t.Errorf("purge again: %v", err)
 	}
 }
+
+// collaboratorHost is removeHost for a gh login that writes to github.com/o/r
+// but is not admin: every GitHub runner call fails if made.
+func collaboratorHost(t *testing.T, perms repoPerms) (*fakeHost, *fakeRunnerAPI) {
+	t.Helper()
+	f, gh := removeHost(t)
+	gh.perms = &perms
+	gh.listErr = Errorf(CodeGitHubAPIFailed, "ListRunners must not be called")
+	gh.deleteErr = Errorf(CodeGitHubAPIFailed, "DeleteRunner must not be called")
+	return f, gh
+}
+
+const collaboratorNote = "in github.com/o/r stays: you are not admin of github.com/o/r. Its owner removes it under Settings → Actions → Runners (https://github.com/o/r/settings/actions/runners). GitHub also removes a runner that has been offline for more than 14 days."
+
+func TestRunnerRemoveCollaborator(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		perms repoPerms
+	}{
+		{"write", repoPerms{Push: true}},
+		// A repository the login cannot see reads as no permissions.
+		{"invisible", repoPerms{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, gh := collaboratorHost(t, tc.perms)
+			c := &yes{}
+			p, r, err := Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "claude"}), c)
+			if err != nil {
+				t.Fatalf("Run: %v (events %v)", err, f.events)
+			}
+			want := []string{"remove runner claude-1", "remove runner claude-2", "remove runner claude-3"}
+			if !reflect.DeepEqual(steps(p), want) || p.Repo != "github.com/o/r" {
+				t.Fatalf("plan = %v, %+v", steps(p), p)
+			}
+			for _, st := range p.Changes() {
+				name := hostName(st.Target)
+				if st.Current != "local, GitHub not read (needs admin of github.com/o/r)" ||
+					st.Detail != name+", local only: waits for a running Job to end; the GitHub registration stays" {
+					t.Errorf("step %s = %q / %q", st.Target, st.Current, st.Detail)
+				}
+			}
+			names := hostName("claude-1") + ", " + hostName("claude-2") + ", " + hostName("claude-3")
+			wantNotes := []string{"The GitHub registration of " + names + " " + collaboratorNote}
+			if !reflect.DeepEqual(p.Notes, wantNotes) {
+				t.Errorf("notes = %q", p.Notes)
+			}
+			// Each slot waits for a running Job and is removed from the host
+			// only; nothing is read, changed or deleted on GitHub.
+			wantEvents := []string{
+				"stop claude-1 0", "purge claude-1",
+				"stop claude-2 0", "purge claude-2",
+				"stop claude-3 0", "purge claude-3",
+			}
+			if !reflect.DeepEqual(f.events, wantEvents) {
+				t.Errorf("events = %q\nwant %q", f.events, wantEvents)
+			}
+			if len(gh.regs) != 5 || len(gh.lists) != 0 {
+				t.Errorf("GitHub touched: regs %d, lists %v", len(gh.regs), gh.lists)
+			}
+			m := resultJSON(t, r)
+			if !reflect.DeepEqual(m["removed"], []any{"claude-1", "claude-2", "claude-3"}) || m["remaining"] != float64(0) {
+				t.Errorf("result = %v", m)
+			}
+			if !reflect.DeepEqual(m["routes"], map[string]any{"github.com/o/r": "request"}) {
+				t.Errorf("routes = %v", m["routes"])
+			}
+			if !reflect.DeepEqual(m["notes"], []any{wantNotes[0]}) {
+				t.Errorf("result notes = %v", m["notes"])
+			}
+			for _, it := range m["items"].([]any) {
+				it := it.(map[string]any)
+				if it["action"] != actRemoveRunner {
+					continue
+				}
+				if it["confirmed"] != true || it["state"] != "absent from the host; GitHub registration not read (needs admin of github.com/o/r)" {
+					t.Errorf("item = %v", it)
+				}
+			}
+		})
+	}
+}
+
+func TestRunnerRemoveCollaboratorCount(t *testing.T) {
+	f, _ := collaboratorHost(t, repoPerms{Push: true})
+	// A slot a crashed add left incomplete is stale and goes before the
+	// local ones.
+	f.slots["claude-4"] = &fakeSlot{}
+	o := RunnerRemove(RunnerRemoveParams{Provider: "claude", Count: 2})
+	p, err := o.Plan(context.Background())
+	want := []string{"remove runner claude-4", "remove runner claude-1"}
+	if err != nil || !reflect.DeepEqual(steps(p), want) {
+		t.Fatalf("plan = %v, %v", steps(p), err)
+	}
+	if c := p.Changes()[0].Current; c != "stale, GitHub not read (needs admin of github.com/o/r)" {
+		t.Errorf("stale = %q", c)
+	}
+	if len(p.Notes) != 1 || !strings.HasPrefix(p.Notes[0], "The GitHub registration of "+hostName("claude-4")+", "+hostName("claude-1")+" "+collaboratorNote) {
+		t.Errorf("notes = %q", p.Notes)
+	}
+	if err := o.Apply(context.Background(), p); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if want := []string{"stop claude-4 0", "purge claude-4", "stop claude-1 0", "purge claude-1"}; !reflect.DeepEqual(f.events, want) {
+		t.Errorf("events = %q", f.events)
+	}
+	if _, err := o.ReadBack(context.Background(), p); err != nil {
+		t.Errorf("ReadBack: %v", err)
+	}
+}
+
+func TestRunnerRemoveCollaboratorPermissionError(t *testing.T) {
+	// Any other failure to read the permission fails as the runner list
+	// did; nothing is removed.
+	f, gh := collaboratorHost(t, repoPerms{Push: true})
+	gh.permsErr = Errorf(CodeGitHubAPIFailed, "read the permissions on github.com/o/r: HTTP 502: Bad Gateway")
+	_, _, err := Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "claude"}), &yes{})
+	if Code(err) != CodeGitHubAPIFailed || len(f.events) != 0 {
+		t.Errorf("err = %v, events %v", err, f.events)
+	}
+}
