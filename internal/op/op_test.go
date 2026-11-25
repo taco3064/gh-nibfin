@@ -138,3 +138,33 @@ func TestNotImplemented(t *testing.T) {
 		t.Errorf("NotImplemented = %v", err)
 	}
 }
+
+func TestFinish(t *testing.T) {
+	tests := []struct {
+		name      string
+		plan      Plan
+		confirmed bool
+		wantCalls []string
+		wantCode  string
+	}{
+		{"read-only reads back", Plan{ReadOnly: true, Confirm: true}, false, []string{"readback"}, ""},
+		{"unconfirmed is refused", Plan{Operation: "init", Confirm: true}, false, nil, CodeConfirmationRequired},
+		{"confirmed applies then reads back", Plan{Confirm: true}, true, []string{"apply", "readback"}, ""},
+		{"no confirmation needed", Plan{}, false, []string{"apply", "readback"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &fakeOp{}
+			r, err := Finish(context.Background(), o, tt.plan, tt.confirmed)
+			if !reflect.DeepEqual(o.calls, tt.wantCalls) {
+				t.Errorf("calls = %v, want %v", o.calls, tt.wantCalls)
+			}
+			if got := Code(err); got != tt.wantCode {
+				t.Errorf("code = %q, want %q (err %v)", got, tt.wantCode, err)
+			}
+			if tt.wantCode == "" && r["ok"] != true {
+				t.Errorf("result = %v", r)
+			}
+		})
+	}
+}
