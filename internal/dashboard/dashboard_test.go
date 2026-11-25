@@ -26,7 +26,9 @@ type fakeOp struct {
 	plan  op.Plan
 	err   error
 	apply func(ctx context.Context) error
-	calls []string
+	// readBack, when set, runs as its ReadBack.
+	readBack func() (op.Result, error)
+	calls    []string
 }
 
 func (f *fakeOp) record(c string) {
@@ -51,6 +53,9 @@ func (f *fakeOp) Apply(ctx context.Context, _ op.Plan) error {
 }
 func (f *fakeOp) ReadBack(context.Context, op.Plan) (op.Result, error) {
 	f.record("readback")
+	if f.readBack != nil {
+		return f.readBack()
+	}
 	return op.Result{"operation": f.plan.Operation}, nil
 }
 
@@ -531,10 +536,11 @@ func (h *harness) plan(command, body string) planned {
 }
 
 type event struct {
-	Event  string
-	Step   op.LoginStep
-	Result op.Result
-	Error  struct{ Code, Message string }
+	Event    string
+	Progress op.Event
+	Step     op.LoginStep
+	Result   op.Result
+	Error    struct{ Code, Message string }
 }
 
 func (h *harness) apply(id, body string) (int, []event) {
@@ -974,5 +980,87 @@ func TestBuiltPageNonce(t *testing.T) {
 	status, _, hdr = h.do("GET", "/index.html", "", nil)
 	if status != 200 || nonceRE.FindString(hdr.Get("Content-Security-Policy")) == "" {
 		t.Errorf("index.html: %d CSP %q", status, hdr.Get("Content-Security-Policy"))
+	}
+}
+
+func TestApplyStreamsProgressAndTheResultWithTheError(t *testing.T) {
+	h := start(t)
+	h.open()
+	step := op.Step{ID: "issue:x", Action: "add label", Target: "x"}
+	partial := op.Result{op.ResultItems: []op.Check{{ID: "issue:x", Action: "add label", Target: "x", Reason: "has bug"}}, op.ResultNotes: []string{}}
+	o := &fakeOp{plan: op.Plan{Operation: "pause", Steps: []op.Step{step}},
+		apply: func(ctx context.Context) error {
+			return op.Track(ctx, step, func() error { return nil })
+		},
+		readBack: func() (op.Result, error) { return partial, op.Errorf(op.CodeNotApplied, "pause not applied") }}
+	h.next = func() *fakeOp { return o }
+	p := h.plan("pause", `{"issues":["https://github.com/a/b/issues/1"]}`)
+	status, events := h.apply(p.ID, ``)
+	if status != 200 || len(events) != 3 {
+		t.Fatalf("%d %+v", status, events)
+	}
+	if events[0].Event != "progress" || events[0].Progress.Phase != op.PhaseStarted || events[0].Progress.ID != "issue:x" || events[0].Progress.Target != "x" ||
+		events[1].Event != "progress" || events[1].Progress.Phase != op.PhaseDone {
+		t.Errorf("progress = %+v", events[:2])
+	}
+	last := events[2]
+	if last.Event != "error" || last.Error.Code != op.CodeNotApplied || last.Result == nil {
+		t.Fatalf("error line = %+v", last)
+	}
+	items, _ := last.Result[op.ResultItems].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["confirmed"] != false || items[0].(map[string]any)["reason"] != "has bug" {
+		t.Errorf("result = %v", last.Result)
+	}
+
+	// A failed item carries its code; an error without a result has no
+	// result field.
+	o = &fakeOp{plan: op.Plan{Operation: "pause"}, apply: func(ctx context.Context) error {
+		return op.Track(ctx, step, func() error { return op.Errorf(op.CodeGitHubError, "boom") })
+	}}
+	p = h.plan("pause", `{"issues":["https://github.com/a/b/issues/1"]}`)
+	_, events = h.apply(p.ID, ``)
+	if len(events) != 3 || events[1].Progress.Phase != op.PhaseFailed || events[1].Progress.Code != op.CodeGitHubError || events[1].Progress.Message != "boom" ||
+		events[2].Event != "error" || events[2].Result != nil {
+		t.Errorf("failed apply = %+v", events)
+	}
+}
+
+func TestReadOnlyChangingPlanReadBackFailure(t *testing.T) {
+	h := start(t)
+	h.open()
+	steps := []op.Step{{ID: "pr", Action: "keep PR", Target: "#3", NoChange: true}}
+	partial := op.Result{"repo": "github.com/o/r", op.ResultItems: []op.Check{{ID: "pr", Action: "keep PR", Target: "#3", Reason: "closed"}}, op.ResultNotes: []string{}}
+	o := &fakeOp{plan: op.Plan{Operation: "upgrade", Steps: steps, ReadOnly: true}}
+	h.next = func() *fakeOp { return o }
+
+	// Success: {"plan","result"} as for status.
+	p := h.plan("upgrade", `{"repo":"o/r"}`)
+	if p.ID != "" || !p.Plan.ReadOnly || p.Result["operation"] != "upgrade" || len(p.Plan.Steps) != 1 || !p.Plan.Steps[0].NoChange {
+		t.Errorf("read-only plan = %+v", p)
+	}
+
+	// A failed read-back keeps 422 and the error body, with the plan and
+	// the result read so far.
+	o.readBack = func() (op.Result, error) { return partial, op.Errorf(op.CodeRepoWriteFailed, "the PR is closed") }
+	status, b, _ := h.do("POST", "/api/commands/upgrade/plan", `{"repo":"o/r"}`, nil)
+	if status != 422 || errCode(t, b) != op.CodeRepoWriteFailed {
+		t.Fatalf("%d %s", status, b)
+	}
+	var body struct {
+		Plan   op.Plan
+		Result struct{ Items []op.Check }
+	}
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Plan.Operation != "upgrade" || len(body.Plan.Steps) != 1 || len(body.Result.Items) != 1 || body.Result.Items[0].Reason != "closed" {
+		t.Errorf("body = %s", b)
+	}
+
+	// Without a result there is no result field.
+	o.readBack = func() (op.Result, error) { return nil, op.Errorf(op.CodeRepoUnreadable, "offline") }
+	status, b, _ = h.do("POST", "/api/commands/upgrade/plan", `{"repo":"o/r"}`, nil)
+	if status != 422 || errCode(t, b) != op.CodeRepoUnreadable || !strings.Contains(string(b), `"plan"`) || strings.Contains(string(b), `"result"`) {
+		t.Errorf("%d %s", status, b)
 	}
 }
