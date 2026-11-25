@@ -135,8 +135,7 @@ func TestErrorKeepsInnermostCode(t *testing.T) {
 
 func TestEntryPointsAreNotImplemented(t *testing.T) {
 	entries := map[string]Operation{
-		"runner remove": RunnerRemove(RunnerRemoveParams{Provider: "codex", Count: 1}),
-		"init":          Init(RepoParams{Repo: "github.com/o/r"}),
+		"init": Init(RepoParams{Repo: "github.com/o/r"}),
 	}
 	for name, o := range entries {
 		_, _, err := Run(context.Background(), o, &fakeConfirmer{answer: true})

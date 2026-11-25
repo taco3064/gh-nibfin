@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +16,7 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
-// github is the part of the GitHub REST API runner add uses. Repositories
+// github is the part of the GitHub REST API the runner commands use. Repositories
 // are HOST/OWNER/REPO; the client acts with the current gh login of that
 // host, whose token only go-gh handles.
 type github interface {
@@ -26,6 +27,8 @@ type github interface {
 	// expires after an hour.
 	RegistrationToken(ctx context.Context, repo string) (string, error)
 	ListRunners(ctx context.Context, repo string) ([]ghRunner, error)
+	RemoveCustomLabels(ctx context.Context, repo string, id int64) error
+	DeleteRunner(ctx context.Context, repo string, id int64) error
 }
 
 type runnerDownload struct {
@@ -37,10 +40,37 @@ type runnerDownload struct {
 }
 
 type ghRunner struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Busy   bool   `json:"busy"`
+	ID     int64     `json:"id"`
+	Name   string    `json:"name"`
+	Status string    `json:"status"`
+	Busy   bool      `json:"busy"`
+	Labels []ghLabel `json:"labels"`
+}
+
+// ghLabel is a runner label; Type is "read-only" or "custom".
+type ghLabel struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// hasCustomLabel reports whether the runner carries the custom label name.
+func (g ghRunner) hasCustomLabel(name string) bool {
+	for _, l := range g.Labels {
+		if l.Type == "custom" && l.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// customLabels reports whether the runner carries any custom label.
+func (g ghRunner) customLabels() bool {
+	for _, l := range g.Labels {
+		if l.Type == "custom" {
+			return true
+		}
+	}
+	return false
 }
 
 // newGitHub returns the client for a host; tests replace it.
@@ -128,6 +158,32 @@ func (g restGitHub) ListRunners(ctx context.Context, repo string) ([]ghRunner, e
 			return all, nil
 		}
 	}
+}
+
+// RemoveCustomLabels removes every custom label of the runner id; GitHub
+// keeps its read-only labels. A runner that is gone already is success.
+func (g restGitHub) RemoveCustomLabels(ctx context.Context, repo string, id int64) error {
+	var out json.RawMessage
+	err := g.c.DoWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/actions/runners/%d/labels", repoPath(repo), id), nil, &out)
+	if notFound(err) {
+		return nil
+	}
+	return apiError(fmt.Sprintf("remove the custom labels of runner %d in %s", id, repo), err)
+}
+
+// DeleteRunner deletes the registration of the runner id. A runner that is
+// gone already is success.
+func (g restGitHub) DeleteRunner(ctx context.Context, repo string, id int64) error {
+	err := g.c.DoWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/actions/runners/%d", repoPath(repo), id), nil, nil)
+	if notFound(err) {
+		return nil
+	}
+	return apiError(fmt.Sprintf("delete runner %d from %s", id, repo), err)
+}
+
+func notFound(err error) bool {
+	var h *api.HTTPError
+	return errors.As(err, &h) && h.StatusCode == http.StatusNotFound
 }
 
 // httpClient downloads the runner archive. It sends no credentials and

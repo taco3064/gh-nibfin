@@ -2,13 +2,6 @@ package op
 
 import "context"
 
-// RunnerRemoveParams are the inputs of runner remove.
-type RunnerRemoveParams struct {
-	Provider    string `json:"provider"`
-	Count       int    `json:"count"`
-	DeleteLogin bool   `json:"deleteLogin"`
-}
-
 // RepoParams name the target repository as HOST/OWNER/REPO.
 type RepoParams struct {
 	Repo string `json:"repo"`
@@ -21,9 +14,6 @@ type IssuesParams struct {
 	Repo   string   `json:"repo,omitempty"`
 	Issues []string `json:"issues"`
 }
-
-// RunnerRemove is the entry point of runner remove.
-func RunnerRemove(p RunnerRemoveParams) Operation { return notImplemented("runner remove") }
 
 // Init is the entry point of init.
 func Init(p RepoParams) Operation { return notImplemented("init") }
