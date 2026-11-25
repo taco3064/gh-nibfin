@@ -26,8 +26,10 @@ Issue's scope and checks.
   borders and focus; do not hard-code colors. The only exceptions are the theme
   token source file that defines the `--nf-` values and the bindings of the
   component library's variables to those tokens. Keep text contrast at least
-  4.5:1 and non-text contrast at least 3:1 in both dark and light themes, and
-  keep visible keyboard focus.
+  4.5:1, and at least 3:1 for non-text parts that carry meaning (control
+  boundaries, focus indicators, meaningful graphics), in both dark and light
+  themes; decorative borders and layered surfaces are exempt. Keep visible
+  keyboard focus.
 
 ## Screenshot review before each visual commit
 
@@ -54,11 +56,15 @@ the Issue that creates them reviews its views once they exist.
    them, and keep session proofs and tokens out of them.
 
 In your final result report, list the views, widths and themes reviewed, what
-was fixed after review, and anything not verified. If the review cannot run
-(the browser cannot start, or the screenshot script cannot build and serve the
-candidate on its own), judge the views from the code, still commit the change
-and return done: report the exact error, say that the visual review is
-unverified, and do not claim it.
+was fixed after review, and anything not verified.
+
+A screenshot script this change creates or modifies must build, serve and
+capture successfully before you return done; if it does not, that is a defect
+to fix. Only when the environment stops the review — the browser cannot be
+installed or started, or an existing script this change does not touch cannot
+serve the candidate on its own — judge the views from the code, still commit
+the change and return done: report the exact error, say that the visual review
+is unverified, and do not claim it.
 
 ## Checks
 
