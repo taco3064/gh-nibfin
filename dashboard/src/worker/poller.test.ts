@@ -268,6 +268,54 @@ describe('check', () => {
     expect(three.errors).toEqual([])
   })
 
+  it('retries a failed jobs read after its probes answer 304 again and clears the error', async () => {
+    const fake = new FakeGitHub()
+    const idle = { runners: [{ id: 7, name: 'nibfin-1', status: 'online', busy: false }] }
+    fake.set(runnersPath(core), idle, 'W/"idle"')
+    fake.set(inProgressPath(core), { workflow_runs: [] }, 'W/"none"')
+    const one = await first(fake)
+    expect(one.errors).toEqual([])
+    // A runner goes busy and its jobs read fails.
+    fake.set(runnersPath(core), { runners: [{ id: 7, name: 'nibfin-1', status: 'online', busy: true }] }, 'W/"busy"')
+    fake.set(inProgressPath(core), { workflow_runs: [{ id: 501 }] }, 'W/"one"')
+    fake.fail(jobsPath(core, 501), 502, 'Bad Gateway')
+    const two = await run(fake, one.state, t0 + minInterval)
+    expect(two.errors.map((e) => e.message).join()).toContain('HTTP 502')
+    expect(two.state.okAt).toBe(t0)
+    // The job finished: both probes are back to their old contents (304).
+    fake.set(runnersPath(core), idle, 'W/"idle"')
+    fake.set(inProgressPath(core), { workflow_runs: [] }, 'W/"none"')
+    const three = await run(fake, two.state, t0 + 2 * minInterval)
+    const probes = fake.requests.filter((r) => r.path === runnersPath(core) || r.path === inProgressPath(core))
+    expect(probes.map((r) => r.headers['If-None-Match'])).toEqual(['W/"idle"', 'W/"none"'])
+    expect(three.errors).toEqual([])
+    expect(three.state.repos[core].jobs.lastError).toBeNull()
+    expect(three.state.okAt).toBe(t0 + 2 * minInterval)
+    expect(three.state.data?.runners.find((r) => r.repo === core)?.runners[0]).toMatchObject({ busy: false, job: null })
+  })
+
+  it('retries a failed blocker query after the lists answer 304 again and clears the error', async () => {
+    const fake = new FakeGitHub()
+    fake.set(issuesPath(cli), [issueJSON(1)], 'W/"l1"')
+    const one = await first(fake)
+    fake.set(issuesPath(cli), [issueJSON(1), issueJSON(2)], 'W/"l2"')
+    fake.graphqlStatus = 502
+    const two = await run(fake, one.state, t0 + minInterval)
+    expect(two.errors[0].message).toContain('POST graphql: HTTP 502')
+    expect(two.state.okAt).toBe(t0)
+    // Issue 2 was closed again: the list is back to its old ETag (304).
+    fake.set(issuesPath(cli), [issueJSON(1)], 'W/"l1"')
+    fake.graphqlStatus = 200
+    fake.blockers['taco3064/gh-nibfin#1'] = [{ repo: core, number: 9, title: 'Core', state: 'CLOSED', url: 'https://github.com/taco3064/nibfin-core/issues/9' }]
+    const three = await run(fake, two.state, t0 + 2 * minInterval)
+    expect(fake.requests.find((r) => r.path === issuesPath(cli))?.headers['If-None-Match']).toBe('W/"l1"')
+    expect(fake.graphqlCalls()).toHaveLength(1)
+    expect(three.errors).toEqual([])
+    expect(three.state.blockers.lastError).toBeNull()
+    expect(three.state.okAt).toBe(t0 + 2 * minInterval)
+    expect(issuesOf(three.state, cli)[0].blockedBy).toHaveLength(1)
+  })
+
   it('sets issuesError while the open Issues were never read', async () => {
     const fake = new FakeGitHub()
     fake.fail(issuesPath(cli), 404, 'Not Found')

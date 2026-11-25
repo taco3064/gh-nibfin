@@ -376,8 +376,10 @@ export async function check(input: State, gh: GitHub, now: number): Promise<Chec
     }
     if (po.kind === 'failed') commit(r.inProgress, po, now)
 
+    // A failed jobs read is retried on the next check even when its
+    // triggering probes then answer 304, so its error clears.
     let jobsOk = true
-    if (ro.kind === 'new' || po.kind === 'new') {
+    if (ro.kind === 'new' || po.kind === 'new' || r.jobs.lastError !== null) {
       const ids = po.kind === 'new' ? po.result.ids : (r.inProgress.result?.ids ?? [])
       try {
         r.jobs.result = runners.some((x) => x.busy) ? await readJobs(gh, repo, ids) : []
@@ -419,8 +421,10 @@ export async function check(input: State, gh: GitHub, now: number): Promise<Chec
   })
   const anyNew = repos.some((repo) => issueOutcomes[repo].kind === 'new')
   const retry = listed.some((g) => g.issues.some((num) => state.blockers.byIssue[issueKey(g.repo, num)]?.error !== undefined || !state.blockers.byIssue[issueKey(g.repo, num)]))
+  // A failed blocker query is retried on the next check even when the
+  // lists then answer 304, so its error clears.
   let blockersOk = true
-  if (anyNew || retry) {
+  if (anyNew || retry || state.blockers.lastError !== null) {
     try {
       state.blockers.byIssue = await readBlockers(gh, listed)
       pass(state.blockers)
