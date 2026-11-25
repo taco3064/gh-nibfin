@@ -137,6 +137,10 @@ type PR struct {
 	Open *PullRequest
 	// Written is the commit Apply wrote, "" when none.
 	Written string
+	// OnDefault are the files of Paths on the default branch, and FileDetail
+	// the detail of a changed file item; Steps reads both.
+	OnDefault  map[string][]byte
+	FileDetail string
 }
 
 // Read reads Branch, its files and the open PR from it.
@@ -166,23 +170,129 @@ func (w *PR) Read(ctx context.Context) error {
 // Done reports whether the branch holds the set and its PR is open.
 func (w *PR) Done() bool { return w.BranchCurrent && w.Open != nil }
 
-// Steps are the plan steps after the file steps: the branch write, when
-// needed, and the PR.
+// PRItem is the ID of the PR item.
+const PRItem = "pr"
+
+// FileItem and BranchItem are the IDs of a file item and the branch item.
+func FileItem(p string) string        { return "file:" + p }
+func BranchItem(branch string) string { return "branch:" + branch }
+
+func fileAction(onDefault []byte) string {
+	if onDefault == nil {
+		return "add"
+	}
+	return "update"
+}
+
+// Steps are the plan items: one per path, the branch and the PR. A file
+// already current on the default branch, or already on a current branch,
+// needs no change; so does a current branch and an open PR.
 func (w *PR) Steps() []op.Step {
 	var steps []op.Step
+	for _, p := range w.Paths {
+		def, ok := w.OnDefault[p]
+		s := op.Step{ID: FileItem(p), Action: fileAction(def), Target: p, Detail: w.FileDetail, Current: "absent", Next: "current"}
+		if ok {
+			s.Current = "differs"
+		}
+		switch {
+		case ok && bytes.Equal(def, w.Files[p]):
+			s.Action, s.Current, s.NoChange, s.Detail = "keep", "current", true, "already current on "+w.DefaultBranch
+		case w.BranchCurrent:
+			s.NoChange, s.Detail = true, "already on "+w.Branch
+		}
+		steps = append(steps, s)
+	}
+	b := op.Step{ID: BranchItem(w.Branch), Action: "write branch", Target: w.Branch, Next: "holds the set"}
 	switch {
 	case w.BranchCurrent:
+		b.Current, b.NoChange, b.Detail = "holds the set", true, "already holds the set"
 	case w.BranchSHA != "":
-		steps = append(steps, op.Step{Action: "write branch", Target: w.Branch, Detail: "replaces earlier contents of that branch"})
+		b.Current, b.Detail = "differs", "replaces earlier contents of that branch"
 	default:
-		steps = append(steps, op.Step{Action: "write branch", Target: w.Branch, Detail: "new branch from " + w.DefaultBranch})
+		b.Current, b.Detail = "absent", "new branch from "+w.DefaultBranch
 	}
+	steps = append(steps, b)
 	if w.Open != nil {
-		steps = append(steps, op.Step{Action: "keep PR", Target: fmt.Sprintf("#%d", w.Open.Number), Detail: w.Open.HTMLURL})
+		steps = append(steps, op.Step{ID: PRItem, Action: "keep PR", Target: fmt.Sprintf("#%d", w.Open.Number), Detail: w.Open.HTMLURL, Current: "open", Next: "open", NoChange: true})
 	} else {
-		steps = append(steps, op.Step{Action: "open PR", Target: w.Branch + " into " + w.DefaultBranch})
+		steps = append(steps, op.Step{ID: PRItem, Action: "open PR", Target: w.Branch + " into " + w.DefaultBranch, Current: "none", Next: "open"})
 	}
 	return steps
+}
+
+// ReadBackItems reads the PR back as ReadBack does and records the items
+// of steps (the plan's Steps) in c: each confirmed when the open PR's head
+// is the expected commit, none when it is not.
+func (w *PR) ReadBackItems(ctx context.Context, c *op.Checks, steps []op.Step) (*PullRequest, error) {
+	c.Expect(steps...)
+	pr, err := w.ReadBack(ctx)
+	if err != nil {
+		for _, s := range steps {
+			c.Set(s, false, "", op.AsError(err).Error())
+		}
+		return nil, err
+	}
+	for _, s := range steps {
+		state := fmt.Sprintf("in PR #%d", pr.Number)
+		switch s.ID {
+		case BranchItem(w.Branch):
+			state = "head " + pr.Head.SHA
+		case PRItem:
+			state = "open: " + pr.HTMLURL
+		}
+		c.Set(s, true, state, "")
+	}
+	return pr, nil
+}
+
+// KeptSteps are the items of a set that needs no branch and no PR: each
+// path kept as it is on the default branch, and no branch write or PR, for
+// the reason why.
+func KeptSteps(paths []string, branch, why string) []op.Step {
+	var steps []op.Step
+	for _, p := range paths {
+		steps = append(steps, op.Step{ID: FileItem(p), Action: "keep", Target: p, Detail: why, Current: "current", Next: "current", NoChange: true})
+	}
+	return append(steps,
+		op.Step{ID: BranchItem(branch), Action: "write branch", Target: branch, Detail: "not needed: " + why, NoChange: true},
+		op.Step{ID: PRItem, Action: "open PR", Target: branch, Detail: "not needed: " + why, NoChange: true},
+	)
+}
+
+// ReadBackKept re-reads the kept files on the default branch and records
+// the items of steps (from KeptSteps) in c. A file is confirmed when it is
+// present and, when want holds it, equal to it. The branch and PR items are
+// confirmed as not needed.
+func (r Repo) ReadBackKept(ctx context.Context, c *op.Checks, steps []op.Step, defaultBranch string, want map[string][]byte) error {
+	c.Expect(steps...)
+	var paths []string
+	for _, s := range steps {
+		if s.ID == FileItem(s.Target) {
+			paths = append(paths, s.Target)
+		}
+	}
+	got, err := r.ReadFiles(ctx, paths, "", defaultBranch)
+	if err != nil {
+		return err
+	}
+	for _, s := range steps {
+		if s.ID != FileItem(s.Target) {
+			c.Set(s, true, "not needed", "")
+			continue
+		}
+		data, ok := got[s.Target]
+		w, check := want[s.Target]
+		switch {
+		case !ok:
+			c.Set(s, false, "absent", "absent on "+defaultBranch)
+		case check && !bytes.Equal(data, w):
+			c.Set(s, false, "differs", "differs on "+defaultBranch)
+		default:
+			c.Set(s, true, "current on "+defaultBranch, "")
+		}
+	}
+	return nil
 }
 
 // openPR returns the open PR from Branch, or nil.
@@ -202,67 +312,87 @@ func (w *PR) openPR(ctx context.Context) (*PullRequest, error) {
 // it is current, and opens the PR, unless one is open.
 func (w *PR) Apply(ctx context.Context) error {
 	w.Written = ""
-	r := w.Repo
+	steps := w.Steps()
 	if !w.BranchCurrent {
-		head, err := r.RefSHA(ctx, w.DefaultBranch)
-		if err == nil && head == "" {
-			err = fmt.Errorf("the branch %s does not exist", w.DefaultBranch)
+		// The changed files and the branch are written as one commit.
+		var items []op.Step
+		for _, s := range steps {
+			if s.ID != PRItem && !s.NoChange {
+				items = append(items, s)
+			}
 		}
-		if err != nil {
-			return ReadErr(fmt.Sprintf("read the branch %s of %s", w.DefaultBranch, r.Name), err)
-		}
-		var commit struct {
-			Tree struct {
-				SHA string `json:"sha"`
-			} `json:"tree"`
-		}
-		if err := r.Client.DoWithContext(ctx, http.MethodGet, r.Base+"/git/commits/"+url.PathEscape(head), nil, &commit); err != nil {
-			return ReadErr(fmt.Sprintf("read the commit %s of %s", head, r.Name), err)
-		}
-
-		type entry struct {
-			Path    string `json:"path"`
-			Mode    string `json:"mode"`
-			Type    string `json:"type"`
-			Content string `json:"content"`
-		}
-		entries := []entry{}
-		for _, p := range w.Paths {
-			entries = append(entries, entry{Path: p, Mode: "100644", Type: "blob", Content: string(w.Files[p])})
-		}
-		var tree struct {
-			SHA string `json:"sha"`
-		}
-		if err := r.Write(ctx, http.MethodPost, "/git/trees", map[string]any{"base_tree": commit.Tree.SHA, "tree": entries}, &tree, "write the tree"); err != nil {
+		if err := op.TrackAll(ctx, items, func() error { return w.writeBranch(ctx) }); err != nil {
 			return err
 		}
-		var created struct {
-			SHA string `json:"sha"`
-		}
-		if err := r.Write(ctx, http.MethodPost, "/git/commits", map[string]any{"message": w.Message, "tree": tree.SHA, "parents": []string{head}}, &created, "write the commit"); err != nil {
-			return err
-		}
-		if created.SHA == "" {
-			return op.Errorf(op.CodeRepoWriteFailed, "write the commit to %s: GitHub returned no commit", r.Name)
-		}
-		if w.BranchSHA != "" {
-			err = r.Write(ctx, http.MethodPatch, "/git/refs/heads/"+EscapeRef(w.Branch), map[string]any{"sha": created.SHA, "force": true}, nil, "update the branch "+w.Branch)
-		} else {
-			err = r.Write(ctx, http.MethodPost, "/git/refs", map[string]any{"ref": "refs/heads/" + w.Branch, "sha": created.SHA}, nil, "create the branch "+w.Branch)
-		}
-		if err != nil {
-			return err
-		}
-		w.Written = created.SHA
 	}
 	if w.Open == nil {
-		var pr PullRequest
-		body := map[string]any{"title": w.Title, "head": w.Branch, "base": w.DefaultBranch, "body": w.Body}
-		if err := r.Write(ctx, http.MethodPost, "/pulls", body, &pr, "open the PR from "+w.Branch); err != nil {
-			return err
-		}
-		w.Open = &pr
+		return op.Track(ctx, steps[len(steps)-1], func() error {
+			var pr PullRequest
+			body := map[string]any{"title": w.Title, "head": w.Branch, "base": w.DefaultBranch, "body": w.Body}
+			if err := w.Repo.Write(ctx, http.MethodPost, "/pulls", body, &pr, "open the PR from "+w.Branch); err != nil {
+				return err
+			}
+			w.Open = &pr
+			return nil
+		})
 	}
+	return nil
+}
+
+// writeBranch writes one commit with every path on the default branch's
+// head and points Branch to it.
+func (w *PR) writeBranch(ctx context.Context) error {
+	r := w.Repo
+	head, err := r.RefSHA(ctx, w.DefaultBranch)
+	if err == nil && head == "" {
+		err = fmt.Errorf("the branch %s does not exist", w.DefaultBranch)
+	}
+	if err != nil {
+		return ReadErr(fmt.Sprintf("read the branch %s of %s", w.DefaultBranch, r.Name), err)
+	}
+	var commit struct {
+		Tree struct {
+			SHA string `json:"sha"`
+		} `json:"tree"`
+	}
+	if err := r.Client.DoWithContext(ctx, http.MethodGet, r.Base+"/git/commits/"+url.PathEscape(head), nil, &commit); err != nil {
+		return ReadErr(fmt.Sprintf("read the commit %s of %s", head, r.Name), err)
+	}
+
+	type entry struct {
+		Path    string `json:"path"`
+		Mode    string `json:"mode"`
+		Type    string `json:"type"`
+		Content string `json:"content"`
+	}
+	entries := []entry{}
+	for _, p := range w.Paths {
+		entries = append(entries, entry{Path: p, Mode: "100644", Type: "blob", Content: string(w.Files[p])})
+	}
+	var tree struct {
+		SHA string `json:"sha"`
+	}
+	if err := r.Write(ctx, http.MethodPost, "/git/trees", map[string]any{"base_tree": commit.Tree.SHA, "tree": entries}, &tree, "write the tree"); err != nil {
+		return err
+	}
+	var created struct {
+		SHA string `json:"sha"`
+	}
+	if err := r.Write(ctx, http.MethodPost, "/git/commits", map[string]any{"message": w.Message, "tree": tree.SHA, "parents": []string{head}}, &created, "write the commit"); err != nil {
+		return err
+	}
+	if created.SHA == "" {
+		return op.Errorf(op.CodeRepoWriteFailed, "write the commit to %s: GitHub returned no commit", r.Name)
+	}
+	if w.BranchSHA != "" {
+		err = r.Write(ctx, http.MethodPatch, "/git/refs/heads/"+EscapeRef(w.Branch), map[string]any{"sha": created.SHA, "force": true}, nil, "update the branch "+w.Branch)
+	} else {
+		err = r.Write(ctx, http.MethodPost, "/git/refs", map[string]any{"ref": "refs/heads/" + w.Branch, "sha": created.SHA}, nil, "create the branch "+w.Branch)
+	}
+	if err != nil {
+		return err
+	}
+	w.Written = created.SHA
 	return nil
 }
 

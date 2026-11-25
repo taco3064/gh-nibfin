@@ -5,11 +5,26 @@ package op
 
 import "context"
 
-// Step is one planned change.
+// Step is one item of a plan: a change, or an item already in place
+// (NoChange). Its ID names the item in the plan, its progress events and its
+// read-back check.
 type Step struct {
+	// ID is unique within the plan and stable across plan, progress and
+	// read-back, such as runner:claude-2 or label:shaped.
+	ID     string `json:"id"`
 	Action string `json:"action"`
 	Target string `json:"target"`
 	Detail string `json:"detail,omitempty"`
+	// Current is the state read at plan time, "" when unknown; Next is the
+	// resulting state.
+	Current string `json:"current,omitempty"`
+	Next    string `json:"next,omitempty"`
+	// NoChange is true when the item is already in place: nothing applies
+	// it, and read-back confirms it is still in place.
+	NoChange bool `json:"noChange"`
+	// AfterStart is true when the target or its state is only known after
+	// the machine starts.
+	AfterStart bool `json:"afterStart"`
 }
 
 // Plan is the structured preview of an operation.
@@ -17,10 +32,27 @@ type Plan struct {
 	Operation string `json:"operation"`
 	Repo      string `json:"repo,omitempty"`
 	Steps     []Step `json:"steps"`
+	// Notes are advice and steps only the person can take. They are not
+	// items: nothing applies them and nothing reads them back.
+	Notes []string `json:"notes,omitempty"`
 	// Confirm is true when the plan must be confirmed before it is applied.
 	Confirm bool `json:"confirm"`
 	// ReadOnly is true when the operation only reads back.
 	ReadOnly bool `json:"readOnly"`
+}
+
+// Changes returns the steps that change something: those without NoChange.
+func (p Plan) Changes() []Step { return Changes(p.Steps) }
+
+// Changes returns the steps without NoChange.
+func Changes(steps []Step) []Step {
+	out := []Step{}
+	for _, s := range steps {
+		if !s.NoChange {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Result is the JSON-serialisable read-back summary of an operation.

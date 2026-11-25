@@ -76,10 +76,10 @@ func TestRunnerAddHostSteps(t *testing.T) {
 	if !reflect.DeepEqual(got[:2], want) {
 		t.Fatalf("plan = %q", got)
 	}
-	if d := p.Steps[0].Detail; !strings.Contains(d, "[wsl2] vmIdleTimeout=-1") || !strings.Contains(d, "takes effect after the next wsl --shutdown; runner add does not shut down the VM") {
+	if d := p.Changes()[0].Detail; !strings.Contains(d, "[wsl2] vmIdleTimeout=-1") || !strings.Contains(d, "takes effect after the next wsl --shutdown; runner add does not shut down the VM") {
 		t.Errorf("wslconfig detail = %q", d)
 	}
-	if d := p.Steps[1].Detail; !strings.Contains(d, "at logon and on resume from sleep") {
+	if d := p.Changes()[1].Detail; !strings.Contains(d, "at logon and on resume from sleep") {
 		t.Errorf("autostart detail = %q", d)
 	}
 	if f.events[0] != "set wslconfig" || f.events[1] != "register autostart" || f.autoStarts != 0 {
@@ -99,7 +99,7 @@ func TestRunnerAddHostSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range p.Steps {
+	for _, s := range p.Changes() {
 		if s.Action == actSetWSLConfig || s.Action == actRegisterAutostart {
 			t.Errorf("rerun plans %v", s)
 		}
@@ -117,11 +117,11 @@ func TestRunnerAddStoppedMachineStartsThroughEntry(t *testing.T) {
 	}
 	got := steps(p)
 	want := []string{`set wslconfig %UserProfile%\.wslconfig`, `register autostart task "Nibfin podman machine"`, "start fake"}
-	if !reflect.DeepEqual(got[:3], want) || p.Steps[2].Detail != `through task "Nibfin podman machine"` {
-		t.Fatalf("plan = %q, %+v", got, p.Steps[2])
+	if !reflect.DeepEqual(got[:3], want) || p.Changes()[2].Detail != `through task "Nibfin podman machine"` {
+		t.Fatalf("plan = %q, %+v", got, p.Changes()[2])
 	}
-	if strings.Contains(p.Steps[0].Detail, "wsl --shutdown") {
-		t.Errorf("a stopped VM picks the key up at its start: %q", p.Steps[0].Detail)
+	if strings.Contains(p.Changes()[0].Detail, "wsl --shutdown") {
+		t.Errorf("a stopped VM picks the key up at its start: %q", p.Changes()[0].Detail)
 	}
 	if err := o.Apply(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -214,9 +214,9 @@ func TestRunnerRemoveLastRunnerRemovesEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"remove runner codex-1", `remove autostart task "Nibfin podman machine"`, `keep wslconfig %UserProfile%\.wslconfig`}
-	if !reflect.DeepEqual(steps(p), want) {
-		t.Errorf("plan = %q", steps(p))
+	want := []string{"start fake", "remove runner codex-1", `remove autostart task "Nibfin podman machine"`, `keep wslconfig %UserProfile%\.wslconfig`}
+	if !reflect.DeepEqual(allSteps(p), want) || !p.Steps[3].NoChange {
+		t.Errorf("plan = %q", allSteps(p))
 	}
 	if f.entry.Present || f.events[len(f.events)-1] != "remove autostart" {
 		t.Errorf("events = %v", f.events)

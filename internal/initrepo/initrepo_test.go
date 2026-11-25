@@ -415,9 +415,14 @@ func runOn(name string) (op.Plan, op.Result, error) {
 	return op.Run(context.Background(), New(op.RepoParams{Repo: "github.com/o/" + name}), yes{})
 }
 
-func actions(p op.Plan) []string {
+// actions lists the changing items; allActions every item.
+func actions(p op.Plan) []string { return names(p.Changes()) }
+
+func allActions(p op.Plan) []string { return names(p.Steps) }
+
+func names(steps []op.Step) []string {
 	var out []string
-	for _, s := range p.Steps {
+	for _, s := range steps {
 		out = append(out, s.Action+" "+s.Target)
 	}
 	return out
@@ -442,9 +447,8 @@ func TestInitExecutionSet(t *testing.T) {
 		"set secret NIBFIN_GITHUB_TOKEN",
 		"add " + issueP, "add " + sharedP, "add " + jobP,
 		"write branch " + Branch, "open PR " + Branch + " into main",
-		"set in the web UI https://github.com/o/app/settings",
 	}
-	if !slices.Equal(actions(p), want) || !p.Confirm {
+	if !slices.Equal(actions(p), want) || !p.Confirm || !slices.Equal(p.Notes, []string{"set in the web UI https://github.com/o/app/settings: " + issuesManual}) {
 		t.Errorf("plan = %q", actions(p))
 	}
 	if f.vars[varExecRepo] != "o/app" || f.vars[varProvider] != "claude" || *f.prPolicy != policyCollab || f.deleteOnMerge || f.approval != allExternal {
@@ -500,8 +504,8 @@ func TestInitExecutionSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
 	}
-	want = []string{"set secret NIBFIN_GITHUB_TOKEN", "keep PR #10", "set in the web UI https://github.com/o/app/settings"}
-	if !slices.Equal(actions(p), want) || !strings.Contains(p.Steps[0].Detail, "replaces the existing value") {
+	want = []string{"set secret NIBFIN_GITHUB_TOKEN"}
+	if !slices.Equal(actions(p), want) || !strings.Contains(p.Changes()[0].Detail, "replaces the existing value") || !slices.Contains(allActions(p), "keep PR #10") {
 		t.Errorf("rerun plan = %q", actions(p))
 	}
 	if w := f.writes(); !slices.Equal(w, []string{"GH secret set"}) {
@@ -722,8 +726,8 @@ func TestInitForkPrivate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		if tc.step != "" && !slices.Contains(actions(p), tc.step) {
-			t.Errorf("%s: plan = %q", tc.name, actions(p))
+		if tc.step != "" && !slices.Contains(allActions(p), tc.step) {
+			t.Errorf("%s: plan = %q", tc.name, allActions(p))
 		}
 		put := slices.Contains(f.calls, "PUT repos/o/app/actions/permissions/fork-pr-workflows-private-repos")
 		if put != tc.write || slices.ContainsFunc(f.calls, func(c string) bool { return strings.Contains(c, "contributor-approval") }) {
@@ -863,7 +867,7 @@ func TestInitAlreadyInitialized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(actions(p), "keep workflows "+issueP) || slices.Contains(actions(p), "open PR "+Branch+" into main") {
+	if !slices.Contains(allActions(p), "keep "+issueP) || slices.Contains(allActions(p), "open PR "+Branch+" into main") || slices.Contains(actions(p), "keep "+issueP) {
 		t.Errorf("plan = %q", actions(p))
 	}
 	if r["initialized"] != true || r["next"] != "gh nibfin upgrade" || r["pr"] != nil || len(f.prs) != 0 || f.vars[varExecRepo] != "o/app" {

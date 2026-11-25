@@ -87,12 +87,14 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 
 	// run executes a changing operation through op.Run with the CLI Confirmer.
 	run := func(c *cobra.Command, o op.Operation, yes bool) error {
-		_, r, err := op.Run(c.Context(), o, confirmer{yes: yes, stdin: stdin, stderr: stderr})
-		if err != nil {
-			return err
+		// Each item's progress is one line on stderr.
+		ctx := op.WithProgress(c.Context(), func(e op.Event) { fmt.Fprintln(stderr, progressLine(e)) })
+		_, r, err := op.Run(ctx, o, confirmer{yes: yes, stdin: stdin, stderr: stderr})
+		// The items read back are printed also when the read-back fails.
+		if r != nil {
+			writeResult(stdout, r, false)
 		}
-		writeResult(stdout, r, false)
-		return nil
+		return err
 	}
 
 	runner := &cobra.Command{
@@ -362,9 +364,17 @@ func writeResult(w io.Writer, r op.Result, asJSON bool) {
 		writeJSON(w, r)
 		return
 	}
+	items, _ := r[op.ResultItems].([]op.Check)
+	notes, hasNotes := r[op.ResultNotes].([]string)
 	keys := make([]string, 0, len(r))
 	for k := range r {
-		keys = append(keys, k)
+		switch {
+		case k == op.ResultItems, k == op.ResultNotes:
+		case k == "advice" && hasNotes:
+			// The advice is printed as the notes.
+		default:
+			keys = append(keys, k)
+		}
 	}
 	sort.Strings(keys)
 	var manual map[string]string
@@ -375,10 +385,14 @@ func writeResult(w io.Writer, r op.Result, asJSON bool) {
 		}
 		fmt.Fprintf(w, "%s: %v\n", k, r[k])
 	}
-	// A step only the user can take stands on its own lines.
+	writeChecks(w, items)
+	// A step only the user can take stands on its own lines; it is the
+	// note, so the notes are not repeated.
 	if manual != nil {
 		fmt.Fprintf(w, "\nSet in the web UI: %s\n  %s\n", manual["url"], manual["instruction"])
+		return
 	}
+	writeNotes(w, notes)
 }
 
 // dashboardServe runs the Dashboard server. Tests replace it.

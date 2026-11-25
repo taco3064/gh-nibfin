@@ -124,6 +124,7 @@ type labelPlan struct {
 	found string // the existing name when it differs in case
 	color string
 	desc  string
+	ok    bool // present as it is
 }
 
 type variable struct {
@@ -162,6 +163,10 @@ type initRepo struct {
 	files        map[string][]byte
 	onDefault    map[string][]byte
 	pr           *workflowpr.PR
+	wfSteps      []op.Step // the workflow items, as planned
+
+	// started is true when Apply started the machine.
+	started bool
 }
 
 func setName(s templates.Set) string {
@@ -210,7 +215,7 @@ func (i *initRepo) Plan(ctx context.Context) (op.Plan, error) {
 	}
 	i.stopped = runners.Stopped
 	if i.stopped {
-		plan.Steps = append(plan.Steps, op.Step{Action: actStart, Target: runners.Describe})
+		plan.Steps = append(plan.Steps, hostStep(runners.Describe, "stopped"))
 	} else if err := i.derive(ctx, runners); err != nil {
 		return plan, err
 	}
@@ -226,56 +231,140 @@ func (i *initRepo) Plan(ctx context.Context) (op.Plan, error) {
 		return plan, apiErr("read the secret "+secretName+" of "+i.p.Repo, err)
 	}
 
-	for _, l := range i.labels {
-		if l.found != "" {
-			plan.Steps = append(plan.Steps, op.Step{Action: "rename label", Target: l.found, Detail: "to " + l.name})
-		} else {
-			plan.Steps = append(plan.Steps, op.Step{Action: "create label", Target: l.name, Detail: l.desc})
-		}
-	}
-	if _, ok := i.settings["pull_request_creation_policy"]; ok {
-		from := "not reported by GitHub"
-		if i.info.PRPolicy != nil {
-			from = "from " + *i.info.PRPolicy
-		}
-		plan.Steps = append(plan.Steps, op.Step{Action: "set pull requests", Target: policyCollab, Detail: from})
-	}
-	if _, ok := i.settings["delete_branch_on_merge"]; ok {
-		plan.Steps = append(plan.Steps, op.Step{Action: "set delete head branches", Target: "false", Detail: "from true"})
-	}
-	switch {
-	case !i.info.Private && i.forkWrite:
-		plan.Steps = append(plan.Steps, op.Step{Action: "set fork PR approval", Target: "all external contributors", Detail: "from " + i.forkPolicy})
-	case i.info.Private && i.forkWrite:
-		plan.Steps = append(plan.Steps, op.Step{Action: "require fork PR approval", Target: i.p.Repo, Detail: "private repository: Require approval for fork pull request workflows"})
-	case i.info.Private && !i.forkPrivate.Run:
-		plan.Steps = append(plan.Steps, op.Step{Action: "keep fork PR workflows off", Target: i.p.Repo, Detail: "private repository: fork pull request workflows do not run"})
-	}
-
+	plan.Steps = append(plan.Steps, i.labelSteps()...)
+	plan.Steps = append(plan.Steps, i.settingSteps()...)
+	plan.Steps = append(plan.Steps, i.forkStep())
 	if i.stopped {
-		plan.Steps = append(plan.Steps, op.Step{Action: actDerive, Target: i.p.Repo, Detail: "after start, from the Runners on " + runners.Describe})
+		v := op.Step{ID: varItem(varExecRepo), Action: "set variable", Target: varExecRepo, Detail: "after start, from the Runners on " + runners.Describe, AfterStart: true}
+		plan.Steps = append(plan.Steps, v)
 	} else {
-		for _, v := range i.vars {
-			switch {
-			case !v.exists:
-				plan.Steps = append(plan.Steps, op.Step{Action: "create variable", Target: v.name, Detail: v.want})
-			case v.old != v.want:
-				plan.Steps = append(plan.Steps, op.Step{Action: "update variable", Target: v.name, Detail: v.want + " from " + v.old})
-			}
-		}
+		plan.Steps = append(plan.Steps, i.varSteps()...)
 	}
-	detail := "from the current gh login of " + i.host
-	if i.secretExists {
-		detail += "; replaces the existing value"
+	plan.Steps = append(plan.Steps, i.secretStep())
+	if i.stopped {
+		plan.Steps = append(plan.Steps, op.Step{ID: "workflows", Action: actDerive, Target: i.p.Repo, Detail: "after start, from the Runners on " + runners.Describe, AfterStart: true})
+	} else {
+		plan.Steps = append(plan.Steps, i.wfSteps...)
 	}
-	plan.Steps = append(plan.Steps, op.Step{Action: "set secret", Target: secretName, Detail: detail})
-	if !i.stopped {
-		plan.Steps = append(plan.Steps, i.workflowSteps()...)
-	}
-	plan.Steps = append(plan.Steps, op.Step{Action: "set in the web UI", Target: i.settingsURL(), Detail: issuesManual})
+	plan.Notes = []string{i.manualNote()}
 	i.planned = true
 	plan.Confirm = true
 	return plan, nil
+}
+
+// The item IDs of init.
+func labelItem(name string) string   { return "label:" + name }
+func settingItem(name string) string { return "setting:" + name }
+func varItem(name string) string     { return "variable:" + name }
+
+const (
+	forkItem   = "fork-approval"
+	secretItem = "secret:" + secretName
+)
+
+// hostStep is the start of the stopped machine.
+func hostStep(where, current string) op.Step {
+	return op.Step{ID: "host", Action: actStart, Target: where, Current: current, Next: "running"}
+}
+
+// manualNote is the step only the person can take, in the web UI.
+func (i *initRepo) manualNote() string {
+	return "set in the web UI " + i.settingsURL() + ": " + issuesManual
+}
+
+// labelSteps are the five label items, each no change when present.
+func (i *initRepo) labelSteps() []op.Step {
+	var steps []op.Step
+	for _, l := range i.labels {
+		steps = append(steps, labelStep(l))
+	}
+	return steps
+}
+
+func labelStep(l labelPlan) op.Step {
+	switch {
+	case l.ok:
+		return op.Step{ID: labelItem(l.name), Action: "create label", Target: l.name, Detail: "already present", Current: "present", Next: "present", NoChange: true}
+	case l.found != "":
+		return op.Step{ID: labelItem(l.name), Action: "rename label", Target: l.found, Detail: "to " + l.name, Current: "named " + l.found, Next: "named " + l.name}
+	}
+	return op.Step{ID: labelItem(l.name), Action: "create label", Target: l.name, Detail: l.desc, Current: "absent", Next: "present"}
+}
+
+// settingSteps are the two repository settings init writes in one PATCH.
+func (i *initRepo) settingSteps() []op.Step {
+	policy := "not reported by GitHub"
+	detail := policy
+	if i.info.PRPolicy != nil {
+		policy, detail = *i.info.PRPolicy, "from "+*i.info.PRPolicy
+	}
+	_, change := i.settings["pull_request_creation_policy"]
+	pr := op.Step{ID: settingItem("pull_request_creation_policy"), Action: "set pull requests", Target: policyCollab, Detail: detail, Current: policy, Next: policyCollab, NoChange: !change}
+	if !change {
+		pr.Detail = "already " + policyCollab
+	}
+	_, change = i.settings["delete_branch_on_merge"]
+	del := op.Step{ID: settingItem("delete_branch_on_merge"), Action: "set delete head branches", Target: "false", Detail: "from true", Current: fmt.Sprint(i.info.DeleteOnMerge), Next: "false", NoChange: !change}
+	if !change {
+		del.Detail = "already false"
+	}
+	return []op.Step{pr, del}
+}
+
+// forkStep is the fork PR approval item.
+func (i *initRepo) forkStep() op.Step {
+	s := op.Step{ID: forkItem, Target: i.p.Repo}
+	switch {
+	case !i.info.Private:
+		s.Action, s.Target, s.Detail = "set fork PR approval", "all external contributors", "from "+i.forkPolicy
+		s.Current, s.Next, s.NoChange = i.forkPolicy, allExternal, !i.forkWrite
+		if !i.forkWrite {
+			s.Detail = "already all external contributors"
+		}
+	case i.forkWrite:
+		s.Action, s.Detail = "require fork PR approval", "private repository: Require approval for fork pull request workflows"
+		s.Current, s.Next = "fork PR workflows run without approval", "approval required"
+	case !i.forkPrivate.Run:
+		s.Action, s.Detail = "keep fork PR workflows off", "private repository: fork pull request workflows do not run"
+		s.Current, s.Next, s.NoChange = "fork PR workflows off", "fork PR workflows off", true
+	default:
+		s.Action, s.Detail = "require fork PR approval", "private repository: already requires approval for fork pull request workflows"
+		s.Current, s.Next, s.NoChange = "approval required", "approval required", true
+	}
+	return s
+}
+
+// varSteps are the variable items, each no change when equal.
+func (i *initRepo) varSteps() []op.Step {
+	var steps []op.Step
+	for _, v := range i.vars {
+		steps = append(steps, varStep(v))
+	}
+	return steps
+}
+
+func varStep(v variable) op.Step {
+	s := op.Step{ID: varItem(v.name), Target: v.name, Next: v.want}
+	switch {
+	case !v.exists:
+		s.Action, s.Detail, s.Current = "create variable", v.want, "absent"
+	case v.old != v.want:
+		s.Action, s.Detail, s.Current = "update variable", v.want+" from "+v.old, v.old
+	default:
+		s.Action, s.Detail, s.Current, s.NoChange = "update variable", "already "+v.want, v.old, true
+	}
+	return s
+}
+
+// secretStep is the Secret item; its states are only set or absent.
+func (i *initRepo) secretStep() op.Step {
+	detail := "from the current gh login of " + i.host
+	current := "absent"
+	if i.secretExists {
+		detail += "; replaces the existing value"
+		current = "set"
+	}
+	return op.Step{ID: secretItem, Action: "set secret", Target: secretName, Detail: detail, Current: current, Next: "set"}
 }
 
 // connect parses HOST/OWNER/REPO and builds the client for HOST.
@@ -429,6 +518,7 @@ func (i *initRepo) planLabels(ctx context.Context) error {
 		}
 		switch {
 		case found == l.name:
+			i.labels = append(i.labels, labelPlan{name: l.name, ok: true})
 		case found == "":
 			i.labels = append(i.labels, labelPlan{name: l.name, color: l.color, desc: l.description})
 		default:
@@ -498,6 +588,13 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 	i.pr = nil
 	if onDefault[all[0]] != nil {
 		i.initialized = true
+		var present []string
+		for _, p := range all {
+			if onDefault[p] != nil {
+				present = append(present, p)
+			}
+		}
+		i.wfSteps = workflowpr.KeptSteps(present, Branch, "already initialized; use gh nibfin upgrade")
 		return nil
 	}
 	i.initialized = false
@@ -526,28 +623,14 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 		Message:       fmt.Sprintf("Set up Nibfin workflows (%s set, %s)", setName(i.set), i.image),
 		Title:         "Set up Nibfin",
 		Body:          i.prBody(paths),
+		OnDefault:     onDefault,
+		FileDetail:    setName(i.set) + " set, " + i.image,
 	}
-	return i.pr.Read(ctx)
-}
-
-func (i *initRepo) workflowSteps() []op.Step {
-	if i.initialized {
-		return []op.Step{{Action: "keep workflows", Target: path.Join(templates.Dir, issueFile), Detail: "already initialized; use gh nibfin upgrade"}}
+	if err := i.pr.Read(ctx); err != nil {
+		return err
 	}
-	if i.pr.Done() {
-		return []op.Step{{Action: "keep PR", Target: fmt.Sprintf("#%d", i.pr.Open.Number), Detail: i.pr.Open.HTMLURL}}
-	}
-	var steps []op.Step
-	if !i.pr.BranchCurrent {
-		for _, p := range i.pr.Paths {
-			action := "add"
-			if i.onDefault[p] != nil {
-				action = "update"
-			}
-			steps = append(steps, op.Step{Action: action, Target: p, Detail: setName(i.set) + " set, " + i.image})
-		}
-	}
-	return append(steps, i.pr.Steps()...)
+	i.wfSteps = i.pr.Steps()
+	return nil
 }
 
 func (i *initRepo) prBody(paths []string) string {
@@ -570,16 +653,25 @@ func (i *initRepo) settingsURL() string {
 	return "https://" + i.host + "/" + name + "/settings"
 }
 
-func (i *initRepo) Apply(ctx context.Context, _ op.Plan) error {
+func (i *initRepo) Apply(ctx context.Context, plan op.Plan) error {
 	if !i.planned {
 		return op.Errorf(op.CodeInvalidArgument, "init: Apply needs a Plan on the same operation")
 	}
 	// The host comes first, so no_runners stops before any repository write.
 	if i.stopped {
-		runners, err := hostRunners(ctx, true)
-		if err != nil {
+		start, _ := findStep(plan.Steps, "host")
+		if start.ID == "" {
+			start = hostStep(i.p.Repo, "stopped")
+		}
+		var runners op.RunnerHostInfo
+		if err := op.Track(ctx, start, func() error {
+			var err error
+			runners, err = hostRunners(ctx, true)
+			return err
+		}); err != nil {
 			return err
 		}
+		i.started = true
 		if err := i.derive(ctx, runners); err != nil {
 			return err
 		}
@@ -595,36 +687,61 @@ func (i *initRepo) Apply(ctx context.Context, _ op.Plan) error {
 	}
 
 	for _, l := range i.labels {
-		if err := i.applyLabel(ctx, l); err != nil {
+		if l.ok {
+			continue
+		}
+		if err := op.Track(ctx, labelStep(l), func() error { return i.applyLabel(ctx, l) }); err != nil {
 			return err
 		}
 	}
 	if len(i.settings) > 0 {
-		if err := i.send(ctx, http.MethodPatch, i.repo.Base, i.settings, nil); err != nil {
-			return apiErr("update the settings of "+i.p.Repo, err)
-		}
-	}
-	if i.forkWrite {
-		var body any = map[string]any{"approval_policy": allExternal}
-		if i.info.Private {
-			body = privateForks{Run: true, Require: true, WriteTokens: i.forkPrivate.WriteTokens, SecretsAndVar: i.forkPrivate.SecretsAndVar}
-		}
-		if err := i.client.DoWithContext(ctx, http.MethodPut, i.forkPath(), jsonBody(body), nil); err != nil {
-			return op.Wrap(op.CodeGitHubAPIFailed, fmt.Errorf("require fork PR approval on %s (PUT %s): %w; %s", i.p.Repo, i.forkPath(), err, forkHint))
-		}
-	}
-	for _, v := range i.vars {
-		if err := i.applyVariable(ctx, v); err != nil {
+		if err := op.TrackAll(ctx, op.Changes(i.settingSteps()), func() error {
+			if err := i.send(ctx, http.MethodPatch, i.repo.Base, i.settings, nil); err != nil {
+				return apiErr("update the settings of "+i.p.Repo, err)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 	}
-	if err := i.setSecret(ctx); err != nil {
+	if i.forkWrite {
+		if err := op.Track(ctx, i.forkStep(), func() error {
+			var body any = map[string]any{"approval_policy": allExternal}
+			if i.info.Private {
+				body = privateForks{Run: true, Require: true, WriteTokens: i.forkPrivate.WriteTokens, SecretsAndVar: i.forkPrivate.SecretsAndVar}
+			}
+			if err := i.client.DoWithContext(ctx, http.MethodPut, i.forkPath(), jsonBody(body), nil); err != nil {
+				return op.Wrap(op.CodeGitHubAPIFailed, fmt.Errorf("require fork PR approval on %s (PUT %s): %w; %s", i.p.Repo, i.forkPath(), err, forkHint))
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	for _, v := range i.vars {
+		if v.exists && v.old == v.want {
+			continue
+		}
+		if err := op.Track(ctx, varStep(v), func() error { return i.applyVariable(ctx, v) }); err != nil {
+			return err
+		}
+	}
+	if err := op.Track(ctx, i.secretStep(), func() error { return i.setSecret(ctx) }); err != nil {
 		return err
 	}
 	if i.initialized || i.pr.Done() {
 		return nil
 	}
 	return i.pr.Apply(ctx)
+}
+
+func findStep(steps []op.Step, id string) (op.Step, bool) {
+	for _, s := range steps {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return op.Step{}, false
 }
 
 func jsonBody(v any) io.Reader {
@@ -703,12 +820,35 @@ func (i *initRepo) setSecret(ctx context.Context) error {
 	return op.Errorf(op.CodeRepoWriteFailed, "set the secret %s of %s with gh secret set: %s", secretName, i.p.Repo, msg)
 }
 
+// ReadBack reads every item back: the labels, the settings, fork PR
+// approval, the variables, the Secret and the workflow files, branch and PR.
+// The items read so far are returned also with an error; differences are
+// not_applied as before, after the workflow items are read too.
 func (i *initRepo) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	if !i.planned || i.stopped {
 		return nil, op.Errorf(op.CodeInvalidArgument, "init: ReadBack needs a Plan and an Apply on the same operation")
 	}
+	var checks op.Checks
+	host := hostStep("", "")
+	if i.started {
+		host.Target = i.runners.Describe
+		checks.Expect(host)
+	}
+	checks.Expect(i.labelSteps()...)
+	checks.Expect(i.settingSteps()...)
+	checks.Expect(i.forkStep())
+	checks.Expect(i.varSteps()...)
+	checks.Expect(i.secretStep())
+	checks.Expect(i.wfSteps...)
+	notes := []string{i.manualNote()}
+	r := op.Result{"repo": i.p.Repo}
+	fail := func(err error) (op.Result, error) { return checks.Fill(r, notes, err), err }
+	if i.started {
+		// Apply's start returned with the machine running.
+		checks.Set(host, true, "running", "")
+	}
 	if err := i.readRepo(ctx); err != nil {
-		return nil, err
+		return fail(err)
 	}
 	visibility := i.info.Visibility
 	if visibility == "" {
@@ -717,70 +857,92 @@ func (i *initRepo) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 			visibility = "private"
 		}
 	}
-	r := op.Result{
-		"repo":          i.p.Repo,
-		"visibility":    visibility,
-		"set":           setName(i.set),
-		"executionRepo": i.execRepo,
-		"manual":        map[string]string{"url": i.settingsURL(), "instruction": issuesManual},
-	}
+	r["visibility"] = visibility
+	r["set"] = setName(i.set)
+	r["executionRepo"] = i.execRepo
+	r["manual"] = map[string]string{"url": i.settingsURL(), "instruction": issuesManual}
 	if !i.scopesRead {
 		r["scopes"] = "unread"
 	}
 	var notApplied []string
 
 	got := []string{}
-	for _, l := range labels {
+	for _, l := range i.labels {
+		s := labelStep(l)
 		found, err := i.readLabel(ctx, l.name)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		if found != l.name {
 			notApplied = append(notApplied, "label "+l.name)
+			state := "absent"
+			if found != "" {
+				state = "named " + found
+			}
+			checks.Set(s, false, state, "label "+l.name+" is "+state)
 			continue
 		}
+		checks.Set(s, true, "present", "")
 		got = append(got, found)
 	}
 	r["labels"] = got
 
+	settings := i.settingSteps()
 	if i.info.PRPolicy == nil {
 		r["pullRequestCreation"] = "not reported by GitHub"
+		checks.Set(settings[0], false, "not reported by GitHub", "GitHub does not report pull_request_creation_policy")
 	} else {
 		r["pullRequestCreation"] = *i.info.PRPolicy
-		if *i.info.PRPolicy != policyCollab {
+		ok := *i.info.PRPolicy == policyCollab
+		if !ok {
 			notApplied = append(notApplied, "pull_request_creation_policy is "+*i.info.PRPolicy)
 		}
+		checks.Set(settings[0], ok, *i.info.PRPolicy, "pull_request_creation_policy is "+*i.info.PRPolicy)
 	}
 	r["deleteBranchOnMerge"] = i.info.DeleteOnMerge
 	if i.info.DeleteOnMerge {
 		notApplied = append(notApplied, "delete_branch_on_merge is true")
 	}
+	checks.Set(settings[1], !i.info.DeleteOnMerge, fmt.Sprint(i.info.DeleteOnMerge), "delete_branch_on_merge is true")
 
 	policy, private, err := i.readFork(ctx)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	if i.info.Private {
 		r["forkPrApproval"] = map[string]any{"route": routePrivate, "runWorkflowsFromForks": private.Run, "requireApproval": private.Require}
-		if private.Run && !private.Require {
-			notApplied = append(notApplied, "fork PR workflows run without approval")
+		state := "approval required"
+		switch {
+		case !private.Run:
+			state = "fork PR workflows off"
+		case !private.Require:
+			state = "fork PR workflows run without approval"
+			notApplied = append(notApplied, state)
 		}
+		checks.Set(i.forkStep(), !private.Run || private.Require, state, state)
 	} else {
 		r["forkPrApproval"] = map[string]any{"route": routePublic, "approvalPolicy": policy}
 		if policy != allExternal {
 			notApplied = append(notApplied, "fork PR approval policy is "+policy)
 		}
+		checks.Set(i.forkStep(), policy == allExternal, policy, "fork PR approval policy is "+policy)
 	}
 
 	vars := map[string]string{}
 	for _, want := range i.vars {
 		v, err := i.readVariable(ctx, want.name)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
-		if !v.exists || v.old != want.want {
+		ok := v.exists && v.old == want.want
+		if !ok {
 			notApplied = append(notApplied, "variable "+want.name)
 		}
+		state := v.old
+		if !v.exists {
+			state = "absent"
+		}
+		checks.Set(varStep(want), ok, state, "variable "+want.name+" is "+state+", want "+want.want)
 		vars[v.name] = v.old
 		if v.name == varProvider {
 			r["provider"] = v.old
@@ -790,30 +952,37 @@ func (i *initRepo) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 
 	has, err := i.exists(ctx, i.repo.Base+"/actions/secrets/"+secretName)
 	if err != nil {
-		return nil, apiErr("read the secret "+secretName+" of "+i.p.Repo, err)
+		return fail(apiErr("read the secret "+secretName+" of "+i.p.Repo, err))
 	}
 	if !has {
 		notApplied = append(notApplied, "secret "+secretName)
+		checks.Set(i.secretStep(), false, "absent", "the secret is absent")
 	} else {
 		r["secret"] = "set"
+		checks.Set(i.secretStep(), true, "set", "")
 	}
 
-	if len(notApplied) > 0 {
-		return nil, op.Errorf(op.CodeNotApplied, "init of %s reads back different: %s", i.p.Repo, strings.Join(notApplied, "; "))
-	}
-
+	var wfErr error
 	if i.initialized {
 		r["initialized"] = true
 		r["next"] = "gh nibfin upgrade"
-		return r, nil
+		wfErr = i.repo.ReadBackKept(ctx, &checks, i.wfSteps, i.info.DefaultBranch, nil)
+	} else {
+		pr, err := i.pr.ReadBackItems(ctx, &checks, i.wfSteps)
+		if err == nil {
+			r["image"] = i.image
+			r["files"] = slices.Clone(i.pr.Paths)
+			r["pr"] = pr.HTMLURL
+			r["number"] = pr.Number
+		}
+		wfErr = err
 	}
-	pr, err := i.pr.ReadBack(ctx)
-	if err != nil {
-		return nil, err
+	if len(notApplied) > 0 {
+		err := op.Errorf(op.CodeNotApplied, "init of %s reads back different: %s", i.p.Repo, strings.Join(notApplied, "; "))
+		return checks.Fill(r, notes, wfErr), err
 	}
-	r["image"] = i.image
-	r["files"] = slices.Clone(i.pr.Paths)
-	r["pr"] = pr.HTMLURL
-	r["number"] = pr.Number
-	return r, nil
+	if wfErr != nil {
+		return fail(wfErr)
+	}
+	return checks.Fill(r, notes, nil), nil
 }
