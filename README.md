@@ -326,10 +326,10 @@ guide to `runner add` then `init`, when this host has no complete Runner (or no
 Podman or machine), and on the Person view otherwise. Its
 Dark, Light and System theme choice is the only thing it stores (in the
 browser). The UI also has an operation dialog, built from `/api/commands` and
-the plan and apply routes below, that is not yet opened from a view. A binary built without the UI serves a
-placeholder page whose only script does the same exchange. The page and its files need no session; they
-keep the Host and Origin checks below, and other paths outside `/api/` are
-`not_found`.
+the plan and apply routes below, that is not yet opened from a view. A binary
+built without the UI serves a placeholder page whose only script does the same
+exchange. The page and its files need no session; they keep the Host and Origin
+checks below, and other paths outside `/api/` are `not_found`.
 
 ### API
 
