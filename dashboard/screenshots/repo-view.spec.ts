@@ -352,16 +352,21 @@ for (const theme of themes) {
 
 test('the header freshness and Refresh follow the repository read', async ({ page }) => {
   const { w } = await open(page, 1280, 'dark')
-  // Before a repository is open, Refresh reads the person view.
+  // Before a repository is open, Refresh reads the person view by the plan
+  // route; the first person read came from the live stream.
   await page.getByRole('button', { name: 'Refresh' }).click()
-  await expect.poll(() => w.statusBodies.length).toBe(2)
+  await expect.poll(() => w.statusBodies.length).toBe(1)
   expect(lastBody(w)).toEqual({})
 
   await pick(page, 'acme/platform')
   await expect(page.locator('[data-slot=repo-summary]')).toBeVisible()
   await expect(freshness(page)).toHaveAttribute('data-state', 'current')
+  // The repository read has no live updates, so the person stream's Live
+  // badge is not shown beside its time.
+  await expect(page.locator('[data-slot=live]')).toHaveCount(0)
   const personTime = await (async () => {
     await tab(page, 'Person').click()
+    await expect(page.locator('[data-slot=live]')).toHaveText('Live')
     return freshness(page).locator('time').getAttribute('datetime')
   })()
   await tab(page, 'Repositories').click()
@@ -395,12 +400,9 @@ test('the reading states of the list and of a repository', async ({ page }) => {
   const w = await prepare(page)
   w.repoStatus = { ...repoStatus }
   await mockOps(page)
+  // The person read, which supplies the list, comes from the live stream.
   let release!: () => void
-  let held = new Promise<void>((r) => (release = r))
-  await page.route('**/api/commands/status/plan', async (route) => {
-    await held
-    await route.fallback()
-  })
+  w.live.hold = new Promise<void>((r) => (release = r))
   await page.goto('/#proof=SCREENSHOT')
   await tab(page, 'Repositories').click()
   await expect(picker(page).locator('[data-state=list-reading]')).toHaveText('Reading repositories…')
@@ -408,7 +410,11 @@ test('the reading states of the list and of a repository', async ({ page }) => {
   release()
   await expect(picker(page).locator('[data-repo-entry]')).toHaveCount(5)
 
-  held = new Promise<void>((r) => (release = r))
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/api/commands/status/plan', async (route) => {
+    await held
+    await route.fallback()
+  })
   await pick(page, 'acme/app')
   await expect(page.locator('[data-state=repo-reading]')).toHaveText('Reading github.com/acme/app…')
   await expect(page.getByRole('button', { name: 'Refreshing…' })).toBeDisabled()
@@ -433,7 +439,7 @@ test('a stale repository answer is dropped', async ({ page }) => {
   await pick(page, 'acme/app')
   await expect(page.locator('[data-slot=repo-link]')).toHaveAttribute('href', 'https://github.com/acme/app')
   release()
-  await expect.poll(() => w.statusBodies.length).toBe(3)
+  await expect.poll(() => w.statusBodies.length).toBe(2)
   await page.waitForTimeout(200)
   await expect(page.locator('[data-slot=repo-link]')).toHaveAttribute('href', 'https://github.com/acme/app')
   await expectClean(w)
