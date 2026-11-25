@@ -52,14 +52,7 @@ func (c confirmer) Confirm(p op.Plan) (bool, error) {
 	if !inOK || !errOK || !term.IsTerminal(in) {
 		return false, op.Errorf(op.CodeConfirmationRequired, "%s needs confirmation; rerun with --yes", p.Operation)
 	}
-	fmt.Fprintf(errOut, "%s will:\n", p.Operation)
-	for _, s := range p.Steps {
-		line := "  " + strings.TrimSpace(s.Action+" "+s.Target)
-		if s.Detail != "" {
-			line += " (" + s.Detail + ")"
-		}
-		fmt.Fprintln(errOut, line)
-	}
+	writePlan(errOut, p)
 	return prompter.New(in, errOut, errOut).Confirm("Apply this plan?", false)
 }
 

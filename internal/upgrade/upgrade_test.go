@@ -306,7 +306,7 @@ func run(t *testing.T) (*confirm, op.Plan, op.Result, error) {
 
 func actions(p op.Plan) []string {
 	var out []string
-	for _, s := range p.Steps {
+	for _, s := range p.Changes() {
 		out = append(out, s.Action+" "+s.Target)
 	}
 	return out
@@ -325,10 +325,16 @@ func TestCurrentRepoWritesNothing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v: %v", set, err)
 		}
-		if c.asked || !p.ReadOnly || len(p.Steps) != 0 || len(f.writes()) != 0 {
+		if c.asked || !p.ReadOnly || len(p.Changes()) != 0 || len(f.writes()) != 0 {
 			t.Errorf("%v: asked %v, plan %+v, writes %v", set, c.asked, p, f.writes())
 		}
+		items := checks(t, r)
+		delete(r, op.ResultItems)
+		delete(r, op.ResultNotes)
 		want := op.Result{"repo": repo, "image": imageRef, "set": setName(set), "current": true}
+		if len(items) != len(p.Steps) || slices.ContainsFunc(items, func(c op.Check) bool { return !c.Confirmed }) {
+			t.Errorf("%v: items %+v", set, items)
+		}
 		if fmt.Sprint(r) != fmt.Sprint(want) {
 			t.Errorf("%v: result %v, want %v", set, r, want)
 		}
@@ -368,8 +374,8 @@ func TestFirstRunOpensOnePR(t *testing.T) {
 		if !conf.asked || !p.Confirm || !slices.Equal(actions(p), c.actions) {
 			t.Errorf("%s: asked %v, plan %q", name, conf.asked, actions(p))
 		}
-		if p.Steps[0].Detail != imageRef {
-			t.Errorf("%s: step detail %q", name, p.Steps[0].Detail)
+		if p.Changes()[0].Detail != imageRef {
+			t.Errorf("%s: step detail %q", name, p.Changes()[0].Detail)
 		}
 		wantWrites := []string{"POST repos/o/r/git/trees", "POST repos/o/r/git/commits", "POST repos/o/r/git/refs", "POST repos/o/r/pulls"}
 		if !slices.Equal(f.writes(), wantWrites) {
@@ -476,7 +482,7 @@ func TestRerunAfterACrash(t *testing.T) {
 		switch key {
 		case "POST repos/o/r/git/refs":
 			// The branch already holds the files: only the PR is opened.
-			if !slices.Equal(actions(p), []string{"update " + issueP, "open PR " + Branch + " into main"}) {
+			if !slices.Equal(actions(p), []string{"open PR " + Branch + " into main"}) {
 				t.Errorf("%s: rerun plan %q", key, actions(p))
 			}
 		case "POST repos/o/r/pulls":
@@ -522,7 +528,8 @@ func TestStalePRIsUpdatedNotDuplicated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(actions(p)[len(actions(p))-2:], []string{"write branch " + Branch, "keep PR #10"}) || p.Steps[len(p.Steps)-2].Detail != "replaces earlier contents of that branch" {
+	last := p.Steps[len(p.Steps)-1]
+	if actions(p)[len(actions(p))-1] != "write branch "+Branch || p.Steps[len(p.Steps)-2].Detail != "replaces earlier contents of that branch" || last.Action+" "+last.Target != "keep PR #10" || !last.NoChange {
 		t.Errorf("plan %q", actions(p))
 	}
 	want := []string{"POST repos/o/r/git/trees", "POST repos/o/r/git/commits", "PATCH repos/o/r/git/refs/heads/" + Branch}
@@ -604,4 +611,14 @@ func TestConcurrentCreateConverges(t *testing.T) {
 	if _, _, r, err := run(t); err != nil || r["number"] != 10 || len(f.prs) != 1 {
 		t.Errorf("rerun %v, %v, PRs %d", r, err, len(f.prs))
 	}
+}
+
+// checks returns the read-back items of a result.
+func checks(t *testing.T, r op.Result) []op.Check {
+	t.Helper()
+	items, ok := r[op.ResultItems].([]op.Check)
+	if !ok {
+		t.Fatalf("result has no items: %v", r)
+	}
+	return items
 }

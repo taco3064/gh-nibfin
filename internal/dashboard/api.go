@@ -114,7 +114,12 @@ func (s *server) plan(w http.ResponseWriter, r *http.Request) {
 	if p.ReadOnly {
 		res, err := op.Finish(r.Context(), o, p, false)
 		if err != nil {
-			writeError(w, http.StatusUnprocessableEntity, err)
+			// The plan and the items read so far come with the error.
+			extra := map[string]any{"plan": p}
+			if res != nil {
+				extra["result"] = res
+			}
+			writeErrorWith(w, http.StatusUnprocessableEntity, err, extra)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"plan": p, "result": resultOrEmpty(res)})
@@ -127,8 +132,9 @@ func (s *server) plan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "plan": p})
 }
 
-// apply applies a stored plan once and streams its login steps and its
-// final result as NDJSON. A plan refused for want of confirmation stays
+// apply applies a stored plan once and streams its progress events, its
+// login steps and its final result, or its error with the result read so
+// far, as NDJSON. A plan refused for want of confirmation stays
 // stored.
 func (s *server) apply(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -160,7 +166,8 @@ func (s *server) apply(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	st := &stream{w: w, rc: http.NewResponseController(w)}
 	sp.interact.attach(func(step op.LoginStep) { st.line(map[string]any{"event": "login_step", "step": step}) })
-	res, err := op.Finish(r.Context(), sp.o, sp.p, body.Confirm)
+	ctx := op.WithProgress(r.Context(), func(e op.Event) { st.line(map[string]any{"event": "progress", "progress": e}) })
+	res, err := op.Finish(ctx, sp.o, sp.p, body.Confirm)
 	sp.interact.attach(nil)
 
 	keep := op.Code(err) == op.CodeConfirmationRequired
@@ -173,7 +180,11 @@ func (s *server) apply(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if err != nil {
-		st.line(map[string]any{"event": "error", "error": op.AsError(err)})
+		line := map[string]any{"event": "error", "error": op.AsError(err)}
+		if res != nil {
+			line["result"] = res
+		}
+		st.line(line)
 		return
 	}
 	st.line(map[string]any{"event": "result", "result": resultOrEmpty(res)})
@@ -349,4 +360,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]any{"error": op.AsError(err)})
+}
+
+// writeErrorWith writes the error body with extra fields next to "error".
+func writeErrorWith(w http.ResponseWriter, status int, err error, extra map[string]any) {
+	body := map[string]any{}
+	for k, v := range extra {
+		body[k] = v
+	}
+	body["error"] = op.AsError(err)
+	writeJSON(w, status, body)
 }

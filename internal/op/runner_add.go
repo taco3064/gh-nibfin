@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/taco3064/gh-nibfin/internal/host"
@@ -28,7 +29,6 @@ const (
 	actLinger     = "enable linger"
 	actAddRunner  = "add runner"
 	actAddRunners = "add runners"
-	actAdvise     = "advise"
 
 	toolsVolume = "nibfin-tools"
 	// memoryPerRunnerGB is the NIBFIN_MEMORY default of a stage run.
@@ -143,15 +143,13 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 	if a.host.NeedsStart() {
 		// Nothing can be asked of a stopped machine; Apply derives the
 		// rest after the start.
-		start := Step{Action: actStart, Target: where}
+		start := hostStep(where, true)
 		if a.entry.Kind != "" {
 			start.Detail = "through " + entryName(a.entry)
 		}
-		plan.Steps = append(plan.Steps,
-			start,
-			Step{Action: actLinger, Target: where},
-			Step{Action: actCreateVolume, Target: toolsVolume, Detail: where},
-		)
+		linger, tools := lingerStep(where), volumeStep(toolsVolume)
+		linger.AfterStart, tools.AfterStart, tools.Detail = true, true, where
+		plan.Steps = append(plan.Steps, start, linger, tools)
 		lp, err := a.login().Plan(ctx)
 		if err != nil {
 			return plan, err
@@ -161,22 +159,53 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 				plan.Steps = append(plan.Steps, s)
 			}
 		}
-		plan.Steps = append(plan.Steps, Step{Action: actAddRunners, Target: fmt.Sprintf("%s ×%d", a.prov.name, a.p.Count), Detail: "repository and slots chosen after start"})
+		plan.Steps = append(plan.Steps, Step{ID: "runners", Action: actAddRunners, Target: fmt.Sprintf("%s ×%d", a.prov.name, a.p.Count),
+			Detail: "repository and slots chosen after start", Next: "configured and registered", AfterStart: true})
 		return plan, nil
 	}
+	plan.Steps = append(plan.Steps, hostStep(where, false))
 	env, err := a.load(ctx)
 	if err != nil {
 		return plan, err
 	}
 	plan.Repo = env.repo
-	steps, err := a.steps(ctx, env)
+	steps, notes, err := a.steps(ctx, env)
 	plan.Steps = append(plan.Steps, steps...)
+	plan.Notes = notes
 	return plan, err
 }
 
-// hostSteps are the host changes that keep the machine and its runners up
+// The item steps of runner add that runner remove and the read-back share.
+func wslStep() Step {
+	return Step{ID: "wslconfig", Action: actSetWSLConfig, Target: host.WSLConfig, Next: "set"}
+}
+
+func autostartStep(action string, as host.Autostart) Step {
+	return Step{ID: "autostart", Action: action, Target: entryName(as)}
+}
+
+func lingerStep(where string) Step {
+	return Step{ID: "linger", Action: actLinger, Target: where, Next: "enabled"}
+}
+
+func slotStep(slot string) Step {
+	return Step{ID: "runner:" + slot, Action: actAddRunner, Target: slot}
+}
+
+// entryState names an autostart entry's state.
+func entryState(as host.Autostart) string {
+	switch {
+	case as.Current:
+		return "current"
+	case as.Present:
+		return "outdated"
+	}
+	return "absent"
+}
+
+// hostSteps are the host items that keep the machine and its runners up
 // while the host is on: the .wslconfig key on a WSL machine and the
-// autostart entry, each only when it is missing. They only read.
+// autostart entry, each no change when in place. They only read.
 func (a *runnerAdd) hostSteps(ctx context.Context) ([]Step, error) {
 	steps := []Step{}
 	if a.host.WSL() {
@@ -187,49 +216,61 @@ func (a *runnerAdd) hostSteps(ctx context.Context) ([]Step, error) {
 		if err != nil {
 			return nil, autostartError(ctx, err)
 		}
-		if !set {
-			d := wslConfigValue
-			if !a.host.NeedsStart() {
-				d += "; takes effect after the next wsl --shutdown; runner add does not shut down the VM"
-			}
-			steps = append(steps, Step{Action: actSetWSLConfig, Target: host.WSLConfig, Detail: d})
+		s := wslStep()
+		s.Detail, s.Current, s.NoChange = wslConfigValue, "not set", set
+		if set {
+			s.Current = "set"
+		} else if !a.host.NeedsStart() {
+			s.Detail += "; takes effect after the next wsl --shutdown; runner add does not shut down the VM"
 		}
+		steps = append(steps, s)
 	}
 	as, err := a.host.Autostart(ctx)
 	if err != nil {
 		return nil, autostartError(ctx, err)
 	}
 	a.entry = as
-	if as.Kind != "" && !as.Current {
-		d := entryTriggers(as.Kind)
-		if as.Present {
-			d += "; replaces the registered one: " + as.Outdated
+	if as.Kind != "" {
+		s := autostartStep(actRegisterAutostart, as)
+		s.Detail, s.Current, s.Next, s.NoChange = entryTriggers(as.Kind), entryState(as), "current", as.Current
+		if as.Present && !as.Current {
+			s.Detail += "; replaces the registered one: " + as.Outdated
 		}
-		steps = append(steps, Step{Action: actRegisterAutostart, Target: entryName(as), Detail: d})
+		steps = append(steps, s)
 	}
 	return steps, nil
 }
 
-// applyHostSteps applies the plan's host steps.
+// applyHostSteps applies the plan's changing host steps.
 func (a *runnerAdd) applyHostSteps(ctx context.Context, steps []Step) error {
 	for _, s := range steps {
+		var err error
 		switch s.Action {
 		case actSetWSLConfig:
-			changed, err := a.host.EnsureIdleTimeout()
-			if err != nil {
-				return autostartError(ctx, err)
-			}
-			if changed && !a.host.NeedsStart() {
-				a.wslPending = true
-			}
+			err = Track(ctx, s, func() error {
+				changed, err := a.host.EnsureIdleTimeout()
+				if err != nil {
+					return autostartError(ctx, err)
+				}
+				if changed && !a.host.NeedsStart() {
+					a.wslPending = true
+				}
+				return nil
+			})
 		case actRegisterAutostart:
-			as, err := a.host.EnsureAutostart(ctx)
-			if err != nil {
-				return autostartError(ctx, err)
-			}
-			if as.Kind != "" && !as.Current {
-				return Errorf(CodeAutostartFailed, "%s was registered, but reads back different: %s", entryName(as), as.Outdated)
-			}
+			err = Track(ctx, s, func() error {
+				as, err := a.host.EnsureAutostart(ctx)
+				if err != nil {
+					return autostartError(ctx, err)
+				}
+				if as.Kind != "" && !as.Current {
+					return Errorf(CodeAutostartFailed, "%s was registered, but reads back different: %s", entryName(as), as.Outdated)
+				}
+				return nil
+			})
+		}
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -288,33 +329,58 @@ func (a *runnerAdd) slots(inv *runners.Inventory) (slots []string, fresh int) {
 	return slots, fresh
 }
 
-func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, error) {
+// steps are the items of a running host: linger, the tools volume, the
+// login items and one item per chosen slot. The host advice is returned as
+// notes.
+func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, error) {
 	where := a.host.Describe()
 	steps := []Step{}
-	if !env.probe.linger {
-		steps = append(steps, Step{Action: actLinger, Target: where})
+	linger := lingerStep(where)
+	linger.NoChange, linger.Current = env.probe.linger, "disabled"
+	if env.probe.linger {
+		linger.Current = "enabled"
 	}
+	steps = append(steps, linger)
 	has, err := volumeExists(ctx, a.host, toolsVolume)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if !has {
-		steps = append(steps, Step{Action: actCreateVolume, Target: toolsVolume, Detail: where})
-	}
+	tools := volumeStep(toolsVolume)
+	tools.Detail, tools.Current, tools.NoChange = where, presence(has), has
+	steps = append(steps, tools)
 	lp, err := a.login().Plan(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	steps = append(steps, lp.Steps...)
+	for _, s := range lp.Steps {
+		if s.Action != actStart {
+			steps = append(steps, s)
+		}
+	}
 	slots, fresh := a.slots(env.inv)
 	detail := env.repo + ", labels " + a.labels(env.user)
 	for _, s := range slots {
-		steps = append(steps, Step{Action: actAddRunner, Target: s, Detail: detail})
+		st := slotStep(s)
+		st.Detail, st.Current, st.Next = detail, "absent", "configured and registered to "+env.repo
+		if r, ok := env.inv.Find(s); ok {
+			st.Current = slotCondition(r)
+		}
+		steps = append(steps, st)
 	}
-	for _, adv := range a.advice(env.probe, len(env.inv.Runners)+fresh) {
-		steps = append(steps, Step{Action: actAdvise, Target: where, Detail: adv})
+	return steps, a.advice(env.probe, len(env.inv.Runners)+fresh), nil
+}
+
+// slotCondition names an existing slot's local state.
+func slotCondition(r runners.Runner) string {
+	switch {
+	case !r.Configured:
+		return "incomplete: not configured"
+	case !r.Unit:
+		return "incomplete: no service unit"
+	case !r.Enabled:
+		return "incomplete: service not enabled"
 	}
-	return steps, nil
+	return "configured, service enabled"
 }
 
 // advice is the non-blocking host advice for runners on the host.
@@ -376,7 +442,7 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 	if err := a.detect(ctx); err != nil {
 		return err
 	}
-	steps := plan.Steps
+	steps := plan.Changes()
 	var env *addEnv
 	var err error
 	for _, s := range steps {
@@ -388,18 +454,24 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 	if err := a.applyHostSteps(ctx, steps); err != nil {
 		return err
 	}
-	if hasStep(steps, actStart) {
+	if start, ok := findStep(steps, actStart); ok {
 		// Started through the autostart entry, so the VM does not depend
 		// on the process that ran gh.
-		if err := a.host.StartViaAutostart(ctx); err != nil {
-			return autostartError(ctx, err)
+		if err := Track(ctx, start, func() error {
+			if err := a.host.StartViaAutostart(ctx); err != nil {
+				return autostartError(ctx, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		if env, err = a.load(ctx); err != nil {
 			return err
 		}
-		if steps, err = a.steps(ctx, env); err != nil {
+		if steps, _, err = a.steps(ctx, env); err != nil {
 			return err
 		}
+		steps = Changes(steps)
 	} else {
 		if env, err = a.load(ctx); err != nil {
 			return err
@@ -410,8 +482,7 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 	}
 
 	// The order is fixed: linger, the tools volume, the login, the slots.
-	var pre, logins []Step
-	var slots []string
+	var pre, logins, slots []Step
 	slotRE := regexp.MustCompile(`^` + a.prov.name + `-[1-9][0-9]{0,5}$`)
 	for _, s := range steps {
 		switch {
@@ -420,20 +491,25 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		case s.Action == actCreateVolume && s.Target == a.prov.volume(), s.Action == actLogIn && s.Target == a.prov.name:
 			logins = append(logins, s)
 		case s.Action == actAddRunner && slotRE.MatchString(s.Target):
-			slots = append(slots, s.Target)
-		case s.Action == actAdvise, s.Action == actSetWSLConfig, s.Action == actRegisterAutostart:
+			slots = append(slots, s)
+		case s.Action == actSetWSLConfig, s.Action == actRegisterAutostart:
 		default:
 			return Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
 		}
 	}
 	for _, s := range pre {
 		if s.Action == actLinger {
-			if _, err := a.script(ctx, "enable linger", lingerScript, nil, ""); err != nil {
-				return Errorf(CodeRunnerInstallFailed, "%v; enable it with: sudo loginctl enable-linger $USER", err)
+			if err := Track(ctx, s, func() error {
+				if _, err := a.script(ctx, "enable linger", lingerScript, nil, ""); err != nil {
+					return Errorf(CodeRunnerInstallFailed, "%v; enable it with: sudo loginctl enable-linger $USER", err)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 			continue
 		}
-		if err := createVolume(ctx, a.host, toolsVolume); err != nil {
+		if err := Track(ctx, s, func() error { return createVolume(ctx, a.host, toolsVolume) }); err != nil {
 			return err
 		}
 	}
@@ -445,65 +521,90 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 	return a.install(ctx, env, slots)
 }
 
-func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []string) error {
+// findStep returns the first step with action.
+func findStep(steps []Step, action string) (Step, bool) {
+	for _, s := range steps {
+		if s.Action == action {
+			return s, true
+		}
+	}
+	return Step{}, false
+}
+
+// install installs each slot as one item: its files, its registration and
+// its service. The archive and the registration token they share are
+// fetched first; when that fails, every slot fails with it.
+func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step) error {
 	needFiles := false
 	for _, s := range slots {
-		if r, ok := env.inv.Find(s); !ok || !r.Configured {
+		if r, ok := env.inv.Find(s.Target); !ok || !r.Configured {
 			needFiles = true
 		}
+	}
+	failAll := func(err error) error {
+		for _, s := range slots {
+			Started(ctx, s)
+			Failed(ctx, s, err)
+		}
+		return err
 	}
 	var archive, token string
 	if needFiles {
 		d, err := a.pickDownload(ctx, env)
 		if err != nil {
-			return err
+			return failAll(err)
 		}
 		path, cleanup, err := downloadArchive(ctx, d)
 		if err != nil {
-			return err
+			return failAll(err)
 		}
 		defer cleanup()
 		archive = path
 		// Fetched after the login, so a long login cannot expire it.
 		if token, err = env.gh.RegistrationToken(ctx, env.repo); err != nil {
-			return err
+			return failAll(err)
 		}
 	}
 	url := "https://" + env.repo
 	labels := a.labels(env.user)
-	for _, s := range slots {
-		a.applied = append(a.applied, s)
-		r, exists := env.inv.Find(s)
-		dir := env.inv.SlotDir(s)
-		if !r.Configured {
-			name, err := env.probe.runnerName(s)
+	for _, st := range slots {
+		s := st.Target
+		err := Track(ctx, st, func() error {
+			a.applied = append(a.applied, s)
+			r, exists := env.inv.Find(s)
+			dir := env.inv.SlotDir(s)
+			if !r.Configured {
+				name, err := env.probe.runnerName(s)
+				if err != nil {
+					return err
+				}
+				f, err := os.Open(archive)
+				if err != nil {
+					return Errorf(CodeRunnerDownloadFailed, "open the runner archive: %v", err)
+				}
+				mode := "existing"
+				if !exists {
+					mode = "new"
+				}
+				_, err = a.script(ctx, "extract the runner into "+s, extractScript, f, "", dir, mode)
+				f.Close()
+				if err != nil {
+					return err
+				}
+				_, err = a.script(ctx, "configure "+s, configureScript, strings.NewReader(token+"\n"), token,
+					dir, "--unattended", "--url", url, "--name", name, "--labels", labels, "--replace")
+				if err != nil {
+					return err
+				}
+			}
+			unit, err := unitText(s, dir)
 			if err != nil {
 				return err
 			}
-			f, err := os.Open(archive)
-			if err != nil {
-				return Errorf(CodeRunnerDownloadFailed, "open the runner archive: %v", err)
-			}
-			mode := "existing"
-			if !exists {
-				mode = "new"
-			}
-			_, err = a.script(ctx, "extract the runner into "+s, extractScript, f, "", dir, mode)
-			f.Close()
-			if err != nil {
-				return err
-			}
-			_, err = a.script(ctx, "configure "+s, configureScript, strings.NewReader(token+"\n"), token,
-				dir, "--unattended", "--url", url, "--name", name, "--labels", labels, "--replace")
-			if err != nil {
-				return err
-			}
-		}
-		unit, err := unitText(s, dir)
-		if err != nil {
+			_, err = a.script(ctx, "install the service of "+s, unitScript, strings.NewReader(unit), "", env.inv.UnitDir, runners.UnitName(s))
 			return err
-		}
-		if _, err := a.script(ctx, "install the service of "+s, unitScript, strings.NewReader(unit), "", env.inv.UnitDir, runners.UnitName(s)); err != nil {
+		})
+		if err != nil {
 			return err
 		}
 	}
@@ -557,6 +658,36 @@ type RunnerState struct {
 	Busy   bool   `json:"busy"`
 }
 
+// slotState names a slot's state as read back, and what keeps it from
+// being confirmed.
+func slotReadBack(st RunnerState) (state, missing string) {
+	r := st.Runner
+	var parts, miss []string
+	if r.Configured {
+		parts = append(parts, "configured")
+	} else {
+		miss = append(miss, "not configured")
+	}
+	if r.Active {
+		parts = append(parts, "active")
+	} else {
+		miss = append(miss, "service not active")
+	}
+	if st.Listed {
+		listed := "listed on GitHub"
+		if st.Status != "" {
+			listed += " (" + st.Status + ")"
+		}
+		parts = append(parts, listed)
+	} else {
+		miss = append(miss, "not registered on GitHub")
+	}
+	return strings.Join(parts, ", "), strings.Join(miss, ", ")
+}
+
+// ReadBack reads every item back: the host, its .wslconfig key and
+// autostart entry, linger, the tools volume, the login and each slot. The
+// items read so far are returned also with an error.
 func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err := a.validate(); err != nil {
 		return nil, err
@@ -564,27 +695,17 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err := a.detect(ctx); err != nil {
 		return nil, err
 	}
-	if a.host.NeedsStart() {
-		return nil, Errorf(CodePodmanFailed, "%s is not running", a.host.Describe())
+	where := a.host.Describe()
+	var checks Checks
+	ws, hs, ls, tools := wslStep(), hostStep(where, false), lingerStep(where), volumeStep(toolsVolume)
+	as0 := autostartStep(actRegisterAutostart, a.entry)
+	if a.host.WSL() {
+		checks.Expect(ws)
 	}
-	inv, err := listRunners(ctx, a.host)
-	if err != nil {
-		return nil, err
+	if a.entry.Kind != "" {
+		checks.Expect(as0)
 	}
-	repo, err := runners.Repo(inv.Runners)
-	if err != nil {
-		return nil, Wrap(CodeRunnerRepoConflict, err)
-	}
-	var list []ghRunner
-	if repo != "" {
-		gh, err := newGitHub(repoHost(repo))
-		if err != nil {
-			return nil, err
-		}
-		if list, err = gh.ListRunners(ctx, repo); err != nil {
-			return nil, err
-		}
-	}
+	checks.Expect(hs, ls, tools, volumeStep(a.prov.volume()), loginStep(a.prov))
 
 	// The slots to verify: those Apply acted on, else the plan's, else
 	// (a plan made on a stopped machine) all of the provider's.
@@ -593,75 +714,139 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		planned[s] = true
 	}
 	if len(planned) == 0 {
-		for _, s := range plan.Steps {
+		for _, s := range plan.Changes() {
 			if s.Action == actAddRunner {
 				planned[s.Target] = true
 			}
 		}
 	}
+	for _, s := range a.applied {
+		checks.Expect(slotStep(s))
+	}
+	for _, s := range plan.Changes() {
+		if len(a.applied) == 0 && s.Action == actAddRunner {
+			checks.Expect(slotStep(s.Target))
+		}
+	}
+	r := Result{"host": where}
+	fail := func(err error) (Result, error) { return checks.Fill(r, nil, err), err }
+
+	if a.host.NeedsStart() {
+		checks.Set(hs, false, "stopped", where+" is not running")
+		return fail(Errorf(CodePodmanFailed, "%s is not running", where))
+	}
+	checks.Set(hs, true, "running", "")
+	inv, err := listRunners(ctx, a.host)
+	if err != nil {
+		return fail(err)
+	}
 	if len(planned) == 0 {
-		for _, r := range inv.Of(a.prov.name) {
-			planned[r.Slot] = true
+		for _, rn := range inv.Of(a.prov.name) {
+			planned[rn.Slot] = true
+			checks.Expect(slotStep(rn.Slot))
+		}
+	}
+	repo, err := runners.Repo(inv.Runners)
+	if err != nil {
+		return fail(Wrap(CodeRunnerRepoConflict, err))
+	}
+	var list []ghRunner
+	if repo != "" {
+		gh, err := newGitHub(repoHost(repo))
+		if err != nil {
+			return fail(err)
+		}
+		if list, err = gh.ListRunners(ctx, repo); err != nil {
+			return fail(err)
 		}
 	}
 
 	states := joinRunners(inv.Runners, list)
 	var missing []string
 	for _, st := range states {
-		r := st.Runner
-		if planned[r.Slot] {
-			delete(planned, r.Slot)
+		rn := st.Runner
+		if planned[rn.Slot] {
+			delete(planned, rn.Slot)
 			// Offline right after the start is reported, not failed.
-			if !r.Configured || !r.Active || !st.Listed {
-				missing = append(missing, r.Slot)
+			state, miss := slotReadBack(st)
+			checks.Set(slotStep(rn.Slot), miss == "", state, miss)
+			if miss != "" {
+				missing = append(missing, rn.Slot)
 			}
 		}
 	}
+	var gone []string
 	for s := range planned {
-		missing = append(missing, s)
+		gone = append(gone, s)
 	}
+	sort.Strings(gone)
+	for _, s := range gone {
+		missing = append(missing, s)
+		checks.Set(slotStep(s), false, "absent", "not on "+where)
+	}
+	r["repo"], r["runners"] = repo, states
 
 	l := a.login()
 	in := false
 	has, err := volumeExists(ctx, a.host, a.prov.volume())
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
+	checks.Set(volumeStep(a.prov.volume()), has, presence(has), "the volume does not exist")
 	if has {
 		if in, err = l.check(ctx, a.prov); err != nil {
-			return nil, err
+			return fail(err)
 		}
 	}
+	checks.Set(loginStep(a.prov), in, loggedIn(in), a.prov.name+" is not logged in")
+	r["login"] = map[string]any{a.prov.name: map[string]bool{"loggedIn": in}}
 	pr, err := a.probe(ctx)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
+	linger := "disabled"
+	if pr.linger {
+		linger = "enabled"
+	}
+	checks.Set(ls, pr.linger, linger, "linger is not enabled")
+	toolsHas, err := volumeExists(ctx, a.host, toolsVolume)
+	if err != nil {
+		return fail(err)
+	}
+	checks.Set(tools, toolsHas, presence(toolsHas), "the volume does not exist")
+	notes := a.advice(pr, len(inv.Runners))
+	r["advice"] = notes
 	as, err := a.host.Autostart(ctx)
 	if err != nil {
-		return nil, autostartError(ctx, err)
+		return fail(autostartError(ctx, err))
 	}
-	r := Result{
-		"host":      a.host.Describe(),
-		"repo":      repo,
-		"runners":   states,
-		"login":     map[string]any{a.prov.name: map[string]bool{"loggedIn": in}},
-		"advice":    a.advice(pr, len(inv.Runners)),
-		"autostart": as,
+	r["autostart"] = as
+	if as.Kind != "" {
+		why := "not registered"
+		if as.Present {
+			why = "differs: " + as.Outdated
+		}
+		checks.Set(autostartStep(actRegisterAutostart, as), as.Current, entryState(as), why)
 	}
 	wslSet := true
 	if a.host.WSL() {
 		if wslSet, err = a.host.IdleTimeoutSet(); err != nil {
-			return nil, autostartError(ctx, err)
+			return fail(autostartError(ctx, err))
 		}
 		w := map[string]string{"vmIdleTimeout": "", "effective": ""}
+		state := "not set"
 		if wslSet {
 			w["vmIdleTimeout"], w["effective"] = "-1", "now"
+			state = "set, effective now"
 			if a.wslPending {
 				w["effective"] = "after wsl --shutdown"
+				state = "set, effective after wsl --shutdown"
 			}
 		}
 		r["wslconfig"] = w
+		checks.Set(ws, wslSet, state, "does not set "+wslConfigValue)
 	}
+	checks.Fill(r, notes, nil)
 	if len(missing) > 0 {
 		return r, Errorf(CodeRunnerMissing, "runners not configured, not running or not registered on GitHub: %s", strings.Join(missing, ", "))
 	}

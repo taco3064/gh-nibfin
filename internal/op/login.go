@@ -231,6 +231,25 @@ func (l *login) targets() ([]provider, error) {
 	return []provider{p}, nil
 }
 
+// hostStep is the host item: a start when the machine is stopped, no change
+// when it runs.
+func hostStep(where string, stopped bool) Step {
+	s := Step{ID: "host", Action: actStart, Target: where, Current: "running", Next: "running", NoChange: !stopped}
+	if stopped {
+		s.Current = "stopped"
+	}
+	return s
+}
+
+// volumeStep and loginStep name a provider's login items.
+func volumeStep(volume string) Step {
+	return Step{ID: "volume:" + volume, Action: actCreateVolume, Target: volume, Next: "present"}
+}
+
+func loginStep(p provider) Step {
+	return Step{ID: "login:" + p.name, Action: actLogIn, Target: p.name, Next: "logged in"}
+}
+
 func (l *login) Plan(ctx context.Context) (Plan, error) {
 	plan := Plan{Operation: "login", Steps: []Step{}}
 	targets, err := l.targets()
@@ -244,9 +263,8 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 	// A stopped machine cannot be asked yet: every target is planned and
 	// Apply checks again after the start.
 	stopped := l.host.NeedsStart()
-	if stopped {
-		plan.Steps = append(plan.Steps, Step{Action: actStart, Target: where})
-	} else {
+	plan.Steps = append(plan.Steps, hostStep(where, stopped))
+	if !stopped {
 		have, err := l.allowed(ctx)
 		if err != nil {
 			return plan, err
@@ -260,25 +278,51 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 				return plan, err
 			}
 		}
-		if !has {
-			plan.Steps = append(plan.Steps, Step{Action: actCreateVolume, Target: p.volume(), Detail: where})
+		vs := volumeStep(p.volume())
+		vs.Detail, vs.NoChange, vs.AfterStart = where, has, stopped
+		if !stopped {
+			vs.Current = presence(has)
 		}
+		plan.Steps = append(plan.Steps, vs)
 		// A named provider always logs in: the request may re-login or
 		// switch accounts. Runner add's login is only done when needed.
-		need := (l.p.Provider != "" && !l.ifNeeded) || !has
-		if !need {
+		forced := l.p.Provider != "" && !l.ifNeeded
+		need := forced || !has
+		ls := loginStep(p)
+		ls.Detail, ls.AfterStart = where, stopped
+		switch {
+		case !stopped && !has:
+			ls.Current = "not logged in"
+		case !need:
 			in, err := l.check(ctx, p)
 			if err != nil {
 				return plan, err
 			}
 			need = !in
+			ls.Current = loggedIn(in)
 		}
-		if need {
-			plan.Steps = append(plan.Steps, Step{Action: actLogIn, Target: p.name, Detail: where})
+		if forced {
+			ls.Detail += "; logs in again when already logged in"
 		}
+		ls.NoChange = !need
+		plan.Steps = append(plan.Steps, ls)
 	}
-	plan.ReadOnly = len(plan.Steps) == 0
+	plan.ReadOnly = len(plan.Changes()) == 0
 	return plan, nil
+}
+
+func presence(has bool) string {
+	if has {
+		return "present"
+	}
+	return "absent"
+}
+
+func loggedIn(in bool) string {
+	if in {
+		return "logged in"
+	}
+	return "not logged in"
 }
 
 func (l *login) Apply(ctx context.Context, plan Plan) error {
@@ -299,11 +343,17 @@ func (l *login) Apply(ctx context.Context, plan Plan) error {
 		ruled = err == nil
 		return err
 	}
-	for _, s := range plan.Steps {
+	for _, s := range plan.Changes() {
 		switch s.Action {
 		case actStart:
-			if err := l.host.Start(ctx); err != nil {
-				return hostError(err)
+			err := Track(ctx, s, func() error {
+				if err := l.host.Start(ctx); err != nil {
+					return hostError(err)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
 			}
 			recheck = l.p.Provider == "" || l.ifNeeded
 		case actCreateVolume:
@@ -317,7 +367,7 @@ func (l *login) Apply(ctx context.Context, plan Plan) error {
 			if have != nil && !have[p.name] {
 				continue
 			}
-			if err := createVolume(ctx, l.host, p.volume()); err != nil {
+			if err := Track(ctx, s, func() error { return createVolume(ctx, l.host, p.volume()) }); err != nil {
 				return err
 			}
 		case actLogIn:
@@ -331,16 +381,16 @@ func (l *login) Apply(ctx context.Context, plan Plan) error {
 			if have != nil && !have[p.name] {
 				continue
 			}
-			if recheck {
-				in, err := l.check(ctx, p)
-				if err != nil {
-					return err
+			err := Track(ctx, s, func() error {
+				if recheck {
+					in, err := l.check(ctx, p)
+					if err != nil || in {
+						return err
+					}
 				}
-				if in {
-					continue
-				}
-			}
-			if err := l.runLogin(ctx, p); err != nil {
+				return l.runLogin(ctx, p)
+			})
+			if err != nil {
 				return err
 			}
 		default:
@@ -350,6 +400,8 @@ func (l *login) Apply(ctx context.Context, plan Plan) error {
 	return nil
 }
 
+// ReadBack reads the host and, per target, its volume and login. The items
+// read so far are returned also with an error.
 func (l *login) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	targets, err := l.targets()
 	if err != nil {
@@ -358,39 +410,58 @@ func (l *login) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err := l.detect(ctx); err != nil {
 		return nil, err
 	}
-	if l.host.NeedsStart() {
-		return nil, Errorf(CodePodmanFailed, "%s is not running", l.host.Describe())
+	where := l.host.Describe()
+	var checks Checks
+	expect := func(ps []provider) {
+		for _, p := range ps {
+			checks.Expect(volumeStep(p.volume()), loginStep(p))
+		}
 	}
+	hs := hostStep(where, false)
+	checks.Expect(hs)
+	r := Result{"host": where}
+	fail := func(err error) (Result, error) { return checks.Fill(r, nil, err), err }
+	if l.host.NeedsStart() {
+		expect(targets)
+		checks.Set(hs, false, "stopped", where+" is not running")
+		return fail(Errorf(CodePodmanFailed, "%s is not running", where))
+	}
+	checks.Set(hs, true, "running", "")
 	have, err := l.allowed(ctx)
 	if err != nil {
-		return nil, err
+		expect(targets)
+		return fail(err)
 	}
 	targets = filterProviders(targets, have)
+	expect(targets)
 	planned := map[string]bool{}
-	for _, s := range plan.Steps {
+	for _, s := range plan.Changes() {
 		if s.Action == actLogIn {
 			planned[s.Target] = true
 		}
 	}
 	states := map[string]any{}
+	r["providers"] = states
 	var missing []string
 	for _, p := range targets {
 		has, err := volumeExists(ctx, l.host, p.volume())
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
+		checks.Set(volumeStep(p.volume()), has, presence(has), "the volume does not exist")
 		in := false
 		if has {
 			if in, err = l.check(ctx, p); err != nil {
-				return nil, err
+				return fail(err)
 			}
 		}
+		checks.Set(loginStep(p), in, loggedIn(in), p.name+" is not logged in")
 		states[p.name] = map[string]bool{"loggedIn": in}
 		if !in && planned[p.name] {
 			missing = append(missing, p.name)
 		}
 	}
-	r := Result{"providers": states, "host": l.host.Describe()}
+	checks.Fill(r, nil, nil)
 	if len(missing) > 0 {
 		return r, Errorf(CodeNotLoggedIn, "%s is not logged in after login", strings.Join(missing, ", "))
 	}

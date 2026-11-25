@@ -154,10 +154,10 @@ func TestRunnerRemoveAll(t *testing.T) {
 	if !reflect.DeepEqual(steps(p), want) || !p.Confirm || p.ReadOnly || p.Repo != "github.com/o/r" || len(c.plans) != 1 {
 		t.Fatalf("plan = %v, %+v", steps(p), p)
 	}
-	if d := p.Steps[2].Detail; d != hostName("claude-1")+", busy: waits for its Job to end" {
+	if d := p.Changes()[2].Detail; d != hostName("claude-1")+", busy: waits for its Job to end" {
 		t.Errorf("busy detail = %q", d)
 	}
-	if d := p.Steps[0].Detail; d != hostName("claude-2")+", idle" {
+	if d := p.Changes()[0].Detail; d != hostName("claude-2")+", idle" {
 		t.Errorf("idle detail = %q", d)
 	}
 	// Every label goes before any stop; the busy runner goes last and its
@@ -207,14 +207,14 @@ func TestRunnerRemoveCount(t *testing.T) {
 	gh.regs = append(gh.regs, reg(6, hostName("claude-4"), "github.com/o/r", false))
 	o := RunnerRemove(RunnerRemoveParams{Provider: "claude", Count: 2, DeleteLogin: true})
 	p, err := o.Plan(context.Background())
-	want := []string{"remove runner claude-4", "remove runner claude-2", "keep volume nibfin-home-claude"}
-	if err != nil || !reflect.DeepEqual(steps(p), want) {
-		t.Fatalf("plan = %v, %v", steps(p), err)
+	want := []string{"start fake", "remove runner claude-4", "remove runner claude-2", "keep volume nibfin-home-claude"}
+	if err != nil || !reflect.DeepEqual(allSteps(p), want) {
+		t.Fatalf("plan = %v, %v", allSteps(p), err)
 	}
-	if d := p.Steps[0].Detail; d != hostName("claude-4")+", stale" {
+	if d := p.Changes()[0].Detail; d != hostName("claude-4")+", stale" {
 		t.Errorf("stale detail = %q", d)
 	}
-	if d := p.Steps[2].Detail; d != "2 claude runners remain" {
+	if d := p.Steps[3].Detail; d != "2 claude runners remain" {
 		t.Errorf("keep detail = %q", d)
 	}
 	if len(f.events) != 0 {
@@ -276,7 +276,7 @@ func TestRunnerRemoveNoRunners(t *testing.T) {
 	f.events = nil
 	c := &yes{}
 	p, r, err = Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "codex", DeleteLogin: true}), c)
-	if err != nil || !p.ReadOnly || len(c.plans) != 0 || len(f.events) != 0 || !reflect.DeepEqual(steps(p), []string{"keep volume nibfin-home-codex"}) || p.Steps[0].Detail != "no such volume" {
+	if err != nil || !p.ReadOnly || len(c.plans) != 0 || len(f.events) != 0 || !reflect.DeepEqual(allSteps(p), []string{"start fake", "keep volume nibfin-home-codex"}) || p.Steps[1].Detail != "no such volume" {
 		t.Errorf("rerun: %v, %+v, events %v", err, p, f.events)
 	}
 	if l := resultJSON(t, r)["login"].(map[string]any); l["volume"] != "absent" {
@@ -330,7 +330,7 @@ func TestRunnerRemoveMatching(t *testing.T) {
 	}
 	// claude-3 (no unit) is stale and not registered in its repository.
 	want := []string{"remove runner claude-3", "remove runner claude-1", "remove runner claude-2"}
-	if !reflect.DeepEqual(steps(p), want) || p.Repo != "" || p.Steps[0].Detail != "c-claude-3 (not registered), stale" {
+	if !reflect.DeepEqual(steps(p), want) || p.Repo != "" || p.Changes()[0].Detail != "c-claude-3 (not registered), stale" {
 		t.Errorf("plan = %v %+v", steps(p), p)
 	}
 	if len(fx.gh.regs) != 2 || fx.gh.regs[0].ID != 7 || fx.gh.regs[1].ID != 8 {
@@ -391,7 +391,7 @@ func TestRunnerRemoveBusyGuard(t *testing.T) {
 	f.stopExit = nil
 	f.events = nil
 	p, _, err := Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "claude", Count: 1}), &yes{})
-	if err != nil || !reflect.DeepEqual(steps(p), []string{"remove runner claude-1"}) || !strings.Contains(p.Steps[0].Detail, "stale: waits for its Job to end") {
+	if err != nil || !reflect.DeepEqual(steps(p), []string{"remove runner claude-1"}) || !strings.Contains(p.Changes()[0].Detail, "stale: waits for its Job to end") {
 		t.Errorf("rerun: %v %+v", err, p)
 	}
 }

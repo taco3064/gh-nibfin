@@ -279,13 +279,17 @@ func TestPause(t *testing.T) {
 		t.Errorf("calls = %v", f.calls)
 	}
 	wantSteps := []Step{
-		{Action: "add label", Target: "https://github.com/o/r/issues/1", Detail: "pause"},
-		{Action: "add label", Target: "https://github.com/a/b/issues/3", Detail: "pause"},
+		{ID: "issue:https://github.com/o/r/issues/1", Action: "add label", Target: "https://github.com/o/r/issues/1", Detail: "pause", Current: "no pause", Next: "pause"},
+		{ID: "issue:https://github.com/o/r/issues/2", Action: "add label", Target: "https://github.com/o/r/issues/2", Detail: "already paused", Current: "pause", Next: "pause", NoChange: true},
+		{ID: "issue:https://github.com/a/b/issues/3", Action: "add label", Target: "https://github.com/a/b/issues/3", Detail: "pause", Current: "no pause", Next: "pause"},
 	}
 	if p.Confirm || p.Operation != "pause" || !reflect.DeepEqual(p.Steps, wantSteps) {
 		t.Errorf("plan = %+v", p)
 	}
 	want := Result{"https://github.com/o/r/issues/1": "paused", "https://github.com/o/r/issues/2": "paused", "https://github.com/a/b/issues/3": "paused"}
+	if items := takeItems(t, res); len(items) != 3 || !items[0].Confirmed || !items[1].Confirmed || !items[2].Confirmed || items[1].State != "pause" {
+		t.Errorf("items = %+v", items)
+	}
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf("result = %v", res)
 	}
@@ -312,13 +316,14 @@ func TestResume(t *testing.T) {
 		t.Errorf("calls = %v", f.calls)
 	}
 	wantSteps := []Step{
-		{Action: "remove label", Target: "https://github.com/o/r/issues/1", Detail: "pause, pending"},
-		{Action: "remove label", Target: "https://github.com/o/r/issues/2", Detail: "pending"},
+		{ID: "issue:https://github.com/o/r/issues/1", Action: "remove label", Target: "https://github.com/o/r/issues/1", Detail: "pause, pending", Current: "pause, pending", Next: "no pause or pending"},
+		{ID: "issue:https://github.com/o/r/issues/2", Action: "remove label", Target: "https://github.com/o/r/issues/2", Detail: "pending", Current: "pending", Next: "no pause or pending"},
+		{ID: "issue:https://github.com/o/r/issues/3", Action: "remove label", Target: "https://github.com/o/r/issues/3", Detail: "already resumed", Current: "no pause or pending", Next: "no pause or pending", NoChange: true},
 	}
 	if p.Confirm || !reflect.DeepEqual(p.Steps, wantSteps) {
 		t.Errorf("plan = %+v", p)
 	}
-	if len(res) != 3 || res["https://github.com/o/r/issues/3"] != "resumed" {
+	if len(takeItems(t, res)) != 3 || len(res) != 3 || res["https://github.com/o/r/issues/3"] != "resumed" {
 		t.Errorf("result = %v", res)
 	}
 	for n, want := range map[int][]string{1: {"bug"}, 2: {}, 3: {"bug"}} {
@@ -344,7 +349,7 @@ func TestNoChangeSendsNoMutation(t *testing.T) {
 	f := newFake(t)
 	f.repo("o/r", "pause").issue("o/r", 1, "pause")
 	p, res, err := Run(context.Background(), Pause(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}), noConfirm())
-	if err != nil || len(p.Steps) != 0 || res["https://github.com/o/r/issues/1"] != "paused" {
+	if err != nil || len(p.Changes()) != 0 || len(p.Steps) != 1 || res["https://github.com/o/r/issues/1"] != "paused" {
 		t.Fatalf("plan %+v, res %v, err %v", p, res, err)
 	}
 	if !reflect.DeepEqual(f.calls, []string{"query", "readback"}) {
@@ -410,7 +415,7 @@ func TestPartialMutationFailure(t *testing.T) {
 	delete(f.failIDs, bad.id)
 	f.calls = nil
 	p, _, err := Run(context.Background(), Pause(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1", "2"}}), noConfirm())
-	if err != nil || len(p.Steps) != 1 || p.Steps[0].Target != bad.url {
+	if err != nil || len(p.Changes()) != 1 || p.Changes()[0].Target != bad.url {
 		t.Fatalf("redo plan %+v, err %v", p, err)
 	}
 }
@@ -464,4 +469,16 @@ func TestApplyBeforePlan(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Errorf("calls = %v", f.calls)
 	}
+}
+
+// takeItems removes the shared keys from r and returns its items.
+func takeItems(t *testing.T, r Result) []Check {
+	t.Helper()
+	items, ok := r[ResultItems].([]Check)
+	if _, notes := r[ResultNotes].([]string); !ok || !notes {
+		t.Fatalf("result without items or notes: %v", r)
+	}
+	delete(r, ResultItems)
+	delete(r, ResultNotes)
+	return items
 }

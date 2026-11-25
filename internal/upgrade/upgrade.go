@@ -57,6 +57,7 @@ type upgrade struct {
 	changed       []string          // paths that differ from the default branch
 	current       bool              // the default branch holds the rendered set
 	pr            *workflowpr.PR    // the branch and its PR, when the set differs
+	steps         []op.Step         // the plan items
 }
 
 func setName(s templates.Set) string {
@@ -118,6 +119,8 @@ func (u *upgrade) Plan(ctx context.Context) (op.Plan, error) {
 	u.planned = true
 	if len(u.changed) == 0 {
 		u.current = true
+		u.steps = workflowpr.KeptSteps(u.paths(), Branch, "the default branch holds the current set")
+		plan.Steps = u.steps
 		plan.ReadOnly = true
 		return plan, nil
 	}
@@ -131,23 +134,18 @@ func (u *upgrade) Plan(ctx context.Context) (op.Plan, error) {
 		Message:       "Upgrade Nibfin workflows to " + u.image,
 		Title:         "Upgrade Nibfin workflows",
 		Body:          u.prBody(),
+		OnDefault:     onDefault,
+		FileDetail:    u.image,
 	}
 	if err := u.pr.Read(ctx); err != nil {
 		return plan, err
 	}
+	u.steps = u.pr.Steps()
+	plan.Steps = u.steps
 	if u.pr.Done() {
 		plan.ReadOnly = true
 		return plan, nil
 	}
-
-	for _, p := range u.changed {
-		action := "update"
-		if onDefault[p] == nil {
-			action = "add"
-		}
-		plan.Steps = append(plan.Steps, op.Step{Action: action, Target: p, Detail: u.image})
-	}
-	plan.Steps = append(plan.Steps, u.pr.Steps()...)
 	plan.Confirm = true
 	return plan, nil
 }
@@ -186,21 +184,26 @@ func (u *upgrade) prBody() string {
 	return b.String()
 }
 
+// ReadBack reads every item back: the files of a current set on the
+// default branch, or the branch and the PR. The items are returned also
+// with an error.
 func (u *upgrade) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	if !u.planned {
 		return nil, op.Errorf(op.CodeInvalidArgument, "upgrade: ReadBack needs a Plan on the same operation")
 	}
 	r := op.Result{"repo": u.p.Repo, "image": u.image, "set": setName(u.set)}
+	var checks op.Checks
 	if u.current {
 		r["current"] = true
-		return r, nil
+		err := u.repo.ReadBackKept(ctx, &checks, u.steps, u.defaultBranch, u.files)
+		return checks.Fill(r, nil, err), err
 	}
-	pr, err := u.pr.ReadBack(ctx)
+	pr, err := u.pr.ReadBackItems(ctx, &checks, u.steps)
 	if err != nil {
-		return nil, err
+		return checks.Fill(r, nil, err), err
 	}
 	r["files"] = slices.Clone(u.changed)
 	r["pr"] = pr.HTMLURL
 	r["number"] = pr.Number
-	return r, nil
+	return checks.Fill(r, nil, nil), nil
 }

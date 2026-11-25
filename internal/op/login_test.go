@@ -217,9 +217,14 @@ func TestRunArgs(t *testing.T) {
 	}
 }
 
-func steps(p Plan) []string {
+// steps lists the changing items of p; allSteps every item.
+func steps(p Plan) []string { return stepNames(p.Changes()) }
+
+func allSteps(p Plan) []string { return stepNames(p.Steps) }
+
+func stepNames(list []Step) []string {
 	out := []string{}
-	for _, s := range p.Steps {
+	for _, s := range list {
 		out = append(out, s.Action+" "+s.Target)
 	}
 	return out
@@ -257,7 +262,7 @@ func TestLoginAllLoggedIn(t *testing.T) {
 	f := &fakeHost{volumes: map[string]bool{"claude": true, "codex": true}, loggedIn: map[string]bool{"claude": true, "codex": true}}
 	useHost(t, f)
 	p, r, err := Run(context.Background(), Login(LoginParams{}), nil)
-	if err != nil || !p.ReadOnly || len(p.Steps) != 0 {
+	if err != nil || !p.ReadOnly || len(p.Changes()) != 0 {
 		t.Fatalf("Run = %+v, %v", p, err)
 	}
 	want := map[string]any{"claude": map[string]bool{"loggedIn": true}, "codex": map[string]bool{"loggedIn": true}}
@@ -526,7 +531,7 @@ func TestLoginIfNeeded(t *testing.T) {
 	useHost(t, f)
 	l := &login{p: LoginParams{Provider: "claude"}, host: f, ifNeeded: true}
 	p, err := l.Plan(context.Background())
-	if err != nil || len(p.Steps) != 0 {
+	if err != nil || len(p.Changes()) != 0 {
 		t.Errorf("logged in: %v, %v", steps(p), err)
 	}
 	f.loggedIn["claude"] = false

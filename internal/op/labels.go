@@ -42,6 +42,7 @@ type issueState struct {
 	id, url  string
 	labelIDs []string // labels to add or remove; empty when nothing changes
 	names    []string // the names of those labels
+	current  string   // the relevant labels at plan time
 }
 
 type labelNode struct {
@@ -164,7 +165,7 @@ func (o *labelOp) Plan(ctx context.Context) (Plan, error) {
 				missing = append(missing, refs[i].Input)
 				continue
 			}
-			s := issueState{ref: refs[i], id: n.ID, url: n.URL}
+			s := issueState{ref: refs[i], id: n.ID, url: n.URL, current: o.state(n.Labels.Nodes)}
 			if o.add != "" {
 				if label == nil || label.ID == "" {
 					if len(noLabel) == 0 || noLabel[len(noLabel)-1] != refs[i].Owner+"/"+refs[i].Name {
@@ -204,21 +205,61 @@ func (o *labelOp) Plan(ctx context.Context) (Plan, error) {
 	}
 	p.Steps = []Step{}
 	for _, s := range o.issues {
-		if len(s.labelIDs) == 0 {
-			continue
-		}
-		action := "remove label"
-		if o.add != "" {
-			action = "add label"
-		}
-		p.Steps = append(p.Steps, Step{Action: action, Target: s.url, Detail: strings.Join(s.names, ", ")})
+		p.Steps = append(p.Steps, o.step(s))
 	}
 	o.client, o.planned = client, true
 	return p, nil
 }
 
+// step is the plan item of one Issue; an Issue already in the target state
+// is a no-change item.
+func (o *labelOp) step(s issueState) Step {
+	st := Step{ID: "issue:" + s.url, Action: "remove label", Target: s.url, Current: s.current, Next: o.target()}
+	if o.add != "" {
+		st.Action = "add label"
+	}
+	if len(s.labelIDs) == 0 {
+		st.NoChange, st.Detail = true, "already "+o.done
+	} else {
+		st.Detail = strings.Join(s.names, ", ")
+	}
+	return st
+}
+
+// relevant are the labels the operation adds or removes.
+func (o *labelOp) relevant() []string {
+	if o.add != "" {
+		return []string{o.add}
+	}
+	return o.remove
+}
+
+// state names the relevant labels an Issue carries, or "no <labels>".
+func (o *labelOp) state(labels []labelNode) string {
+	var has []string
+	for _, name := range o.relevant() {
+		if hasLabel(labels, name) {
+			has = append(has, name)
+		}
+	}
+	if len(has) == 0 {
+		return "no " + strings.Join(o.relevant(), " or ")
+	}
+	return strings.Join(has, ", ")
+}
+
+// target is the state of an Issue once the operation applied.
+func (o *labelOp) target() string {
+	if o.add != "" {
+		return o.add
+	}
+	return "no " + strings.Join(o.remove, " or ")
+}
+
 // Apply sends one mutation with one field per Issue that needs a change.
-// Nothing is sent when no Issue does.
+// Nothing is sent when no Issue does. Each changing Issue's progress follows
+// the mutation: done only on a successful response; on an error the Issues
+// its path names fail with it, and the others fail as unknown.
 func (o *labelOp) Apply(ctx context.Context, _ Plan) error {
 	if !o.planned {
 		return fmt.Errorf("%s: apply before plan", o.name)
@@ -229,13 +270,18 @@ func (o *labelOp) Apply(ctx context.Context, _ Plan) error {
 	}
 	var q, decl strings.Builder
 	vars := map[string]any{}
-	alias := map[string]string{}
+	alias := map[string]Step{}
+	var changing []Step
+	var keys []string
 	for i, s := range o.issues {
 		if len(s.labelIDs) == 0 {
 			continue
 		}
 		a := "m" + strconv.Itoa(i)
-		alias[a] = s.url
+		st := o.step(s)
+		alias[a] = st
+		keys = append(keys, a)
+		changing = append(changing, st)
 		fmt.Fprintf(&decl, "$%si: ID!, $%sl: [ID!]!, ", a, a)
 		vars[a+"i"], vars[a+"l"] = s.id, s.labelIDs
 		fmt.Fprintf(&q, "%s: %s(input: {labelableId: $%si, labelIds: $%sl}) { clientMutationId } ", a, field, a, a)
@@ -243,42 +289,59 @@ func (o *labelOp) Apply(ctx context.Context, _ Plan) error {
 	if len(vars) == 0 {
 		return nil
 	}
+	b := StartAll(ctx, changing)
 	mutation := "mutation(" + strings.TrimSuffix(decl.String(), ", ") + ") { " + q.String() + "}"
 	var data map[string]json.RawMessage
 	if err := o.client.DoWithContext(ctx, mutation, vars, &data); err != nil {
 		var failed []string
+		named := map[string]bool{}
 		var gqlErr *api.GraphQLError
 		if errors.As(err, &gqlErr) {
 			for _, e := range gqlErr.Errors {
-				if p := PathAliases(e.Path); len(p) > 0 && alias[p[0]] != "" {
-					failed = append(failed, alias[p[0]])
+				if p := PathAliases(e.Path); len(p) > 0 && alias[p[0]].ID != "" && !named[p[0]] {
+					named[p[0]] = true
+					failed = append(failed, alias[p[0]].Target)
 				}
 			}
 		}
+		var out error
 		if len(failed) > 0 {
-			return Errorf(CodeGitHubError, "%s failed for %s: %w", o.name, strings.Join(failed, ", "), err)
+			out = Errorf(CodeGitHubError, "%s failed for %s: %w", o.name, strings.Join(failed, ", "), err)
+		} else {
+			out = Errorf(CodeGitHubError, "%s: %w", o.name, err)
 		}
-		return Errorf(CodeGitHubError, "%s: %w", o.name, err)
+		for _, a := range keys {
+			if named[a] {
+				b.Fail(alias[a].ID, out)
+			}
+		}
+		b.Close(Errorf(CodeGitHubError, "the %s mutation failed, so the outcome for this Issue is unknown: %v", o.name, err))
+		return out
 	}
+	b.Close(nil)
 	return nil
 }
 
 // ReadBack reads every planned Issue's labels in one query and checks they
-// match the target.
+// match the target. Every Issue is an item, including those that needed no
+// change; the items are returned also with an error.
 func (o *labelOp) ReadBack(ctx context.Context, _ Plan) (Result, error) {
 	if !o.planned {
 		return nil, fmt.Errorf("%s: read back before plan", o.name)
 	}
+	var checks Checks
 	ids := make([]string, len(o.issues))
 	for i, s := range o.issues {
 		ids[i] = s.id
+		checks.Expect(o.step(s))
 	}
 	const query = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on Issue { id url labels(first: 100) { nodes { id name } } } } }"
 	var data struct {
 		Nodes []*issueNode `json:"nodes"`
 	}
 	if err := o.client.DoWithContext(ctx, query, map[string]any{"ids": ids}, &data); err != nil {
-		return nil, Errorf(CodeGitHubError, "%s read-back: %w", o.name, err)
+		err = Errorf(CodeGitHubError, "%s read-back: %w", o.name, err)
+		return checks.Fill(nil, nil, err), err
 	}
 	byID := map[string]*issueNode{}
 	for _, n := range data.Nodes {
@@ -290,17 +353,22 @@ func (o *labelOp) ReadBack(ctx context.Context, _ Plan) (Result, error) {
 	var wrong []string
 	for _, s := range o.issues {
 		n := byID[s.id]
+		st := o.step(s)
 		switch {
 		case n == nil:
 			wrong = append(wrong, s.url+" (not read back)")
+			checks.Set(st, false, "", "not read back")
 		case !o.reached(n.Labels.Nodes):
 			wrong = append(wrong, s.url+" has "+labelNames(n.Labels.Nodes))
+			checks.Set(st, false, o.state(n.Labels.Nodes), "has "+labelNames(n.Labels.Nodes))
 		default:
 			r[s.url] = o.done
+			checks.Set(st, true, o.state(n.Labels.Nodes), "")
 		}
 	}
+	checks.Fill(r, nil, nil)
 	if len(wrong) > 0 {
-		return nil, Errorf(CodeNotApplied, "%s not applied: %s", o.name, strings.Join(wrong, "; "))
+		return r, Errorf(CodeNotApplied, "%s not applied: %s", o.name, strings.Join(wrong, "; "))
 	}
 	return r, nil
 }

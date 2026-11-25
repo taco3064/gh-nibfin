@@ -284,7 +284,7 @@ func TestRunnerAddFirstRunners(t *testing.T) {
 	if !reflect.DeepEqual(steps(p), want) || !p.Confirm || p.Repo != "github.com/cur/repo" || len(c.plans) != 1 {
 		t.Fatalf("plan = %v, %+v", steps(p), p)
 	}
-	if d := p.Steps[4].Detail; d != "github.com/cur/repo, labels nibfin,nibfin-42-claude" {
+	if d := p.Changes()[4].Detail; d != "github.com/cur/repo, labels nibfin,nibfin-42-claude" {
 		t.Errorf("detail = %q", d)
 	}
 	wantEvents := []string{"linger", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "token",
@@ -527,8 +527,8 @@ func TestRunnerAddAdvice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	last := p.Steps[len(p.Steps)-1]
-	if last.Action != actAdvise || !strings.Contains(last.Detail, "cpu are not delegated") || !strings.Contains(last.Detail, "Delegate=cpu cpuset io memory pids") || !strings.Contains(last.Detail, "NIBFIN_CONTAINER_LIMITS=off") {
+	last := p.Notes[len(p.Notes)-1]
+	if !strings.Contains(last, "cpu are not delegated") || !strings.Contains(last, "Delegate=cpu cpuset io memory pids") || !strings.Contains(last, "NIBFIN_CONTAINER_LIMITS=off") {
 		t.Errorf("advice = %+v", last)
 	}
 
@@ -538,12 +538,7 @@ func TestRunnerAddAdvice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var advice []string
-	for _, s := range p.Steps {
-		if s.Action == actAdvise {
-			advice = append(advice, s.Detail)
-		}
-	}
+	advice := p.Notes
 	// Two existing runners and two new ones: 12 GB.
 	if len(advice) != 2 || !strings.Contains(advice[0], "NIBFIN_CONTAINER_LIMITS=off") ||
 		!strings.Contains(advice[1], `%UserProfile%\.wslconfig, leaving at least 12 GB for 4 runners`) ||
@@ -555,8 +550,8 @@ func TestRunnerAddAdvice(t *testing.T) {
 	f = &fakeHost{vm: true, probe: "arch aarch64\nnode n\nmachine ab\nlinger 1\ncgroup ?\nmemkb 1\n"}
 	useRunnerHost(t, f)
 	p, _ = RunnerAdd(RunnerAddParams{Provider: "codex", Count: 1}).Plan(context.Background())
-	for _, s := range p.Steps {
-		if s.Action == actAdvise {
+	for _, s := range p.Notes {
+		{
 			t.Errorf("advice on applehv: %v", s)
 		}
 	}
