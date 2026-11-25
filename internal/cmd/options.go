@@ -19,9 +19,10 @@ import (
 // the current directory's repository. Tests replace it.
 var repoResolver = op.ResolveRepo
 
-// addRepoFlag adds -R, --repo.
+// addRepoFlag adds -R, --repo, which fills the plan request field repo.
 func addRepoFlag(c *cobra.Command, v *string) {
 	c.Flags().StringVarP(v, "repo", "R", "", "target repository as [HOST/]OWNER/REPO (default: the current directory's repository)")
+	declareParam(c, "repo", "repo")
 }
 
 // addYesFlag adds --yes.

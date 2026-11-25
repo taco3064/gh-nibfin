@@ -290,6 +290,14 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
 - `POST /api/session` with `X-Nibfin-Proof: <proof>` returns
   `{"session": "<value>"}` once. Every other `/api/` request needs
   `X-Nibfin-Session: <value>` (`session_required`).
+- `GET /api/commands` returns `{"commands": [...]}`: every runnable command's
+  `path` (such as `runner add`), `short` and `long` descriptions, `flags`
+  (`name`, `shorthand`, `type`, `default`, `usage`, `required`, `allowed`) and
+  positional `args` (`name`, `required`, `repeatable`, `allowed`), built at
+  start from the CLI's own command definition. `api` is the command's name in
+  the plan route below (absent for `runner` and `dashboard`), and each input's
+  `param` is its request field there; it is empty for CLI-only inputs such as
+  `--yes`, `--json`, `--port` and `--no-browser`.
 - `POST /api/commands/<command>/plan` with the command's parameters as JSON:
   - `runner-add` `{"provider", "count"}` (count defaults to 2);
   - `runner-remove` `{"provider", "count", "deleteLogin"}` (count 0 removes
