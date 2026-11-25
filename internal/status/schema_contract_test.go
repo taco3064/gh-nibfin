@@ -112,7 +112,7 @@ func TestSchemaContract(t *testing.T) {
 	readHost = runners("github.com/o/r")
 	fx.graph.repo("o/r", "WRITE").blockers[1] = []map[string]any{blocker("o/r", 2, "OPEN")}
 	fx.graph.viewer = []map[string]any{nibfinNode("o/r", "WRITE", true)}
-	check("repo read", run(t, "github.com/o/r"), "initPR", "permission", "blockedBy", "runs", "execution")
+	check("repo read", run(t, "github.com/o/r"), "usesNibfin", "changedAt", "pr", "permission", "blockedBy", "runs", "execution")
 
 	// Person view, every part failed.
 	var items []any
@@ -147,7 +147,10 @@ func TestSchemaContract(t *testing.T) {
 	}
 
 	// Repository view, every part failed.
-	routes = map[string]any{"repos/o/r/contents/.github/workflows/nibfin-job.yml": &api.HTTPError{StatusCode: 403, Message: "Forbidden"}}
+	routes = map[string]any{
+		"repos/o/r/contents/.github/workflows/nibfin-job.yml":   &api.HTTPError{StatusCode: 403, Message: "Forbidden"},
+		"repos/o/r/contents/.github/workflows/nibfin-issue.yml": &api.HTTPError{StatusCode: 403, Message: "Forbidden"},
+	}
 	fx = setup(t, routes)
 	readHost = failedHost
 	fx.graph.fail = fmt.Errorf("connection reset")

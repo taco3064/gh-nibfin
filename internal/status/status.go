@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -166,18 +165,25 @@ type PullRequest struct {
 	URL    string `json:"url"`
 }
 
-// NibfinRun is whether a Nibfin run succeeded after the init PR merged.
+// NibfinRun is whether a Nibfin run succeeded after nibfin-issue.yml last
+// changed on the default branch.
 type NibfinRun struct {
-	// Initialized is true when the default branch's history has a
-	// nibfin-issue.yml that gh nibfin generated.
-	Initialized bool         `json:"initialized"`
-	InitCommit  string       `json:"initCommit,omitempty"`
-	InitPR      *PullRequest `json:"initPR,omitempty"`
-	MergedAt    string       `json:"mergedAt,omitempty"`
-	Succeeded   bool         `json:"succeeded"`
-	Run         string       `json:"run,omitempty"`
-	At          string       `json:"at,omitempty"`
-	Error       *op.Error    `json:"error,omitempty"`
+	// UsesNibfin is true when the default branch has nibfin-issue.yml,
+	// whether gh nibfin generated it or the repository maintains it.
+	UsesNibfin bool `json:"usesNibfin"`
+	// Commit is the newest commit that changed nibfin-issue.yml on the
+	// default branch, and PR the merged PR of that commit, when there is
+	// one.
+	Commit string       `json:"commit,omitempty"`
+	PR     *PullRequest `json:"pr,omitempty"`
+	// ChangedAt is PR's merge time, or else Commit's committer time.
+	ChangedAt string `json:"changedAt,omitempty"`
+	// Succeeded is true when a Nibfin · run succeeded at or after
+	// ChangedAt; Run is that run and At its creation time.
+	Succeeded bool      `json:"succeeded"`
+	Run       string    `json:"run,omitempty"`
+	At        string    `json:"at,omitempty"`
+	Error     *op.Error `json:"error,omitempty"`
 }
 
 func (s *status) Plan(context.Context) (op.Plan, error) {
@@ -629,81 +635,64 @@ type commitJSON struct {
 	} `json:"commit"`
 }
 
-// nibfinRun finds the init commit (the oldest commit whose nibfin-issue.yml
-// gh nibfin generated), the PR that merged it, and a successful Nibfin run
-// created at or after that merge.
+// nibfinRun reads whether the default branch has nibfin-issue.yml, the
+// newest commit that changed it there, the PR that merged that commit, and
+// a successful Nibfin run created at or after that change. It never walks
+// the file's history: about four serial reads for any repository.
 func (r *reader) nibfinRun(ctx context.Context, repo string) NibfinRun {
 	out := NibfinRun{}
 	fail := func(what string, err error) NibfinRun {
 		out.Error = apiErr(op.CodeGitHubAPIFailed, what+" of "+repo, err)
 		return out
 	}
-	var commits []commitJSON
-	for page := 1; ; page++ {
-		var list []commitJSON
-		q := url.Values{"path": {issueFile}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
-		if err := r.get(ctx, base(repo)+"/commits?"+q.Encode(), &list); err != nil {
-			return fail("list the commits of "+issueFile, err)
-		}
-		commits = append(commits, list...)
-		if len(list) < perPage {
-			break
-		}
+	_, found, err := templates.ReadFile(ctx, r.c, r.host+"/"+repo, issueFile, "")
+	if err != nil {
+		return fail("read "+issueFile, err)
 	}
-	type dated struct {
-		sha string
-		at  time.Time
-	}
-	var ds []dated
-	for _, c := range commits {
-		if t, err := time.Parse(time.RFC3339, c.Commit.Committer.Date); err == nil && c.SHA != "" {
-			ds = append(ds, dated{c.SHA, t})
-		}
-	}
-	sort.SliceStable(ds, func(i, j int) bool { return ds[i].at.Before(ds[j].at) })
-	var init *dated
-	for start := 0; start < len(ds) && init == nil; start += filesPerQuery {
-		chunk := ds[start:min(start+filesPerQuery, len(ds))]
-		shas := make([]string, len(chunk))
-		for i, d := range chunk {
-			shas[i] = d.sha
-		}
-		gen, sha, err := r.generatedAt(ctx, repo, shas)
-		if err != nil {
-			return fail("read "+issueFile+" at "+sha, err)
-		}
-		if gen >= 0 {
-			init = &chunk[gen]
-		}
-	}
-	if init == nil {
+	if !found {
 		return out
 	}
-	out.Initialized = true
-	out.InitCommit = init.sha
+	out.UsesNibfin = true
 
-	merged := init.at
+	// Without sha, GitHub lists the default branch's commits, newest first.
+	var list []commitJSON
+	q := url.Values{"path": {issueFile}, "per_page": {"1"}}
+	if err := r.get(ctx, base(repo)+"/commits?"+q.Encode(), &list); err != nil {
+		return fail("list the commits of "+issueFile, err)
+	}
+	if len(list) == 0 || list[0].SHA == "" {
+		return out
+	}
+	last := list[0]
+	out.Commit = last.SHA
+	changed, err := time.Parse(time.RFC3339, last.Commit.Committer.Date)
+	if err != nil {
+		return fail("read the date of commit "+last.SHA, err)
+	}
+
+	// A merge commit flow dates the listed commit before its merge; the
+	// merged PR's time is the change on the default branch.
 	var prs []struct {
 		Number   int     `json:"number"`
 		HTMLURL  string  `json:"html_url"`
 		MergedAt *string `json:"merged_at"`
 	}
-	if err := r.get(ctx, base(repo)+"/commits/"+url.PathEscape(init.sha)+"/pulls", &prs); err != nil {
-		return fail("list the PRs of "+init.sha, err)
+	if err := r.get(ctx, base(repo)+"/commits/"+url.PathEscape(last.SHA)+"/pulls", &prs); err != nil {
+		return fail("list the PRs of "+last.SHA, err)
 	}
 	for _, pr := range prs {
 		if pr.MergedAt == nil {
 			continue
 		}
 		if t, err := time.Parse(time.RFC3339, *pr.MergedAt); err == nil {
-			out.InitPR = &PullRequest{Number: pr.Number, URL: pr.HTMLURL}
-			merged = t
+			out.PR = &PullRequest{Number: pr.Number, URL: pr.HTMLURL}
+			changed = t
 			break
 		}
 	}
-	out.MergedAt = merged.UTC().Format(time.RFC3339)
+	out.ChangedAt = changed.UTC().Format(time.RFC3339)
 
-	created := ">=" + merged.UTC().Format("2006-01-02T15:04:05") + "+00:00"
+	created := ">=" + changed.UTC().Format("2006-01-02T15:04:05") + "+00:00"
 	seen := 0
 	for page := 1; seen < maxResults; page++ {
 		q := url.Values{"status": {"success"}, "created": {created}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
@@ -719,7 +708,7 @@ func (r *reader) nibfinRun(ctx context.Context, repo string) NibfinRun {
 		}
 		for _, run := range body.Runs {
 			t, err := time.Parse(time.RFC3339, run.CreatedAt)
-			if err != nil || t.Before(merged) || !strings.HasPrefix(run.Name, runPrefix) {
+			if err != nil || t.Before(changed) || !strings.HasPrefix(run.Name, runPrefix) {
 				continue
 			}
 			out.Succeeded, out.Run, out.At = true, run.HTMLURL, run.CreatedAt
@@ -731,58 +720,4 @@ func (r *reader) nibfinRun(ctx context.Context, repo string) NibfinRun {
 		}
 	}
 	return out
-}
-
-// filesPerQuery bounds the file versions one query reads: 50 blobs of a
-// few kilobytes each.
-const filesPerQuery = 50
-
-// generatedAt reads nibfin-issue.yml at each of shas, oldest first, in one
-// GraphQL query, and returns the index of the first whose file gh nibfin
-// generated, or -1. A commit without the file, or a file that is not text,
-// is not generated. On failure it returns the commit the error names, or
-// the first one.
-func (r *reader) generatedAt(ctx context.Context, repo string, shas []string) (int, string, error) {
-	c, gerr := r.graph()
-	if gerr != nil {
-		return -1, shas[0], gerr
-	}
-	owner, name, _ := strings.Cut(repo, "/")
-	vars := map[string]any{"o": owner, "n": name}
-	var decl, q strings.Builder
-	decl.WriteString("$o: String!, $n: String!")
-	for i, sha := range shas {
-		fmt.Fprintf(&decl, ", $e%d: String!", i)
-		fmt.Fprintf(&q, " c%d: object(expression: $e%d) { ... on Blob { text } }", i, i)
-		vars[fmt.Sprintf("e%d", i)] = sha + ":" + issueFile
-	}
-	query := "query(" + decl.String() + ") { repository(owner: $o, name: $n) {" + q.String() + " } }"
-	var data struct {
-		Repository map[string]*struct {
-			Text *string `json:"text"`
-		} `json:"repository"`
-	}
-	if err := c.DoWithContext(ctx, query, vars, &data); err != nil {
-		sha := shas[0]
-		var gqlErr *api.GraphQLError
-		if errors.As(err, &gqlErr) && len(gqlErr.Errors) > 0 {
-			path := op.PathAliases(gqlErr.Errors[0].Path)
-			if len(path) >= 2 && strings.HasPrefix(path[1], "c") {
-				if i, err := strconv.Atoi(path[1][1:]); err == nil && i < len(shas) {
-					sha = shas[i]
-				}
-			}
-		}
-		return -1, sha, err
-	}
-	if data.Repository == nil {
-		return -1, shas[0], errors.New("repository not returned")
-	}
-	for i := range shas {
-		b := data.Repository[fmt.Sprintf("c%d", i)]
-		if b != nil && b.Text != nil && strings.HasPrefix(*b.Text, templates.GeneratedPrefix) {
-			return i, "", nil
-		}
-	}
-	return -1, "", nil
 }

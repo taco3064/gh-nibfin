@@ -326,9 +326,14 @@ whether its workflows pin the latest attested image (`execution` set), or
 that it has the `peer` set or none.
 
 With `-R` it shows the repository view: all open Issues of that repository,
-its image, and whether a `Nibfin · ` run succeeded after the init PR merged.
-The init commit is the oldest commit of `nibfin-issue.yml` on the default
-branch that starts with the generated header.
+its image, and whether a `Nibfin · ` run succeeded after `nibfin-issue.yml`
+last changed on the default branch. A repository uses Nibfin when its default
+branch has `.github/workflows/nibfin-issue.yml`, whether `gh nibfin init`
+generated it or the repository maintains it by hand. The last change is the
+newest commit that changed the file on the default branch, at the merge time
+of its PR, or else at its commit time; the check reads that commit only and
+never walks the file's history. A repository without the file shows that it
+does not use Nibfin.
 
 Both views also read, for the Dashboard and `--json`:
 
@@ -397,8 +402,13 @@ Repositories and Runners. The Repositories view picks a repository from a
 searchable list of your repositories that use Nibfin on the current host (the
 person read's host, or the open repository's), or by `[HOST/]OWNER/REPO`
 entered by hand, and reads its repository-view `status` once, and again on
-Refresh; it has no live updates. It shows the image its workflows pin, whether
-a Nibfin run succeeded after the init PR merged, Init or Upgrade through the
+Refresh; it has no live updates. Both views show each section as soon as it
+is read, with its own loading state until then: the open Issues first, then
+their blockers, runs and pending comments, the image, the Nibfin run, the
+permission, the host and the repository list. A Refresh keeps the data shown
+until the new read is complete. It shows the image its workflows pin, whether
+a Nibfin run succeeded after `nibfin-issue.yml` last changed (or that the
+repository does not use Nibfin), Init or Upgrade through the
 operation dialog with the repository filled in, and a dependency graph of its
 open Issues: each points to its blockers, including closed ones and those in
 other repositories. Search and stage, paused, pending and blocked filters hide
@@ -472,6 +482,18 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   read-back fails, the response is the error body with `plan` and, when the
   read-back returned one, `result`, status `422`. Any other plan returns
   `{"id", "plan"}`.
+- `POST /api/commands/status/read` with `{"repo"}` (empty: the person view)
+  reads `status` as the plan route does and answers NDJSON while it reads:
+  `{"event":"partial","result":{...},"loading":[...]}` each time a section is
+  read while others are still being read, then one
+  `{"event":"result","result":{...}}` or
+  `{"event":"error","error":{"code","message"},"result":{...}}`. A partial
+  `result` holds the sections read so far; `loading` names those still being
+  read, by their key in the result (`host`, `latestImage`, `issues`, `image`,
+  `nibfinRun`, `permission`, `nibfinRepos`, `user`, `repos`) or by the Issue
+  field still being read (`pendingComment`, `blockedBy`, `runs`). The last
+  `result` is the object `status --json` prints. Closing the request cancels
+  the read.
 
   The result of every changing command has `items` and `notes` next to its
   command keys. `items` holds one `{"id", "action", "target", "confirmed",
@@ -543,6 +565,9 @@ Refresh does.
 session never goes in the URL) answers `text/event-stream`. Each event is one
 `data: <json>` frame with `event` and, by event:
 
+- `partial` `{at, result, loading}`: before the stream's first `snapshot`
+  only, the part of the first person-view read done so far, with `loading` as
+  in the status read route above;
 - `snapshot` `{at, result}`: the whole person view, `result` being the object
   `status --json` prints;
 - `issue` `{at, repo, issue}`: one re-read Issue of `repo`;

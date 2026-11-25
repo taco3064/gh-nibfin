@@ -380,16 +380,16 @@
     "status.NibfinRun": {
       "type": "object",
       "properties": {
-        "initialized": {
+        "usesNibfin": {
           "type": "boolean"
         },
-        "initCommit": {
+        "commit": {
           "type": "string"
         },
-        "initPR": {
+        "pr": {
           "$ref": "#/$defs/status.PullRequest"
         },
-        "mergedAt": {
+        "changedAt": {
           "type": "string"
         },
         "succeeded": {
@@ -406,7 +406,7 @@
         }
       },
       "required": [
-        "initialized",
+        "usesNibfin",
         "succeeded"
       ],
       "additionalProperties": false
