@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"bytes"
+	"crypto/rand"
 	"embed"
 	"io/fs"
 	"net/http"
@@ -30,6 +32,17 @@ var appFiles fs.FS = func() fs.FS {
 // same-origin scripts, styles, fonts, images and requests, nothing inline.
 const appCSP = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 
+// noncePlaceholder is the CSP nonce Vite writes into the built HTML
+// (html.cspNonce in dashboard/vite.config.ts). Each response replaces it with
+// a fresh nonce, which the page passes to the <style> elements Radix creates.
+const noncePlaceholder = "NIBFIN_CSP_NONCE"
+
+// nonceCSP is appCSP with nonce also allowed for <style> elements; scripts
+// stay same-origin only.
+func nonceCSP(nonce string) string {
+	return strings.Replace(appCSP, "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1)
+}
+
 // built reports whether appFiles holds a built UI.
 func built() bool {
 	fi, err := fs.Stat(appFiles, "index.html")
@@ -42,9 +55,30 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 		s.placeholder(w, r)
 		return
 	}
-	w.Header().Set("Content-Security-Policy", appCSP)
+	serveHTML(w, r, "index.html")
+}
+
+// serveHTML serves one HTML file of the built UI. A file that carries the
+// nonce placeholder gets a fresh nonce per response, in its body and in the
+// style-src of its policy; any other is served as it is with appCSP.
+func serveHTML(w http.ResponseWriter, r *http.Request, name string) {
+	b, err := fs.ReadFile(appFiles, name)
+	if err != nil {
+		notFound(w, r)
+		return
+	}
+	csp := appCSP
+	if bytes.Contains(b, []byte(noncePlaceholder)) {
+		nonce := rand.Text()
+		b = bytes.ReplaceAll(b, []byte(noncePlaceholder), []byte(nonce))
+		csp = nonceCSP(nonce)
+	}
+	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("Content-Type", assetTypes[".html"])
-	http.ServeFileFS(w, r, appFiles, "index.html")
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(b)
+	}
 }
 
 // asset serves one regular file of the built UI. Hidden paths, folders and
@@ -53,6 +87,17 @@ func (s *server) asset(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/")
 	if isAPI(r.URL.Path) || !fs.ValidPath(name) || hidden(name) || !regular(name) {
 		notFound(w, r)
+		return
+	}
+	if path.Ext(name) == ".html" {
+		// Like http.ServeFileFS, the index by name redirects to its folder.
+		if path.Base(name) == "index.html" {
+			w.Header().Set("Content-Security-Policy", appCSP)
+			w.Header().Set("Location", "./")
+			w.WriteHeader(http.StatusMovedPermanently)
+			return
+		}
+		serveHTML(w, r, name)
 		return
 	}
 	w.Header().Set("Content-Security-Policy", appCSP)

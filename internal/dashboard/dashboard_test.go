@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -920,5 +921,58 @@ func TestCommandsWithoutASchemaIsAnEmptyList(t *testing.T) {
 	status, body, _ := h.do("GET", "/api/commands", "", nil)
 	if status != http.StatusOK || strings.TrimSpace(string(body)) != `{"commands":[]}` {
 		t.Errorf("%d %s", status, body)
+	}
+}
+
+// The built page and every HTML file with the placeholder get a fresh
+// style-src nonce per response, the same in the header and the body.
+func TestBuiltPageNonce(t *testing.T) {
+	page := `<!doctype html><meta property="csp-nonce" nonce="NIBFIN_CSP_NONCE"><script type="module" nonce="NIBFIN_CSP_NONCE" src="/assets/x.js"></script><link rel="stylesheet" nonce="NIBFIN_CSP_NONCE" href="/assets/x.css">`
+	withApp(t, fstest.MapFS{
+		"index.html":  {Data: []byte(page)},
+		"other.html":  {Data: []byte(page)},
+		"plain.html":  {Data: []byte(`<!doctype html><p>no nonce</p>`)},
+		"assets/x.js": {Data: []byte("console.log('NIBFIN_CSP_NONCE')")},
+	})
+	h := start(t)
+	nonceRE := regexp.MustCompile(`style-src 'self' 'nonce-([A-Z2-7]+)'; `)
+	seen := map[string]bool{}
+	for _, p := range []string{"/", "/", "/other.html"} {
+		status, body, hdr := h.do("GET", p, "", nil)
+		csp := hdr.Get("Content-Security-Policy")
+		m := nonceRE.FindStringSubmatch(csp)
+		if status != 200 || m == nil || hdr.Get("Content-Type") != "text/html; charset=utf-8" {
+			t.Fatalf("%s: %d %q CSP %q", p, status, hdr.Get("Content-Type"), csp)
+		}
+		nonce := m[1]
+		if csp != strings.Replace(appCSP, "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1) {
+			t.Errorf("%s: CSP %q changes more than style-src", p, csp)
+		}
+		if !strings.Contains(csp, "script-src 'self'; ") || strings.Contains(csp, "unsafe") {
+			t.Errorf("%s: CSP %q", p, csp)
+		}
+		if strings.Contains(string(body), noncePlaceholder) || strings.Count(string(body), `nonce="`+nonce+`"`) != 3 {
+			t.Errorf("%s: body %s does not carry nonce %s", p, body, nonce)
+		}
+		if seen[nonce] {
+			t.Errorf("%s: nonce %s repeated", p, nonce)
+		}
+		seen[nonce] = true
+		checkCommonHeaders(t, p, hdr)
+	}
+
+	// HTML without the placeholder and other files keep appCSP unchanged.
+	status, body, hdr := h.do("GET", "/plain.html", "", nil)
+	if status != 200 || hdr.Get("Content-Security-Policy") != appCSP || string(body) != `<!doctype html><p>no nonce</p>` {
+		t.Errorf("plain.html: %d CSP %q %s", status, hdr.Get("Content-Security-Policy"), body)
+	}
+	status, body, hdr = h.do("GET", "/assets/x.js", "", nil)
+	if status != 200 || hdr.Get("Content-Security-Policy") != appCSP || !strings.Contains(string(body), noncePlaceholder) {
+		t.Errorf("x.js: %d CSP %q %s", status, hdr.Get("Content-Security-Policy"), body)
+	}
+	// The index by name still redirects to its folder, which serves the page.
+	status, _, hdr = h.do("GET", "/index.html", "", nil)
+	if status != 200 || nonceRE.FindString(hdr.Get("Content-Security-Policy")) == "" {
+		t.Errorf("index.html: %d CSP %q", status, hdr.Get("Content-Security-Policy"))
 	}
 }
