@@ -2,12 +2,15 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { expectClean, expectNonce, prepare, shot, storageKey, unauthorized, widths } from './support'
 
-// Screenshots of the empty Dashboard page, served by the real Go server with
-// its CSP. The API is mocked with fictional bodies, so no gh login, real
-// proof or session is involved.
+// Screenshots of the Dashboard page and its theme control, served by the
+// real Go server with its CSP. The API is mocked with fictional bodies, so no
+// gh login, real proof or session is involved.
 
+// settle waits for the connection state, or for the person view once the
+// session is open.
 async function settle(page: Page, state: string) {
-  await expect(page.locator(`[role=status][data-state="${state}"]`)).toBeVisible()
+  const ready = state === 'connected' ? '[data-view="person"]' : `[role=status][data-state="${state}"]`
+  await expect(page.locator(ready)).toBeVisible()
   await page.evaluate(() => document.fonts.ready.then(() => undefined))
   const fonts = await page.evaluate(() => [
     document.fonts.check('16px "DM Sans Variable"'),

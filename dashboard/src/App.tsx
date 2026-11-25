@@ -1,107 +1,107 @@
-import { useEffect, useState } from 'react'
-import { CircleAlert, CircleCheck, Info, LoaderCircle, type LucideIcon } from 'lucide-react'
+import { useState } from 'react'
+import { FolderGit2, LoaderCircle, RefreshCw, Server, UserRound, type LucideIcon } from 'lucide-react'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PersonView } from '@/components/person/person-view'
+import { ConnectionCard } from '@/components/shell/connection-card'
+import { FreshnessIndicator } from '@/components/shell/freshness-indicator'
+import { Note } from '@/components/shell/note'
+import { RepoView } from '@/components/shell/repo-view'
+import { RunnerView } from '@/components/shell/runner-view'
 import { ThemeControl } from '@/components/theme-control'
-import { api, openSession, readProof, type ApiError } from '@/lib/session'
-import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { landingView, viewLabels, views, type View } from '@/lib/shell'
+import type { PersonView as PersonData } from '@/lib/status'
+import { useStatus, type Status } from '@/lib/use-status'
 
-type Connection =
-  | { state: 'no-proof' }
-  | { state: 'connecting' }
-  | { state: 'connected' }
-  | { state: 'failed'; error: ApiError }
-
-const proofInvalidMessage =
-  'This session URL was already used or is invalid. If you did not open it yourself, stop gh nibfin dashboard (Ctrl-C).'
-
-// The proof is read once per page load, before the first render.
-const proof = readProof(location.hash, history)
+const viewIcons: Record<View, LucideIcon> = { person: UserRound, repo: FolderGit2, runner: Server }
 
 export function App() {
-  const connection = useConnection()
+  const status = useStatus()
+  // picked is the view the person chose; landing is set once, from the
+  // first successful read. Neither is stored, and a refresh changes neither.
+  const [picked, setPicked] = useState<View>()
+  const [landing, setLanding] = useState<View>()
+  if (status.data && landing === undefined) setLanding(landingView(status.data))
+  const view = picked ?? landing ?? 'person'
+  const connected = status.connection.state === 'connected'
+
   return (
-    <div className="flex min-h-svh flex-col">
+    <Tabs value={view} onValueChange={(v) => setPicked(v as View)} className="flex min-h-svh flex-col gap-0">
       <header className="border-b border-border-subtle bg-card">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 sm:px-6">
           <h1 className="text-lg font-semibold tracking-tight">gh nibfin dashboard</h1>
           <ThemeControl />
+          {connected && (
+            <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <TabsList aria-label="Views" className="w-full sm:w-fit">
+                {views.map((v) => {
+                  const Icon = viewIcons[v]
+                  return (
+                    <TabsTrigger key={v} value={v} className="px-3">
+                      <Icon aria-hidden="true" />
+                      {viewLabels[v]}
+                    </TabsTrigger>
+                  )
+                })}
+              </TabsList>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <FreshnessIndicator readAt={status.readAt} />
+                <Button variant="outline" size="sm" onClick={status.refresh} disabled={status.reading} data-action="refresh">
+                  {status.reading ? (
+                    <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
+                  ) : (
+                    <RefreshCw aria-hidden="true" />
+                  )}
+                  {status.reading ? 'Refreshing…' : 'Refresh'}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
-        <ConnectionCard connection={connection} />
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 sm:py-8">
+        {connected ? <Shell status={status} /> : <ConnectionCard connection={status.connection} />}
       </main>
-    </div>
+    </Tabs>
   )
 }
 
-function useConnection(): Connection {
-  const [connection, setConnection] = useState<Connection>(proof ? { state: 'connecting' } : { state: 'no-proof' })
-  useEffect(() => {
-    if (!proof) return
-    let live = true
-    void (async () => {
-      const opened = await openSession(proof)
-      const checked = opened.ok ? await api<{ result?: unknown }>('/api/commands/status/plan', {}) : opened
-      if (!live) return
-      if (!checked.ok) setConnection({ state: 'failed', error: checked.error })
-      else if (checked.value.result === undefined) {
-        setConnection({ state: 'failed', error: { code: 'error', message: 'the status read returned no result' } })
-      } else setConnection({ state: 'connected' })
-    })()
-    return () => {
-      live = false
-    }
-  }, [])
-  return connection
+function Shell({ status }: { status: Status }) {
+  const { data, readError } = status
+  return (
+    <>
+      {readError && (
+        <Note tone="danger" data-note="read-error">
+          {data ? 'Refresh failed' : 'Status could not be read'}: {readError.code}: {readError.message}
+        </Note>
+      )}
+      {views.map((v) => (
+        <TabsContent key={v} value={v} className="flex flex-col gap-4" data-content={v}>
+          {data ? <ViewContent view={v} data={data} onChanged={status.onChanged} /> : <NoData reading={status.reading} />}
+        </TabsContent>
+      ))}
+    </>
+  )
 }
 
-const tones = {
-  info: 'bg-info-bg text-info',
-  success: 'bg-success-bg text-success',
-  danger: 'bg-danger-bg text-danger',
-}
-
-function describe(c: Connection): { tone: keyof typeof tones; icon: LucideIcon; label: string; detail: string; spin?: boolean } {
-  switch (c.state) {
-    case 'no-proof':
-      return { tone: 'info', icon: Info, label: 'No session', detail: 'Open the session URL printed by gh nibfin dashboard.' }
-    case 'connecting':
-      return { tone: 'info', icon: LoaderCircle, label: 'Connecting', detail: 'Opening the session…', spin: true }
-    case 'connected':
-      return { tone: 'success', icon: CircleCheck, label: 'Connected', detail: 'The session is open and the API answers.' }
-    case 'failed':
-      if (c.error.code === 'proof_invalid') {
-        return { tone: 'danger', icon: CircleAlert, label: 'Session URL used', detail: proofInvalidMessage }
-      }
-      return { tone: 'danger', icon: CircleAlert, label: 'Not connected', detail: `${c.error.code}: ${c.error.message}` }
+function ViewContent({ view, data, onChanged }: { view: View; data: PersonData; onChanged: Status['onChanged'] }) {
+  switch (view) {
+    case 'person':
+      return <PersonView data={data} onChanged={onChanged} />
+    case 'repo':
+      return <RepoView />
+    case 'runner':
+      return <RunnerView data={data} />
   }
 }
 
-function ConnectionCard({ connection }: { connection: Connection }) {
-  const d = describe(connection)
-  const Icon = d.icon
+function NoData({ reading }: { reading: boolean }) {
+  if (!reading) return <p className="text-sm text-muted-foreground">No status data. Use Refresh to read it again.</p>
   return (
-    <Card className="border-border-subtle">
-      <CardHeader>
-        <CardTitle>
-          <h2 className="text-base">Connection</h2>
-        </CardTitle>
-        <CardDescription>This page talks only to the local gh nibfin dashboard server.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div
-          role="status"
-          data-state={connection.state}
-          className={cn('flex items-start gap-3 rounded-md px-4 py-3', tones[d.tone])}
-        >
-          <Icon aria-hidden="true" className={cn('mt-0.5 size-5 shrink-0', d.spin && 'motion-safe:animate-spin')} />
-          <div className="min-w-0">
-            <p className="font-semibold">{d.label}</p>
-            <p className="text-sm break-words">{d.detail}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <p role="status" data-state="reading" className="flex items-center gap-2 text-sm text-muted-foreground">
+      <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
+      Reading status…
+    </p>
   )
 }

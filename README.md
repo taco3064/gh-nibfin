@@ -308,8 +308,14 @@ new session URL. Nothing is stored: the proof, the session and the plans live
 in the server's memory.
 
 The page is the Dashboard UI, built from `dashboard/` and embedded in the
-binary. It removes the proof from the address bar, exchanges it, keeps the
-session in memory only and checks the connection with a `status` read. Its
+binary. It removes the proof from the address bar, exchanges it and keeps the
+session in memory only. It then reads the person-view `status` once, and again
+on Refresh. It shows three views: Person (your open Issues with `scope`,
+grouped by repository, each with whether its workflows use the latest image),
+Repositories and Runners. A freshness indicator shows the time of the data and
+turns stale after five minutes. The page opens on the Runners view, with a
+guide to `runner add` then `init`, when this host has no complete Runner (or no
+Podman or machine), and on the Person view otherwise. Its
 Dark, Light and System theme choice is the only thing it stores (in the
 browser). A binary built without the UI serves a placeholder page whose only
 script does the same exchange. The page and its files need no session; they
