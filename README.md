@@ -310,7 +310,8 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   `{"event":"error","error":{"code","message"}}`. Closing the request cancels
   the apply, as Ctrl-C cancels a command.
 - `POST /api/plans/<id>/code` with `{"code": "..."}` hands a pasted code to the
-  login that asked for it (`409` when none waits).
+  login that asked for it. It is accepted once the `code_requested` line has
+  been sent, and `409` means no code is requested.
 - `DELETE /api/plans/<id>` drops a stored plan.
 
 One apply runs at a time; another is refused with `operation_running`. Errors

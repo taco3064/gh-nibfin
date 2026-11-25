@@ -223,12 +223,17 @@ func (s *server) drop(w http.ResponseWriter, r *http.Request) {
 
 // interactor is the Dashboard side of a structured login: steps go to the
 // apply stream and the code comes from the /code route.
+//
+// A code is pending from the moment the code_requested step is emitted, not
+// only once the login calls Code: the client may post the code as soon as it
+// reads that step, before the login reaches Code. Such a code is held in the
+// one-slot buffer until Code takes it.
 type interactor struct {
 	emitMu sync.Mutex
 	emit   func(op.LoginStep)
 
 	mu      sync.Mutex
-	waiting bool
+	pending bool
 	codes   chan string
 }
 
@@ -241,6 +246,12 @@ func (i *interactor) attach(emit func(op.LoginStep)) {
 }
 
 func (i *interactor) Step(step op.LoginStep) {
+	if step.Kind == op.StepCodeRequested {
+		// Mark the code pending before the client can read the step.
+		i.mu.Lock()
+		i.pending = true
+		i.mu.Unlock()
+	}
 	i.emitMu.Lock()
 	defer i.emitMu.Unlock()
 	if i.emit != nil {
@@ -251,14 +262,16 @@ func (i *interactor) Step(step op.LoginStep) {
 // Code waits for the person's code or for ctx to end; there is no timer.
 func (i *interactor) Code(ctx context.Context) (string, error) {
 	i.mu.Lock()
-	i.waiting = true
+	if len(i.codes) == 0 {
+		i.pending = true
+	}
 	i.mu.Unlock()
 	select {
 	case c := <-i.codes:
 		return c, nil
 	case <-ctx.Done():
 		i.mu.Lock()
-		i.waiting = false
+		i.pending = false
 		select {
 		case <-i.codes:
 		default:
@@ -268,14 +281,15 @@ func (i *interactor) Code(ctx context.Context) (string, error) {
 	}
 }
 
-// give passes code to a waiting Code; it reports false when none waits.
+// give passes code to the login whose code is pending (requested by a
+// code_requested step or a waiting Code); it reports false when none is.
 func (i *interactor) give(code string) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if !i.waiting {
+	if !i.pending {
 		return false
 	}
-	i.waiting = false
+	i.pending = false
 	i.codes <- code
 	return true
 }
