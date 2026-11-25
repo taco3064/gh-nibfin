@@ -27,8 +27,13 @@ type fakeGraph struct {
 	// fail is returned for every blocker query; viewerFail for the
 	// repository list.
 	fail, viewerFail error
-	queries          []string
-	hosts            []string
+	// viewerMissingFile answers every viewer node without the workflow
+	// file with GitHub's per-node "Could not resolve file" error;
+	// viewerErrs are added to every viewer page.
+	viewerMissingFile bool
+	viewerErrs        []api.GraphQLErrorItem
+	queries           []string
+	hosts             []string
 }
 
 type graphRepo struct {
@@ -92,7 +97,19 @@ func (f *fakeGraph) DoWithContext(_ context.Context, query string, vars map[stri
 		if f.viewerFail != nil {
 			return f.viewerFail
 		}
-		data["viewer"] = map[string]any{"repositories": page(f.viewer, vars["after"], 100)}
+		pg := page(f.viewer, vars["after"], 100)
+		data["viewer"] = map[string]any{"repositories": pg}
+		if f.viewerMissingFile {
+			for i, n := range pg["nodes"].([]map[string]any) {
+				ref, _ := n["defaultBranchRef"].(map[string]any)
+				if ref != nil && ref["target"].(map[string]any)["file"] == nil {
+					errs = append(errs, api.GraphQLErrorItem{
+						Message: "Could not resolve file for path '.github/workflows/nibfin-issue.yml'.",
+						Path:    []any{"viewer", "repositories", "nodes", float64(i), "defaultBranchRef", "target", "file"}})
+				}
+			}
+		}
+		errs = append(errs, f.viewerErrs...)
 	case f.fail != nil:
 		return f.fail
 	case strings.HasPrefix(query, "query($o: String!"):
@@ -520,6 +537,45 @@ func TestNibfinRepos(t *testing.T) {
 	}
 	if got := run(t, "")["nibfinRepos"].([]NibfinRepo); len(got) != 1 || got[0].Execution != nil {
 		t.Errorf("repos = %+v", got)
+	}
+
+	// Repositories without the workflow come back with GitHub's per-node
+	// "Could not resolve file" errors next to the data, on every page:
+	// they are left out and the rest of the list is shown.
+	fx = setup(t, personRoutes())
+	readHost = runners("github.com/E/Exec")
+	fx.graph.viewerMissingFile = true
+	for i := 0; i < 150; i++ {
+		fx.graph.viewer = append(fx.graph.viewer, nibfinNode(fmt.Sprintf("o/plain%d", i), "WRITE", i%50 == 7))
+	}
+	fx.graph.viewer = append(fx.graph.viewer, nibfinNode("A/first", "ADMIN", true),
+		map[string]any{"nameWithOwner": "o/empty", "url": "u", "visibility": "PUBLIC", "viewerPermission": "ADMIN", "defaultBranchRef": nil})
+	res = run(t, "")
+	names = nil
+	for _, r := range res["nibfinRepos"].([]NibfinRepo) {
+		names = append(names, r.Repo)
+	}
+	if !reflect.DeepEqual(names, []string{"A/first", "o/plain107", "o/plain57", "o/plain7"}) || res["nibfinReposError"] != nil {
+		t.Errorf("missing workflow: repos = %v, %v", names, res["nibfinReposError"])
+	}
+
+	// Any other per-node error next to the data still fails the list.
+	for _, item := range []api.GraphQLErrorItem{
+		{Type: "FORBIDDEN", Message: "Resource not accessible by integration", Path: []any{"viewer", "repositories", "nodes", float64(2), "viewerPermission"}},
+		{Message: "Could not resolve file for path '.github/workflows/nibfin-issue.yml'.", Path: []any{"viewer", "repositories"}},
+		{Message: "Something went wrong", Path: []any{"viewer", "repositories", "nodes", float64(2), "defaultBranchRef", "target", "file"}},
+	} {
+		fx = setup(t, personRoutes())
+		fx.graph.viewerMissingFile = true
+		fx.graph.viewerErrs = []api.GraphQLErrorItem{item}
+		fx.graph.viewer = []map[string]any{nibfinNode("A/first", "ADMIN", true), nibfinNode("o/plain", "WRITE", false)}
+		res = run(t, "")
+		if got := res["nibfinRepos"].([]NibfinRepo); len(got) != 0 || got == nil {
+			t.Errorf("%s: repos = %v", item.Message, got)
+		}
+		if e, _ := res["nibfinReposError"].(*op.Error); e == nil || e.Code != op.CodeGitHubAPIFailed || !strings.Contains(e.Error(), item.Message) {
+			t.Errorf("%s: error = %v", item.Message, res["nibfinReposError"])
+		}
 	}
 
 	// The query fails: the error, and no partial list.

@@ -354,7 +354,10 @@ func (r *reader) nibfinRepos(ctx context.Context) ([]NibfinRepo, *op.Error) {
 			} `json:"viewer"`
 		}
 		if err := c.DoWithContext(ctx, reposQuery, map[string]any{"after": after}, &data); err != nil {
-			return []NibfinRepo{}, gqlFail("list your repositories that use Nibfin", err)
+			var gqlErr *api.GraphQLError
+			if !errors.As(err, &gqlErr) || !missingWorkflowOnly(gqlErr) {
+				return []NibfinRepo{}, gqlFail("list your repositories that use Nibfin", err)
+			}
 		}
 		rs := data.Viewer.Repositories
 		for _, n := range rs.Nodes {
@@ -375,6 +378,39 @@ func (r *reader) nibfinRepos(ctx context.Context) ([]NibfinRepo, *op.Error) {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i].Repo) < strings.ToLower(out[j].Repo) })
 	return out, nil
+}
+
+// missingFilePath is the error path GitHub gives a repository list node
+// whose default branch has no nibfin-issue.yml; "" stands for the node
+// index, a JSON number.
+var missingFilePath = []string{"viewer", "repositories", "nodes", "", "defaultBranchRef", "target", "file"}
+
+// missingWorkflowOnly reports whether every error of a repository list
+// page is GitHub's answer for a repository whose default branch has no
+// nibfin-issue.yml. Such a repository does not use Nibfin; its node comes
+// back with a null file next to the rest of the page.
+func missingWorkflowOnly(e *api.GraphQLError) bool {
+	if len(e.Errors) == 0 {
+		return false
+	}
+	for _, item := range e.Errors {
+		if !strings.HasPrefix(item.Message, "Could not resolve file for path") || len(item.Path) != len(missingFilePath) {
+			return false
+		}
+		for i, want := range missingFilePath {
+			if want == "" {
+				switch item.Path[i].(type) {
+				case float64, int:
+					continue
+				}
+				return false
+			}
+			if s, ok := item.Path[i].(string); !ok || s != want {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (r *reader) setNibfinRepos(ctx context.Context, res op.Result) {
