@@ -74,6 +74,12 @@ type fakeHost struct {
 	archiveSHA string
 	token      string
 	units      map[string]string
+	// stopExit is the stop script's exit status per slot; purgeNoop makes the
+	// purge script succeed without removing anything; rmExit is podman
+	// volume rm's exit status.
+	stopExit  map[string]int
+	purgeNoop bool
+	rmExit    int
 	// events records the order of the changing steps.
 	events []string
 }
@@ -94,6 +100,12 @@ func (f *fakeHost) Podman(ctx context.Context, args ...string) *exec.Cmd {
 		if !f.volumes[strings.TrimPrefix(args[2], "nibfin-home-")] {
 			exit = 1
 		}
+	case args[0] == "volume" && args[1] == "rm":
+		exit = f.rmExit
+		if exit == 0 {
+			delete(f.volumes, strings.TrimPrefix(args[2], "nibfin-home-"))
+		}
+		f.events = append(f.events, "rm volume "+args[2])
 	case args[0] == "volume" && args[1] == "create":
 		f.volumes[strings.TrimPrefix(args[3], "nibfin-home-")] = true
 		f.events = append(f.events, "create volume "+args[3])

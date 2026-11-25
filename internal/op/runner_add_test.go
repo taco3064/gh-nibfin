@@ -47,6 +47,8 @@ var scriptNames = map[string]string{
 	extractScript:      "extract",
 	configureScript:    "configure",
 	unitScript:         "unit",
+	stopScript:         "stop",
+	purgeScript:        "purge",
 }
 
 // shellHelper is the child of a fake Shell: it checks its stdin against
@@ -155,6 +157,19 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 			s := f.slots[strings.TrimSuffix(strings.TrimPrefix(args[1], "nibfin-runner-"), ".service")]
 			s.unit, s.enabled, s.active = true, true, true
 		}
+	case "stop":
+		if e, ok := f.stopExit[slot]; ok {
+			exit = e
+		}
+		f.events = append(f.events, "stop "+slot+" "+args[3])
+		if s := f.slots[slot]; exit == 0 && s != nil {
+			s.enabled, s.active = false, false
+		}
+	case "purge":
+		f.events = append(f.events, "purge "+args[1])
+		if exit == 0 && !f.purgeNoop {
+			delete(f.slots, args[1])
+		}
 	}
 	c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
 	c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=shell",
@@ -173,6 +188,13 @@ type fakeRunnerAPI struct {
 	listErr error
 	busy    map[string]bool
 	err     error
+	// regs, when set, are the registrations instead of one per configured
+	// slot (see runner_remove_test.go).
+	regs      []*fakeReg
+	lists     map[string]int
+	keepRegs  bool
+	onStrip   func()
+	deleteErr error
 }
 
 func (g *fakeRunnerAPI) User(context.Context) (int64, error) { return g.user, g.err }
@@ -184,11 +206,14 @@ func (g *fakeRunnerAPI) RegistrationToken(_ context.Context, repo string) (strin
 	g.host.events = append(g.host.events, "token")
 	return g.host.token, nil
 }
-func (g *fakeRunnerAPI) ListRunners(context.Context, string) ([]ghRunner, error) {
+func (g *fakeRunnerAPI) ListRunners(_ context.Context, repo string) ([]ghRunner, error) {
 	if g.listErr != nil {
 		return nil, g.listErr
 	}
 	var out []ghRunner
+	if g.regs != nil {
+		return g.listRegs(repo), nil
+	}
 	if g.unlisted {
 		return out, nil
 	}

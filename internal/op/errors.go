@@ -41,6 +41,8 @@ const (
 	CodeRunnerDownloadFailed = "runner_download_failed"
 	CodeRunnerInstallFailed  = "runner_install_failed"
 	CodeRunnerMissing        = "runner_missing"
+	CodeRunnerBusy           = "runner_busy"
+	CodeRunnerRemoveFailed   = "runner_remove_failed"
 	// CodeMachineStopped marks a status part not read because the podman
 	// machine is stopped; status never starts it.
 	CodeMachineStopped = "machine_stopped"
