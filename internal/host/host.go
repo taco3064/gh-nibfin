@@ -23,6 +23,9 @@ var (
 	ErrMachineStart   = errors.New("podman machine start failed")
 	ErrUnsupported    = errors.New("unsupported host")
 	ErrPodman         = errors.New("podman failed")
+	// ErrAutostart is a failure to read, register or remove the entry that
+	// starts the machine at logon, or to set the .wslconfig key.
+	ErrAutostart = errors.New("autostart failed")
 )
 
 // InstallHint is where the user installs Podman.
@@ -75,13 +78,9 @@ func Detect(ctx context.Context) (*Host, error) {
 		h.Running = true
 		return h, nil
 	}
-	out, err := h.output(ctx, "machine", "list", "--format", "json")
+	list, err := h.machines(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var list []machineEntry
-	if err := json.Unmarshal(out, &list); err != nil {
-		return nil, errorf(ErrPodman, "cannot read podman machine list: %v", err)
 	}
 	var m *machineEntry
 	for i := range list {
@@ -103,6 +102,19 @@ func Detect(ctx context.Context) (*Host, error) {
 	h.Running = m.Running
 	h.VMType = m.VMType
 	return h, nil
+}
+
+// machines reads podman machine list.
+func (h *Host) machines(ctx context.Context) ([]machineEntry, error) {
+	out, err := h.output(ctx, "machine", "list", "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	var list []machineEntry
+	if err := json.Unmarshal(out, &list); err != nil {
+		return nil, errorf(ErrPodman, "cannot read podman machine list: %v", err)
+	}
+	return list, nil
 }
 
 // NeedsStart reports whether the machine must be started first.
