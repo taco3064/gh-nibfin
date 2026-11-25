@@ -81,7 +81,7 @@ func ReadHost(ctx context.Context) HostReport {
 		return rep
 	}
 
-	if pr, err := probeHost(ctx, h); err != nil {
+	if pr, err := probeHost(ctx, h, CodeRunnerInstallFailed); err != nil {
 		rep.Memory.Error = AsError(err)
 	} else {
 		rep.Memory.TotalKB, rep.Memory.AvailableKB = pr.memKB, pr.memAvailKB

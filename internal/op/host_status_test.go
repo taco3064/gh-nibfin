@@ -166,7 +166,7 @@ func TestReadHostPartErrors(t *testing.T) {
 func TestProbeMemAvailable(t *testing.T) {
 	f := &fakeHost{probe: defaultProbe + "memavailkb 1234\n"}
 	useRunnerHost(t, f)
-	pr, err := probeHost(context.Background(), f)
+	pr, err := probeHost(context.Background(), f, CodeRunnerInstallFailed)
 	if err != nil || pr.memKB != 16000000 || pr.memAvailKB != 1234 {
 		t.Errorf("probe = %+v, %v", pr, err)
 	}
