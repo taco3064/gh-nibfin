@@ -28,6 +28,9 @@ type fakeSlot struct {
 	name, url                         string
 	// env is the NIBFIN_PROVIDER value of its .env.
 	env string
+	// oldUnit marks a unit file that differs from unitText; job a running
+	// Runner.Worker (see runner_upgrade_test.go).
+	oldUnit, job bool
 }
 
 type shellCall struct {
@@ -54,6 +57,8 @@ var scriptNames = map[string]string{
 	envCheckScript:     "envcheck",
 	stopScript:         "stop",
 	purgeScript:        "purge",
+	slotSpecScript:     "spec",
+	slotUpgradeScript:  "upgrade",
 }
 
 // shellHelper is the child of a fake Shell: it checks its stdin against
@@ -182,6 +187,8 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		if s := f.slots[slot]; exit == 0 && s != nil {
 			s.enabled, s.active = false, false
 		}
+	case "spec", "upgrade":
+		stdout, stdinSHA = f.upgradeShell(name, slot, args, exit)
 	case "purge":
 		f.events = append(f.events, "purge "+args[1])
 		if exit == 0 && !f.purgeNoop {
@@ -212,6 +219,8 @@ type fakeRunnerAPI struct {
 	keepRegs  bool
 	onStrip   func()
 	deleteErr error
+	// setErr fails SetCustomLabels (see runner_upgrade_test.go).
+	setErr error
 
 	// The request route (see runner_request_test.go).
 	login    string

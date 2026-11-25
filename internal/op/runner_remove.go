@@ -36,6 +36,21 @@ const (
 	busyExit = 75
 )
 
+// workersFn sets r to the resolved slot directory $1 and defines the shell
+// function workers, which prints the pid of each Runner.Worker process of
+// that slot: a Job running on the runner. The runner-host scripts that wait
+// for a slot's Jobs begin with it.
+const workersFn = `r=$(cd -P -- "$1" 2>/dev/null && pwd -P) || r=$1
+workers() {
+  for p in /proc/[0-9]*; do
+    e=$(readlink "$p/exe" 2>/dev/null) || continue
+    case $e in
+    "$r"/*/Runner.Worker|"$r"/*/"Runner.Worker (deleted)") printf '%s\n' "${p#/proc/}" ;;
+    esac
+  done
+}
+`
+
 // The runner-host scripts of runner remove. They are constants; only data
 // travels as their arguments.
 const (
@@ -45,16 +60,7 @@ const (
 	// then the slot is scanned again, and the service is stopped right after
 	// a scan finds none. With $4 = 1 (GitHub reports the runner busy) a
 	// first scan that finds no worker stops nothing and exits busyExit.
-	stopScript = `r=$(cd -P -- "$1" 2>/dev/null && pwd -P) || r=$1
-workers() {
-  for p in /proc/[0-9]*; do
-    e=$(readlink "$p/exe" 2>/dev/null) || continue
-    case $e in
-    "$r"/*/Runner.Worker|"$r"/*/"Runner.Worker (deleted)") printf '%s\n' "${p#/proc/}" ;;
-    esac
-  done
-}
-w=$(workers)
+	stopScript = workersFn + `w=$(workers)
 if [ -z "$w" ] && [ "$4" = 1 ]; then
   echo "GitHub reports the runner busy, but no Runner.Worker of it runs here" >&2
   exit 75

@@ -1,6 +1,7 @@
 package op
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -38,6 +39,9 @@ type github interface {
 	RegistrationToken(ctx context.Context, repo string) (string, error)
 	ListRunners(ctx context.Context, repo string) ([]ghRunner, error)
 	RemoveCustomLabels(ctx context.Context, repo string, id int64) error
+	// SetCustomLabels replaces every custom label of the runner id with
+	// labels; it needs admin of repo.
+	SetCustomLabels(ctx context.Context, repo string, id int64, labels []string) error
 	DeleteRunner(ctx context.Context, repo string, id int64) error
 }
 
@@ -177,6 +181,18 @@ func (g restGitHub) RemoveCustomLabels(ctx context.Context, repo string, id int6
 		return nil
 	}
 	return apiError(fmt.Sprintf("remove the custom labels of runner %d in %s", id, repo), err)
+}
+
+// SetCustomLabels replaces every custom label of the runner id with labels
+// (PUT .../labels); GitHub keeps its read-only labels.
+func (g restGitHub) SetCustomLabels(ctx context.Context, repo string, id int64, labels []string) error {
+	body, err := json.Marshal(map[string][]string{"labels": labels})
+	if err != nil {
+		return Errorf(CodeGitHubAPIFailed, "set the labels of runner %d in %s: %v", id, repo, err)
+	}
+	var out json.RawMessage
+	err = g.c.DoWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/actions/runners/%d/labels", repoPath(repo), id), bytes.NewReader(body), &out)
+	return apiError(fmt.Sprintf("set the labels of runner %d in %s", id, repo), err)
 }
 
 // DeleteRunner deletes the registration of the runner id. A runner that is
