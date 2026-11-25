@@ -46,14 +46,68 @@ export function api<T>(path: string, body: unknown, fetcher: Fetch = fetch): Pro
   return post<T>(fetcher, path, { 'X-Nibfin-Session': session, 'Content-Type': 'application/json' }, JSON.stringify(body))
 }
 
+// apiGet reads path with the session.
+export async function apiGet<T>(path: string, fetcher: Fetch = fetch): Promise<Outcome<T>> {
+  if (session === null) return failure('session_required', 'no session is open')
+  return (await send<T>(fetcher, path, { method: 'GET', headers: { 'X-Nibfin-Session': session } })).outcome
+}
+
+// PlanOutcome is the answer of a plan route. A failure keeps the plan and the
+// result its error body carries: a read-only plan whose read-back failed
+// answers 422 with both.
+export type PlanOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: ApiError; status?: number; plan?: unknown; result?: unknown }
+
+// planRequest posts body as JSON to a plan route with the session.
+export async function planRequest<T>(path: string, body: unknown, fetcher: Fetch = fetch): Promise<PlanOutcome<T>> {
+  if (session === null) return failure('session_required', 'no session is open')
+  const r = await send<T>(fetcher, path, {
+    method: 'POST',
+    headers: { 'X-Nibfin-Session': session, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (r.outcome.ok) return r.outcome
+  const out: PlanOutcome<T> = { ...r.outcome }
+  if (r.status !== undefined) out.status = r.status
+  const extra = r.parsed as { plan?: unknown; result?: unknown } | null | undefined
+  if (extra && typeof extra === 'object') {
+    if (extra.plan !== undefined) out.plan = extra.plan
+    if (extra.result !== undefined) out.result = extra.result
+  }
+  return out
+}
+
 // ApplyOutcome is the end of an apply. unknown is set when the request failed
 // before the final line arrived: the write may or may not have happened.
 export type ApplyOutcome<T> = { ok: true; value: T } | { ok: false; error: ApiError; unknown?: boolean; status?: number }
 
-// applyPlan applies the stored plan id without confirmation and reads its
-// NDJSON stream to the end. The last result line is the result; an error
-// line or a non-2xx answer is the error. login_step lines are skipped.
-export async function applyPlan<T>(id: string, fetcher: Fetch = fetch): Promise<ApplyOutcome<T>> {
+// StreamOutcome is ApplyOutcome with the result an error line carries when
+// the read-back returned one.
+export type StreamOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: ApiError; unknown?: boolean; status?: number; result?: T }
+
+// StreamLine is one parsed NDJSON line of an apply: progress, login_step,
+// result or error.
+export interface StreamLine {
+  event?: string
+  progress?: unknown
+  step?: unknown
+  result?: unknown
+  error?: Partial<ApiError>
+}
+
+// applyStream applies the stored plan id and reads its NDJSON stream as it
+// arrives, handing every complete line to onEvent. The last result or error
+// line is the outcome; a stream that ends or breaks without one is unknown,
+// and a non-2xx answer before the stream is a failure with its status.
+export async function applyStream<T>(
+  id: string,
+  confirm: boolean,
+  onEvent: (line: StreamLine) => void,
+  fetcher: Fetch = fetch,
+): Promise<StreamOutcome<T>> {
   if (session === null) return failure('session_required', 'no session is open')
   const path = `/api/plans/${encodeURIComponent(id)}/apply`
   let res: Response
@@ -61,7 +115,7 @@ export async function applyPlan<T>(id: string, fetcher: Fetch = fetch): Promise<
     res = await fetcher(path, {
       method: 'POST',
       headers: { 'X-Nibfin-Session': session, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm: false }),
+      body: JSON.stringify({ confirm }),
     })
   } catch (e) {
     return { ...failure('network_error', `the request to ${path} failed: ${String(e)}`), unknown: true }
@@ -75,26 +129,56 @@ export async function applyPlan<T>(id: string, fetcher: Fetch = fetch): Promise<
     }
     return { ...failure(error?.code ?? 'error', error?.message ?? `${path} answered ${res.status}`), status: res.status }
   }
-  let text: string
+  let last: StreamOutcome<T> | null = null
+  const take = (line: string) => {
+    if (!line.trim()) return
+    let ev: StreamLine
+    try {
+      ev = JSON.parse(line) as StreamLine
+    } catch {
+      // A line cut off by a closed stream is not a final line.
+      return
+    }
+    if (ev === null || typeof ev !== 'object') return
+    if (ev.event === 'result') last = { ok: true, value: ev.result as T }
+    else if (ev.event === 'error') {
+      const f: StreamOutcome<T> = failure(ev.error?.code ?? 'error', ev.error?.message ?? 'the apply failed')
+      if (ev.result !== undefined && ev.result !== null) f.result = ev.result as T
+      last = f
+    }
+    onEvent(ev)
+  }
   try {
-    text = await res.text()
+    if (!res.body) {
+      for (const line of (await res.text()).split('\n')) take(line)
+    } else {
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+      let buffered = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffered += value
+        const lines = buffered.split('\n')
+        buffered = lines.pop() ?? ''
+        for (const line of lines) take(line)
+      }
+      take(buffered)
+    }
   } catch (e) {
     return { ...failure('network_error', `the stream of ${path} broke: ${String(e)}`), unknown: true }
   }
-  let last: ApplyOutcome<T> | null = null
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue
-    let ev: { event?: string; result?: T; error?: Partial<ApiError> }
-    try {
-      ev = JSON.parse(line)
-    } catch {
-      // A line cut off by a closed stream is not a final line.
-      continue
-    }
-    if (ev.event === 'result') last = { ok: true, value: ev.result as T }
-    else if (ev.event === 'error') last = failure(ev.error?.code ?? 'error', ev.error?.message ?? 'the apply failed')
-  }
   return last ?? { ...failure('stream_incomplete', `the stream of ${path} ended without a result`), unknown: true }
+}
+
+// applyPlan applies the stored plan id without confirmation and reads its
+// NDJSON stream to the end. The last result line is the result; an error
+// line or a non-2xx answer is the error. Other lines are skipped.
+export async function applyPlan<T>(id: string, fetcher: Fetch = fetch): Promise<ApplyOutcome<T>> {
+  const r = await applyStream<T>(id, false, () => {}, fetcher)
+  if (r.ok) return r
+  // The pause and resume path keeps its outcomes: an error carries no result.
+  const { result: _dropped, ...rest } = r
+  return rest
 }
 
 // deletePlan drops a stored plan that will not be applied.
@@ -114,19 +198,33 @@ export function resetSession(): void {
 }
 
 async function post<T>(fetcher: Fetch, path: string, headers: Record<string, string>, body?: string): Promise<Outcome<T>> {
+  return (await send<T>(fetcher, path, { method: 'POST', headers, body })).outcome
+}
+
+// send makes one JSON request. It returns the outcome and, for an answer that
+// was read, its status and parsed body.
+async function send<T>(
+  fetcher: Fetch,
+  path: string,
+  init: RequestInit,
+): Promise<{ outcome: Outcome<T>; status?: number; parsed?: unknown }> {
   let res: Response
   let parsed: unknown
   try {
-    res = await fetcher(path, { method: 'POST', headers, body })
+    res = await fetcher(path, init)
     parsed = await res.json()
   } catch (e) {
-    return failure('network_error', `the request to ${path} failed: ${String(e)}`)
+    return { outcome: failure('network_error', `the request to ${path} failed: ${String(e)}`) }
   }
   const error = (parsed as { error?: Partial<ApiError> } | null)?.error
   if (!res.ok || error) {
-    return failure(error?.code ?? 'error', error?.message ?? `${path} answered ${res.status}`)
+    return {
+      outcome: failure(error?.code ?? 'error', error?.message ?? `${path} answered ${res.status}`),
+      status: res.status,
+      parsed,
+    }
   }
-  return { ok: true, value: parsed as T }
+  return { outcome: { ok: true, value: parsed as T }, status: res.status, parsed }
 }
 
 function failure(code: string, message: string): { ok: false; error: ApiError } {
