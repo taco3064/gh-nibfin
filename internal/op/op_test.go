@@ -133,16 +133,7 @@ func TestErrorKeepsInnermostCode(t *testing.T) {
 	}
 }
 
-func TestEntryPointsAreNotImplemented(t *testing.T) {
-	entries := map[string]Operation{
-		"init": Init(RepoParams{Repo: "github.com/o/r"}),
-	}
-	for name, o := range entries {
-		_, _, err := Run(context.Background(), o, &fakeConfirmer{answer: true})
-		if Code(err) != CodeNotImplemented || !strings.Contains(err.Error(), name) {
-			t.Errorf("%s: err = %v (code %q)", name, err, Code(err))
-		}
-	}
+func TestNotImplemented(t *testing.T) {
 	if err := NotImplemented("dashboard"); Code(err) != CodeNotImplemented || err.Error() != "dashboard is not implemented" {
 		t.Errorf("NotImplemented = %v", err)
 	}
