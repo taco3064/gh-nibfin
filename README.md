@@ -24,11 +24,12 @@ gh nibfin dashboard [--port N] [--no-browser]
 an Issue URL, and several can be given at once. Both commands write all
 changes in one GraphQL mutation, read them back, and ask no confirmation.
 
-`login`, `upgrade` and `runner add` are also implemented. Every other command
-currently reports `not_implemented`. The behaviour of each command is tracked
-as a scope Issue in this repository.
+`login`, `upgrade`, `runner add` and `status` are also implemented. Every
+other command currently reports `not_implemented`. The behaviour of each
+command is tracked as a scope Issue in this repository.
 
-`-R, --repo` defaults to the current directory's repository. A changing
+`-R, --repo` defaults to the current directory's repository; for `status` it
+selects the repository view instead (see [Status](#status)). A changing
 command shows its plan and asks to confirm; `--yes` skips the question.
 
 ## Workflow templates
@@ -115,3 +116,40 @@ Host requirements:
   connection, named as the machine.
 
 gh nibfin stores no token; it uses only the exit status of the CLI's check.
+
+## Status
+
+`gh nibfin status [-R OWNER/REPO] [--json]` reports; it writes nothing. It
+never starts the podman machine, pulls an image, creates a volume or writes to
+GitHub, and it shows labels, comments and runs as GitHub returns them, without
+deriving a cause or advice.
+
+Every view shows the runner host:
+
+- the Podman host and whether its machine is running, with the host's total
+  and available memory (`MemAvailable`);
+- each Runner's systemd service (active or not) against GitHub's
+  online/offline and busy, as listed for the repository the Runners serve;
+- each provider's login, from the CLI's own check run with `--pull=never`
+  (no `nibfin-home-<provider>` volume means not logged in).
+
+Without `-R` it shows the person view: the open Issues labelled `scope` and
+assigned to you on gh's default host, across repositories (GitHub's issue
+search, up to its 1,000 results), grouped by repository. Each Issue shows
+`pause` and `pending`; a `pending` Issue links the oldest
+`<!-- nibfin:pending -->` comment by the account that added the `pending`
+label last, or shows `pending (no marked comment)`. Each repository shows
+whether its workflows pin the latest attested image (`execution` set), or
+that it has the `peer` set or none.
+
+With `-R` it shows the repository view: all open Issues of that repository,
+its image, and whether a `Nibfin · ` run succeeded after the init PR merged.
+The init commit is the oldest commit of `nibfin-issue.yml` on the default
+branch that starts with the generated header.
+
+A part that cannot be read (no Podman, a stopped machine, no admin access to
+list runners, an image that cannot be verified, an unreadable repository)
+shows its own `<code>: <message>`, and the rest of the report is still
+printed. Only an invalid `-R` (`invalid_repo`) or no gh login
+(`auth_unavailable`) fails the command. `--json` prints the same report as a
+JSON object.
