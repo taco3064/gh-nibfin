@@ -249,6 +249,9 @@ type issueDoc struct {
 		Issues struct {
 			Types []string `yaml:"types"`
 		} `yaml:"issues"`
+		PullRequestReview struct {
+			Types []string `yaml:"types"`
+		} `yaml:"pull_request_review"`
 	} `yaml:"on"`
 	Jobs map[string]struct {
 		RunsOn string `yaml:"runs-on"`
@@ -292,6 +295,9 @@ func TestRenderIssueCaller(t *testing.T) {
 	if want := []string{"opened", "reopened", "closed", "assigned", "unassigned", "labeled", "unlabeled"}; !slices.Equal(d.On.Issues.Types, want) {
 		t.Errorf("issues types %v", d.On.Issues.Types)
 	}
+	if !slices.Equal(d.On.PullRequestReview.Types, []string{"submitted"}) {
+		t.Errorf("pull_request_review types %v, want [submitted]", d.On.PullRequestReview.Types)
+	}
 	wake, ok := d.Jobs["wake"]
 	if !ok || len(d.Jobs) != 1 || wake.RunsOn != "ubuntu-24.04" || len(wake.Steps) != 1 {
 		t.Fatalf("jobs %+v, want one wake job on ubuntu-24.04 with one step", d.Jobs)
@@ -299,6 +305,13 @@ func TestRenderIssueCaller(t *testing.T) {
 	step := wake.Steps[0]
 	if step.Env["GH_TOKEN"] != "${{ secrets.NIBFIN_GITHUB_TOKEN }}" || step.Env["EXECUTION_REPO"] != "${{ vars.NIBFIN_EXECUTION_REPO }}" {
 		t.Errorf("wake env %v", step.Env)
+	}
+	if step.Env["REVIEW_BRANCH"] != "${{ github.event.pull_request.head.ref }}" ||
+		step.Env["REVIEW_HEAD_REPO"] != "${{ github.event.pull_request.head.repo.full_name }}" {
+		t.Errorf("wake review env %v", step.Env)
+	}
+	if !strings.Contains(text, "|| github.event.pull_request.head.ref || github.event.check_suite.head_branch") {
+		t.Error("run-name does not title a review run by its head branch")
 	}
 	for _, want := range []string{
 		`gh workflow run nibfin-shared-runner.yml --repo "$EXECUTION_REPO" "${inputs[@]}"`,
@@ -324,7 +337,10 @@ func TestRenderNoWorkflows(t *testing.T) {
 	if d.On.WorkflowRun != nil || strings.Contains(text, "workflow_run:") {
 		t.Errorf("workflow_run is rendered for an empty list:\n%s", text)
 	}
-	if !strings.Contains(text, "unlabeled]\n  check_suite:\n") {
+	if !slices.Equal(d.On.PullRequestReview.Types, []string{"submitted"}) {
+		t.Errorf("pull_request_review types %v, want [submitted]", d.On.PullRequestReview.Types)
+	}
+	if !strings.Contains(text, "unlabeled]\n  pull_request_review:\n    types: [submitted]\n  check_suite:\n") {
 		t.Errorf("the triggers are not contiguous:\n%s", text)
 	}
 }
