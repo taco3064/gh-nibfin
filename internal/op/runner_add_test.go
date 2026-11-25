@@ -47,6 +47,7 @@ var scriptNames = map[string]string{
 	extractScript:      "extract",
 	configureScript:    "configure",
 	unitScript:         "unit",
+	unitDirScript:      "unitdir",
 	stopScript:         "stop",
 	purgeScript:        "purge",
 }
@@ -151,6 +152,8 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 			s := f.slots[slot]
 			s.configured, s.name, s.url = true, flag(args, "--name"), flag(args, "--url")
 		}
+	case "unitdir":
+		f.events = append(f.events, "unitdir "+args[0])
 	case "unit":
 		f.events = append(f.events, "unit "+args[1])
 		if exit == 0 {
@@ -448,13 +451,62 @@ func TestRunnerAddStoppedMachine(t *testing.T) {
 	}
 	// After the start: logged in already, so no login; two new slots.
 	wantEvents := []string{"start via autostart", "linger", "create volume nibfin-tools", "token",
-		"extract claude-1", "configure claude-1", "unit nibfin-runner-claude-1.service",
-		"extract claude-2", "configure claude-2", "unit nibfin-runner-claude-2.service"}
+		"extract claude-1", "configure claude-1", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
 	if f.autoStarts != 1 || f.starts != 0 || !reflect.DeepEqual(f.events, wantEvents) || fx.gh.tokens != 1 {
 		t.Errorf("starts %d %d, events %v", f.autoStarts, f.starts, f.events)
 	}
 	if _, err := o.ReadBack(context.Background(), p); err != nil {
 		t.Errorf("ReadBack: %v", err)
+	}
+}
+
+// TestRunnerAddMachineUnitDir covers a podman machine whose unit directory
+// is root-owned (#387): the unit directory step runs before each unit, a
+// refused step fails the slot before the unit, and a rerun completes the
+// half-installed slot with only that step and its unit.
+func TestRunnerAddMachineUnitDir(t *testing.T) {
+	f := &fakeHost{vm: true, probe: strings.Replace(defaultProbe, "linger 0", "linger 1", 1),
+		slots: map[string]*fakeSlot{}, volumes: map[string]bool{"nibfin-tools": true, "claude": true}, loggedIn: map[string]bool{"claude": true}}
+	f.shellExit = map[string]int{"unitdir": 1}
+	f.shellErr = map[string]string{"unitdir": "sudo: a password is required"}
+	fx := useRunnerHost(t, f)
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2}), &yes{})
+	if Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "a password is required") ||
+		!strings.Contains(err.Error(), "sudo chown $(id -u):$(id -g) "+unitDir+" "+unitDir+"/default.target.wants") {
+		t.Fatalf("refused: %v", err)
+	}
+	want := []string{"token", "extract claude-1", "configure claude-1", "unitdir " + unitDir}
+	if !reflect.DeepEqual(f.events, want) {
+		t.Errorf("events = %v", f.events)
+	}
+
+	// The rerun picks the configured claude-1 first: no download, only the
+	// unit directory step and its unit, then the new claude-2.
+	f.shellExit, f.shellErr, f.events, fx.gh.tokens = nil, nil, nil, 0
+	_, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2}), &yes{})
+	if err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	want = []string{"token", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
+	if !reflect.DeepEqual(f.events, want) || fx.gh.tokens != 1 {
+		t.Errorf("rerun events = %v, tokens %d", f.events, fx.gh.tokens)
+	}
+	for _, s := range f.shells {
+		if s.script == "unitdir" && !reflect.DeepEqual(s.args, []string{unitDir}) {
+			t.Errorf("unitdir args = %q", s.args)
+		}
+	}
+
+	// Only the half-installed slot: no download, no token.
+	f.slots["claude-3"] = &fakeSlot{configured: true, name: "c", url: "https://github.com/cur/repo"}
+	f.events, fx.gh.tokens = nil, 0
+	downloads := len(*fx.auth)
+	_, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	want = []string{"unitdir " + unitDir, "unit nibfin-runner-claude-3.service"}
+	if err != nil || !reflect.DeepEqual(f.events, want) || fx.gh.tokens != 0 || len(*fx.auth) != downloads {
+		t.Errorf("incomplete only: %v, events %v, tokens %d", err, f.events, fx.gh.tokens)
 	}
 }
 

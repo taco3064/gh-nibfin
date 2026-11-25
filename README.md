@@ -189,7 +189,11 @@ Windows and macOS.
   and runs as the systemd user service
   `${XDG_CONFIG_HOME:-~/.config}/systemd/user/nibfin-runner-<provider>-<n>.service`.
   The command enables linger (`loginctl enable-linger`) so the services keep
-  running after logout.
+  running after logout. On a `podman machine` whose unit directory is
+  root-owned (as podman's WSL provisioning creates it), it gives the VM user
+  ownership of that directory and its `default.target.wants` with
+  `sudo -n chown`, without recursing; a refused `sudo` stops the Runner
+  (`runner_install_failed`) with the `chown` to run inside the VM.
 - It creates the `nibfin-tools` Podman volume and runs `login` for the
   provider when it is not logged in.
 - A rerun after an interruption completes the provider's unfinished slots

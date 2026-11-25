@@ -117,3 +117,82 @@ func TestScriptsUnderSh(t *testing.T) {
 		t.Errorf("systemctl = %q", b)
 	}
 }
+
+// TestUnitDirScriptUnderSh runs unitDirScript with a stand-in sudo: it
+// asks sudo for a non-recursive chown of exactly the directories the user
+// cannot write, and of nothing else.
+func TestUnitDirScriptUnderSh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the scripts run on the Linux runner host")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can write every directory")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	os.MkdirAll(bin, 0o755)
+	log := filepath.Join(root, "sudo.log")
+	os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\necho \"$*\" >> \"$SUDO_LOG\"\nexit ${SUDO_EXIT:-0}\n"), 0o755)
+	env := []string{"PATH=" + bin + ":" + os.Getenv("PATH"), "SUDO_LOG=" + log}
+	a := &runnerAdd{host: &localHost{env: env}}
+	ctx := context.Background()
+	idOut, err := exec.Command("sh", "-c", `echo "$(id -u):$(id -g)"`).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := strings.TrimSpace(string(idOut))
+	run := func(dir string) error {
+		_, err := a.script(ctx, "unitdir", unitDirScript, nil, "", dir)
+		return err
+	}
+	sudo := func() string {
+		b, _ := os.ReadFile(log)
+		os.Remove(log)
+		return string(b)
+	}
+
+	// Missing: nothing to do.
+	units := filepath.Join(root, "systemd", "user")
+	if err := run(units); err != nil || sudo() != "" {
+		t.Errorf("missing: %v", err)
+	}
+	// Writable: no sudo.
+	wants := filepath.Join(units, "default.target.wants")
+	os.MkdirAll(wants, 0o755)
+	if err := run(units); err != nil || sudo() != "" {
+		t.Errorf("writable: %v", err)
+	}
+	// Only the read-only one is changed, never recursively.
+	os.Chmod(wants, 0o555)
+	t.Cleanup(func() { os.Chmod(wants, 0o755); os.Chmod(units, 0o755) })
+	if err := run(units); err != nil {
+		t.Fatalf("wants read-only: %v", err)
+	}
+	if got := sudo(); got != "-n chown "+owner+" "+wants+"\n" {
+		t.Errorf("sudo = %q", got)
+	}
+	os.Chmod(units, 0o555)
+	if err := run(units); err != nil {
+		t.Fatalf("both read-only: %v", err)
+	}
+	if got := sudo(); got != "-n chown "+owner+" "+units+"\n-n chown "+owner+" "+wants+"\n" {
+		t.Errorf("sudo = %q", got)
+	}
+	// A symlinked directory is not followed.
+	os.Chmod(units, 0o755)
+	os.Chmod(wants, 0o755)
+	target := filepath.Join(root, "elsewhere")
+	os.Mkdir(target, 0o555)
+	t.Cleanup(func() { os.Chmod(target, 0o755) })
+	link := filepath.Join(root, "linked")
+	os.Symlink(target, link)
+	if err := run(link); err != nil || sudo() != "" {
+		t.Errorf("symlink: %v", err)
+	}
+	// A refused sudo fails the script.
+	os.Chmod(units, 0o555)
+	a.host = &localHost{env: append(env, "SUDO_EXIT=1")}
+	if err := run(units); Code(err) != CodeRunnerInstallFailed {
+		t.Errorf("refused: %v", err)
+	}
+}
