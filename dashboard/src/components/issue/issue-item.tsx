@@ -45,6 +45,9 @@ export interface IssueItemProps {
   // onChanged gets the confirmed changes of a pause or resume; an empty
   // list when the result is unknown and the status should be read again.
   onChanged: (changes: Change[]) => void
+  // stacked keeps the column layout at every width, for narrow places such
+  // as a graph column; by default it turns into a row from the sm width.
+  stacked?: boolean
   className?: string
 }
 
@@ -57,7 +60,7 @@ const stageLook: Record<Stage, { tone: Tone; icon: LucideIcon }> = {
 
 const linkClass = 'rounded-sm text-link underline-offset-4 hover:underline'
 
-function ExternalMark({ label }: { label: string }) {
+export function ExternalMark({ label }: { label: string }) {
   return (
     <>
       <ExternalLink aria-hidden="true" className="inline size-3.5 shrink-0 align-[-0.125em]" />
@@ -144,7 +147,7 @@ function Blockers({ issue }: { issue: StatusIssue }) {
 // IssueItem is the shared Dashboard element of one Issue: its stage from
 // labels, its GitHub link, its runs, its open blockers and pause/resume.
 // It renders only from its props; the placing view applies onChanged.
-export function IssueItem({ issue, repo, access, selected, onSelectedChange, onChanged, className }: IssueItemProps) {
+export function IssueItem({ issue, repo, access, selected, onSelectedChange, onChanged, stacked = false, className }: IssueItemProps) {
   const id = useId()
   const change = useChange(onChanged)
   const gate = changeAccess(access, repo)
@@ -175,7 +178,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
           aria-label={`Select #${issue.number}`}
         />
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className={cn('flex min-w-0 flex-1 flex-col gap-3', !stacked && 'sm:flex-row sm:items-start sm:justify-between')}>
         <div className="flex min-w-0 flex-col gap-2">
           <h3 id={`${id}-title`} className="text-base leading-snug font-semibold">
             <a href={issue.url} target="_blank" rel="noreferrer" className={cn(linkClass, 'text-foreground')}>
@@ -187,7 +190,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
           <StageBadges issue={issue} />
           <Blockers issue={issue} />
         </div>
-        <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+        <div className={cn('flex shrink-0 flex-col gap-2', !stacked && 'sm:items-end')}>
           <div className="flex flex-wrap items-center gap-2">
             <IssueRunsDialog issue={issue} />
             <Button
@@ -202,7 +205,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
               {label}
             </Button>
           </div>
-          <div className="flex max-w-full flex-col gap-2 sm:max-w-xs">
+          <div className={cn('flex max-w-full flex-col gap-2', !stacked && 'sm:max-w-xs')}>
             <DisabledReason id={`${id}-reason`} access={gate} />
             <ChangeMessage outcome={change.outcome} />
           </div>

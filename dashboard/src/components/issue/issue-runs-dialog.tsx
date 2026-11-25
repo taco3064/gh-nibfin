@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { runsView, type RunsNote } from '@/lib/issue'
 import type { Run, StatusIssue } from '@/lib/status'
-import { cn } from '@/lib/utils'
+import { cn, formatTime } from '@/lib/utils'
 
 import { tones, type Tone } from './tones'
 
@@ -41,12 +41,6 @@ function conclusionTone(c: string | null): Tone {
     default:
       return 'neutral'
   }
-}
-
-function formatTime(iso: string): string {
-  const t = Date.parse(iso)
-  if (Number.isNaN(t)) return iso
-  return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function Note({ note }: { note: RunsNote }) {
