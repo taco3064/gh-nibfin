@@ -1,0 +1,53 @@
+name: Worker
+# Deploys the Live data Worker (dashboard/src/worker/) to Cloudflare. Runs only when the
+# Worker, the status --json schema or the npm project change. It triggers on push, so
+# Nibfin waits for it as CD.
+on:
+  push:
+    branches: [main]
+    paths:
+      - dashboard/src/worker/**
+      - schema/**
+      - dashboard/package.json
+      - dashboard/package-lock.json
+      - .github/workflows/worker.yml
+permissions:
+  contents: read
+concurrency:
+  group: worker
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Every step is skipped until the Worker exists (#364), so the run stays green.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        if: hashFiles('dashboard/src/worker/wrangler.jsonc') != ''
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install
+        if: hashFiles('dashboard/src/worker/wrangler.jsonc') != ''
+        working-directory: dashboard
+        run: npm ci
+      # wrangler comes from the lockfile (a devDependency added by #364).
+      - name: Deploy
+        if: hashFiles('dashboard/src/worker/wrangler.jsonc') != ''
+        working-directory: dashboard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config src/worker/wrangler.jsonc
+      # The read-only GitHub token reaches only the Worker, never the page.
+      - name: Set the Worker's GitHub token
+        if: hashFiles('dashboard/src/worker/wrangler.jsonc') != ''
+        working-directory: dashboard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          LIVE_TOKEN: ${{ secrets.NIBFIN_LIVE_GITHUB_TOKEN }}
+        run: printf '%s' "$LIVE_TOKEN" | npx wrangler secret put GITHUB_TOKEN --config src/worker/wrangler.jsonc
