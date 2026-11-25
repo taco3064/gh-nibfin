@@ -232,18 +232,21 @@ func writeRun(w io.Writer, run status.NibfinRun) {
 	case run.Error != nil:
 		writeErr(w, "nibfin run", run.Error)
 		return
-	case !run.Initialized:
-		fmt.Fprintln(w, "nibfin run: no init commit (no generated nibfin-issue.yml on the default branch)")
+	case !run.UsesNibfin:
+		fmt.Fprintln(w, "nibfin run: not used (no nibfin-issue.yml on the default branch)")
+		return
+	case run.Commit == "":
+		fmt.Fprintln(w, "nibfin run: none succeeded (no commit of nibfin-issue.yml listed on the default branch)")
 		return
 	}
-	since := "init commit " + run.InitCommit
-	if run.InitPR != nil {
-		since = fmt.Sprintf("init PR #%d %s", run.InitPR.Number, clean(run.InitPR.URL))
+	change := fmt.Sprintf("in commit %s at %s", clean(run.Commit), clean(run.ChangedAt))
+	if run.PR != nil {
+		change = fmt.Sprintf("by PR #%d %s at %s", run.PR.Number, clean(run.PR.URL), clean(run.ChangedAt))
 	}
 	if run.Succeeded {
-		fmt.Fprintf(w, "nibfin run: succeeded %s at %s, after %s merged at %s\n", clean(run.Run), clean(run.At), since, run.MergedAt)
+		fmt.Fprintf(w, "nibfin run: succeeded %s at %s, after nibfin-issue.yml last changed %s\n", clean(run.Run), clean(run.At), change)
 	} else {
-		fmt.Fprintf(w, "nibfin run: none succeeded since %s merged at %s\n", since, run.MergedAt)
+		fmt.Fprintf(w, "nibfin run: none succeeded since nibfin-issue.yml last changed %s\n", change)
 	}
 }
 

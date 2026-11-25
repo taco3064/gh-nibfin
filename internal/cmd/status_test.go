@@ -117,8 +117,8 @@ func TestStatusRepoText(t *testing.T) {
 		"repo":        "github.com/o/r",
 		"image":       status.RepoImage{Set: "execution", Ref: &ref, Latest: &no},
 		"issues":      []status.Issue{{Number: 7, Title: "Seven"}},
-		"nibfinRun": status.NibfinRun{Initialized: true, InitCommit: "abc", InitPR: &status.PullRequest{Number: 5, URL: "https://github.com/o/r/pull/5"},
-			MergedAt: "2026-11-01T00:00:00Z", Succeeded: true, Run: "https://github.com/o/r/actions/runs/1", At: "2026-11-02T00:00:00Z"},
+		"nibfinRun": status.NibfinRun{UsesNibfin: true, Commit: "abc", PR: &status.PullRequest{Number: 5, URL: "https://github.com/o/r/pull/5"},
+			ChangedAt: "2026-11-01T00:00:00Z", Succeeded: true, Run: "https://github.com/o/r/actions/runs/1", At: "2026-11-02T00:00:00Z"},
 	}
 	out, repos := runStatus(t, []string{"status", "-R", "o/r"}, r)
 	for _, want := range []string{
@@ -127,7 +127,7 @@ func TestStatusRepoText(t *testing.T) {
 		"runners: machine_stopped: stop\n",
 		"github.com/o/r  image: sha256:bbbbbbbbbbbb (not latest)\n",
 		"  #7 Seven\n",
-		"nibfin run: succeeded https://github.com/o/r/actions/runs/1 at 2026-11-02T00:00:00Z, after init PR #5 https://github.com/o/r/pull/5 merged at 2026-11-01T00:00:00Z\n",
+		"nibfin run: succeeded https://github.com/o/r/actions/runs/1 at 2026-11-02T00:00:00Z, after nibfin-issue.yml last changed by PR #5 https://github.com/o/r/pull/5 at 2026-11-01T00:00:00Z\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -147,16 +147,24 @@ func TestStatusRepoText(t *testing.T) {
 	}
 }
 
-func TestStatusTextNotInitialized(t *testing.T) {
-	var b bytes.Buffer
-	writeRun(&b, status.NibfinRun{})
-	if !strings.Contains(b.String(), "no init commit") {
-		t.Errorf("run = %q", b.String())
-	}
-	b.Reset()
-	writeRun(&b, status.NibfinRun{Initialized: true, InitCommit: "abc", MergedAt: "t"})
-	if b.String() != "nibfin run: none succeeded since init commit abc merged at t\n" {
-		t.Errorf("run = %q", b.String())
+func TestStatusTextNibfinRun(t *testing.T) {
+	for _, tc := range []struct {
+		run  status.NibfinRun
+		want string
+	}{
+		{status.NibfinRun{}, "nibfin run: not used (no nibfin-issue.yml on the default branch)\n"},
+		{status.NibfinRun{UsesNibfin: true}, "nibfin run: none succeeded (no commit of nibfin-issue.yml listed on the default branch)\n"},
+		{status.NibfinRun{UsesNibfin: true, Commit: "abc", ChangedAt: "t"}, "nibfin run: none succeeded since nibfin-issue.yml last changed in commit abc at t\n"},
+		{status.NibfinRun{UsesNibfin: true, Commit: "abc", PR: &status.PullRequest{Number: 5, URL: "u"}, ChangedAt: "t"},
+			"nibfin run: none succeeded since nibfin-issue.yml last changed by PR #5 u at t\n"},
+		{status.NibfinRun{UsesNibfin: true, Commit: "abc", ChangedAt: "t", Succeeded: true, Run: "r", At: "a"},
+			"nibfin run: succeeded r at a, after nibfin-issue.yml last changed in commit abc at t\n"},
+	} {
+		var b bytes.Buffer
+		writeRun(&b, tc.run)
+		if b.String() != tc.want {
+			t.Errorf("run %+v = %q, want %q", tc.run, b.String(), tc.want)
+		}
 	}
 }
 
