@@ -7,7 +7,7 @@ import { FreshnessIndicator } from '@/components/shell/freshness-indicator'
 import { LiveBadge, LiveNotes } from '@/components/shell/live-status'
 import { Note } from '@/components/shell/note'
 import { RepoView } from '@/components/shell/repo-view'
-import { RunnerView } from '@/components/shell/runner-view'
+import { RunnerView } from '@/components/runner/runner-view'
 import { ThemeControl } from '@/components/theme-control'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -87,21 +87,31 @@ function Shell({ status }: { status: Status }) {
       )}
       {views.map((v) => (
         <TabsContent key={v} value={v} className="flex flex-col gap-4" data-content={v}>
-          {data ? <ViewContent view={v} data={data} onChanged={status.onChanged} /> : <NoData reading={status.reading} />}
+          {data ? <ViewContent view={v} data={data} onChanged={status.onChanged} refresh={status.refresh} /> : <NoData reading={status.reading} />}
         </TabsContent>
       ))}
     </>
   )
 }
 
-function ViewContent({ view, data, onChanged }: { view: View; data: PersonData; onChanged: Status['onChanged'] }) {
+function ViewContent({
+  view,
+  data,
+  onChanged,
+  refresh,
+}: {
+  view: View
+  data: PersonData
+  onChanged: Status['onChanged']
+  refresh: Status['refresh']
+}) {
   switch (view) {
     case 'person':
       return <PersonView data={data} onChanged={onChanged} />
     case 'repo':
       return <RepoView />
     case 'runner':
-      return <RunnerView data={data} />
+      return <RunnerView data={data} onFinished={refresh} />
   }
 }
 

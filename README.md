@@ -213,7 +213,9 @@ home. It then reads the state back with the CLI's own check
 every provider with Runners on the host that is not logged in.
 
 On a terminal the CLI is attached to it. Otherwise the command prints the URL
-to open and the one-time code, and reads a pasted code from stdin.
+to open and the one-time code, and reads a pasted code from stdin. A
+cancelled login without a terminal removes its `nibfin-login-<provider>`
+container.
 
 Host requirements:
 
@@ -326,8 +328,20 @@ turns stale after five minutes. The page opens on the Runners view, with a
 guide to `runner add` then `init`, when this host has no complete Runner (or no
 Podman or machine), and on the Person view otherwise. Its
 Dark, Light and System theme choice is the only thing it stores (in the
-browser). The UI also has an operation dialog, built from `/api/commands` and
-the plan and apply routes below, that is not yet opened from a view. A binary
+browser).
+
+The Runners view shows the host (the podman machine state and its free
+memory), each Runner slot's local service against GitHub's online, offline and
+busy state, and each provider's login. It opens `runner add`, `runner remove`
+and `login` in the operation dialog, built from `/api/commands` and the plan
+and apply routes below, and reads the status again after the dialog closes. A
+login, also one `runner add` runs, shows the CLI's URL and either a field for
+the pasted code (Claude) or the one-time code to copy (Codex), then Waiting for
+authorization, Verifying and Done once the read-back confirms it. Closing the
+dialog while a login waits, or 15 minutes without authorization, ends the
+request; the server then cancels the apply and removes the login container.
+
+A binary
 built without the UI serves a placeholder page whose only script does the same
 exchange. The page and its files need no session; they keep the Host and Origin
 checks below, and other paths outside `/api/` are `not_found`.
