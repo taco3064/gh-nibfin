@@ -87,7 +87,7 @@ for (const theme of themes) {
       await shot(page, `shell-person-${theme}-${width}`)
 
       await tab(page, 'Repositories').click()
-      await expect(page.locator('[data-note=not-built]')).toHaveText('The repository view is not built yet.')
+      await expect(page.locator('[data-view=repo] [data-slot=picker]')).toContainText('Repositories using Nibfin on github.com')
       await expectNoPageScroll(page)
       await shot(page, `shell-repo-${theme}-${width}`, false)
       await tab(page, 'Runners').click()

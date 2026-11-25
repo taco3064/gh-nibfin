@@ -26,16 +26,23 @@ export interface Watch {
   consoleErrors: string[]
   // statusReads counts the status requests.
   statusReads: number
-  // status is the answer of the next status reads; a test may replace it.
-  // A live stream opens with it too: a result is its snapshot, which counts
-  // as a status read, and an error ends the stream with an error frame.
+  // status is the answer of the next person-view status reads (no repo in
+  // the body); a test may replace it. A live stream opens with it too: a
+  // result is its snapshot, which counts as a status read, and an error ends
+  // the stream with an error frame.
   status: StatusAnswer
   live: LiveMock
+  // repoStatus answers the repository-view reads by the body's repo; a repo
+  // without an entry answers invalid_repo.
+  repoStatus: Record<string, StatusAnswer>
+  // statusBodies are the request bodies of the plan status reads, in order.
+  statusBodies: Record<string, unknown>[]
 }
 
 // prepare mocks the API and records CSP violations and console errors. The
 // first exchange opens a session; later ones find the proof used. The status
-// read answers status, by default a fictional person view.
+// read answers status, by default a fictional person view, or the entry of
+// repoStatus for the body's repo.
 export async function prepare(page: Page, status: StatusAnswer = { result: personView() }): Promise<Watch> {
   const w: Watch = {
     violations: () => page.evaluate(() => (window as unknown as { __csp: string[] }).__csp),
@@ -43,6 +50,8 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
     statusReads: 0,
     status,
     live: undefined as unknown as LiveMock,
+    repoStatus: {},
+    statusBodies: [],
   }
   w.live = await mockLive(page, () => {
     w.statusReads++
@@ -70,7 +79,15 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
   await page.route('**/api/commands/status/plan', (route) => {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
     w.statusReads++
-    const a = w.status
+    const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>
+    w.statusBodies.push(body)
+    const a: StatusAnswer =
+      typeof body.repo === 'string'
+        ? (w.repoStatus[body.repo] ?? {
+            error: { code: 'invalid_repo', message: `${body.repo} is not a repository; use [HOST/]OWNER/REPO` },
+            httpStatus: 400,
+          })
+        : w.status
     if ('error' in a) return route.fulfill({ status: a.httpStatus, json: { error: a.error } })
     return route.fulfill({ json: { plan: { operation: 'status', readOnly: true }, result: a.result } })
   })

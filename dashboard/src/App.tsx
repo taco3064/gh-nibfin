@@ -2,23 +2,28 @@ import { useState } from 'react'
 import { FolderGit2, LoaderCircle, RefreshCw, Server, UserRound, type LucideIcon } from 'lucide-react'
 
 import { PersonView } from '@/components/person/person-view'
+import { RepoView } from '@/components/repo/repo-view'
 import { ConnectionCard } from '@/components/shell/connection-card'
 import { FreshnessIndicator } from '@/components/shell/freshness-indicator'
 import { LiveBadge, LiveNotes } from '@/components/shell/live-status'
 import { Note } from '@/components/shell/note'
-import { RepoView } from '@/components/shell/repo-view'
 import { RunnerView } from '@/components/runner/runner-view'
 import { ThemeControl } from '@/components/theme-control'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { pickerSource } from '@/lib/repo'
 import { landingView, viewLabels, views, type View } from '@/lib/shell'
 import type { PersonView as PersonData } from '@/lib/status'
+import { useRepoStatus, type RepoStatus } from '@/lib/use-repo-status'
 import { useStatus, type Status } from '@/lib/use-status'
 
 const viewIcons: Record<View, LucideIcon> = { person: UserRound, repo: FolderGit2, runner: Server }
 
 export function App() {
   const status = useStatus()
+  // The repository read lives here so the chosen repository survives tab
+  // switches; nothing is stored.
+  const repoStatus = useRepoStatus()
   // picked is the view the person chose; landing is set once, from the
   // first successful read. Neither is stored, and a refresh changes neither.
   const [picked, setPicked] = useState<View>()
@@ -26,6 +31,9 @@ export function App() {
   if (status.data && landing === undefined) setLanding(landingView(status.data))
   const view = picked ?? landing ?? 'person'
   const connected = status.connection.state === 'connected'
+  // On the repository view with a repository open, the header's freshness
+  // and Refresh follow the repository read; otherwise the person read.
+  const active = view === 'repo' && repoStatus.repo !== undefined ? repoStatus : status
 
   return (
     <Tabs value={view} onValueChange={(v) => setPicked(v as View)} className="flex min-h-svh flex-col gap-0">
@@ -47,15 +55,15 @@ export function App() {
                 })}
               </TabsList>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <LiveBadge live={status.live} />
-                <FreshnessIndicator readAt={status.readAt} />
-                <Button variant="outline" size="sm" onClick={status.refresh} disabled={status.reading} data-action="refresh">
-                  {status.reading ? (
+                {active === status && <LiveBadge live={status.live} />}
+                <FreshnessIndicator readAt={active.readAt} />
+                <Button variant="outline" size="sm" onClick={active.refresh} disabled={active.reading} data-action="refresh">
+                  {active.reading ? (
                     <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
                   ) : (
                     <RefreshCw aria-hidden="true" />
                   )}
-                  {status.reading ? 'Refreshing…' : 'Refresh'}
+                  {active.reading ? 'Refreshing…' : 'Refresh'}
                 </Button>
               </div>
             </div>
@@ -63,13 +71,13 @@ export function App() {
         </div>
       </header>
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 sm:py-8">
-        {connected ? <Shell status={status} /> : <ConnectionCard connection={status.connection} />}
+        {connected ? <Shell status={status} repoStatus={repoStatus} /> : <ConnectionCard connection={status.connection} />}
       </main>
     </Tabs>
   )
 }
 
-function Shell({ status }: { status: Status }) {
+function Shell({ status, repoStatus }: { status: Status; repoStatus: RepoStatus }) {
   const { data, readError } = status
   return (
     <>
@@ -87,7 +95,17 @@ function Shell({ status }: { status: Status }) {
       )}
       {views.map((v) => (
         <TabsContent key={v} value={v} className="flex flex-col gap-4" data-content={v}>
-          {data ? <ViewContent view={v} data={data} onChanged={status.onChanged} refresh={status.refresh} /> : <NoData reading={status.reading} />}
+          {v === 'repo' ? (
+            <RepoView
+              status={repoStatus}
+              source={pickerSource(repoStatus.data, data)}
+              listReading={status.reading || repoStatus.reading}
+            />
+          ) : data ? (
+            <ViewContent view={v} data={data} onChanged={status.onChanged} refresh={status.refresh} />
+          ) : (
+            <NoData reading={status.reading} />
+          )}
         </TabsContent>
       ))}
     </>
@@ -100,7 +118,7 @@ function ViewContent({
   onChanged,
   refresh,
 }: {
-  view: View
+  view: Exclude<View, 'repo'>
   data: PersonData
   onChanged: Status['onChanged']
   refresh: Status['refresh']
@@ -108,8 +126,6 @@ function ViewContent({
   switch (view) {
     case 'person':
       return <PersonView data={data} onChanged={onChanged} />
-    case 'repo':
-      return <RepoView />
     case 'runner':
       return <RunnerView data={data} onFinished={refresh} />
   }
