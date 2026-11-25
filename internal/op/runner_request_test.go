@@ -433,6 +433,8 @@ func TestRunnerAddRequestPassphrase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Close before TempDir's cleanup: Windows cannot remove an open file.
+	t.Cleanup(func() { prompts.Close() })
 	term := &Terminal{In: os.Stdin, Out: prompts, Err: prompts}
 	tries := 0
 	readPassword = func(*Terminal) ([]byte, error) { tries++; return []byte("wrong"), nil }
