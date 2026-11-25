@@ -34,7 +34,17 @@ var (
 	}
 	latestImage = image.Latest
 	ciWorkflows = templates.CIWorkflows
+	// hostPart returns the host part: the runners on this host.
+	hostPart = func() hostUpgrade { return op.RunnersUpgrade() }
 )
+
+// hostUpgrade is the host part of upgrade (op.RunnersUpgrade): it brings the
+// runners on this host to what runner add sets up today.
+type hostUpgrade interface {
+	Plan(ctx context.Context) ([]op.Step, []string, error)
+	Apply(ctx context.Context, steps []op.Step) error
+	ReadBack(ctx context.Context, checks *op.Checks, r op.Result) error
+}
 
 const issueFile = "nibfin-issue.yml"
 
@@ -67,8 +77,15 @@ type upgrade struct {
 	changed       []string          // paths that differ from the default branch
 	current       bool              // the default branch holds the rendered set
 	pr            *workflowpr.PR    // the branch and its PR, when the set differs
-	steps         []op.Step         // the plan items
+	steps         []op.Step         // the plan items of the repository part
+
+	host      hostUpgrade // the host part
+	hostSteps []op.Step   // its plan items
 }
+
+// repoDone reports whether the repository part has nothing to apply: the
+// default branch holds the set, or the open PR does.
+func (u *upgrade) repoDone() bool { return u.current || u.pr.Done() }
 
 func setName(s templates.Set) string {
 	if s == templates.Execution {
@@ -77,7 +94,30 @@ func setName(s templates.Set) string {
 	return "peer"
 }
 
+// Plan plans the repository part, then the host part. It is read-only when
+// neither has anything to apply.
 func (u *upgrade) Plan(ctx context.Context) (op.Plan, error) {
+	plan, err := u.planRepo(ctx)
+	if err != nil {
+		return plan, err
+	}
+	u.host = hostPart()
+	steps, notes, err := u.host.Plan(ctx)
+	if err != nil {
+		return plan, err
+	}
+	u.hostSteps = steps
+	plan.Steps = append(plan.Steps, steps...)
+	if len(notes) > 0 {
+		plan.Notes = notes
+	}
+	plan.ReadOnly = u.repoDone() && len(op.Changes(steps)) == 0
+	plan.Confirm = !plan.ReadOnly
+	return plan, nil
+}
+
+// planRepo plans the repository part: the workflow set and its PR.
+func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 	plan := op.Plan{Operation: "upgrade", Repo: u.p.Repo, Steps: []op.Step{}}
 	*u = upgrade{p: u.p}
 	repo, _, err := workflowpr.NewRepo(u.p.Repo, newClient)
@@ -152,11 +192,6 @@ func (u *upgrade) Plan(ctx context.Context) (op.Plan, error) {
 	}
 	u.steps = u.pr.Steps()
 	plan.Steps = u.steps
-	if u.pr.Done() {
-		plan.ReadOnly = true
-		return plan, nil
-	}
-	plan.Confirm = true
 	return plan, nil
 }
 
@@ -176,10 +211,12 @@ func (u *upgrade) Apply(ctx context.Context, _ op.Plan) error {
 	if !u.planned {
 		return op.Errorf(op.CodeInvalidArgument, "upgrade: Apply needs a Plan on the same operation")
 	}
-	if u.current {
-		return nil
+	if !u.repoDone() {
+		if err := u.pr.Apply(ctx); err != nil {
+			return err
+		}
 	}
-	return u.pr.Apply(ctx)
+	return u.host.Apply(ctx, op.Changes(u.hostSteps))
 }
 
 func (u *upgrade) prBody() string {
@@ -194,9 +231,9 @@ func (u *upgrade) prBody() string {
 }
 
 // ReadBack reads every item back: the files of a current set on the
-// default branch, or the branch and the PR. The items are returned also
-// with an error.
-func (u *upgrade) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
+// default branch, or the branch and the PR; then the runners on this host.
+// The items are returned also with an error.
+func (u *upgrade) ReadBack(ctx context.Context, p op.Plan) (op.Result, error) {
 	if !u.planned {
 		return nil, op.Errorf(op.CodeInvalidArgument, "upgrade: ReadBack needs a Plan on the same operation")
 	}
@@ -204,15 +241,20 @@ func (u *upgrade) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	var checks op.Checks
 	if u.current {
 		r["current"] = true
-		err := u.repo.ReadBackKept(ctx, &checks, u.steps, u.defaultBranch, u.files)
-		return checks.Fill(r, nil, err), err
+		if err := u.repo.ReadBackKept(ctx, &checks, u.steps, u.defaultBranch, u.files); err != nil {
+			checks.Expect(u.hostSteps...)
+			return checks.Fill(r, p.Notes, err), err
+		}
+	} else {
+		pr, err := u.pr.ReadBackItems(ctx, &checks, u.steps)
+		if err != nil {
+			checks.Expect(u.hostSteps...)
+			return checks.Fill(r, p.Notes, err), err
+		}
+		r["files"] = slices.Clone(u.changed)
+		r["pr"] = pr.HTMLURL
+		r["number"] = pr.Number
 	}
-	pr, err := u.pr.ReadBackItems(ctx, &checks, u.steps)
-	if err != nil {
-		return checks.Fill(r, nil, err), err
-	}
-	r["files"] = slices.Clone(u.changed)
-	r["pr"] = pr.HTMLURL
-	r["number"] = pr.Number
-	return checks.Fill(r, nil, nil), nil
+	err := u.host.ReadBack(ctx, &checks, r)
+	return checks.Fill(r, p.Notes, err), err
 }
