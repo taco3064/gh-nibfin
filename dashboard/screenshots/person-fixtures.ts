@@ -173,6 +173,15 @@ export const repos = [
   { repo: 'acme/tools', image: image.none, permission: 'ADMIN', issues: [issue('acme/tools', 9, 'Lint rule for imports', [])] },
 ]
 
+// nibfinRepos are the account's repositories on github.com that use Nibfin.
+export const nibfinRepos = [
+  { repo: 'acme/app', url: `${gh}/acme/app`, visibility: 'PRIVATE', permission: 'ADMIN', execution: true },
+  { repo: 'acme/docs', url: `${gh}/acme/docs`, visibility: 'PUBLIC', permission: 'WRITE', execution: false },
+  { repo: 'acme/infra', url: `${gh}/acme/infra`, visibility: 'INTERNAL', permission: 'MAINTAIN', execution: false },
+  { repo: 'acme/platform', url: `${gh}/acme/platform`, visibility: 'PRIVATE', permission: 'WRITE', execution: false },
+  { repo: 'acme/site', url: `${gh}/acme/site`, visibility: 'PUBLIC', permission: 'READ', execution: false },
+]
+
 export function personView(over: Record<string, unknown> = {}) {
   return {
     host: hosts.complete,
@@ -181,7 +190,7 @@ export function personView(over: Record<string, unknown> = {}) {
     user: 'octo-dev',
     repos,
     truncated: false,
-    nibfinRepos: [],
+    nibfinRepos,
     ...over,
   }
 }
