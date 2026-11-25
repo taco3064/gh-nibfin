@@ -14,6 +14,7 @@ import {
   filterGraph,
   isEmptyFilter,
   layoutGraph,
+  nodeKey,
   nodeLabel,
   type Graph,
   type GraphFilter,
@@ -57,6 +58,12 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
     return m
   }, [graph, layout])
   const access: RepoPermission = { permission: data.permission, ...(data.permissionError ? { permissionError: data.permissionError } : {}) }
+  // Issues without a shown edge are split: those whose blockers could not
+  // be read are never listed as having no dependencies.
+  const [unreadAlone, unlinked] = useMemo(() => {
+    const unread = new Set(graph.unread.map((i) => nodeKey(graph.repo, i.number)))
+    return [layout.unlinked.filter((k) => unread.has(k)), layout.unlinked.filter((k) => !unread.has(k))]
+  }, [graph, layout])
   const total = data.issues?.length ?? 0
   const label = (k: string) => nodeLabel(graph, graph.nodes.get(k)!)
 
@@ -115,10 +122,16 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
             </p>
           )}
           {layout.columns.length > 0 && <GraphRegion layout={layout} renderNode={renderNode} />}
-          {layout.unlinked.length > 0 && (
+          {unreadAlone.length > 0 && (
+            <div className="flex flex-col gap-3" data-slot="unread">
+              <h3 className="text-base font-semibold">Issues whose blockers could not be read</h3>
+              <ul className="flex flex-col gap-3">{unreadAlone.map((k) => renderNode(k, false))}</ul>
+            </div>
+          )}
+          {unlinked.length > 0 && (
             <div className="flex flex-col gap-3" data-slot="unlinked">
               <h3 className="text-base font-semibold">Issues without dependencies</h3>
-              <ul className="flex flex-col gap-3">{layout.unlinked.map((k) => renderNode(k, false))}</ul>
+              <ul className="flex flex-col gap-3">{unlinked.map((k) => renderNode(k, false))}</ul>
             </div>
           )}
         </>
