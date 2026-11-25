@@ -366,7 +366,8 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   `afterStart` marks an item whose target or state is only known after the
   machine starts (such as the slots `runner add` chooses). A Secret's states
   are only `set` or `absent`. `notes` are advice and steps only you can take,
-  such as the web-UI setting of `init`; they are not items.
+  such as the web-UI setting of `init`, absent when there are none; they are
+  not items.
 
   A read-only plan returns `{"plan", "result"}` and is read back at once:
   `status`, whose result is the object `status --json` prints, and a
