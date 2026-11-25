@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { api, apiGet, applyPlan, applyStream, openSession, planRequest, readProof, resetSession } from './session'
+import { api, apiGet, applyPlan, applyStream, openSession, planRequest, readProof, resetSession, sendCode } from './session'
 
 vi.stubGlobal('location', { pathname: '/', search: '' })
 
@@ -233,5 +233,71 @@ describe('apiGet', () => {
 
   it('needs a session', async () => {
     expect(await apiGet('/api/commands', reply(200, {}))).toMatchObject({ ok: false, error: { code: 'session_required' } })
+  })
+})
+
+describe('sendCode', () => {
+  async function opened() {
+    await openSession('P', reply(200, { session: 'S1' }))
+  }
+
+  it('is ok on 204 and posts the code once with the session', async () => {
+    await opened()
+    const f = vi.fn(async () => new Response(null, { status: 204 }))
+    expect(await sendCode('ID 1', 'the-code', f)).toEqual({ ok: true })
+    expect(f).toHaveBeenCalledTimes(1)
+    const [path, init] = f.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/plans/ID%201/code')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toMatchObject({ 'X-Nibfin-Session': 'S1' })
+    expect(init.body).toBe('{"code":"the-code"}')
+  })
+
+  it('returns the error body and status on 409', async () => {
+    await opened()
+    const r = await sendCode('ID', 'c', reply(409, { error: { code: 'invalid_argument', message: 'no code requested' } }))
+    expect(r).toEqual({ ok: false, error: { code: 'invalid_argument', message: 'no code requested' }, status: 409 })
+  })
+
+  it('reports a network error', async () => {
+    await opened()
+    const r = await sendCode(
+      'ID',
+      'c',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+    expect(r).toMatchObject({ ok: false, error: { code: 'network_error' } })
+  })
+
+  it('needs a session', async () => {
+    expect(await sendCode('ID', 'c', reply(204, {}))).toMatchObject({ ok: false, error: { code: 'session_required' } })
+  })
+})
+
+describe('applyStream abort', () => {
+  it('passes the signal and an abort mid-stream comes out as unknown', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const ac = new AbortController()
+    const enc = new TextEncoder()
+    const f = vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(enc.encode('{"event":"login_step","step":{"provider":"claude","kind":"code_requested"}}\n'))
+          init?.signal?.addEventListener('abort', () => c.error(init.signal?.reason))
+        },
+      })
+      return new Response(body, { status: 200 })
+    })
+    const seen: string[] = []
+    const p = applyStream('ID', true, (l) => {
+      seen.push(l.event ?? '')
+      ac.abort()
+    }, f, ac.signal)
+    const r = await p
+    expect((f.mock.calls[0] as unknown as [string, RequestInit])[1].signal).toBe(ac.signal)
+    expect(seen).toEqual(['login_step'])
+    expect(r).toMatchObject({ ok: false, unknown: true, error: { code: 'network_error' } })
   })
 })

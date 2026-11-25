@@ -1,8 +1,9 @@
 // Status data types: the parts of `gh nibfin status --json` the Dashboard
 // reads. They mirror schema/status.schema.json ($defs status.PersonView,
 // status.RepoIssues, status.RepoImage, status.LatestImage, status.Issue,
-// status.Blocker, status.Run, op.HostReport, op.RunnersReport,
-// op.RunnerState and op.Error); follow that file when it changes.
+// status.Blocker, status.Run, op.HostReport, op.HostInfo,
+// op.MemoryReport, op.ProviderReport, op.RunnersReport, op.RunnerState and op.Error);
+// follow that file when it changes.
 
 import type { ApiError } from '@/lib/session'
 
@@ -101,15 +102,44 @@ export interface RunnerState {
 
 // RunnersReport is the Runner slots of this host (op.RunnersReport).
 export interface RunnersReport {
+  // repo is the OWNER/REPO the Runners serve, when one is read.
+  repo?: string
   runners: RunnerState[] | null
   error?: ApiError
   githubError?: ApiError
 }
 
+// HostInfo is the runner host (op.HostInfo). machine and vmType are empty
+// on the local Linux host.
+export interface HostInfo {
+  describe?: string
+  machine?: string
+  vmType?: string
+  running?: boolean
+  error?: ApiError
+}
+
+// MemoryReport is the runner host's memory from /proc/meminfo, in kB
+// (op.MemoryReport).
+export interface MemoryReport {
+  totalKB: number
+  availableKB: number
+  error?: ApiError
+}
+
+// ProviderReport is one provider's login on the host (op.ProviderReport).
+export interface ProviderReport {
+  provider: string
+  loggedIn: boolean
+  error?: ApiError
+}
+
 // HostReport is the parts of op.HostReport the Dashboard reads.
 export interface HostReport {
-  host: { running?: boolean; error?: ApiError }
+  host: HostInfo
+  memory: MemoryReport
   runners: RunnersReport
+  providers: ProviderReport[] | null
 }
 
 // PersonView is the result of the status read without a repository

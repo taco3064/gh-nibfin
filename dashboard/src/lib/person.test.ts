@@ -51,7 +51,7 @@ const repo = (name: string, issues: StatusIssue[] | null): RepoIssues => ({
 })
 
 const view = (repos: RepoIssues[] | null): PersonView => ({
-  host: { host: {}, runners: { runners: [] } },
+  host: { host: {}, memory: { totalKB: 0, availableKB: 0 }, runners: { runners: [] }, providers: [] },
   latestImage: {},
   githubHost: 'github.com',
   repos,
