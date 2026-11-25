@@ -37,15 +37,15 @@ export function RunnerView({ data, onFinished }: { data: PersonView; onFinished?
         }
       : undefined
   const has = (api: string) => commands.state === 'loaded' && commandByApi(commands.commands, api) !== undefined
+  // Without a complete Runner the guide leads; the host and the providers
+  // still show below it.
+  const none = hasNoRunner(data.host)
 
   return (
     <>
       <CommandsNote commands={commands} />
-      {hasNoRunner(data.host) ? (
-        <NoRunnerGuide host={data.host} open={has('runner-add') ? opener : undefined} />
-      ) : (
-        <RunnerSections host={data.host} open={opener} has={has} />
-      )}
+      {none && <NoRunnerGuide host={data.host} open={has('runner-add') ? opener : undefined} />}
+      <RunnerSections host={data.host} open={opener} has={has} runnersError={!none} />
       {open && (
         <OperationDialog
           key={open.command.path}
@@ -86,7 +86,19 @@ function Tag({ label, icon: I, slot }: { label: Label; icon?: LucideIcon; slot: 
   )
 }
 
-function RunnerSections({ host, open, has }: { host: HostReport; open?: Opener; has: (api: string) => boolean }) {
+// RunnerSections is the host card and one section per provider. runnersError
+// is false when the guide already shows the runners error.
+function RunnerSections({
+  host,
+  open,
+  has,
+  runnersError,
+}: {
+  host: HostReport
+  open?: Opener
+  has: (api: string) => boolean
+  runnersError: boolean
+}) {
   const groups = slotsByProvider(host)
   const providers: ProviderReport[] = [...(host.providers ?? [])]
   // A provider that only a slot names still gets its section.
@@ -97,7 +109,7 @@ function RunnerSections({ host, open, has }: { host: HostReport; open?: Opener; 
   return (
     <>
       <HostCard host={host} />
-      {error && <Note tone="warning">Runners could not be read: {error.code}: {error.message}</Note>}
+      {runnersError && error && <Note tone="warning">Runners could not be read: {error.code}: {error.message}</Note>}
       {githubError && (
         <Note tone="warning" data-note="github-error">
           GitHub&apos;s Runner list could not be read; the local state is shown. {githubError.code}: {githubError.message}
