@@ -250,6 +250,35 @@ its image, and whether a `Nibfin · ` run succeeded after the init PR merged.
 The init commit is the oldest commit of `nibfin-issue.yml` on the default
 branch that starts with the generated header.
 
+Both views also read, for the Dashboard and `--json`:
+
+- each Issue's native `Blocked by` Issues, open and closed, in any
+  repository (repository, number, title, state, URL), read in batches; the
+  text output shows only the open ones (`blocked by: OWNER/REPO#N Title`);
+- each Issue's Nibfin runs, the runs titled `Nibfin · OWNER/REPO#N · …` in
+  its repository and in the execution repository (the one this host's
+  Runners serve), newest first. Each repository's run list is scanned once,
+  from the oldest listed Issue's creation time; `runsTruncated` marks Issues
+  whose scan reached GitHub's 1,000-run window;
+- the gh account's permission on each listed repository, as GitHub names it
+  (`permission`);
+- the account's repositories (owned, as a collaborator or through an
+  organization) whose default branch has `nibfin-issue.yml` (`nibfinRepos`),
+  each with its URL, visibility, permission and whether it is the execution
+  repository.
+
+Each of these reports its own error (`blockedByError`, `runsError`,
+`permissionError`, `nibfinReposError`), never an empty list in its place.
+Stages are what the labels show; nothing is derived from runs.
+
+[`schema/status.schema.json`](schema/status.schema.json) (JSON Schema draft
+2020-12) describes the `status --json` output of both views, which is also
+the `result` of the Dashboard's `status` route. It is generated from the Go
+types; after changing them, regenerate it with
+`go test ./internal/status -run TestSchemaFile -update` (the tests fail while
+it is stale). A command-level failure prints the `{code, message}` error
+object, which this schema does not describe.
+
 A part that cannot be read (no Podman, a stopped machine, no admin access to
 list runners, an image that cannot be verified, an unreadable repository)
 shows its own `<code>: <message>`, and the rest of the report is still

@@ -1,0 +1,654 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gh nibfin status --json",
+  "description": "The object gh nibfin status --json prints, and the result of the Dashboard's status route: the person view without -R, the repository view with it. Generated from the Go types; regenerate with go test ./internal/status -run TestSchemaFile -update.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/status.PersonView"
+    },
+    {
+      "$ref": "#/$defs/status.RepoView"
+    }
+  ],
+  "$defs": {
+    "op.AutostartReport": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "current": {
+          "type": "boolean"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "kind",
+        "present",
+        "current"
+      ],
+      "additionalProperties": false
+    },
+    "op.Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "op.HostInfo": {
+      "type": "object",
+      "properties": {
+        "describe": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "vmType": {
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "additionalProperties": false
+    },
+    "op.HostReport": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/op.HostInfo"
+        },
+        "memory": {
+          "$ref": "#/$defs/op.MemoryReport"
+        },
+        "runners": {
+          "$ref": "#/$defs/op.RunnersReport"
+        },
+        "providers": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/op.ProviderReport"
+          }
+        },
+        "autostart": {
+          "$ref": "#/$defs/op.AutostartReport"
+        }
+      },
+      "required": [
+        "host",
+        "memory",
+        "runners",
+        "providers",
+        "autostart"
+      ],
+      "additionalProperties": false
+    },
+    "op.MemoryReport": {
+      "type": "object",
+      "properties": {
+        "totalKB": {
+          "type": "integer"
+        },
+        "availableKB": {
+          "type": "integer"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "totalKB",
+        "availableKB"
+      ],
+      "additionalProperties": false
+    },
+    "op.ProviderReport": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "loggedIn": {
+          "type": "boolean"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "provider",
+        "loggedIn"
+      ],
+      "additionalProperties": false
+    },
+    "op.RunnerState": {
+      "type": "object",
+      "properties": {
+        "slot": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "unit": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "listed": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "busy": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slot",
+        "provider",
+        "configured",
+        "unit",
+        "enabled",
+        "active",
+        "listed",
+        "busy"
+      ],
+      "additionalProperties": false
+    },
+    "op.RunnersReport": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "runners": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/op.RunnerState"
+          }
+        },
+        "githubError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "runners"
+      ],
+      "additionalProperties": false
+    },
+    "status.Blocker": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "title",
+        "state",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "status.Issue": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "labels": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "pause": {
+          "type": "boolean"
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "pendingComment": {
+          "type": "string"
+        },
+        "pendingCommentError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "blockedBy": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.Blocker"
+          }
+        },
+        "blockedByError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "runs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.Run"
+          }
+        },
+        "runsError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "runsTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "url",
+        "labels",
+        "pause",
+        "pending",
+        "createdAt",
+        "blockedBy",
+        "runs"
+      ],
+      "additionalProperties": false
+    },
+    "status.LatestImage": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "status.NibfinRepo": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string"
+        },
+        "permission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "execution": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repo",
+        "url",
+        "visibility",
+        "permission",
+        "execution"
+      ],
+      "additionalProperties": false
+    },
+    "status.NibfinRun": {
+      "type": "object",
+      "properties": {
+        "initialized": {
+          "type": "boolean"
+        },
+        "initCommit": {
+          "type": "string"
+        },
+        "initPR": {
+          "$ref": "#/$defs/status.PullRequest"
+        },
+        "mergedAt": {
+          "type": "string"
+        },
+        "succeeded": {
+          "type": "boolean"
+        },
+        "run": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "initialized",
+        "succeeded"
+      ],
+      "additionalProperties": false
+    },
+    "status.PersonView": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/op.HostReport"
+        },
+        "latestImage": {
+          "$ref": "#/$defs/status.LatestImage"
+        },
+        "githubHost": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "userError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "repos": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.RepoIssues"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "issuesError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "nibfinRepos": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.NibfinRepo"
+          }
+        },
+        "nibfinReposError": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "host",
+        "latestImage",
+        "githubHost",
+        "repos",
+        "truncated",
+        "nibfinRepos"
+      ],
+      "additionalProperties": false
+    },
+    "status.PullRequest": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "status.RepoImage": {
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": "string"
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "error": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "ref",
+        "latest"
+      ],
+      "additionalProperties": false
+    },
+    "status.RepoIssues": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "image": {
+          "$ref": "#/$defs/status.RepoImage"
+        },
+        "issues": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.Issue"
+          }
+        },
+        "permission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissionError": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "repo",
+        "image",
+        "issues",
+        "permission"
+      ],
+      "additionalProperties": false
+    },
+    "status.RepoView": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/op.HostReport"
+        },
+        "latestImage": {
+          "$ref": "#/$defs/status.LatestImage"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "image": {
+          "$ref": "#/$defs/status.RepoImage"
+        },
+        "issues": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.Issue"
+          }
+        },
+        "issuesError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "nibfinRun": {
+          "$ref": "#/$defs/status.NibfinRun"
+        },
+        "permission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissionError": {
+          "$ref": "#/$defs/op.Error"
+        },
+        "nibfinRepos": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/status.NibfinRepo"
+          }
+        },
+        "nibfinReposError": {
+          "$ref": "#/$defs/op.Error"
+        }
+      },
+      "required": [
+        "host",
+        "latestImage",
+        "repo",
+        "image",
+        "issues",
+        "nibfinRun",
+        "permission",
+        "nibfinRepos"
+      ],
+      "additionalProperties": false
+    },
+    "status.Run": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "conclusion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "name",
+        "workflow",
+        "status",
+        "conclusion",
+        "createdAt",
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
