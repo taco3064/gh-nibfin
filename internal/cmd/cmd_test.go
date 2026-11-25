@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/taco3064/gh-nibfin/internal/initrepo"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
@@ -46,8 +47,6 @@ func fakeRepo(t *testing.T) *[]string {
 func TestEveryCommandIsNotImplemented(t *testing.T) {
 	fakeRepo(t)
 	for _, args := range [][]string{
-		{"init"},
-		{"init", "-R", "o/r", "--yes"},
 		{"dashboard", "--port", "8080", "--no-browser"},
 	} {
 		code, stdout, stderr := execute(t, args...)
@@ -354,5 +353,26 @@ func TestStatusJSONError(t *testing.T) {
 func TestStatusRunsTheStatusOperation(t *testing.T) {
 	if reflect.ValueOf(ops.Status).Pointer() != reflect.ValueOf(status.New).Pointer() {
 		t.Error("status does not call status.New")
+	}
+}
+
+func TestInitRunsTheInitOperation(t *testing.T) {
+	if reflect.ValueOf(ops.Init).Pointer() != reflect.ValueOf(initrepo.New).Pointer() {
+		t.Error("init does not call initrepo.New")
+	}
+}
+
+func TestWriteResultManual(t *testing.T) {
+	r := op.Result{"pr": "https://github.com/o/r/pull/1", "manual": map[string]string{"url": "https://github.com/o/r/settings", "instruction": "Issues → Creation allowed by: Collaborators only"}}
+	var b bytes.Buffer
+	writeResult(&b, r, false)
+	want := "pr: https://github.com/o/r/pull/1\n\nSet in the web UI: https://github.com/o/r/settings\n  Issues → Creation allowed by: Collaborators only\n"
+	if b.String() != want {
+		t.Errorf("human = %q", b.String())
+	}
+	b.Reset()
+	writeResult(&b, r, true)
+	if !strings.Contains(b.String(), `"manual": {`) || !strings.Contains(b.String(), `"url": "https://github.com/o/r/settings"`) {
+		t.Errorf("json = %s", b.String())
 	}
 }
