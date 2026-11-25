@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { CircleAlert, CircleCheck, Info, LoaderCircle, Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
+import { CircleAlert, CircleCheck, Info, LoaderCircle, type LucideIcon } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { ThemeControl } from '@/components/theme-control'
 import { api, openSession, readProof, type ApiError } from '@/lib/session'
-import { readPreference, storePreference, type ThemePreference } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
 type Connection =
@@ -55,39 +54,6 @@ function useConnection(): Connection {
     }
   }, [])
   return connection
-}
-
-const themeOptions: { value: ThemePreference; label: string; icon: LucideIcon }[] = [
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'system', label: 'System', icon: Monitor },
-]
-
-function ThemeControl() {
-  const [pref, setPref] = useState<ThemePreference>(readPreference)
-  return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      size="sm"
-      aria-label="Theme"
-      value={pref}
-      onValueChange={(v) => {
-        // Radix sends '' when the selected item is pressed again; keep the choice.
-        if (!v) return
-        const next = v as ThemePreference
-        setPref(next)
-        storePreference(next)
-      }}
-    >
-      {themeOptions.map(({ value, label, icon: Icon }) => (
-        <ToggleGroupItem key={value} value={value} className="border-border">
-          <Icon aria-hidden="true" />
-          {label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  )
 }
 
 const tones = {

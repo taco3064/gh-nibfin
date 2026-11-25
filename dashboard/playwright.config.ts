@@ -1,7 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// npm run screenshots builds the UI, then this starts the real Go server,
-// which embeds the fresh build, captures the page and stops the server.
+// npm run screenshots builds the UI and the Issue element harness into
+// .screenshots-dist/, then this starts the real Go server with the
+// dashboardscreenshots tag, which serves that build, captures the pages and
+// stops the server.
 const port = 4790
 
 export default defineConfig({
@@ -18,7 +20,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium' }],
   webServer: {
-    command: `go run . dashboard --no-browser --port ${port}`,
+    command: `go run -tags dashboardscreenshots . dashboard --no-browser --port ${port}`,
     cwd: '..',
     url: `http://127.0.0.1:${port}/`,
     reuseExistingServer: false,
