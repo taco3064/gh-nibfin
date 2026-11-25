@@ -123,7 +123,7 @@ func (r *reader) issueRuns(ctx context.Context, groups []*repoGroup) {
 			byKey[strings.ToLower(repoOf[is]+"#"+strconv.Itoa(is.Number))] = is
 		}
 		for _, run := range runs {
-			if is := byKey[issueOfTitle(run.Name)]; is != nil {
+			if is := byKey[IssueOfTitle(run.Name)]; is != nil {
 				is.Runs = append(is.Runs, run)
 			}
 		}
@@ -152,10 +152,10 @@ func (r *reader) issueRuns(ctx context.Context, groups []*repoGroup) {
 	}
 }
 
-// issueOfTitle returns "owner/repo#n", lower case, from a run title
+// IssueOfTitle returns "owner/repo#n", lower case, from a run title
 // "Nibfin · OWNER/REPO#N · …", or "" for any other title (the @ref route and
 // wake runs among them).
-func issueOfTitle(title string) string {
+func IssueOfTitle(title string) string {
 	t := strings.ToLower(title)
 	rest, ok := strings.CutPrefix(t, strings.ToLower(runPrefix))
 	if !ok {
