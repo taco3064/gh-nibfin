@@ -38,8 +38,18 @@ var (
 
 const issueFile = "nibfin-issue.yml"
 
-// executionOnly are the files only the execution set has.
-var executionOnly = []string{"nibfin-shared-runner.yml", "nibfin-job.yml"}
+// executionOnly are the paths only the execution set has. Any of them on the
+// default branch makes the repository the execution repository.
+var executionOnly = func() []string {
+	peer := templates.Files(templates.Peer)
+	var out []string
+	for _, p := range templates.Files(templates.Execution) {
+		if !slices.Contains(peer, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}()
 
 // New is the entry point of upgrade.
 func New(p op.RepoParams) op.Operation { return &upgrade{p: p} }
@@ -95,8 +105,8 @@ func (u *upgrade) Plan(ctx context.Context) (op.Plan, error) {
 		return plan, op.Errorf(op.CodeNotInitialized, "%s has no %s/%s on %s; run gh nibfin init", u.p.Repo, templates.Dir, issueFile, u.defaultBranch)
 	}
 	u.set = templates.Peer
-	for _, f := range executionOnly {
-		if onDefault[path.Join(templates.Dir, f)] != nil {
+	for _, p := range executionOnly {
+		if onDefault[p] != nil {
 			u.set = templates.Execution
 		}
 	}
@@ -152,10 +162,9 @@ func (u *upgrade) Plan(ctx context.Context) (op.Plan, error) {
 
 // paths are the paths of every file a set may hold, in a fixed order.
 func (u *upgrade) paths() []string {
-	all := append([]string{issueFile}, executionOnly...)
+	all := templates.Files(templates.Execution)
 	out := make([]string, 0, len(all))
-	for _, f := range all {
-		p := path.Join(templates.Dir, f)
+	for _, p := range all {
 		if _, ok := u.files[p]; ok || u.files == nil {
 			out = append(out, p)
 		}

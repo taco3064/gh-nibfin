@@ -27,7 +27,14 @@ const (
 	issueP   = ".github/workflows/nibfin-issue.yml"
 	sharedP  = ".github/workflows/nibfin-shared-runner.yml"
 	jobP     = ".github/workflows/nibfin-job.yml"
+	requestP = ".github/workflows/nibfin-runner-request.yml"
 )
+
+// without returns files less the path p.
+func without(files map[string]string, p string) map[string]string {
+	delete(files, p)
+	return files
+}
 
 type fakePR struct {
 	number int
@@ -360,7 +367,20 @@ func TestFirstRunOpensOnePR(t *testing.T) {
 		"partial execution": {
 			have:    map[string]string{issueP: "old\n", jobP: "old\n"},
 			set:     "execution",
-			actions: []string{"update " + issueP, "add " + sharedP, "update " + jobP, "write branch " + Branch, "open PR " + Branch + " into main"},
+			actions: []string{"update " + issueP, "add " + sharedP, "update " + jobP, "add " + requestP, "write branch " + Branch, "open PR " + Branch + " into main"},
+		},
+		// An execution repository set up before the runner request workflow
+		// gets it in the same PR.
+		"execution without the request workflow": {
+			have:    without(stale(t, templates.Execution), requestP),
+			set:     "execution",
+			actions: []string{"update " + issueP, "update " + jobP, "add " + requestP, "write branch " + Branch, "open PR " + Branch + " into main"},
+		},
+		// The request workflow alone marks the execution set.
+		"request workflow only": {
+			have:    map[string]string{issueP: "old\n", requestP: "old\n"},
+			set:     "execution",
+			actions: []string{"update " + issueP, "add " + sharedP, "add " + jobP, "update " + requestP, "write branch " + Branch, "open PR " + Branch + " into main"},
 		},
 	}
 	for name, c := range cases {

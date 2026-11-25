@@ -51,9 +51,9 @@ const (
 	CodeMachineStopped = "machine_stopped"
 	// CodeScopeMissing is a gh login without a scope the command needs.
 	CodeScopeMissing = "scope_missing"
-	// CodeProviderAmbiguous is an execution repository whose Runners serve
-	// more than one provider while NIBFIN_PROVIDER names none.
-	CodeProviderAmbiguous = "provider_ambiguous"
+	// CodeRunnerRepoNotAdmin is a peer init from a host whose Runners serve a
+	// repository where the current gh login is not admin.
+	CodeRunnerRepoNotAdmin = "runner_repo_not_admin"
 	// CodeListenFailed is a Dashboard server that cannot listen on or keep
 	// serving its port.
 	CodeListenFailed = "listen_failed"

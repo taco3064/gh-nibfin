@@ -42,7 +42,7 @@ func TestUpgradeItemsAndProgress(t *testing.T) {
 			}
 		}
 	}
-	if !reflect.DeepEqual(changing, []string{file, job, branch, workflowpr.PRItem}) || len(p.Steps) != len(changing)+1 {
+	if !reflect.DeepEqual(changing, []string{file, job, branch, workflowpr.PRItem}) || len(p.Steps) != len(changing)+2 {
 		t.Fatalf("changing %q of %+v", changing, p.Steps)
 	}
 	if err := o.Apply(ctx, p); err != nil {
