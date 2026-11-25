@@ -701,7 +701,8 @@ Before the secret is set, pages get `auth_unavailable` and no request is made.
   were created, summed over the three repositories from search totals;
 - `runners`: per repository each runner's GitHub `status` and `busy`, and
   for a busy runner its running job's repository, Issue or ref, and stage,
-  read from the job's run title.
+  read from the job's run title. Runner names are not sent: they include host
+  names.
 
 ### Building the Dashboard UI
 

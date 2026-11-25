@@ -1,6 +1,7 @@
 // The connections and the alarm loop of the one Durable Object. It knows
 // the runtime only through Store, so tests pass fakes.
 
+import { publicData } from './build'
 import type { GitHub } from './github'
 import type { ApiError, LiveEvent } from './messages'
 import { check, minInterval, type CheckResult } from './poller'
@@ -45,7 +46,7 @@ function broadcast(store: Store, events: LiveEvent[]): void {
 }
 
 function snapshot(state: State): LiveEvent[] {
-  return state.data && state.at !== null ? [{ event: 'snapshot', at: iso(state.at), result: state.data }] : []
+  return state.data && state.at !== null ? [{ event: 'snapshot', at: iso(state.at), result: publicData(state.data) }] : []
 }
 
 function errorEvents(errors: ApiError[]): LiveEvent[] {

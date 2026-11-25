@@ -163,9 +163,11 @@ describe('check', () => {
     const { state, errors } = await first(fake)
     expect(errors).toEqual([])
     const rs = state.data?.runners.find((r) => r.repo === core)?.runners ?? []
-    expect(rs[0]).toEqual({ id: 7, name: 'nibfin-1', status: 'online', busy: true, job: { title: 'Nibfin · taco3064/gh-nibfin#355 · review', repo: cli, issue: 355, ref: null, stage: 'review', url: 'https://github.com/j/1' } })
+    expect(rs[0]).toEqual({ id: 7, status: 'online', busy: true, job: { title: 'Nibfin · taco3064/gh-nibfin#355 · review', repo: cli, issue: 355, ref: null, stage: 'review', url: 'https://github.com/j/1' } })
     expect(rs[1].job).toMatchObject({ repo: cli, issue: null, ref: 'nibfin/issue-354', stage: 'route' })
-    expect(rs[2]).toEqual({ id: 9, name: 'nibfin-3', status: 'offline', busy: false, job: null })
+    expect(rs[2]).toEqual({ id: 9, status: 'offline', busy: false, job: null })
+    // Runner names include host names: no built runner carries one.
+    for (const r of rs) expect(Object.keys(r)).toEqual(['id', 'status', 'busy', 'job'])
     expect(rs[3].job).toBeNull()
     // No runner in the other repositories: no in-progress probe there.
     expect(fake.gets()).not.toContain(inProgressPath(cli))

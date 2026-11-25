@@ -49,10 +49,11 @@ export interface RepoRunners {
 }
 
 // Runner carries GitHub's status and busy as they are, and for a busy
-// runner its running Nibfin job, or null when none matched.
+// runner its running Nibfin job, or null when none matched. It carries no
+// runner name: names include host names, and the runner list is not
+// otherwise public.
 export interface Runner {
   id: number
-  name: string
   status: string
   busy: boolean
   job: Job | null
