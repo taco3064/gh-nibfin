@@ -23,14 +23,22 @@ const proof = readProof(location.hash, history)
 // The spec paces the apply stream: window.__holdApply(n) lets only the first
 // n lines through until window.__releaseApply() is called. Route mocks answer
 // a whole body at once, so this is the only way to show the stream mid-way.
+// A later __holdApply(n) lets the stream on to line n. An aborted request
+// errors its paced stream as a real aborted fetch does; window.__aborts
+// counts them.
 const gate = { allowed: Number.POSITIVE_INFINITY, waiters: [] as (() => void)[] }
-const w = window as unknown as { __holdApply: (n: number) => void; __releaseApply: () => void }
+const w = window as unknown as { __holdApply: (n: number) => void; __releaseApply: () => void; __aborts: number }
+const wake = () => {
+  for (const f of gate.waiters.splice(0)) f()
+}
+w.__aborts = 0
 w.__holdApply = (n) => {
   gate.allowed = n
+  wake()
 }
 w.__releaseApply = () => {
   gate.allowed = Number.POSITIVE_INFINITY
-  for (const f of gate.waiters.splice(0)) f()
+  wake()
 }
 
 const paced: typeof fetch = async (input, init) => {
@@ -38,10 +46,21 @@ const paced: typeof fetch = async (input, init) => {
   if (!String(input).endsWith('/apply') || !res.ok || !res.body) return res
   const lines = (await res.text()).split(/(?<=\n)/)
   const enc = new TextEncoder()
+  const signal = init?.signal
   let i = 0
+  let aborted = false
   const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      signal?.addEventListener('abort', () => {
+        aborted = true
+        w.__aborts++
+        c.error(signal.reason)
+        wake()
+      })
+    },
     async pull(c) {
-      while (i >= gate.allowed) await new Promise<void>((r) => gate.waiters.push(r))
+      while (i >= gate.allowed && !aborted) await new Promise<void>((r) => gate.waiters.push(r))
+      if (aborted) return
       if (i < lines.length) c.enqueue(enc.encode(lines[i++]))
       else c.close()
     },
