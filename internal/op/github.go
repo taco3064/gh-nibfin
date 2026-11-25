@@ -22,7 +22,8 @@ import (
 type github interface {
 	// User returns the id and login of the authenticated user.
 	User(ctx context.Context) (ghUser, error)
-	// RepoPermissions returns the gh login's permissions on repo.
+	// RepoPermissions returns the gh login's permissions on repo; none
+	// for a repository the login cannot see.
 	RepoPermissions(ctx context.Context, repo string) (repoPerms, error)
 	// UserKeys lists the verified public SSH keys of login.
 	UserKeys(ctx context.Context, login string) ([]ghKey, error)
