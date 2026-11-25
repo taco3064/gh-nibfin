@@ -81,6 +81,7 @@ jobs:
             target=(--branch "$BRANCH")
           fi
           podman run --rm --userns=keep-id:uid=1000,gid=1000 \
+            --label "io.github.taco3064.nibfin.repo=$REPO" --label "io.github.taco3064.nibfin.issue=$ISSUE" \
             --env NIBFIN_GITHUB_TOKEN --env NIBFIN_RUN_REPO --env NIBFIN_RUN_ID \
             "$IMAGE_REF" nibfin route --repo "$REPO" "${target[@]}"
 
@@ -151,6 +152,7 @@ jobs:
               --cgroup-conf "memory.high=$MEMORY_HIGH")
           fi
           podman run --rm --userns=keep-id:uid=1000,gid=1000 "${limits[@]}" \
+            --label "io.github.taco3064.nibfin.repo=$REPO" --label "io.github.taco3064.nibfin.issue=$ISSUE" \
             --volume "$GITHUB_WORKSPACE/nibfin-workspace:/workspace:Z" \
             --volume "nibfin-home-$PROVIDER:/nibfin/home" \
             --volume nibfin-tools:/nibfin/tools \

@@ -183,6 +183,33 @@ func TestRenderJobMirrorsCore(t *testing.T) {
 	}
 }
 
+// TestRenderJobLabelsContainers checks that each podman run labels its
+// container with the Issue's repository and number, for the Dashboard's
+// podman events watcher.
+func TestRenderJobLabelsContainers(t *testing.T) {
+	job := string(render(t, Execution, params())[".github/workflows/nibfin-job.yml"])
+	const label = `--label "io.github.taco3064.nibfin.repo=$REPO" --label "io.github.taco3064.nibfin.issue=$ISSUE" \`
+	runs := strings.Split(job, "podman run ")[1:]
+	if len(runs) != 2 {
+		t.Fatalf("podman run appears %d times, want 2", len(runs))
+	}
+	for i, run := range runs {
+		// The command ends at its first line without a continuation.
+		lines := strings.Split(run, "\n")
+		var cmd []string
+		for _, l := range lines {
+			l = strings.TrimSpace(l)
+			cmd = append(cmd, l)
+			if !strings.HasSuffix(l, `\`) {
+				break
+			}
+		}
+		if !slices.Contains(cmd, label) {
+			t.Errorf("podman run %d has no line %q:\n%s", i+1, label, strings.Join(cmd, "\n"))
+		}
+	}
+}
+
 func TestRenderSharedRunner(t *testing.T) {
 	b := string(render(t, Execution, params())[".github/workflows/nibfin-shared-runner.yml"])
 	for _, want := range []string{
