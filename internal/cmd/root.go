@@ -20,6 +20,7 @@ import (
 
 	"github.com/taco3064/gh-nibfin/internal/dashboard"
 	"github.com/taco3064/gh-nibfin/internal/initrepo"
+	"github.com/taco3064/gh-nibfin/internal/live"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
@@ -322,6 +323,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 				},
 				SessionOpened: func() { fmt.Fprintln(out, "session opened") },
 				Commands:      commandSchema(c.Root()),
+				Watch:         watchPerson,
 			})
 		},
 	}
@@ -393,6 +395,12 @@ func writeResult(w io.Writer, r op.Result, asJSON bool) {
 		return
 	}
 	writeNotes(w, notes)
+}
+
+// watchPerson keeps the Dashboard's person view current over the same
+// status entry point the CLI calls.
+func watchPerson(ctx context.Context, send func(any)) error {
+	return live.Watch(ctx, live.Deps{Status: ops.Status, ReadIssue: status.ReadIssue}, func(e live.Event) { send(e) })
 }
 
 // dashboardServe runs the Dashboard server. Tests replace it.

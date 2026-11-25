@@ -45,6 +45,9 @@ type Options struct {
 	SessionOpened func()
 	// Commands is the schema GET /api/commands serves.
 	Commands []Command
+	// Watch sends the person view and its changes until ctx ends; GET
+	// /api/live streams what it sends. Nil leaves the route unavailable.
+	Watch func(ctx context.Context, send func(any)) error
 }
 
 // Header names of the session proof and the session.
@@ -99,6 +102,9 @@ type server struct {
 	session  string // "" until the exchange
 	plans    map[string]*storedPlan
 	applying string // the command being applied, or ""
+	// liveCancel ends the running live stream; liveID numbers the streams.
+	liveCancel context.CancelFunc
+	liveID     int
 }
 
 func newServer(o Options, port int) *server {
@@ -119,6 +125,7 @@ func newServer(o Options, port int) *server {
 	s.mux.HandleFunc("POST /api/plans/{id}/apply", s.apply)
 	s.mux.HandleFunc("POST /api/plans/{id}/code", s.code)
 	s.mux.HandleFunc("DELETE /api/plans/{id}", s.drop)
+	s.mux.HandleFunc("GET /api/live", s.live)
 	s.mux.HandleFunc("GET /", s.asset)
 	s.mux.HandleFunc("/", notFound)
 	return s

@@ -134,3 +134,17 @@ func TestDashboardBadPort(t *testing.T) {
 		t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 }
+
+func TestDashboardWiresLiveUpdates(t *testing.T) {
+	old := dashboardServe
+	t.Cleanup(func() { dashboardServe = old })
+	var got dashboard.Options
+	dashboardServe = func(_ context.Context, o dashboard.Options) error { got = o; return nil }
+	var out, errOut lockedBuffer
+	if code := Execute([]string{"dashboard", "--no-browser"}, strings.NewReader(""), &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if got.Watch == nil {
+		t.Error("the Dashboard has no live updates")
+	}
+}
