@@ -274,3 +274,24 @@ test('a cut-off stream says the result is unknown', async ({ page }) => {
   await shot(page, 'issue-unknown-light-1280')
   await expectClean(w)
 })
+
+test('the runs dialog does not animate when reduced motion is requested', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const { w } = await open(page, 1280, 'dark')
+  const { dialog } = await openRuns(page, item(page, 'acme/app', 101))
+  const animations = async () =>
+    page.evaluate(() =>
+      ['[data-slot=dialog-content]', '[data-slot=dialog-overlay]'].map(
+        (s) => getComputedStyle(document.querySelector(s)!).animationName,
+      ),
+    )
+  expect(await animations()).toEqual(['none', 'none'])
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+
+  // With motion allowed, the same dialog keeps its enter animation.
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await openRuns(page, item(page, 'acme/app', 101))
+  expect((await animations()).every((n) => n !== 'none')).toBe(true)
+  await expectClean(w)
+})
