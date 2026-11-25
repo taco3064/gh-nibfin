@@ -62,6 +62,7 @@ type harness struct {
 	mu      sync.Mutex
 	params  []any
 	next    func() *fakeOp // the operation the next entry returns
+	gap     chan struct{}  // passed to the next fake login
 	cancel  context.CancelFunc
 	done    chan error
 }
@@ -92,7 +93,7 @@ func start(t *testing.T) *harness {
 				t.Errorf("login params = %+v", p)
 			}
 			entry(op.LoginParams{Provider: p.Provider})
-			return &loginOp{fakeOp: h.next(), ia: p.Interact}
+			return &loginOp{fakeOp: h.next(), ia: p.Interact, gap: h.gap}
 		},
 		Init:    func(p op.RepoParams) op.Operation { return entry("init:" + p.Repo) },
 		Upgrade: func(p op.RepoParams) op.Operation { return entry("upgrade:" + p.Repo) },
@@ -520,6 +521,9 @@ type loginOp struct {
 	*fakeOp
 	ia   op.Interactor
 	code string
+	// gap, when set, holds Apply between code_requested and Code, as the
+	// real login does while it flushes the step before calling Code.
+	gap chan struct{}
 }
 
 func (l *loginOp) Apply(ctx context.Context, _ op.Plan) error {
@@ -527,6 +531,9 @@ func (l *loginOp) Apply(ctx context.Context, _ op.Plan) error {
 	l.ia.Step(op.LoginStep{Provider: "claude", Kind: op.StepOpenURL, URL: "https://example.com/login"})
 	l.ia.Step(op.LoginStep{Provider: "claude", Kind: op.StepDeviceCode, Code: "ABCD-EFGH"})
 	l.ia.Step(op.LoginStep{Provider: "claude", Kind: op.StepCodeRequested})
+	if l.gap != nil {
+		<-l.gap
+	}
 	code, err := l.ia.Code(ctx)
 	if err != nil {
 		l.ia.Step(op.LoginStep{Provider: "claude", Kind: op.StepFailed, Message: err.Error()})
@@ -592,6 +599,45 @@ func TestLoginStreamsStepsAndTakesTheCode(t *testing.T) {
 	// The other plan stayed stored and applies now.
 	if _, events := h.apply(other.ID, `{}`); len(events) != 1 || events[0].Event != "result" {
 		t.Errorf("other plan: %+v", events)
+	}
+}
+
+// The code may arrive after code_requested is streamed but before the login
+// reaches Code: it is accepted and handed over once Code runs.
+func TestCodePostedBeforeTheLoginWaits(t *testing.T) {
+	h := start(t)
+	h.open()
+	gap := make(chan struct{})
+	h.gap = gap
+	o := &fakeOp{plan: op.Plan{Operation: "login"}}
+	h.next = func() *fakeOp { return o }
+	p := h.plan("login", `{"provider":"claude"}`)
+	resp, err := http.DefaultClient.Do(h.request("POST", "/api/plans/"+p.ID+"/apply", `{}`, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	sc := bufio.NewScanner(resp.Body)
+	for sc.Scan() && !strings.Contains(sc.Text(), op.StepCodeRequested) {
+	}
+	// Apply is held in the gap, so Code has not been called yet.
+	if status, b, _ := h.do("POST", "/api/plans/"+p.ID+"/code", `{"code":"abc-123"}`, nil); status != 204 {
+		t.Fatalf("code in the gap: %d %s", status, b)
+	}
+	if status, b, _ := h.do("POST", "/api/plans/"+p.ID+"/code", `{"code":"again"}`, nil); status != 409 || errCode(t, b) != op.CodeInvalidArgument {
+		t.Errorf("second code: %d %s", status, b)
+	}
+	close(gap)
+	var rest []event
+	for sc.Scan() {
+		var e event
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+			t.Fatal(err)
+		}
+		rest = append(rest, e)
+	}
+	if len(rest) != 2 || rest[0].Step.Kind != op.StepSucceeded || rest[1].Event != "result" {
+		t.Fatalf("after code: %+v", rest)
 	}
 }
 
