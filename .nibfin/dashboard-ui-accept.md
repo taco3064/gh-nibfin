@@ -19,7 +19,11 @@ Shape is a defect:
   horizontal page scroll or push controls off screen at narrow widths.
 - Any meaning shown by color or animation also has a text label, and motion
   respects reduced-motion settings.
+- When the diff changes or adds `--nf-` token values, each text color stays at
+  least 4.5:1 and each non-text color at least 3:1 against the surface it is
+  used on, in both dark and light themes; compute the ratios from the values
+  in the diff.
 - No screenshots or other review output are committed.
 
-Contrast ratios and the look of each view are covered by the Writer's
-screenshot review; do not start a browser for them.
+Judge everything above by reading the diff; do not start a browser. How each
+view looks is the Writer's screenshot review, which you cannot see.
