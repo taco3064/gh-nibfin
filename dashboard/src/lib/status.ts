@@ -1,9 +1,10 @@
 // Status data types: the parts of `gh nibfin status --json` the Dashboard
 // reads. They mirror schema/status.schema.json ($defs status.PersonView,
-// status.RepoIssues, status.RepoImage, status.LatestImage, status.Issue,
-// status.Blocker, status.Run, op.HostReport, op.HostInfo,
-// op.MemoryReport, op.ProviderReport, op.RunnersReport, op.RunnerState and op.Error);
-// follow that file when it changes.
+// status.RepoView, status.RepoIssues, status.RepoImage, status.LatestImage,
+// status.Issue, status.Blocker, status.Run, status.NibfinRepo,
+// status.NibfinRun, status.PullRequest, op.HostReport, op.HostInfo,
+// op.MemoryReport, op.ProviderReport, op.RunnersReport, op.RunnerState and
+// op.Error); follow that file when it changes.
 
 import type { ApiError } from '@/lib/session'
 
@@ -142,6 +143,66 @@ export interface HostReport {
   providers: ProviderReport[] | null
 }
 
+// NibfinRepo is one of the account's repositories whose default branch has
+// nibfin-issue.yml (status.NibfinRepo).
+export interface NibfinRepo {
+  // repo is OWNER/REPO, without the host; the host is the read's.
+  repo: string
+  url: string
+  visibility: string
+  permission: string | null
+  // execution is true for the repository this host's Runners serve.
+  execution: boolean | null
+}
+
+// PullRequest is a pull request reference (status.PullRequest).
+export interface PullRequest {
+  number: number
+  url: string
+}
+
+// NibfinRun says whether a Nibfin run succeeded after the init PR merged
+// (status.NibfinRun).
+export interface NibfinRun {
+  initialized: boolean
+  initCommit?: string
+  initPR?: PullRequest
+  mergedAt?: string
+  succeeded: boolean
+  // run is the URL of the successful run, at its creation time.
+  run?: string
+  at?: string
+  error?: ApiError
+}
+
+// RepoView is the result of the status read of one repository
+// (status.RepoView).
+export interface RepoView extends RepoPermission {
+  host: HostReport
+  latestImage: LatestImage
+  // repo is HOST/OWNER/REPO.
+  repo: string
+  image: RepoImage
+  issues: StatusIssue[] | null
+  issuesError?: ApiError
+  nibfinRun: NibfinRun
+  // nibfinRepos are on the host of repo.
+  nibfinRepos: NibfinRepo[] | null
+  nibfinReposError?: ApiError
+}
+
+// repoHost returns the host of a HOST/OWNER/REPO value, or '' without one.
+export function repoHost(repo: string): string {
+  const parts = repo.split('/')
+  return parts.length >= 3 ? parts[0] : ''
+}
+
+// ownerRepo returns the OWNER/REPO of a HOST/OWNER/REPO value.
+export function ownerRepo(repo: string): string {
+  const parts = repo.split('/')
+  return parts.length >= 3 ? parts.slice(1).join('/') : repo
+}
+
 // PersonView is the result of the status read without a repository
 // (status.PersonView).
 export interface PersonView {
@@ -153,4 +214,7 @@ export interface PersonView {
   repos: RepoIssues[] | null
   truncated: boolean
   issuesError?: ApiError
+  // nibfinRepos are on githubHost.
+  nibfinRepos: NibfinRepo[] | null
+  nibfinReposError?: ApiError
 }
