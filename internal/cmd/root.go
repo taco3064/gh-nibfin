@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/taco3064/gh-nibfin/internal/initrepo"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
@@ -27,7 +28,7 @@ var ops = struct {
 	Status       func(op.RepoParams) op.Operation
 	Pause        func(op.IssuesParams) op.Operation
 	Resume       func(op.IssuesParams) op.Operation
-}{op.RunnerAdd, op.RunnerRemove, op.Login, op.Init, upgrade.New, status.New, op.Pause, op.Resume}
+}{op.RunnerAdd, op.RunnerRemove, op.Login, initrepo.New, upgrade.New, status.New, op.Pause, op.Resume}
 
 var providers = []string{"claude", "codex"}
 
@@ -183,6 +184,19 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		return c
 	}
 	initCmd := repoCmd("init", "Set up Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Init(p) })
+	initCmd.Long = "Set up Nibfin in a repository and open one PR that imports its workflows.\n\n" +
+		"It sets the labels scope, shaped, delivered, pause and pending; pull request creation\n" +
+		"limited to collaborators; approval required for fork PR workflows (all external\n" +
+		"contributors on a public repository, \"Require approval for fork pull request\n" +
+		"workflows\" on a private one); \"Automatically delete head branches\" off; the\n" +
+		"variables NIBFIN_EXECUTION_REPO (and NIBFIN_PROVIDER in the execution repository);\n" +
+		"and the Secret NIBFIN_GITHUB_TOKEN from the current gh login, which needs the\n" +
+		"workflow scope (gh auth refresh -s workflow).\n\n" +
+		"The PR on branch nibfin/init holds the execution set when this host's Runners serve\n" +
+		"the repository, the peer set otherwise. Without Runners it stops and points to\n" +
+		"gh nibfin runner add. An initialized repository gets no PR; use gh nibfin upgrade.\n\n" +
+		"GitHub offers Issues \"Creation allowed by: Collaborators only\" only in the web UI;\n" +
+		"init prints the Settings link to set it there."
 	upgradeCmd := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })
 
 	var statusRepo string
@@ -313,7 +327,16 @@ func writeResult(w io.Writer, r op.Result, asJSON bool) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	var manual map[string]string
 	for _, k := range keys {
+		if m, ok := r[k].(map[string]string); ok && k == "manual" {
+			manual = m
+			continue
+		}
 		fmt.Fprintf(w, "%s: %v\n", k, r[k])
+	}
+	// A step only the user can take stands on its own lines.
+	if manual != nil {
+		fmt.Fprintf(w, "\nSet in the web UI: %s\n  %s\n", manual["url"], manual["instruction"])
 	}
 }
