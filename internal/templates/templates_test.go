@@ -330,3 +330,13 @@ func TestRenderRejects(t *testing.T) {
 		t.Errorf("unknown set: %v", err)
 	}
 }
+
+func TestRenderGeneratedPrefix(t *testing.T) {
+	for _, set := range []Set{Execution, Peer} {
+		for p, b := range render(t, set, params()) {
+			if !bytes.HasPrefix(b, []byte(GeneratedPrefix)) {
+				t.Errorf("%s does not start with %q", p, GeneratedPrefix)
+			}
+		}
+	}
+}

@@ -42,7 +42,8 @@ const (
 // The runner-host scripts. They are constants; only data travels as their
 // arguments.
 const (
-	// probeScript prints what runner add needs to know about the host.
+	// probeScript prints what runner add and status need to know about the
+	// host.
 	probeScript = `u=$(id -u)
 n=$(id -un)
 printf 'arch %s\n' "$(uname -m | tr -cd 'A-Za-z0-9_')"
@@ -52,6 +53,7 @@ if [ -e "/var/lib/systemd/linger/$n" ]; then echo 'linger 1'; else echo 'linger 
 c="/sys/fs/cgroup/user.slice/user-$u.slice/user@$u.service/cgroup.controllers"
 if [ -r "$c" ]; then printf 'cgroup %s\n' "$(tr -cd 'a-z_ ' < "$c")"; else echo 'cgroup ?'; fi
 printf 'memkb %s\n' "$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null | tr -cd '0-9')"
+printf 'memavailkb %s\n' "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null | tr -cd '0-9')"
 `
 	// lingerScript keeps the user's systemd manager running after logout.
 	lingerScript = `loginctl enable-linger`
@@ -110,6 +112,7 @@ type hostProbe struct {
 	cgroupRead          bool
 	controllers         map[string]bool
 	memKB               int64
+	memAvailKB          int64
 }
 
 func (a *runnerAdd) validate() error {
@@ -307,7 +310,12 @@ func (a *runnerAdd) advice(pr hostProbe, runnersOnHost int) []string {
 }
 
 func (a *runnerAdd) probe(ctx context.Context) (hostProbe, error) {
-	out, err := a.script(ctx, "probe the runner host", probeScript, nil, "")
+	return probeHost(ctx, a.host)
+}
+
+// probeHost runs probeScript on h and parses its lines.
+func probeHost(ctx context.Context, h runnerHost) (hostProbe, error) {
+	out, err := runScript(ctx, h, "probe the runner host", probeScript, nil, "")
 	if err != nil {
 		return hostProbe{}, err
 	}
@@ -333,6 +341,8 @@ func (a *runnerAdd) probe(ctx context.Context) (hostProbe, error) {
 			}
 		case "memkb":
 			pr.memKB, _ = strconv.ParseInt(val, 10, 64)
+		case "memavailkb":
+			pr.memAvailKB, _ = strconv.ParseInt(val, 10, 64)
 		default:
 			return pr, Errorf(CodeRunnerInstallFailed, "probe the runner host: unexpected line %q", sc.Text())
 		}
@@ -363,8 +373,12 @@ func (pr hostProbe) runnerName(slot string) (string, error) {
 // runner_install_failed with the script's stderr, or podman_failed when
 // podman machine ssh itself failed. secret is scrubbed from the error.
 func (a *runnerAdd) script(ctx context.Context, what, script string, stdin io.Reader, secret string, args ...string) (string, error) {
+	return runScript(ctx, a.host, what, script, stdin, secret, args...)
+}
+
+func runScript(ctx context.Context, h runnerHost, what, script string, stdin io.Reader, secret string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
-	c := a.host.Shell(ctx, script, args...)
+	c := h.Shell(ctx, script, args...)
 	c.Stdin = stdin
 	c.Stdout = &stdout
 	c.Stderr = &stderr
@@ -379,10 +393,10 @@ func (a *runnerAdd) script(ctx context.Context, what, script string, stdin io.Re
 	if secret != "" {
 		msg = strings.ReplaceAll(msg, secret, "[token]")
 	}
-	if !a.host.Local() && exitCode(err) == 125 {
+	if !h.Local() && exitCode(err) == 125 {
 		return "", Errorf(CodePodmanFailed, "podman machine ssh (%s): %s", what, msg)
 	}
-	return "", Errorf(CodeRunnerInstallFailed, "%s on %s: %s", what, a.host.Describe(), msg)
+	return "", Errorf(CodeRunnerInstallFailed, "%s on %s: %s", what, h.Describe(), msg)
 }
 
 func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
@@ -552,8 +566,9 @@ func unitText(slot, dir string) (string, error) {
 		"WantedBy=default.target\n", nil
 }
 
-// runnerState is one runner of the host as read back.
-type runnerState struct {
+// RunnerState is one runner of the host as read back: its local slot and
+// service joined with what GitHub lists under its name.
+type RunnerState struct {
 	runners.Runner
 	// Listed is true when GitHub lists a runner of this name.
 	Listed bool   `json:"listed"`
@@ -579,18 +594,14 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err != nil {
 		return nil, Wrap(CodeRunnerRepoConflict, err)
 	}
-	listed := map[string]ghRunner{}
+	var list []ghRunner
 	if repo != "" {
 		gh, err := newGitHub(repoHost(repo))
 		if err != nil {
 			return nil, err
 		}
-		list, err := gh.ListRunners(ctx, repo)
-		if err != nil {
+		if list, err = gh.ListRunners(ctx, repo); err != nil {
 			return nil, err
-		}
-		for _, g := range list {
-			listed[strings.ToLower(g.Name)] = g
 		}
 	}
 
@@ -613,14 +624,10 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		}
 	}
 
-	states := []runnerState{}
+	states := joinRunners(inv.Runners, list)
 	var missing []string
-	for _, r := range inv.Runners {
-		st := runnerState{Runner: r}
-		if g, ok := listed[strings.ToLower(r.Name)]; ok && r.Name != "" {
-			st.Listed, st.Status, st.Busy = true, g.Status, g.Busy
-		}
-		states = append(states, st)
+	for _, st := range states {
+		r := st.Runner
 		if planned[r.Slot] {
 			delete(planned, r.Slot)
 			// Offline right after the start is reported, not failed.

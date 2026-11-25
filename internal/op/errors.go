@@ -41,6 +41,9 @@ const (
 	CodeRunnerDownloadFailed = "runner_download_failed"
 	CodeRunnerInstallFailed  = "runner_install_failed"
 	CodeRunnerMissing        = "runner_missing"
+	// CodeMachineStopped marks a status part not read because the podman
+	// machine is stopped; status never starts it.
+	CodeMachineStopped = "machine_stopped"
 )
 
 // Error is an error with a machine-readable cause code.

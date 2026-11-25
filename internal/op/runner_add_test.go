@@ -169,7 +169,10 @@ type fakeRunnerAPI struct {
 	downloads []runnerDownload
 	tokens    int
 	unlisted  bool
-	err       error
+	// listErr fails ListRunners; busy marks runners busy by name.
+	listErr error
+	busy    map[string]bool
+	err     error
 }
 
 func (g *fakeRunnerAPI) User(context.Context) (int64, error) { return g.user, g.err }
@@ -182,13 +185,16 @@ func (g *fakeRunnerAPI) RegistrationToken(_ context.Context, repo string) (strin
 	return g.host.token, nil
 }
 func (g *fakeRunnerAPI) ListRunners(context.Context, string) ([]ghRunner, error) {
+	if g.listErr != nil {
+		return nil, g.listErr
+	}
 	var out []ghRunner
 	if g.unlisted {
 		return out, nil
 	}
 	for _, s := range g.host.slots {
 		if s.configured {
-			out = append(out, ghRunner{Name: s.name, Status: "online"})
+			out = append(out, ghRunner{Name: strings.ToUpper(s.name), Status: "online", Busy: g.busy[s.name]})
 		}
 	}
 	return out, nil
