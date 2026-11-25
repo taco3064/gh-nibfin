@@ -57,6 +57,18 @@ the latest attested main image.
   `NIBFIN_PROVIDER` repository variable is unused and can be deleted.
 - Event text, inputs and repository variables reach every script only as
   quoted environment variables, never as `${{ }}` inside a `run:` script.
+- `nibfin-issue.yml` also runs when a review is submitted on a pull request.
+  A review on a `nibfin/issue-*` pull request from the same repository wakes
+  its Issue by branch when the reviewer has admin or write permission, the same
+  check as for Issue events. Reviews on other branches or from forks are not
+  routed, and edited or dismissed reviews start no run.
+- Required approvals: when a branch protection rule or Ruleset requires
+  approving reviews, Nibfin waits for a member's approval, and submitting
+  that approval wakes the Issue. Nibfin's pull requests are authored by the
+  login `init` stored as `NIBFIN_GITHUB_TOKEN` (the Owner's), and the author
+  cannot approve their own pull request. So in an Owner-only repository
+  that requires approvals, Nibfin's pull requests cannot merge. Existing
+  repositories get the review trigger with `gh nibfin upgrade`.
 
 ### Runner request
 
