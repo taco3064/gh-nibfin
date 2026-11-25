@@ -101,12 +101,15 @@ export interface StreamLine {
 // applyStream applies the stored plan id and reads its NDJSON stream as it
 // arrives, handing every complete line to onEvent. The last result or error
 // line is the outcome; a stream that ends or breaks without one is unknown,
-// and a non-2xx answer before the stream is a failure with its status.
+// and a non-2xx answer before the stream is a failure with its status. An
+// aborted signal ends the request, which cancels the apply on the server;
+// it comes out as unknown.
 export async function applyStream<T>(
   id: string,
   confirm: boolean,
   onEvent: (line: StreamLine) => void,
   fetcher: Fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<StreamOutcome<T>> {
   if (session === null) return failure('session_required', 'no session is open')
   const path = `/api/plans/${encodeURIComponent(id)}/apply`
@@ -116,6 +119,7 @@ export async function applyStream<T>(
       method: 'POST',
       headers: { 'X-Nibfin-Session': session, 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm }),
+      signal,
     })
   } catch (e) {
     return { ...failure('network_error', `the request to ${path} failed: ${String(e)}`), unknown: true }
@@ -179,6 +183,35 @@ export async function applyPlan<T>(id: string, fetcher: Fetch = fetch): Promise<
   // The pause and resume path keeps its outcomes: an error carries no result.
   const { result: _dropped, ...rest } = r
   return rest
+}
+
+// CodeOutcome is the answer of the code route: 204 is ok; otherwise the
+// error body's error with its status, or network_error.
+export type CodeOutcome = { ok: true } | { ok: false; error: ApiError; status?: number }
+
+// sendCode hands a pasted authorization code to the login waiting in the
+// apply of plan id. The code is not kept.
+export async function sendCode(id: string, code: string, fetcher: Fetch = fetch): Promise<CodeOutcome> {
+  if (session === null) return failure('session_required', 'no session is open')
+  const path = `/api/plans/${encodeURIComponent(id)}/code`
+  let res: Response
+  try {
+    res = await fetcher(path, {
+      method: 'POST',
+      headers: { 'X-Nibfin-Session': session, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+  } catch (e) {
+    return failure('network_error', `the request to ${path} failed: ${String(e)}`)
+  }
+  if (res.status === 204) return { ok: true }
+  let error: Partial<ApiError> | undefined
+  try {
+    error = ((await res.json()) as { error?: Partial<ApiError> } | null)?.error
+  } catch {
+    // A body that is not JSON keeps the status as the message.
+  }
+  return { ...failure(error?.code ?? 'error', error?.message ?? `${path} answered ${res.status}`), status: res.status }
 }
 
 // deletePlan drops a stored plan that will not be applied.

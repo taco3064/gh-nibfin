@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  endedSummary,
   fieldsOf,
   initialRun,
   initialValues,
@@ -308,5 +309,37 @@ describe('summary', () => {
       error: { code: 'read_failed', message: 'm' },
     })
     expect(summary(s)?.kind).toBe('notConfirmed')
+  })
+})
+
+describe('initialValues with initial', () => {
+  it('replaces the defaults of known keys only', () => {
+    const v = initialValues(fieldsOf(add), { provider: 'beta', unknown: 'x' })
+    expect(v).toEqual({ provider: 'beta', count: '2' })
+  })
+  it('keeps the defaults without initial', () => {
+    expect(initialValues(fieldsOf(add))).toEqual({ provider: '', count: '2' })
+  })
+})
+
+describe('aborted', () => {
+  const plannedAction: RunAction = {
+    type: 'planned',
+    id: 'P9',
+    plan: { operation: 'login', steps: [{ id: 'login:alpha', action: 'log in', target: 'alpha', noChange: false, afterStart: false }], confirm: false, readOnly: false },
+  }
+  it('ends an applying dialog and is never confirmed', () => {
+    const s = [plannedAction, { type: 'apply' } as RunAction, { type: 'aborted', reason: 'timed out after 15 minutes' } as RunAction].reduce(runReducer, initialRun)
+    expect(s).toMatchObject({ phase: 'finished', ending: 'ended', endedReason: 'timed out after 15 minutes' })
+    expect(s.rows.every((r) => r.check === undefined)).toBe(true)
+    expect(summary(s)).toEqual({ kind: 'ended', text: endedSummary('timed out after 15 minutes') })
+    expect(summary(s)?.text).toContain('The login was ended (timed out after 15 minutes).')
+    // The stream's later unknown outcome does not replace it.
+    const after = runReducer(s, { type: 'applied', outcome: { ok: true, value: { items: [{ id: 'login:alpha', action: 'log in', target: 'alpha', confirmed: true }] } } })
+    expect(after).toBe(s)
+  })
+  it('is ignored outside an apply', () => {
+    const s = runReducer(initialRun, { type: 'aborted', reason: 'x' })
+    expect(s).toBe(initialRun)
   })
 })

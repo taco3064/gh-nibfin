@@ -169,8 +169,12 @@ export function fieldsOf(command: Command): Field[] {
   return out
 }
 
-export function initialValues(fields: readonly Field[]): Values {
-  return Object.fromEntries(fields.map((f) => [f.key, f.initial]))
+// initialValues are the fields' defaults; a value of initial replaces the
+// default of the field with its key, and keys no field has are ignored.
+export function initialValues(fields: readonly Field[], initial?: Values): Values {
+  return Object.fromEntries(
+    fields.map((f) => [f.key, initial && Object.hasOwn(initial, f.key) ? initial[f.key] : f.initial]),
+  )
 }
 
 function splitList(v: string): string[] {
@@ -239,7 +243,8 @@ export interface Row {
 export type Phase = 'inputs' | 'planning' | 'planFailed' | 'preview' | 'applying' | 'finished'
 
 // Ending is how a finished dialog got its outcome.
-export type Ending = 'readOnly' | 'result' | 'error' | 'unknown'
+// ended is an apply the dialog aborted while a login waited.
+export type Ending = 'readOnly' | 'result' | 'error' | 'unknown' | 'ended'
 
 export interface RunState {
   phase: Phase
@@ -252,6 +257,8 @@ export interface RunState {
   refused?: { error: ApiError; status?: number }
   ending?: Ending
   result?: OpResult
+  // endedReason is why the dialog aborted the apply.
+  endedReason?: string
 }
 
 export type RunAction =
@@ -262,6 +269,7 @@ export type RunAction =
   | { type: 'apply' }
   | { type: 'progress'; event: ProgressEvent }
   | { type: 'applied'; outcome: StreamOutcome<OpResult> }
+  | { type: 'aborted'; reason: string }
 
 export const initialRun: RunState = { phase: 'inputs', rows: [] }
 
@@ -315,6 +323,9 @@ export function runReducer(state: RunState, a: RunAction): RunState {
     case 'progress':
       if (state.phase !== 'applying') return state
       return { ...state, rows: withProgress(state.rows, a.event) }
+    case 'aborted':
+      if (state.phase !== 'applying') return state
+      return { ...state, phase: 'finished', ending: 'ended', endedReason: a.reason }
     case 'applied': {
       if (state.phase !== 'applying') return state
       const o = a.outcome
@@ -338,7 +349,7 @@ export function changingCount(plan: Plan): number {
   return (plan.steps ?? []).filter((s) => !s.noChange).length
 }
 
-export type SummaryKind = 'confirmed' | 'notConfirmed' | 'failed' | 'unknown'
+export type SummaryKind = 'confirmed' | 'notConfirmed' | 'failed' | 'unknown' | 'ended'
 
 export interface Summary {
   kind: SummaryKind
@@ -347,11 +358,18 @@ export interface Summary {
 
 export const unknownSummary = 'The outcome is unknown: the apply ended without a result. Read the status again to see what changed.'
 
+// endedSummary is the outcome line of an apply the dialog aborted while a
+// login waited.
+export function endedSummary(reason: string): string {
+  return `The login was ended (${reason}). The server cancels the apply and removes the login container; items done before stay. Read the status to see the login state.`
+}
+
 // summary is the outcome line of a finished dialog. Only a read-back can
 // confirm: a done progress event never counts.
 export function summary(state: RunState): Summary | null {
   if (state.phase !== 'finished') return null
   if (state.ending === 'unknown') return { kind: 'unknown', text: unknownSummary }
+  if (state.ending === 'ended') return { kind: 'ended', text: endedSummary(state.endedReason ?? 'ended') }
   if (!state.result) return { kind: 'failed', text: 'Failed. The items were not read back.' }
   const checks = state.result.items ?? []
   const confirmed = checks.filter((c) => c.confirmed).length

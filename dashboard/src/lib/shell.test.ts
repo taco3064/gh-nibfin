@@ -19,7 +19,9 @@ function slot(over: Partial<RunnerState> = {}): RunnerState {
 
 const host = (runners: RunnerState[] | null, code?: string): HostReport => ({
   host: code ? { error: { code, message: 'm' } } : { running: true },
+  memory: { totalKB: 0, availableKB: 0 },
   runners: code ? { runners, error: { code, message: 'm' } } : { runners },
+  providers: [],
 })
 
 describe('hasNoRunner', () => {
