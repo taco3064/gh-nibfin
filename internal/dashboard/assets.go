@@ -43,6 +43,7 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Security-Policy", appCSP)
+	w.Header().Set("Content-Type", assetTypes[".html"])
 	http.ServeFileFS(w, r, appFiles, "index.html")
 }
 
@@ -55,7 +56,28 @@ func (s *server) asset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Security-Policy", appCSP)
+	if ctype, ok := assetTypes[path.Ext(name)]; ok {
+		w.Header().Set("Content-Type", ctype)
+	}
 	http.ServeFileFS(w, r, appFiles, name)
+}
+
+// assetTypes fixes the content type of the files the build emits. The mime
+// package reads them from the Windows registry, which can differ per machine
+// (for example application/javascript, or text/plain for .css, which the
+// browser then refuses under nosniff). Other extensions fall back to it.
+var assetTypes = map[string]string{
+	".css":   "text/css; charset=utf-8",
+	".html":  "text/html; charset=utf-8",
+	".ico":   "image/x-icon",
+	".js":    "text/javascript; charset=utf-8",
+	".json":  "application/json",
+	".map":   "application/json",
+	".png":   "image/png",
+	".svg":   "image/svg+xml",
+	".txt":   "text/plain; charset=utf-8",
+	".webp":  "image/webp",
+	".woff2": "font/woff2",
 }
 
 func hidden(name string) bool {

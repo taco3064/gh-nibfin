@@ -361,6 +361,7 @@ func TestBuiltPage(t *testing.T) {
 		"assets/x.js":        {Data: []byte("console.log(1)")},
 		"assets/_chunk.js":   {Data: []byte("export {}")},
 		"assets/x.css":       {Data: []byte("body{}")},
+		"assets/x.woff2":     {Data: []byte("wOF2")},
 		"assets/.hidden":     {Data: []byte("secret")},
 		"licenses/OFL.txt":   {Data: []byte("OFL")},
 		"api/commands/x.txt": {Data: []byte("not served")},
@@ -377,13 +378,14 @@ func TestBuiltPage(t *testing.T) {
 
 	// Files need no session and carry the page's policy.
 	for p, ctype := range map[string]string{
-		"/assets/x.js":      "text/javascript",
-		"/assets/_chunk.js": "text/javascript",
-		"/assets/x.css":     "text/css",
-		"/licenses/OFL.txt": "text/plain",
+		"/assets/x.js":      "text/javascript; charset=utf-8",
+		"/assets/_chunk.js": "text/javascript; charset=utf-8",
+		"/assets/x.woff2":   "font/woff2",
+		"/assets/x.css":     "text/css; charset=utf-8",
+		"/licenses/OFL.txt": "text/plain; charset=utf-8",
 	} {
 		status, _, hdr := h.do("GET", p, "", nil)
-		if status != 200 || !strings.HasPrefix(hdr.Get("Content-Type"), ctype) || hdr.Get("Content-Security-Policy") != appCSP {
+		if status != 200 || hdr.Get("Content-Type") != ctype || hdr.Get("Content-Security-Policy") != appCSP {
 			t.Errorf("%s: %d %q CSP %q", p, status, hdr.Get("Content-Type"), hdr.Get("Content-Security-Policy"))
 		}
 		checkCommonHeaders(t, p, hdr)
