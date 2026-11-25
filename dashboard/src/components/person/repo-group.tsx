@@ -1,23 +1,14 @@
-import { CircleAlert, CircleCheck, CircleHelp, CircleMinus, CircleSlash, ExternalLink, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 
 import { IssueItem } from '@/components/issue'
 import { tones } from '@/components/issue/tones'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { Change } from '@/lib/issue'
-import { imageState, type ImageKind } from '@/lib/person'
+import { imageState } from '@/lib/person'
 import type { LatestImage, RepoIssues } from '@/lib/status'
 
-const imageIcons: Record<ImageKind, LucideIcon> = {
-  error: CircleAlert,
-  none: CircleMinus,
-  peer: CircleMinus,
-  noPin: CircleSlash,
-  latest: CircleCheck,
-  notLatest: TriangleAlert,
-  unknown: CircleHelp,
-  otherSet: CircleHelp,
-}
+import { imageIcons } from './image-icons'
 
 export interface RepoGroupProps {
   group: RepoIssues

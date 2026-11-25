@@ -102,6 +102,14 @@ describe('fieldsOf', () => {
   })
 })
 
+describe('initialValues', () => {
+  it('starts at the defaults, or at an initial value for a known key', () => {
+    const f = fieldsOf(add)
+    expect(initialValues(f)).toEqual({ provider: '', count: '2' })
+    expect(initialValues(f, { count: '5', provider: 'beta', unknown: 'x' })).toEqual({ provider: 'beta', count: '5' })
+  })
+})
+
 describe('requestBody', () => {
   it('builds the body with JSON types', () => {
     const f = fieldsOf(remove)
