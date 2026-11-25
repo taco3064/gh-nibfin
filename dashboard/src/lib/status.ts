@@ -1,6 +1,8 @@
 // Status data types: the parts of `gh nibfin status --json` the Dashboard
-// reads. They mirror schema/status.schema.json ($defs status.Issue,
-// status.Blocker, status.Run and op.Error); follow that file when it changes.
+// reads. They mirror schema/status.schema.json ($defs status.PersonView,
+// status.RepoIssues, status.RepoImage, status.LatestImage, status.Issue,
+// status.Blocker, status.Run, op.HostReport, op.RunnersReport,
+// op.RunnerState and op.Error); follow that file when it changes.
 
 import type { ApiError } from '@/lib/session'
 
@@ -56,4 +58,69 @@ export interface StatusIssue {
 export interface RepoPermission {
   permission: string | null
   permissionError?: ApiError
+}
+
+// LatestImage is the newest Nibfin image release (status.LatestImage).
+export interface LatestImage {
+  ref?: string
+  error?: ApiError
+}
+
+// RepoImage is the image a repository's Nibfin workflows pin
+// (status.RepoImage). set is execution, peer or none; it is omitted with an
+// error. latest is null when it could not be compared.
+export interface RepoImage {
+  set?: string
+  ref: string | null
+  latest: boolean | null
+  error?: ApiError
+}
+
+// RepoIssues is one repository of the person view (status.RepoIssues).
+export interface RepoIssues extends RepoPermission {
+  // repo is OWNER/REPO.
+  repo: string
+  image: RepoImage
+  issues: StatusIssue[] | null
+}
+
+// RunnerState is one Runner slot on this host (op.RunnerState).
+export interface RunnerState {
+  slot: string
+  provider: string
+  name?: string
+  repo?: string
+  configured: boolean
+  unit: boolean
+  enabled: boolean
+  active: boolean
+  listed: boolean
+  status?: string
+  busy: boolean
+}
+
+// RunnersReport is the Runner slots of this host (op.RunnersReport).
+export interface RunnersReport {
+  runners: RunnerState[] | null
+  error?: ApiError
+  githubError?: ApiError
+}
+
+// HostReport is the parts of op.HostReport the Dashboard reads.
+export interface HostReport {
+  host: { running?: boolean; error?: ApiError }
+  runners: RunnersReport
+}
+
+// PersonView is the result of the status read without a repository
+// (status.PersonView).
+export interface PersonView {
+  host: HostReport
+  latestImage: LatestImage
+  githubHost: string
+  user?: string
+  userError?: ApiError
+  repos: RepoIssues[] | null
+  truncated: boolean
+  issuesError?: ApiError
 }
