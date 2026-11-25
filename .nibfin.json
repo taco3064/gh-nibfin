@@ -1,3 +1,6 @@
 {
-  "tools": { "go": "1.27.1" }
+  "tools": { "go": "1.27.1" },
+  "skills": {
+    "deliver": { "mode": "extend", "path": ".nibfin/dashboard-ui-delivery.md" }
+  }
 }
