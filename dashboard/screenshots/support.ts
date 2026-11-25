@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, type Page, type Response } from '@playwright/test'
 
+import { commands } from './command-fixtures'
 import { frame, mockLive, type LiveMock } from './live-mock'
 import { personView } from './person-fixtures'
 
@@ -64,6 +65,8 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
           },
         })
   })
+  // The command schema the runner view reads; a spec may route it again.
+  await page.route('**/api/commands', (route) => route.fulfill({ json: { commands } }))
   await page.route('**/api/commands/status/plan', (route) => {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
     w.statusReads++
