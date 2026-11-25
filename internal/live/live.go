@@ -43,6 +43,8 @@ type Deps struct {
 
 // Event is one change Watch sends. Event names it:
 //
+//   - partial: before the stream's first snapshot, the part of the first
+//     full read done so far; Loading names what is still being read.
 //   - snapshot: a full person-view read; Result is the status --json object.
 //   - issue: one re-read Issue of Repo.
 //   - checked: every GitHub check succeeded and found nothing new up to At.
@@ -55,6 +57,7 @@ type Event struct {
 	Event    string        `json:"event"`
 	At       string        `json:"at,omitempty"`
 	Result   op.Result     `json:"result,omitempty"`
+	Loading  []string      `json:"loading,omitempty"`
 	Repo     string        `json:"repo,omitempty"`
 	Issue    *status.Issue `json:"issue,omitempty"`
 	Watching *bool         `json:"watching,omitempty"`
@@ -162,7 +165,7 @@ func Watch(ctx context.Context, d Deps, send func(Event)) error {
 	if host, _ := defaultHost(); host != "" {
 		w.setHost(ctx, host)
 	}
-	if err := w.fullRead(ctx); err != nil {
+	if err := w.fullRead(ctx, true); err != nil {
 		return err
 	}
 	select {
@@ -404,7 +407,7 @@ func (w *watcher) work(ctx context.Context) {
 			}
 		}
 		if full && ctx.Err() == nil {
-			if err := w.fullRead(ctx); err != nil && ctx.Err() == nil {
+			if err := w.fullRead(ctx, false); err != nil && ctx.Err() == nil {
 				w.sendError("status", op.AsError(err))
 			}
 		}
@@ -415,9 +418,15 @@ func (w *watcher) work(ctx context.Context) {
 }
 
 // fullRead reads the person view as the status plan route does, sends it
-// as a snapshot and updates the watch set.
-func (w *watcher) fullRead(ctx context.Context) error {
+// as a snapshot and updates the watch set. The stream's first read also
+// sends each section as it is read, as partial events before the snapshot.
+func (w *watcher) fullRead(ctx context.Context, first bool) error {
 	t := now()
+	if first {
+		ctx = status.WithPartial(ctx, func(res op.Result, loading []string) {
+			w.send(Event{Event: "partial", At: stamp(t), Result: res, Loading: loading})
+		})
+	}
 	o := w.d.Status(op.RepoParams{})
 	p, err := o.Plan(ctx)
 	if err != nil {
