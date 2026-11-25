@@ -119,9 +119,8 @@ func newServer(o Options, port int) *server {
 	s.mux.HandleFunc("POST /api/plans/{id}/apply", s.apply)
 	s.mux.HandleFunc("POST /api/plans/{id}/code", s.code)
 	s.mux.HandleFunc("DELETE /api/plans/{id}", s.drop)
-	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotFound, op.Errorf(op.CodeNotFound, "no route %s %s", r.Method, r.URL.Path))
-	})
+	s.mux.HandleFunc("GET /", s.asset)
+	s.mux.HandleFunc("/", notFound)
 	return s
 }
 
@@ -144,9 +143,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, op.Errorf(op.CodeForbiddenOrigin, "Origin %q is not %s", r.Header.Get("Origin"), s.origin))
 		return
 	}
-	// Only the page and the exchange go without the session; the exchange
-	// checks the proof itself.
-	if r.URL.Path != "/" && r.URL.Path != "/api/session" && !s.hasSession(r) {
+	// Only the API needs the session: the page and its files carry no data,
+	// and the exchange checks the proof itself.
+	if isAPI(r.URL.Path) && r.URL.Path != "/api/session" && !s.hasSession(r) {
 		writeError(w, http.StatusUnauthorized, op.Errorf(op.CodeSessionRequired, "this request needs the %s header from the session exchange", SessionHeader))
 		return
 	}

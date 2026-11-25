@@ -1,0 +1,4 @@
+# npm run build in dashboard/ writes the Dashboard UI here; the Go server
+# embeds it. Only this file is committed, so go build works without Node.
+*
+!.gitignore

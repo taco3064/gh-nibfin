@@ -6,7 +6,8 @@ import (
 	"net/http"
 )
 
-// apiCSP is the Content-Security-Policy of every response but the page.
+// apiCSP is the Content-Security-Policy of every response but the page and
+// its files.
 const apiCSP = "default-src 'none'; frame-ancestors 'none'"
 
 // pageScript exchanges the proof in the URL fragment for the session. It is
@@ -58,8 +59,9 @@ var pageCSP = func() string {
 		"'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 }()
 
-// page serves the placeholder page; it holds no data.
-func (s *server) page(w http.ResponseWriter, _ *http.Request) {
+// placeholder serves the page of a binary built without the Dashboard UI; it
+// holds no data.
+func (s *server) placeholder(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Security-Policy", pageCSP)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(pageHTML))

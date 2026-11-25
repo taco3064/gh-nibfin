@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io/fs"
 	"net"
 	"net/http"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
 )
@@ -307,17 +309,32 @@ func TestHostAndOriginChecks(t *testing.T) {
 	}
 }
 
+// withApp replaces the embedded UI for one test.
+func withApp(t *testing.T, fsys fs.FS) {
+	t.Helper()
+	old := appFiles
+	appFiles = fsys
+	t.Cleanup(func() { appFiles = old })
+}
+
+func checkCommonHeaders(t *testing.T, what string, hdr http.Header) {
+	t.Helper()
+	for k, v := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"} {
+		if hdr.Get(k) != v {
+			t.Errorf("%s: %s = %q", what, k, hdr.Get(k))
+		}
+	}
+}
+
 func TestPage(t *testing.T) {
+	// A binary built without the Dashboard UI serves the placeholder.
+	withApp(t, fstest.MapFS{".gitignore": {Data: []byte("*\n")}})
 	h := start(t)
 	status, body, hdr := h.do("GET", "/", "", nil)
 	if status != 200 || !strings.HasPrefix(hdr.Get("Content-Type"), "text/html") || !strings.Contains(string(body), "not built yet") {
 		t.Fatalf("page: %d %q %s", status, hdr.Get("Content-Type"), body)
 	}
-	for k, v := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"} {
-		if hdr.Get(k) != v {
-			t.Errorf("%s = %q", k, hdr.Get(k))
-		}
-	}
+	checkCommonHeaders(t, "page", hdr)
 	page := string(body)
 	i, j := strings.Index(page, "<script>"), strings.Index(page, "</script>")
 	if i < 0 || j < 0 || strings.Count(page, "<script") != 1 {
@@ -328,10 +345,91 @@ func TestPage(t *testing.T) {
 	if !strings.Contains(csp, "script-src 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'") || !strings.HasPrefix(csp, "default-src 'none'") || !strings.Contains(csp, "connect-src 'self'") {
 		t.Errorf("page CSP %q does not allow exactly the script", csp)
 	}
-	// Other routes need the session and carry the API policy.
-	status, _, hdr = h.do("GET", "/favicon.ico", "", nil)
-	if status != 401 || hdr.Get("Content-Security-Policy") != apiCSP {
-		t.Errorf("favicon: %d, CSP %q", status, hdr.Get("Content-Security-Policy"))
+	// Unknown paths outside the API are not found, with the API policy.
+	for _, p := range []string{"/favicon.ico", "/.gitignore"} {
+		status, body, hdr = h.do("GET", p, "", nil)
+		if status != 404 || errCode(t, body) != op.CodeNotFound || hdr.Get("Content-Security-Policy") != apiCSP {
+			t.Errorf("%s: %d %s, CSP %q", p, status, body, hdr.Get("Content-Security-Policy"))
+		}
+	}
+}
+
+func TestBuiltPage(t *testing.T) {
+	withApp(t, fstest.MapFS{
+		".gitignore":         {Data: []byte("*\n")},
+		"index.html":         {Data: []byte(`<!doctype html><script type="module" src="/assets/x.js"></script>`)},
+		"assets/x.js":        {Data: []byte("console.log(1)")},
+		"assets/_chunk.js":   {Data: []byte("export {}")},
+		"assets/x.css":       {Data: []byte("body{}")},
+		"assets/.hidden":     {Data: []byte("secret")},
+		"licenses/OFL.txt":   {Data: []byte("OFL")},
+		"api/commands/x.txt": {Data: []byte("not served")},
+	})
+	h := start(t)
+	status, body, hdr := h.do("GET", "/", "", nil)
+	if status != 200 || !strings.HasPrefix(hdr.Get("Content-Type"), "text/html") || !strings.Contains(string(body), "/assets/x.js") {
+		t.Fatalf("page: %d %q %s", status, hdr.Get("Content-Type"), body)
+	}
+	if hdr.Get("Content-Security-Policy") != appCSP {
+		t.Errorf("page CSP %q", hdr.Get("Content-Security-Policy"))
+	}
+	checkCommonHeaders(t, "page", hdr)
+
+	// Files need no session and carry the page's policy.
+	for p, ctype := range map[string]string{
+		"/assets/x.js":      "text/javascript",
+		"/assets/_chunk.js": "text/javascript",
+		"/assets/x.css":     "text/css",
+		"/licenses/OFL.txt": "text/plain",
+	} {
+		status, _, hdr := h.do("GET", p, "", nil)
+		if status != 200 || !strings.HasPrefix(hdr.Get("Content-Type"), ctype) || hdr.Get("Content-Security-Policy") != appCSP {
+			t.Errorf("%s: %d %q CSP %q", p, status, hdr.Get("Content-Type"), hdr.Get("Content-Security-Policy"))
+		}
+		checkCommonHeaders(t, p, hdr)
+	}
+
+	// Hidden files, folders, missing files and the index by name are not found.
+	for _, p := range []string{"/.gitignore", "/assets/.hidden", "/assets/", "/assets", "/missing.js", "/favicon.ico"} {
+		status, body, hdr := h.do("GET", p, "", nil)
+		if status != 404 || errCode(t, body) != op.CodeNotFound || hdr.Get("Content-Security-Policy") != apiCSP {
+			t.Errorf("%s: %d %s CSP %q", p, status, body, hdr.Get("Content-Security-Policy"))
+		}
+	}
+	// Files are only read.
+	if status, body, _ := h.do("POST", "/assets/x.js", "", nil); status != 404 || errCode(t, body) != op.CodeNotFound {
+		t.Errorf("POST asset: %d %s", status, body)
+	}
+
+	// The API still needs the session, also under a path a file shares.
+	for _, p := range []string{"/api/commands/x.txt", "/api/commands/status/plan", "/api/nope", "/api"} {
+		for _, m := range []string{"GET", "POST"} {
+			status, body, _ := h.do(m, p, "{}", nil)
+			if status != 401 || errCode(t, body) != op.CodeSessionRequired {
+				t.Errorf("%s %s without session: %d %s", m, p, status, body)
+			}
+		}
+	}
+	h.open()
+	if status, body, _ := h.do("GET", "/api/commands/x.txt", "", nil); status != 404 || strings.Contains(string(body), "not served") {
+		t.Errorf("file under /api/: %d %s", status, body)
+	}
+
+	// Host and Origin are enforced on files too.
+	_, port, _ := net.SplitHostPort(h.host)
+	if status, body, _ := h.do("GET", "/assets/x.js", "", map[string]string{"Host": "localhost:" + port}); status != 403 || errCode(t, body) != op.CodeForbiddenHost {
+		t.Errorf("asset with wrong Host: %d %s", status, body)
+	}
+	if status, body, _ := h.do("GET", "/assets/x.js", "", map[string]string{"Origin": "http://evil.example"}); status != 403 || errCode(t, body) != op.CodeForbiddenOrigin {
+		t.Errorf("asset with wrong Origin: %d %s", status, body)
+	}
+}
+
+// The embedded folder always holds the committed placeholder, so go build
+// works with or without npm run build.
+func TestEmbeddedPlaceholder(t *testing.T) {
+	if _, err := fs.Stat(appFiles, ".gitignore"); err != nil {
+		t.Fatalf("dist/.gitignore is not embedded: %v", err)
 	}
 }
 
