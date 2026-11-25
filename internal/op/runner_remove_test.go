@@ -575,16 +575,28 @@ func (r rewrite) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
+// TestFakeWorker is the body of the fake Runner.Worker processes of
+// TestRemoveScriptsUnderSh: a copy of the test binary that sleeps.
+func TestFakeWorker(t *testing.T) {
+	d, err := time.ParseDuration(os.Getenv("GO_WANT_FAKE_WORKER"))
+	if err != nil {
+		t.Skip("not a fake worker")
+	}
+	time.Sleep(d)
+}
+
 // TestRemoveScriptsUnderSh runs the real stop and purge scripts against a
 // directory tree, with a stand-in for systemctl and short-lived processes
-// run from a copy of sleep named Runner.Worker as the Jobs.
+// run from a copy of the test binary named Runner.Worker as the Jobs. (A
+// copy of sleep is no fake worker where sleep is a multi-call binary that
+// dispatches on its name, as uutils coreutils does.)
 func TestRemoveScriptsUnderSh(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the scripts run on the Linux runner host")
 	}
-	sleep, err := exec.LookPath("sleep")
+	self, err := os.Executable()
 	if err != nil {
-		t.Skip("no sleep")
+		t.Skip("no test binary")
 	}
 	if err := exec.Command("tail", "--pid=1", "--version").Run(); err != nil {
 		t.Skip("no tail --pid")
@@ -609,20 +621,23 @@ func TestRemoveScriptsUnderSh(t *testing.T) {
 	unit := runners.UnitName("claude-1")
 	os.WriteFile(filepath.Join(units, unit), []byte("[Unit]\n"), 0o644)
 	worker := filepath.Join(slot, "bin", "Runner.Worker")
-	b, err := os.ReadFile(sleep)
+	b, err := os.ReadFile(self)
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(worker, b, 0o755)
-	start := func(secs string) {
-		c := exec.Command(worker, secs)
+	if err := os.WriteFile(worker, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := func(secs string) error {
+		c := exec.Command(worker, "-test.run=^TestFakeWorker$")
+		c.Env = append(os.Environ(), "GO_WANT_FAKE_WORKER="+secs+"s")
 		if err := c.Start(); err != nil {
-			t.Error(err)
-			return
+			return err
 		}
 		os.WriteFile(filepath.Join(pids, secs), []byte(strconv.Itoa(c.Process.Pid)), 0o644)
 		// Reaped at once, as the runner listener does.
 		go c.Wait()
+		return nil
 	}
 	stop := func(require string) (int, error) {
 		_, exit, err := hostScript(ctx, h, CodeRunnerRemoveFailed, "stop", stopScript, nil, "", slot, units, unit, require)
@@ -650,13 +665,20 @@ func TestRemoveScriptsUnderSh(t *testing.T) {
 
 	// A worker, and a second one that starts while the first is waited for:
 	// the stop comes only after both ended.
-	start("1")
+	if err := start("1"); err != nil {
+		t.Fatal(err)
+	}
+	second := make(chan error, 1)
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		start("2")
+		second <- start("2")
 	}()
 	began := time.Now()
-	if _, err := stop("1"); err != nil {
+	_, err = stop("1")
+	if err2 := <-second; err2 != nil {
+		t.Fatalf("second worker: %v", err2)
+	}
+	if err != nil {
 		t.Fatalf("stop with workers: %v", err)
 	}
 	if took := time.Since(began); took < 2*time.Second {
