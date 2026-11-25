@@ -21,31 +21,41 @@ Issue's scope and checks.
 - Before designing a new layout or component, look at external references
   (well-designed web pages, the shadcn/ui examples and blocks, or an available
   design skill), learn how they solve the same problem, and adapt the good
-  parts. Name the references used in the handoff.
+  parts. Name the references used in your final result report.
 - Use the Nibfin theme tokens (`--nf-` variables) and fonts for surfaces, text,
   borders and focus; do not hard-code colors. Keep text contrast at least
   4.5:1 and non-text contrast at least 3:1 in both dark and light themes, and
   keep visible keyboard focus.
 
-## Screenshot review before each commit
+## Screenshot review before each visual commit
 
-Every commit that changes how the Dashboard looks needs a browser review first:
+Every commit that changes how the Dashboard looks gets a browser review first.
+The review starts with the first such commit after the project has its
+screenshot script and a Playwright version pinned in `dashboard/`'s lockfile;
+the Issue that creates them reviews its views once they exist.
 
 1. In `dashboard/`, run `npm ci`, then `npx playwright install --only-shell
-   chromium` (the lockfile decides the Playwright version; Core keeps the
-   browser in the tool cache).
+   chromium`. The lockfile decides the Playwright version. Leave
+   `PLAYWRIGHT_BROWSERS_PATH` as Core sets it: the browser lives in Core's
+   tool cache, outside the repository.
 2. Build and serve the candidate, then run the project's screenshot script
    for every changed view at several widths, at least 375, 768, 1280 and
    1920 px, in dark and light themes where the change affects color.
 3. Look at every screenshot. Check layout, wrapping, overflow, alignment,
    contrast, empty, loading and failed states, and the open state of changed
    dialogs and menus. Fix what is wrong and repeat the same captures.
-4. Keep screenshots under `/tmp`, never in the repository, and keep session
-   proofs and tokens out of them.
+4. Write screenshots to an ignored folder in the repository (for example
+   `dashboard/.screenshots/`, with a narrow `.gitignore` entry); never commit
+   them, and keep session proofs and tokens out of them.
 
-In the handoff, list the views, widths and themes reviewed, what was fixed
-after review, and anything not verified. If the browser cannot run, say so
-and do not claim a visual review.
+In your final result report, list the views, widths and themes reviewed, what
+was fixed after review, and anything not verified. If the browser cannot run,
+still commit the change and return done: report the exact error, say that the
+visual review is unverified, and do not claim it.
 
-Run only the frontend checks related to the change. CI runs the full build
-and test suite and is the authoritative result.
+## Checks
+
+The repository's CI does not run the Dashboard's checks yet. Until it does,
+run the Dashboard's build, typecheck, lint and tests (the `dashboard/`
+scripts) before returning done. Once CI runs them, run only the ones related
+to the change and leave the rest to CI.
