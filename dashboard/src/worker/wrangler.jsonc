@@ -1,0 +1,14 @@
+// The public live data Worker. worker.yml deploys it from dashboard/ and
+// sets the GITHUB_TOKEN secret; no secret or variable lives here.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nibfin-live",
+  "main": "index.ts",
+  "compatibility_date": "2026-11-20",
+  "durable_objects": {
+    "bindings": [{ "name": "LIVE", "class_name": "Live" }]
+  },
+  "exports": {
+    "Live": { "type": "durable-object", "storage": "sqlite" }
+  }
+}
