@@ -28,6 +28,7 @@ import {
   type Stage,
 } from '@/lib/issue'
 import { useLoading } from '@/lib/loading-context'
+import { useReadOnly } from '@/lib/repo-source'
 import type { RepoPermission, StatusIssue } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -159,15 +160,18 @@ function Blockers({ issue }: { issue: StatusIssue }) {
 // IssueItem is the shared Dashboard element of one Issue: its stage from
 // labels, its GitHub link, its runs, its open blockers and pause/resume.
 // It renders only from its props; the placing view applies onChanged.
+// Read-only, it offers no selection, pause or resume; its runs dialog and
+// links stay.
 export function IssueItem({ issue, repo, access, selected, onSelectedChange, onChanged, stacked = false, className }: IssueItemProps) {
   const id = useId()
   const loading = useLoading()
+  const readOnly = useReadOnly()
   const change = useChange(onChanged)
   const gate = changeAccess(access, repo)
   // resume clears both pause and pending.
   const action = issue.pause || issue.pending ? 'resume' : 'pause'
   const running = change.running !== null
-  const selectable = selected !== undefined && onSelectedChange !== undefined
+  const selectable = !readOnly && selected !== undefined && onSelectedChange !== undefined
   const ActionIcon = running ? LoaderCircle : action === 'pause' ? CirclePause : CirclePlay
   const label = running
     ? change.running === 'pause'
@@ -206,30 +210,34 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
         <div className={cn('flex shrink-0 flex-col gap-2', !stacked && 'sm:items-end')}>
           <div className="flex flex-wrap items-center gap-2">
             {loading.has('runs') ? <SectionLoading label="Reading runs…" data-loading="runs" /> : <IssueRunsDialog issue={issue} />}
-            <Button
-              variant="outline"
-              size="sm"
-              data-action={action}
-              disabled={!gate.enabled || running}
-              aria-describedby={gate.enabled ? undefined : `${id}-reason`}
-              onClick={() => void change.run(action, [issue.url])}
-            >
-              <ActionIcon aria-hidden="true" className={cn(running && 'motion-safe:animate-spin')} />
-              {label}
-            </Button>
-          </div>
-          <div className={cn('flex max-w-full flex-col gap-2', !stacked && 'sm:max-w-xs')}>
-            {/* While the permission is read, the reason is for screen readers only:
-                every row would repeat it. */}
-            {access.permissionLoading && !gate.enabled ? (
-              <span id={`${id}-reason`} className="sr-only">
-                {gate.reason}
-              </span>
-            ) : (
-              <DisabledReason id={`${id}-reason`} access={gate} />
+            {!readOnly && (
+              <Button
+                variant="outline"
+                size="sm"
+                data-action={action}
+                disabled={!gate.enabled || running}
+                aria-describedby={gate.enabled ? undefined : `${id}-reason`}
+                onClick={() => void change.run(action, [issue.url])}
+              >
+                <ActionIcon aria-hidden="true" className={cn(running && 'motion-safe:animate-spin')} />
+                {label}
+              </Button>
             )}
-            <ChangeMessage outcome={change.outcome} />
           </div>
+          {!readOnly && (
+            <div className={cn('flex max-w-full flex-col gap-2', !stacked && 'sm:max-w-xs')}>
+              {/* While the permission is read, the reason is for screen readers only:
+                  every row would repeat it. */}
+              {access.permissionLoading && !gate.enabled ? (
+                <span id={`${id}-reason`} className="sr-only">
+                  {gate.reason}
+                </span>
+              ) : (
+                <DisabledReason id={`${id}-reason`} access={gate} />
+              )}
+              <ChangeMessage outcome={change.outcome} />
+            </div>
+          )}
         </div>
       </div>
     </article>

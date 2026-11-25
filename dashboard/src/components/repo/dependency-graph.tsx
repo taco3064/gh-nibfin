@@ -24,11 +24,12 @@ import {
 } from '@/lib/graph'
 import { accessOf, stageLabels, type Change, type Stage } from '@/lib/issue'
 import { useLoading } from '@/lib/loading-context'
-import type { RepoPermission, RepoView } from '@/lib/status'
+import type { RepoViewData } from '@/lib/repo-source'
+import type { RepoPermission } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 export interface DependencyGraphProps {
-  data: RepoView
+  data: RepoViewData
   onChanged: (changes: Change[]) => void
 }
 
@@ -61,7 +62,7 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
     for (const e of layout.edges) m.set(e.to, [...(m.get(e.to) ?? []), nodeLabel(graph, graph.nodes.get(e.from)!)])
     return m
   }, [graph, layout])
-  const access: RepoPermission = accessOf(data, loading)
+  const access: RepoPermission = accessOf({ permission: data.permission ?? null, permissionError: data.permissionError }, loading)
   // Issues without a shown edge are split: those whose blockers could not
   // be read are never listed as having no dependencies.
   const [unreadAlone, unlinked] = useMemo(() => {

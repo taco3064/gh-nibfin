@@ -16,7 +16,7 @@ import { cn, formatTime } from '@/lib/utils'
 
 import { tones, type Tone } from './tones'
 
-export const truncatedText = 'Older runs may be missing: GitHub lists at most 1,000 runs per scan.'
+export const truncatedText = 'Older runs may be missing: only the newest runs were read.'
 
 function words(v: string): string {
   return v.replaceAll('_', ' ')

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { filterRepos, type PickerSource } from '@/lib/repo'
+import { useReadOnly } from '@/lib/repo-source'
 import { cn } from '@/lib/utils'
 
 export interface RepoPickerProps {
@@ -25,8 +26,10 @@ export interface RepoPickerProps {
 
 // RepoPicker chooses the repository of the view: a searchable list of the
 // account's repositories that use Nibfin on one host, plus a manual entry
-// for any repository. Once one is open it collapses to its name.
+// for any repository. Once one is open it collapses to its name. Read-only,
+// it lists only the source's repositories, without manual entry.
 export function RepoPicker({ source, listReading, current, onOpen }: RepoPickerProps) {
+  const readOnly = useReadOnly()
   const [expanded, setExpanded] = useState(false)
   if (current !== undefined && !expanded) {
     return (
@@ -66,7 +69,7 @@ export function RepoPicker({ source, listReading, current, onOpen }: RepoPickerP
       </CardHeader>
       <CardContent className="flex flex-col gap-5 px-4 sm:px-5">
         <RepoList source={source} listReading={listReading} current={current} onPick={pick} />
-        <ManualEntry onOpen={pick} />
+        {!readOnly && <ManualEntry onOpen={pick} />}
       </CardContent>
     </Card>
   )
@@ -84,6 +87,7 @@ function RepoList({
   onPick: (repo: string) => void
 }) {
   const id = useId()
+  const readOnly = useReadOnly()
   const [query, setQuery] = useState('')
   if (!source) {
     if (listReading) {
@@ -94,6 +98,7 @@ function RepoList({
         </p>
       )
     }
+    if (readOnly) return <p className="text-sm text-muted-foreground">Waiting for live data…</p>
     return <p className="text-sm text-muted-foreground">The repository list is not read. Open a repository by name below.</p>
   }
   if (source.error) {
@@ -156,7 +161,7 @@ function RepoList({
                   <Badge variant="outline" className={tones.neutral}>
                     {r.visibility.toLowerCase()}
                   </Badge>
-                  <span className="text-muted-foreground">{r.permission ? r.permission.toLowerCase() : 'no permission reported'}</span>
+                  {!readOnly && <span className="text-muted-foreground">{r.permission ? r.permission.toLowerCase() : 'no permission reported'}</span>}
                   {r.execution === true && (
                     <Badge variant="outline" className={tones.info}>
                       <Server aria-hidden="true" />
