@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, type Page, type Response } from '@playwright/test'
 
+import { personView } from './person-fixtures'
+
 // Shared checks of the screenshot specs: the API is mocked with fictional
 // bodies, CSP violations and console errors fail the spec.
 
@@ -13,14 +15,29 @@ export const widths = [375, 768, 1280, 1920]
 export const storageKey = 'nibfin-dashboard-theme'
 export const unauthorized = 'Failed to load resource: the server responded with a status of 401'
 
+// StatusAnswer is one answer of the mocked status read: a result, or an
+// error with its HTTP status.
+export type StatusAnswer = { result: unknown } | { error: { code: string; message: string }; httpStatus: number }
+
 export interface Watch {
   violations: () => Promise<string[]>
   consoleErrors: string[]
+  // statusReads counts the status requests.
+  statusReads: number
+  // status is the answer of the next status reads; a test may replace it.
+  status: StatusAnswer
 }
 
 // prepare mocks the API and records CSP violations and console errors. The
-// first exchange opens a session; later ones find the proof used.
-export async function prepare(page: Page): Promise<Watch> {
+// first exchange opens a session; later ones find the proof used. The status
+// read answers status, by default a fictional person view.
+export async function prepare(page: Page, status: StatusAnswer = { result: personView() }): Promise<Watch> {
+  const w: Watch = {
+    violations: () => page.evaluate(() => (window as unknown as { __csp: string[] }).__csp),
+    consoleErrors: [],
+    statusReads: 0,
+    status,
+  }
   let exchanges = 0
   await page.route('**/api/session', (route) => {
     exchanges++
@@ -38,7 +55,10 @@ export async function prepare(page: Page): Promise<Watch> {
   })
   await page.route('**/api/commands/status/plan', (route) => {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
-    return route.fulfill({ json: { plan: { operation: 'status', readOnly: true }, result: { operation: 'status' } } })
+    w.statusReads++
+    const a = w.status
+    if ('error' in a) return route.fulfill({ status: a.httpStatus, json: { error: a.error } })
+    return route.fulfill({ json: { plan: { operation: 'status', readOnly: true }, result: a.result } })
   })
   await page.addInitScript(() => {
     const w = window as unknown as { __csp: string[] }
@@ -47,15 +67,11 @@ export async function prepare(page: Page): Promise<Watch> {
       w.__csp.push(`${e.violatedDirective} ${e.blockedURI}`)
     })
   })
-  const consoleErrors: string[] = []
   page.on('console', (m) => {
-    if (m.type() === 'error') consoleErrors.push(m.text())
+    if (m.type() === 'error') w.consoleErrors.push(m.text())
   })
-  page.on('pageerror', (e) => consoleErrors.push(e.message))
-  return {
-    consoleErrors,
-    violations: () => page.evaluate(() => (window as unknown as { __csp: string[] }).__csp),
-  }
+  page.on('pageerror', (e) => w.consoleErrors.push(e.message))
+  return w
 }
 
 export async function expectClean(w: Watch, allowed: string[] = []) {

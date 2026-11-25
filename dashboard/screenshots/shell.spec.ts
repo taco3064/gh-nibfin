@@ -1,0 +1,321 @@
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+import { hosts, issueURL, personView } from './person-fixtures'
+import { expectClean, expectNonce, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
+
+// Screenshots and checks of the Dashboard shell (#352): the three views, the
+// landing rule, the freshness indicator, Refresh and the person view. The
+// real Go server serves the page with its CSP; every API answer is a
+// fictional mock.
+
+const themes = ['dark', 'light'] as const
+type Theme = (typeof themes)[number]
+
+interface Ops {
+  plans: { action: string; issues: string[] }[]
+  mode: 'result' | 'cut'
+}
+
+// mockOps answers the pause and resume plans and applies; the status read
+// falls through to prepare's mock.
+async function mockOps(page: Page): Promise<Ops> {
+  const ops: Ops = { plans: [], mode: 'result' }
+  await page.route('**/api/commands/*/plan', async (route) => {
+    const action = new URL(route.request().url()).pathname.split('/')[3]
+    if (action === 'status') return route.fallback()
+    const body = route.request().postDataJSON() as { issues: string[] }
+    ops.plans.push({ action, issues: body.issues })
+    await route.fulfill({ json: { id: `PLAN${ops.plans.length}`, plan: { operation: action, issues: body.issues } } })
+  })
+  await page.route('**/api/plans/**', async (route) => {
+    const id = new URL(route.request().url()).pathname.split('/')[3]
+    if (route.request().method() === 'DELETE') return route.fulfill({ status: 204 })
+    const plan = ops.plans[Number(id.replace('PLAN', '')) - 1]
+    const done = plan.action === 'pause' ? 'paused' : 'resumed'
+    const body =
+      ops.mode === 'result'
+        ? JSON.stringify({ event: 'result', result: Object.fromEntries(plan.issues.map((u) => [u, done])) }) + '\n'
+        : '{"event":"res'
+    await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body })
+  })
+  return ops
+}
+
+interface Opened {
+  w: Watch
+  ops: Ops
+}
+
+async function open(page: Page, width: number, theme: Theme, status?: StatusAnswer, ready = '[data-content] > *'): Promise<Opened> {
+  await page.setViewportSize({ width, height: 900 })
+  await page.addInitScript(([k, t]) => localStorage.setItem(k, t), [storageKey, theme])
+  const w = await prepare(page, status)
+  const ops = await mockOps(page)
+  const res = await page.goto('/#proof=SCREENSHOT')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+  await expectNonce(page, res)
+  await expect(page.locator(ready).first()).toBeVisible()
+  await page.evaluate(() => document.fonts.ready.then(() => undefined))
+  await expectNoPageScroll(page)
+  return { w, ops }
+}
+
+async function expectNoPageScroll(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+}
+
+const tab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Views' }).getByRole('tab', { name })
+const item = (page: Page, repo: string, n: number): Locator => page.locator(`article[data-issue="${issueURL(repo, n)}"]`)
+const freshness = (page: Page) => page.locator('[data-slot=freshness]')
+
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`person landing and the three views at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme)
+      await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
+      await expect(page.locator('[data-view=person]')).toContainText('Open Issues with scope assigned to octo-dev on github.com')
+      await expect(freshness(page)).toHaveAttribute('data-state', 'current')
+      await expect(freshness(page)).toContainText('Current')
+      await shot(page, `shell-person-${theme}-${width}`)
+
+      await tab(page, 'Repositories').click()
+      await expect(page.locator('[data-note=not-built]')).toHaveText('The repository view is not built yet.')
+      await expectNoPageScroll(page)
+      await shot(page, `shell-repo-${theme}-${width}`, false)
+      await tab(page, 'Runners').click()
+      await expect(page.locator('[data-note=not-built]')).toHaveText('The runner view is not built yet.')
+      await expectNoPageScroll(page)
+      expect(w.statusReads).toBe(1)
+      await expectClean(w)
+    })
+
+    test(`runner landing without a complete Runner at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme, { result: personView({ host: hosts.incomplete }) })
+      await expect(tab(page, 'Runners')).toHaveAttribute('aria-selected', 'true')
+      const guide = page.locator('[data-guide=no-runner]')
+      await expect(guide).toContainText('This host has no Runner yet')
+      const steps = guide.getByRole('listitem')
+      await expect(steps).toHaveCount(2)
+      await expect(steps.nth(0)).toContainText('gh nibfin runner add <claude|codex>')
+      await expect(steps.nth(1)).toContainText('gh nibfin init')
+      await expect(guide.locator('[data-slot=note]')).toHaveCount(0)
+      await shot(page, `shell-runner-guide-${theme}-${width}`)
+      await expectClean(w)
+    })
+  }
+}
+
+for (const width of widths) {
+  test(`runner landing without Podman at ${width}px`, async ({ page }) => {
+    const { w } = await open(page, width, 'dark', { result: personView({ host: hosts.podmanMissing }) })
+    await expect(tab(page, 'Runners')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('[data-guide=no-runner]')).toContainText('podman_missing: podman is not installed')
+    await shot(page, `shell-runner-podman-missing-dark-${width}`)
+    await expectClean(w)
+  })
+}
+
+test('a stopped machine lands on the person view', async ({ page }) => {
+  const { w } = await open(page, 1280, 'dark', { result: personView({ host: hosts.machineStopped }) })
+  await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
+  await tab(page, 'Runners').click()
+  await expect(page.locator('[data-note=not-built]')).toHaveText('The runner view is not built yet.')
+  await expectClean(w)
+})
+
+test('the views switch by keyboard', async ({ page }) => {
+  const { w } = await open(page, 1280, 'light')
+  await tab(page, 'Person').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(tab(page, 'Repositories')).toBeFocused()
+  await expect(tab(page, 'Repositories')).toHaveAttribute('aria-selected', 'true')
+  await shot(page, 'shell-tab-focus-light-1280', false)
+  await page.keyboard.press('ArrowRight')
+  await expect(tab(page, 'Runners')).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('ArrowRight')
+  await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('[data-view=person]')).toBeVisible()
+  await expectClean(w)
+})
+
+test('every image state is a labelled badge', async ({ page }) => {
+  const { w } = await open(page, 1280, 'dark')
+  const image = (repo: string) => page.locator(`[data-repo="${repo}"] [data-image]`)
+  await expect(image('acme/app')).toHaveText('Latest image')
+  await expect(image('acme/docs')).toHaveText('Not the latest image')
+  await expect(image('acme/infra')).toHaveText('Latest image unknowngithub_error: latest release of acme/nibfin: rate limited')
+  await expect(image('acme/legacy')).toHaveText('Image could not be readgithub_error: reading .github/workflows of acme/legacy: HTTP 502')
+  await expect(image('acme/mobile')).toHaveText('No valid image pin')
+  await expect(image('acme/site')).toHaveText('Peer set: no image pin')
+  await expect(image('acme/tools')).toHaveText('No Nibfin workflows')
+  await expect(page.locator('[data-repo="acme/app"] [data-slot=count]')).toHaveText('3 Issues')
+  await expect(page.locator('[data-repo="acme/docs"] [data-slot=count]')).toHaveText('1 Issue')
+  const link = page.getByRole('link', { name: 'acme/app (opens GitHub)', exact: true })
+  await expect(link).toHaveAttribute('href', 'https://github.com/acme/app')
+  await expect(link).toHaveAttribute('rel', 'noreferrer')
+  await expect(link).toHaveAttribute('target', '_blank')
+  await expectClean(w)
+})
+
+for (const theme of themes) {
+  for (const width of [375, 1280]) {
+    test(`person view errors and notes at ${width}px, ${theme}`, async ({ page }) => {
+      const issuesError = { code: 'github_error', message: 'search of Issues: secondary rate limit' }
+      const data = personView({
+        user: undefined,
+        userError: { code: 'github_error', message: 'reading the current account: HTTP 401' },
+        issuesError,
+        truncated: true,
+        repos: personView().repos.slice(0, 2),
+      })
+      const { w } = await open(page, width, theme, { result: data })
+      const view = page.locator('[data-view=person]')
+      await expect(view).toContainText('Account could not be read: github_error: reading the current account: HTTP 401')
+      await expect(view.locator('[data-note=issues-error]')).toHaveText(
+        'Issue search failed: github_error: search of Issues: secondary rate limit',
+      )
+      await expect(view.locator('[data-note=truncated]')).toContainText('at most 1,000 Issues')
+      await expect(view.locator('[data-repo]')).toHaveCount(2)
+      await expect(view.locator('[data-empty]')).toHaveCount(0)
+      await shot(page, `shell-person-errors-${theme}-${width}`)
+
+      // A failed search with nothing read is not an empty search.
+      w.status = { result: personView({ repos: [], issuesError }) }
+      await page.getByRole('button', { name: 'Refresh' }).click()
+      await expect(view.locator('[data-repo]')).toHaveCount(0)
+      await expect(view.locator('[data-empty]')).toHaveCount(0)
+
+      w.status = { result: personView({ repos: [] }) }
+      await page.getByRole('button', { name: 'Refresh' }).click()
+      await expect(view.locator('[data-empty]')).toHaveText('No open Issues with scope are assigned to you.')
+      await expectNoPageScroll(page)
+      await shot(page, `shell-person-empty-${theme}-${width}`)
+      await expectClean(w)
+    })
+  }
+}
+
+test('the data turns stale after five minutes without a read', async ({ page }) => {
+  await page.clock.install()
+  const { w } = await open(page, 1280, 'dark')
+  await expect(freshness(page)).toHaveAttribute('data-state', 'current')
+  await page.clock.fastForward('04:58')
+  await expect(freshness(page)).toHaveAttribute('data-state', 'current')
+  await page.clock.fastForward('00:03')
+  await expect(freshness(page)).toHaveAttribute('data-state', 'stale')
+  await expect(freshness(page)).toContainText('Stale: over 5 minutes old')
+  await shot(page, 'shell-stale-dark-1280', false)
+  await page.setViewportSize({ width: 375, height: 900 })
+  await expectNoPageScroll(page)
+  await shot(page, 'shell-stale-dark-375', false)
+  expect(w.statusReads).toBe(1)
+
+  // Refresh reads again, shows the new time and is current again.
+  const before = await freshness(page).locator('time').getAttribute('datetime')
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect(freshness(page)).toHaveAttribute('data-state', 'current')
+  await expect(freshness(page).locator('time')).not.toHaveAttribute('datetime', before!)
+  expect(w.statusReads).toBe(2)
+  await expectClean(w)
+})
+
+test('refresh shows its progress and a failure keeps the data', async ({ page }) => {
+  const { w } = await open(page, 1280, 'light')
+  await tab(page, 'Repositories').click()
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/api/commands/status/plan', async (route) => {
+    await held
+    await route.fallback()
+  })
+  w.status = { error: { code: 'github_error', message: 'search of Issues: HTTP 502' }, httpStatus: 502 }
+  const before = await freshness(page).locator('time').getAttribute('datetime')
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect(page.getByRole('button', { name: 'Refreshing…' })).toBeDisabled()
+  await shot(page, 'shell-refreshing-light-1280', false)
+  release()
+  await expect(page.locator('[data-note=read-error]')).toHaveText('Refresh failed: github_error: search of Issues: HTTP 502')
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled()
+  // The view stays, and so do the data and its time.
+  await expect(tab(page, 'Repositories')).toHaveAttribute('aria-selected', 'true')
+  await expect(freshness(page).locator('time')).toHaveAttribute('datetime', before!)
+  await tab(page, 'Person').click()
+  await expect(page.locator('[data-repo]')).toHaveCount(7)
+  await shot(page, 'shell-refresh-failed-light-1280', false)
+  expect(w.statusReads).toBe(2)
+  await expectClean(w, ['Failed to load resource: the server responded with a status of 502'])
+})
+
+for (const theme of themes) {
+  test(`a failed first read offers Refresh, ${theme}`, async ({ page }) => {
+    const { w } = await open(
+      page,
+      375,
+      theme,
+      { error: { code: 'github_error', message: 'reading the host: HTTP 500' }, httpStatus: 500 },
+      '[data-note=read-error]',
+    )
+    await expect(page.locator('[data-note=read-error]')).toHaveText('Status could not be read: github_error: reading the host: HTTP 500')
+    await expect(freshness(page)).toHaveText('No data yet')
+    await shot(page, `shell-first-read-failed-${theme}-375`)
+    w.status = { result: personView() }
+    await page.getByRole('button', { name: 'Refresh' }).click()
+    await expect(page.locator('[data-note=read-error]')).toHaveCount(0)
+    await expect(page.locator('[data-repo]')).toHaveCount(7)
+    await expect(freshness(page)).toHaveAttribute('data-state', 'current')
+    await expectClean(w, ['Failed to load resource: the server responded with a status of 500'])
+  })
+}
+
+test('the loading state before the first read', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 })
+  const w = await prepare(page)
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/api/commands/status/plan', async (route) => {
+    await held
+    await route.fallback()
+  })
+  await page.goto('/#proof=SCREENSHOT')
+  await expect(page.locator('[role=status][data-state=reading]')).toHaveText('Reading status…')
+  await expect(freshness(page)).toHaveText('No data yet')
+  await expect(page.getByRole('button', { name: 'Refreshing…' })).toBeDisabled()
+  await shot(page, 'shell-loading-dark-768', false)
+  release()
+  await expect(page.locator('[data-view=person]')).toBeVisible()
+  await expectClean(w)
+})
+
+test('a pause updates the badge and an unknown result reads again', async ({ page }) => {
+  const { w, ops } = await open(page, 1280, 'dark')
+  const it = item(page, 'acme/app', 101)
+  await it.getByRole('button', { name: 'Pause' }).click()
+  await expect(it.locator('[data-badge=paused]')).toHaveText('Paused')
+  expect(ops.plans).toEqual([{ action: 'pause', issues: [issueURL('acme/app', 101)] }])
+  expect(w.statusReads).toBe(1)
+
+  ops.mode = 'cut'
+  await it.getByRole('button', { name: 'Resume' }).click()
+  await expect.poll(() => w.statusReads).toBe(2)
+  // The re-read shows the labels as the data has them.
+  await expect(it.locator('[data-badge=paused]')).toHaveCount(0)
+  await expectClean(w)
+})
+
+test('a bulk resume across two repositories is one operation', async ({ page }) => {
+  const { w, ops } = await open(page, 375, 'light')
+  await expect(page.getByRole('region', { name: 'Selected Issues' })).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Select #102' }).check()
+  await page.getByRole('checkbox', { name: 'Select #12' }).check()
+  const bulk = page.getByRole('region', { name: 'Selected Issues' })
+  await expect(bulk.locator('[data-slot=selected-count]')).toHaveText('2 selected')
+  await expectNoPageScroll(page)
+  await shot(page, 'shell-bulk-light-375', false)
+  await bulk.getByRole('button', { name: 'Resume selected' }).click()
+  await expect(bulk.getByRole('status')).toHaveText('Confirmed: resumed 2.')
+  expect(ops.plans).toEqual([{ action: 'resume', issues: [issueURL('acme/app', 102), issueURL('acme/infra', 12)] }])
+  await expect(item(page, 'acme/app', 102).locator('[data-badge=paused]')).toHaveCount(0)
+  await expect(item(page, 'acme/infra', 12).locator('[data-badge=paused]')).toHaveCount(0)
+  expect(w.statusReads).toBe(1)
+  await expectClean(w)
+})
