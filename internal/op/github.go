@@ -20,8 +20,17 @@ import (
 // are HOST/OWNER/REPO; the client acts with the current gh login of that
 // host, whose token only go-gh handles.
 type github interface {
-	// User returns the id of the authenticated user.
-	User(ctx context.Context) (int64, error)
+	// User returns the id and login of the authenticated user.
+	User(ctx context.Context) (ghUser, error)
+	// RepoPermissions returns the gh login's permissions on repo.
+	RepoPermissions(ctx context.Context, repo string) (repoPerms, error)
+	// UserKeys lists the verified public SSH keys of login.
+	UserKeys(ctx context.Context, login string) ([]ghKey, error)
+	CreateIssue(ctx context.Context, repo, title, body string) (ghIssue, error)
+	Issue(ctx context.Context, repo string, number int) (ghIssue, error)
+	IssueComments(ctx context.Context, repo string, number int) ([]ghComment, error)
+	CreateComment(ctx context.Context, repo string, number int, body string) error
+	CloseIssue(ctx context.Context, repo string, number int, reason string) error
 	Downloads(ctx context.Context, repo string) ([]runnerDownload, error)
 	// RegistrationToken returns a token that registers one runner; it
 	// expires after an hour.
@@ -110,17 +119,15 @@ func apiError(what string, err error) error {
 	return Errorf(CodeGitHubAPIFailed, "%s: %v", what, err)
 }
 
-func (g restGitHub) User(ctx context.Context) (int64, error) {
-	var u struct {
-		ID int64 `json:"id"`
-	}
+func (g restGitHub) User(ctx context.Context) (ghUser, error) {
+	var u ghUser
 	if err := g.c.DoWithContext(ctx, http.MethodGet, "user", nil, &u); err != nil {
-		return 0, apiError("get the gh login's user", err)
+		return u, apiError("get the gh login's user", err)
 	}
-	if u.ID == 0 {
-		return 0, Errorf(CodeGitHubAPIFailed, "get the gh login's user: no user id")
+	if u.ID == 0 || u.Login == "" {
+		return u, Errorf(CodeGitHubAPIFailed, "get the gh login's user: no user id or login")
 	}
-	return u.ID, nil
+	return u, nil
 }
 
 func (g restGitHub) Downloads(ctx context.Context, repo string) ([]runnerDownload, error) {

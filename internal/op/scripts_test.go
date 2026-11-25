@@ -196,3 +196,60 @@ func TestUnitDirScriptUnderSh(t *testing.T) {
 		t.Errorf("refused: %v", err)
 	}
 }
+
+// TestEnvScriptsUnderSh runs envScript and envCheckScript with the local sh.
+func TestEnvScriptsUnderSh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the scripts run on the Linux runner host")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	a := &runnerAdd{host: &localHost{}, prov: provider{name: "claude"}}
+	ctx := context.Background()
+	slot := t.TempDir()
+	env := filepath.Join(slot, ".env")
+	check := func() bool {
+		ok, err := a.envHasProvider(ctx, slot)
+		if err != nil {
+			t.Fatalf("check: %v", err)
+		}
+		return ok
+	}
+	set := func(p string) {
+		if _, err := a.script(ctx, "env", envScript, nil, "", slot, p); err != nil {
+			t.Fatalf("env %s: %v", p, err)
+		}
+	}
+	// No .env yet (config.sh not run): created with the one line.
+	if check() {
+		t.Error("check passed without .env")
+	}
+	set("claude")
+	if b, _ := os.ReadFile(env); string(b) != "NIBFIN_PROVIDER=claude\n" {
+		t.Errorf(".env = %q", b)
+	}
+	// env.sh's lines are kept, an old provider line is replaced, and a
+	// missing final newline is not lost.
+	os.WriteFile(env, []byte("LANG=C.UTF-8\nNIBFIN_PROVIDER=codex\nJAVA_HOME=/j"), 0o644)
+	if check() {
+		t.Error("check passed for codex")
+	}
+	set("claude")
+	set("claude")
+	if b, _ := os.ReadFile(env); string(b) != "LANG=C.UTF-8\nJAVA_HOME=/j\nNIBFIN_PROVIDER=claude\n" {
+		t.Errorf(".env = %q", b)
+	}
+	if !check() {
+		t.Error("check failed")
+	}
+	if _, err := os.Stat(env + ".tmp"); err == nil {
+		t.Error("tmp .env left")
+	}
+	// Only the provider line: grep finds nothing else, which is no error.
+	os.WriteFile(env, []byte("NIBFIN_PROVIDER=codex\n"), 0o644)
+	set("claude")
+	if b, _ := os.ReadFile(env); string(b) != "NIBFIN_PROVIDER=claude\n" {
+		t.Errorf(".env = %q", b)
+	}
+}
