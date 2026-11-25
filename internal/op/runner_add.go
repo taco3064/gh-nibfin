@@ -358,15 +358,23 @@ func (a *runnerAdd) load(ctx context.Context) (*addEnv, error) {
 	return &addEnv{inv: inv, probe: pr, repo: repo, gh: gh, user: user, admin: perms.Admin}, nil
 }
 
-// labels are the custom labels of a new runner: nibfin-<user id>, which the
-// stage Job of an Issue assigned to the user runs on, and for an admin also
-// nibfin, which routing runs on. GitHub's default labels, self-hosted
-// among them, stay: --no-default-labels is never passed.
-func (a *runnerAdd) labels(env *addEnv) string {
-	if env.admin {
-		return fmt.Sprintf("nibfin,nibfin-%d", env.user.ID)
+// runnerLabels are the custom labels of a runner: nibfin-<user id>, which
+// the stage Job of an Issue assigned to the user runs on, and for an admin
+// also nibfin, which routing runs on. runner add registers them; upgrade
+// sets them on the runners already registered.
+func runnerLabels(admin bool, userID int64) []string {
+	own := fmt.Sprintf("nibfin-%d", userID)
+	if admin {
+		return []string{nibfinLabel, own}
 	}
-	return fmt.Sprintf("nibfin-%d", env.user.ID)
+	return []string{own}
+}
+
+// labels are the custom labels of a new runner (runnerLabels). GitHub's
+// default labels, self-hosted among them, stay: --no-default-labels is never
+// passed.
+func (a *runnerAdd) labels(env *addEnv) string {
+	return strings.Join(runnerLabels(env.admin, env.user.ID), ",")
 }
 
 // needFiles reports whether a slot needs the archive and a registration
