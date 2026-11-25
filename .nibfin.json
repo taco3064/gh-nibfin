@@ -1,7 +1,6 @@
 {
   "tools": { "go": "1.27.1" },
   "skills": {
-    "deliver": { "mode": "extend", "path": ".nibfin/dashboard-ui-delivery.md" },
-    "accept": { "mode": "extend", "path": ".nibfin/dashboard-ui-accept.md" }
+    "deliver": { "mode": "extend", "path": ".nibfin/dashboard-ui-delivery.md" }
   }
 }

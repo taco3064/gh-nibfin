@@ -54,9 +54,11 @@ the Issue that creates them reviews its views once they exist.
    them, and keep session proofs and tokens out of them.
 
 In your final result report, list the views, widths and themes reviewed, what
-was fixed after review, and anything not verified. If the browser cannot run,
-still commit the change and return done: report the exact error, say that the
-visual review is unverified, and do not claim it.
+was fixed after review, and anything not verified. If the review cannot run
+(the browser cannot start, or the screenshot script cannot build and serve the
+candidate on its own), judge the views from the code, still commit the change
+and return done: report the exact error, say that the visual review is
+unverified, and do not claim it.
 
 ## Checks
 
