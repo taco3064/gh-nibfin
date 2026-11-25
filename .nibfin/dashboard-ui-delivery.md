@@ -68,7 +68,14 @@ is unverified, and do not claim it.
 
 ## Checks
 
-The repository's CI does not run the Dashboard's checks yet. Until it does,
-run the Dashboard's build, typecheck, lint and tests (the `dashboard/`
-scripts) before returning done. Once CI runs them, run only the ones related
-to the change and leave the rest to CI.
+Once `dashboard/package-lock.json` exists, the repository's CI runs the
+Dashboard checks on Linux and Windows with Node 24, in `dashboard/` and before
+the Go steps: `npm ci`, then `npm run build`, `npm run typecheck`,
+`npm run lint` and `npm test`.
+
+These four scripts are the contract `dashboard/` keeps: the Issue that creates
+`dashboard/` adds all four, and later changes keep them. `npm test` runs unit
+tests only and starts no browser; the screenshot review above is separate.
+
+Run only the checks related to your change and leave the rest to CI, whose
+failure comes back to you as a `ci-failure` fix.
