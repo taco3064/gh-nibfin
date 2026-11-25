@@ -720,3 +720,46 @@ placeholder `NIBFIN_CSP_NONCE` (Vite's `html.cspNonce`); the server replaces it
 in `meta[property=csp-nonce]` and in the policy's `style-src`, and the client
 passes it to the scroll lock of shadcn/ui dialogs, menus and selects through
 `get-nonce`'s `setNonce`.
+
+### Host smoke test
+
+`internal/op/hostsmoke_test.go` runs the host side of `runner add` and
+`runner remove` against a real Windows `podman machine`: the real host layer
+(`podman machine ssh`), slot layout, scripts and systemd units. Only what
+needs GitHub is replaced: the registration token is a fixed test value, the
+runner download is a stand-in archive (`internal/op/testdata/hostsmoke/`)
+served from a local TLS server and checked by its sha256 as usual, and the
+GitHub runner list holds one runner per configured slot. Its `config.sh`
+writes `.runner`, `.env` and `.path` without storing the token, and its
+`runsvc.sh` keeps running until the unit stops it. No GitHub call is made and
+no gh login is read; the provider login is left out, so `runner add`'s
+read-back may report only `not_logged_in`.
+
+It checks, by reading the VM itself: `runner add claude --count 2` creates both
+slots, their `.runner`, `.env` and unit files, enables and starts the units,
+leaves the unit directory and `default.target.wants` owned by the VM user and
+podman machine's own `podman-mnt-bindings.service` as it was, and registers the
+autostart task; a rerun after an interrupted add (a configured slot without its
+unit) completes that slot without a new download, registration token or
+configure, and adds no slot; `runner remove claude` stops and removes both units
+and slots and, with the last Runner, the autostart task.
+
+The build tag `hostsmoke` keeps it out of `go test ./...` and `go vet ./...`.
+Run it on Windows with WSL 2 and Podman, after `podman machine init --now`,
+with the machine's name from `podman machine list`:
+
+```powershell
+$env:NIBFIN_HOST_SMOKE = "podman-machine-default"
+go vet -tags hostsmoke ./internal/op
+go test -tags hostsmoke -run TestHostSmoke -count=1 -v -timeout 20m ./internal/op
+```
+
+Without `NIBFIN_HOST_SMOKE`, or on another OS, it is skipped. Before it writes
+anything it fails unless that name is the running default WSL machine, the
+machine has no Runner slot of any provider, and the `Nibfin podman machine`
+task does not exist, so it never touches a host with real Runners. A failed run
+removes the slots it added. Afterwards the host keeps what `runner remove`
+keeps: the `[wsl2] vmIdleTimeout=-1` key in `%UserProfile%\.wslconfig`, linger
+in the VM and the `nibfin-tools` volume. A CI job for it (a separate
+maintenance change) installs WSL 2 and Podman, runs `podman machine init
+--now`, then the two commands above.

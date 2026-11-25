@@ -1,3 +1,5 @@
 # The embedded workflow templates render byte-identical output on every OS,
 # so a Windows checkout must not convert them to CRLF.
 /internal/templates/workflows/*.yml text eol=lf
+# The host smoke test's stand-in runner scripts run in the Linux VM.
+/internal/op/testdata/hostsmoke/** text eol=lf
