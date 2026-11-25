@@ -117,7 +117,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			return run(c, ops.RunnerAdd(p), addYes)
 		},
 	}
-	runnerAdd.Flags().IntVar(&addCount, "count", 2, "number of Runners")
+	runnerAdd.Flags().IntVar(&addCount, "count", op.DefaultRunnerAddCount, "number of Runners")
 	addYesFlag(runnerAdd, &addYes)
 
 	var removeCount int
