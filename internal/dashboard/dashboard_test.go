@@ -67,7 +67,10 @@ type harness struct {
 	done    chan error
 }
 
-func start(t *testing.T) *harness {
+func start(t *testing.T) *harness { t.Helper(); return startWith(t, nil) }
+
+// startWith starts the server with commands as its schema.
+func startWith(t *testing.T, commands []Command) *harness {
 	t.Helper()
 	h := &harness{t: t, done: make(chan error, 1)}
 	h.next = func() *fakeOp { return &fakeOp{plan: op.Plan{Operation: "x"}} }
@@ -106,7 +109,8 @@ func start(t *testing.T) *harness {
 	h.cancel = cancel
 	go func() {
 		h.done <- Serve(ctx, Options{
-			Ops: ops,
+			Ops:      ops,
+			Commands: commands,
 			ResolveRepo: func(v string) (string, error) {
 				if v == "bad" {
 					return "", op.Errorf(op.CodeInvalidRepo, "invalid repository %q", v)
@@ -760,5 +764,61 @@ func TestServeUsesTheGivenPort(t *testing.T) {
 	err = Serve(ctx, Options{Port: port, Ready: func(u string) { got = u; cancel() }})
 	if err != nil || !strings.HasPrefix(got, "http://127.0.0.1:"+strconv.Itoa(port)+"/#proof=") {
 		t.Errorf("Serve = %v, URL %q", err, got)
+	}
+}
+
+func TestCommandsServesTheSchema(t *testing.T) {
+	want := []Command{{
+		Path:  "runner add",
+		API:   "runner-add",
+		Short: "Add Runners",
+		Flags: []Flag{{Name: "count", Type: "int", Default: "2", Usage: "number of Runners", Param: "count"}},
+		Args:  []Arg{{Name: "provider", Required: true, Allowed: []string{"claude", "codex"}, Param: "provider"}},
+	}}
+	h := startWith(t, want)
+
+	// Without the session it is refused like every other /api/ route.
+	status, body, _ := h.do("GET", "/api/commands", "", nil)
+	if status != http.StatusUnauthorized || errCode(t, body) != op.CodeSessionRequired {
+		t.Fatalf("no session: %d %s", status, body)
+	}
+	status, body, _ = h.do("GET", "/api/commands", "", map[string]string{"Host": "localhost:1"})
+	if status != http.StatusForbidden || errCode(t, body) != op.CodeForbiddenHost {
+		t.Errorf("wrong Host: %d %s", status, body)
+	}
+
+	h.open()
+	status, body, _ = h.do("GET", "/api/commands", "", map[string]string{"Origin": "http://evil.example"})
+	if status != http.StatusForbidden || errCode(t, body) != op.CodeForbiddenOrigin {
+		t.Errorf("wrong Origin: %d %s", status, body)
+	}
+	status, body, hdr := h.do("GET", "/api/commands", "", nil)
+	if status != http.StatusOK || hdr.Get("Content-Type") != "application/json" {
+		t.Fatalf("GET: %d %s %v", status, body, hdr)
+	}
+	var got struct{ Commands []Command }
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Commands, want) {
+		t.Errorf("commands = %+v, want %+v", got.Commands, want)
+	}
+	if !strings.Contains(string(body), `"path":"runner add"`) || !strings.Contains(string(body), `"repeatable":false`) {
+		t.Errorf("body %s", body)
+	}
+
+	// The route only reads.
+	status, body, _ = h.do("POST", "/api/commands", "", nil)
+	if status != http.StatusNotFound || errCode(t, body) != op.CodeNotFound {
+		t.Errorf("POST: %d %s", status, body)
+	}
+}
+
+func TestCommandsWithoutASchemaIsAnEmptyList(t *testing.T) {
+	h := start(t)
+	h.open()
+	status, body, _ := h.do("GET", "/api/commands", "", nil)
+	if status != http.StatusOK || strings.TrimSpace(string(body)) != `{"commands":[]}` {
+		t.Errorf("%d %s", status, body)
 	}
 }
