@@ -44,18 +44,6 @@ func fakeRepo(t *testing.T) *[]string {
 	return seen
 }
 
-func TestEveryCommandIsNotImplemented(t *testing.T) {
-	fakeRepo(t)
-	for _, args := range [][]string{
-		{"dashboard", "--port", "8080", "--no-browser"},
-	} {
-		code, stdout, stderr := execute(t, args...)
-		if code == 0 || !strings.HasPrefix(stderr, "not_implemented: ") || stdout != "" {
-			t.Errorf("%v: exit %d, stdout %q, stderr %q", args, code, stdout, stderr)
-		}
-	}
-}
-
 func TestBadInvocationsFail(t *testing.T) {
 	fakeRepo(t)
 	for _, args := range [][]string{
