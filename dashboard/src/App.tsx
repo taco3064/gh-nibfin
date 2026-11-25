@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FolderGit2, LoaderCircle, RefreshCw, Server, UserRound, type LucideIcon } from 'lucide-react'
 
+import wordmark from '@/assets/nibfin-logo.png?no-inline'
 import { PersonView } from '@/components/person/person-view'
 import { RepoView } from '@/components/repo/repo-view'
 import { ConnectionCard } from '@/components/shell/connection-card'
@@ -42,7 +43,14 @@ export function App() {
     <Tabs value={view} onValueChange={(v) => setPicked(v as View)} className="flex min-h-svh flex-col gap-0">
       <header className="border-b border-border-subtle bg-card">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 sm:px-6">
-          <h1 className="text-lg font-semibold tracking-tight">gh nibfin dashboard</h1>
+          <h1 className="flex items-center">
+            {/* Wide screens show the wordmark, narrow ones the "b" mark. Both are
+                same-origin files: ?no-inline keeps the wordmark out of a data:
+                URL, which the Dashboard CSP (img-src 'self') would block. */}
+            <img src={wordmark} alt="Nibfin" width={287} height={96} className="hidden h-8 w-auto sm:block" />
+            <img src="/apple-touch-icon.png" alt="Nibfin" width={180} height={180} className="h-8 w-auto sm:hidden" />
+            <span className="sr-only"> dashboard</span>
+          </h1>
           <ThemeControl />
           {connected && (
             <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-3">
