@@ -16,8 +16,10 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/status"
 )
 
 // fakeOp records its calls; apply, when set, runs as its Apply.
@@ -28,7 +30,9 @@ type fakeOp struct {
 	apply func(ctx context.Context) error
 	// readBack, when set, runs as its ReadBack.
 	readBack func() (op.Result, error)
-	calls    []string
+	// readCtx, when set, runs as its ReadBack with the context.
+	readCtx func(context.Context) (op.Result, error)
+	calls   []string
 }
 
 func (f *fakeOp) record(c string) {
@@ -51,8 +55,11 @@ func (f *fakeOp) Apply(ctx context.Context, _ op.Plan) error {
 	}
 	return nil
 }
-func (f *fakeOp) ReadBack(context.Context, op.Plan) (op.Result, error) {
+func (f *fakeOp) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	f.record("readback")
+	if f.readCtx != nil {
+		return f.readCtx(ctx)
+	}
 	if f.readBack != nil {
 		return f.readBack()
 	}
@@ -544,6 +551,7 @@ func (h *harness) plan(command, body string) planned {
 
 type event struct {
 	Event    string
+	Loading  []string
 	Progress op.Event
 	Step     op.LoginStep
 	Result   op.Result
@@ -1069,5 +1077,126 @@ func TestReadOnlyChangingPlanReadBackFailure(t *testing.T) {
 	status, b, _ = h.do("POST", "/api/commands/upgrade/plan", `{"repo":"o/r"}`, nil)
 	if status != 422 || errCode(t, b) != op.CodeRepoUnreadable || !strings.Contains(string(b), `"plan"`) || strings.Contains(string(b), `"result"`) {
 		t.Errorf("%d %s", status, b)
+	}
+}
+
+// read posts body to the status stream route and returns its lines.
+func (h *harness) read(body string, headers map[string]string) (int, string, []event) {
+	h.t.Helper()
+	resp, err := http.DefaultClient.Do(h.request("POST", "/api/commands/status/read", body, headers))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var events []event
+	sc := bufio.NewScanner(resp.Body)
+	for sc.Scan() {
+		var e event
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+			h.t.Fatalf("line %q: %v", sc.Text(), err)
+		}
+		events = append(events, e)
+	}
+	return resp.StatusCode, resp.Header.Get("Content-Type"), events
+}
+
+func TestStatusReadStreams(t *testing.T) {
+	h := start(t)
+	// The session and origin checks of every /api/ route.
+	if status, b, _ := h.do("POST", "/api/commands/status/read", `{"repo":"o/r"}`, nil); status != 401 || errCode(t, b) != op.CodeSessionRequired {
+		t.Errorf("without session: %d %s", status, b)
+	}
+	h.open()
+	if status, b, _ := h.do("POST", "/api/commands/status/read", `{"repo":"o/r"}`, map[string]string{"Origin": "http://evil.example"}); status != 403 || errCode(t, b) != op.CodeForbiddenOrigin {
+		t.Errorf("wrong origin: %d %s", status, b)
+	}
+	if status, b, _ := h.do("GET", "/api/commands/status/read", "", nil); status != 405 && status != 404 {
+		t.Errorf("GET: %d %s", status, b)
+	}
+
+	o := &fakeOp{plan: op.Plan{Operation: "status", ReadOnly: true}}
+	o.readCtx = func(ctx context.Context) (op.Result, error) {
+		sink := status.PartialFrom(ctx)
+		if sink == nil {
+			t.Error("no partial sink")
+			return op.Result{}, nil
+		}
+		sink(op.Result{"issues": json.RawMessage(`[]`)}, []string{"host", "image"})
+		sink(op.Result{"issues": json.RawMessage(`[]`), "image": json.RawMessage(`{}`)}, []string{"host"})
+		return op.Result{"repo": "github.com/o/r"}, nil
+	}
+	h.next = func() *fakeOp { return o }
+	code, ctype, events := h.read(`{"repo":"o/r"}`, nil)
+	if code != 200 || ctype != "application/x-ndjson" || len(events) != 3 {
+		t.Fatalf("read: %d %q %+v", code, ctype, events)
+	}
+	if e := events[0]; e.Event != "partial" || !reflect.DeepEqual(e.Loading, []string{"host", "image"}) || e.Result["issues"] == nil {
+		t.Errorf("first = %+v", e)
+	}
+	if e := events[1]; e.Event != "partial" || !reflect.DeepEqual(e.Loading, []string{"host"}) {
+		t.Errorf("second = %+v", e)
+	}
+	if e := events[2]; e.Event != "result" || e.Result["repo"] != "github.com/o/r" {
+		t.Errorf("last = %+v", e)
+	}
+	h.mu.Lock()
+	last := h.params[len(h.params)-1]
+	h.mu.Unlock()
+	if last != "status:github.com/o/r" {
+		t.Errorf("params = %v", last)
+	}
+
+	// A failed read: the error with what was read.
+	o.readCtx = func(context.Context) (op.Result, error) {
+		return op.Result{"repo": "x"}, op.Errorf(op.CodeAuthUnavailable, "no gh login")
+	}
+	if _, _, events := h.read(`{"repo":"o/r"}`, nil); len(events) != 1 || events[0].Event != "error" ||
+		events[0].Error.Code != op.CodeAuthUnavailable || events[0].Result["repo"] != "x" {
+		t.Errorf("failed read = %+v", events)
+	}
+
+	// A bad repository or body fails before the stream.
+	if status, b, _ := h.do("POST", "/api/commands/status/read", `{"repo":"bad"}`, nil); status != 422 || errCode(t, b) != op.CodeInvalidRepo {
+		t.Errorf("bad repo: %d %s", status, b)
+	}
+	if status, b, _ := h.do("POST", "/api/commands/status/read", `{"nope":1}`, nil); status != 400 || errCode(t, b) != op.CodeInvalidArgument {
+		t.Errorf("bad body: %d %s", status, b)
+	}
+	// A plan that is not a read is never applied.
+	w := &fakeOp{plan: op.Plan{Operation: "init"}}
+	h.next = func() *fakeOp { return w }
+	if status, b, _ := h.do("POST", "/api/commands/status/read", `{}`, nil); status != 422 || !reflect.DeepEqual(w.Calls(), []string{"plan"}) {
+		t.Errorf("not a read: %d %s %v", status, b, w.Calls())
+	}
+}
+
+func TestStatusReadCancels(t *testing.T) {
+	h := start(t)
+	h.open()
+	ended := make(chan error, 1)
+	o := &fakeOp{plan: op.Plan{Operation: "status", ReadOnly: true}}
+	o.readCtx = func(ctx context.Context) (op.Result, error) {
+		status.PartialFrom(ctx)(op.Result{}, []string{"host"})
+		<-ctx.Done()
+		ended <- ctx.Err()
+		return nil, ctx.Err()
+	}
+	h.next = func() *fakeOp { return o }
+	resp, err := http.DefaultClient.Do(h.request("POST", "/api/commands/status/read", `{"repo":"o/r"}`, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(resp.Body)
+	if !sc.Scan() || !strings.Contains(sc.Text(), `"partial"`) {
+		t.Fatalf("first line %q", sc.Text())
+	}
+	resp.Body.Close()
+	select {
+	case err := <-ended:
+		if err == nil {
+			t.Error("read not cancelled")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing the request did not cancel the read")
 	}
 }
