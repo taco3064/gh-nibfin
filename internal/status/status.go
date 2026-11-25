@@ -93,6 +93,58 @@ type Issue struct {
 	// the pending label last.
 	PendingComment      string    `json:"pendingComment,omitempty"`
 	PendingCommentError *op.Error `json:"pendingCommentError,omitempty"`
+	// CreatedAt is GitHub's creation time of the Issue (RFC 3339).
+	CreatedAt string `json:"createdAt"`
+	// BlockedBy is every Issue GitHub lists as blocking this one, open and
+	// closed, in any repository; BlockedByError says why it is not known.
+	BlockedBy      []Blocker `json:"blockedBy"`
+	BlockedByError *op.Error `json:"blockedByError,omitempty"`
+	// Runs are the Nibfin runs of the Issue in its own repository and in the
+	// execution repository, newest first. RunsError says why some may be
+	// missing; RunsTruncated that a scan reached GitHub's 1,000-run window.
+	Runs          []Run     `json:"runs"`
+	RunsError     *op.Error `json:"runsError,omitempty"`
+	RunsTruncated bool      `json:"runsTruncated,omitempty"`
+}
+
+// Blocker is an Issue that blocks another, as GitHub lists it.
+type Blocker struct {
+	// Repo is OWNER/REPO.
+	Repo   string `json:"repo"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	// State is GitHub's OPEN or CLOSED.
+	State string `json:"state"`
+	URL   string `json:"url"`
+}
+
+// Run is one Actions run whose title names an Issue.
+type Run struct {
+	// Repo is the OWNER/REPO the run belongs to.
+	Repo string `json:"repo"`
+	// Name is the run's title (display_title).
+	Name string `json:"name"`
+	// Workflow is the workflow's name.
+	Workflow   string  `json:"workflow"`
+	Status     string  `json:"status"`
+	Conclusion *string `json:"conclusion"`
+	CreatedAt  string  `json:"createdAt"`
+	URL        string  `json:"url"`
+}
+
+// NibfinRepo is a repository of the current gh account whose default branch
+// has nibfin-issue.yml.
+type NibfinRepo struct {
+	// Repo is OWNER/REPO.
+	Repo       string `json:"repo"`
+	URL        string `json:"url"`
+	Visibility string `json:"visibility"`
+	// Permission is the account's permission as GitHub names it; nil when
+	// GitHub returns none.
+	Permission *string `json:"permission"`
+	// Execution is whether this host's Runners serve the repository; nil
+	// when the host's runners cannot be read.
+	Execution *bool `json:"execution"`
 }
 
 // RepoIssues is one repository of the person view.
@@ -100,6 +152,10 @@ type RepoIssues struct {
 	Repo   string    `json:"repo"`
 	Image  RepoImage `json:"image"`
 	Issues []Issue   `json:"issues"`
+	// Permission is the current gh account's permission on Repo as GitHub
+	// names it; nil when unknown, with PermissionError when unread.
+	Permission      *string   `json:"permission"`
+	PermissionError *op.Error `json:"permissionError,omitempty"`
 }
 
 // PullRequest names a pull request.
@@ -151,9 +207,10 @@ func (s *status) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	if err != nil {
 		return nil, op.Errorf(op.CodeAuthUnavailable, "cannot use the gh login for %s: %v", host, err)
 	}
-	r := &reader{c: c, host: host}
+	hr := readHost(ctx)
+	r := &reader{c: c, host: host, runners: hr.Runners}
 
-	res := op.Result{"host": readHost(ctx)}
+	res := op.Result{"host": hr}
 	latest := LatestImage{}
 	if ref, err := latestImage(ctx); err != nil {
 		latest.Error = op.AsError(err)
@@ -174,8 +231,15 @@ func (s *status) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 		res["issuesError"] = op.AsError(err)
 		issues = []Issue{}
 	}
+	g := newGroup(repo, issues)
+	r.links(ctx, []*repoGroup{g})
 	res["issues"] = issues
 	res["nibfinRun"] = r.nibfinRun(ctx, repo)
+	res["permission"] = g.perm
+	if g.permErr != nil {
+		res["permissionError"] = g.permErr
+	}
+	r.setNibfinRepos(ctx, res)
 	return res, nil
 }
 
@@ -192,6 +256,12 @@ func splitRepo(repo string) ([]string, error) {
 type reader struct {
 	c    templates.RESTClient
 	host string
+	// runners is this host's runner report, the source of the execution
+	// repository.
+	runners op.RunnersReport
+
+	gql    graphQL
+	gqlErr *op.Error
 }
 
 func (r *reader) get(ctx context.Context, p string, out any) error {
@@ -230,10 +300,12 @@ type issueJSON struct {
 	RepositoryURL string      `json:"repository_url"`
 	Labels        []labelJSON `json:"labels"`
 	PullRequest   *struct{}   `json:"pull_request"`
+	CreatedAt     string      `json:"created_at"`
 }
 
 func toIssue(j issueJSON) Issue {
-	is := Issue{Number: j.Number, Title: j.Title, URL: j.HTMLURL, Labels: []string{}}
+	is := Issue{Number: j.Number, Title: j.Title, URL: j.HTMLURL, Labels: []string{},
+		CreatedAt: j.CreatedAt, BlockedBy: []Blocker{}, Runs: []Run{}}
 	for _, l := range j.Labels {
 		is.Labels = append(is.Labels, l.Name)
 		is.Pause = is.Pause || strings.EqualFold(l.Name, "pause")
@@ -273,13 +345,20 @@ func (r *reader) person(ctx context.Context, res op.Result, latest LatestImage) 
 		names = append(names, n)
 	}
 	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
+	var groups []*repoGroup
 	for _, n := range names {
 		issues := byRepo[n]
 		sort.SliceStable(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
 		repos = append(repos, RepoIssues{Repo: n, Image: r.image(ctx, n, latest), Issues: issues})
+		groups = append(groups, newGroup(n, issues))
+	}
+	r.links(ctx, groups)
+	for i, g := range groups {
+		repos[i].Permission, repos[i].PermissionError = g.perm, g.permErr
 	}
 	res["repos"] = repos
 	res["truncated"] = truncated
+	r.setNibfinRepos(ctx, res)
 }
 
 // search pages through GitHub's issue search, up to its 1,000 results.

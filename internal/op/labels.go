@@ -127,7 +127,7 @@ func (o *labelOp) Plan(ctx context.Context) (Plan, error) {
 			return p, Errorf(CodeGitHubError, "%s: %w", o.name, err)
 		}
 		for _, e := range gqlErr.Errors {
-			path := pathAliases(e.Path)
+			path := PathAliases(e.Path)
 			if e.Type != "NOT_FOUND" || len(path) == 0 {
 				return p, Errorf(CodeGitHubError, "%s: %w", o.name, err)
 			}
@@ -250,7 +250,7 @@ func (o *labelOp) Apply(ctx context.Context, _ Plan) error {
 		var gqlErr *api.GraphQLError
 		if errors.As(err, &gqlErr) {
 			for _, e := range gqlErr.Errors {
-				if p := pathAliases(e.Path); len(p) > 0 && alias[p[0]] != "" {
+				if p := PathAliases(e.Path); len(p) > 0 && alias[p[0]] != "" {
 					failed = append(failed, alias[p[0]])
 				}
 			}
@@ -318,8 +318,9 @@ func (o *labelOp) reached(labels []labelNode) bool {
 	return true
 }
 
-// pathAliases returns the string elements of a GraphQL error path.
-func pathAliases(path []any) []string {
+// PathAliases returns the leading string elements of a GraphQL error path:
+// the aliases and field names before the first list index.
+func PathAliases(path []any) []string {
 	var out []string
 	for _, p := range path {
 		s, ok := p.(string)

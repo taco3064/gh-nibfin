@@ -57,14 +57,21 @@ func file(s string) map[string]string {
 
 type fixture struct {
 	gh    *fakeGH
+	graph *fakeGraph
 	hosts []string
 }
 
 func setup(t *testing.T, routes map[string]any) *fixture {
 	t.Helper()
-	fx := &fixture{gh: &fakeGH{t: t, routes: routes}}
-	oldHost, oldImage, oldREST, oldDefault := readHost, latestImage, newREST, defaultHost
-	t.Cleanup(func() { readHost, latestImage, newREST, defaultHost = oldHost, oldImage, oldREST, oldDefault })
+	fx := &fixture{gh: &fakeGH{t: t, routes: routes}, graph: newFakeGraph(t)}
+	oldHost, oldImage, oldREST, oldDefault, oldGraph := readHost, latestImage, newREST, defaultHost, newGraphQL
+	t.Cleanup(func() {
+		readHost, latestImage, newREST, defaultHost, newGraphQL = oldHost, oldImage, oldREST, oldDefault, oldGraph
+	})
+	newGraphQL = func(host string) (graphQL, error) {
+		fx.graph.hosts = append(fx.graph.hosts, host)
+		return fx.graph, nil
+	}
 	readHost = func(context.Context) op.HostReport {
 		return op.HostReport{Host: op.HostInfo{Describe: "fake", Running: true}}
 	}
@@ -108,6 +115,7 @@ func item(repo string, n int, labels ...string) map[string]any {
 		"html_url":       fmt.Sprintf("https://github.com/%s/issues/%d", repo, n),
 		"repository_url": "https://api.github.com/repos/" + repo,
 		"labels":         ls,
+		"created_at":     fmt.Sprintf("2026-11-%02dT00:00:00Z", 1+n%20),
 	}
 }
 
