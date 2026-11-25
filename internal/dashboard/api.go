@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/status"
 )
 
 // maxBody limits every request body.
@@ -370,4 +371,41 @@ func writeErrorWith(w http.ResponseWriter, status int, err error, extra map[stri
 	}
 	body["error"] = op.AsError(err)
 	writeJSON(w, status, body)
+}
+
+// statusRead reads status as the plan route does and streams it as NDJSON:
+// a partial line for each section read while others are still being read,
+// then the result, or the error with the result read so far. The request
+// ending cancels the read.
+func (s *server) statusRead(w http.ResponseWriter, r *http.Request) {
+	o, code, err := s.build("status", r, nil)
+	if err != nil {
+		writeError(w, code, err)
+		return
+	}
+	p, err := o.Plan(r.Context())
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err)
+		return
+	}
+	if !p.ReadOnly {
+		writeError(w, http.StatusUnprocessableEntity, op.Errorf(op.CodeInvalidArgument, "%s is not a read", p.Operation))
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.WriteHeader(http.StatusOK)
+	st := &stream{w: w, rc: http.NewResponseController(w)}
+	ctx := status.WithPartial(r.Context(), func(res op.Result, loading []string) {
+		st.line(map[string]any{"event": "partial", "result": res, "loading": loading})
+	})
+	res, err := op.Finish(ctx, o, p, false)
+	if err != nil {
+		line := map[string]any{"event": "error", "error": op.AsError(err)}
+		if res != nil {
+			line["result"] = res
+		}
+		st.line(line)
+		return
+	}
+	st.line(map[string]any{"event": "result", "result": resultOrEmpty(res)})
 }
