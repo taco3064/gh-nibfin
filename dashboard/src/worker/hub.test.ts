@@ -184,6 +184,28 @@ describe('hub', () => {
     expect(store.state?.sentSeq).toBe(store.state?.seq)
   })
 
+  it('never sends a runner name kept in a snapshot stored before names were dropped', async () => {
+    const { store, hub } = setup()
+    const a = new FakeSocket()
+    store.clients.push(a)
+    await hub.alarm()
+    const s = store.state as State
+    const data = structuredClone(s.data) as NonNullable<State['data']>
+    data.runners[0].runners = [{ id: 7, name: 'host-1', status: 'online', busy: false, job: null } as (typeof data.runners)[0]['runners'][0]]
+    store.state = { ...s, data, seq: s.seq + 1 }
+
+    const b = new FakeSocket()
+    await hub.connect(b)
+    const c = new FakeSocket()
+    store.clients.push(c)
+    await hub.alarm()
+    for (const sock of [b, c]) {
+      const snap = sock.events().find((e) => e.event === 'snapshot')
+      expect(snap?.event === 'snapshot' && snap.result.runners[0].runners).toEqual([{ id: 7, status: 'online', busy: false, job: null }])
+      expect(sock.sent.join('')).not.toContain('host-1')
+    }
+  })
+
   it('closes a page whose send throws and still reaches the others', async () => {
     const { store, hub } = setup()
     const bad = new FakeSocket()

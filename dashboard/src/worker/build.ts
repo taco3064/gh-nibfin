@@ -156,7 +156,7 @@ function repoRunners(state: State, repo: string): RepoRunners {
       const j = r.jobs.result.find((x) => x.runnerId === rn.id && x.status === 'in_progress')
       if (j) job = parseJobTitle(j.workflowName, j.url)
     }
-    return { id: rn.id, name: rn.name, status: rn.status, busy: rn.busy, job }
+    return { id: rn.id, status: rn.status, busy: rn.busy, job }
   })
   if (error) out.error = error
   return out
@@ -169,6 +169,16 @@ function summary(state: State): Summary {
   if (error) out.error = error
   else if (out.created === null || out.delivered === null) out.error = notRead('the Summary')
   return out
+}
+
+// publicData keeps exactly the public fields of every runner. The hub sends
+// each snapshot through it, so data stored before runner names were dropped
+// is never sent with them.
+export function publicData(data: LiveData): LiveData {
+  return {
+    ...data,
+    runners: data.runners.map((r) => ({ ...r, runners: r.runners.map(({ id, status, busy, job }): Runner => ({ id, status, busy, job })) })),
+  }
 }
 
 export function buildLiveData(state: State): LiveData {
