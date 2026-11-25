@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,6 +24,7 @@ import (
 	"filippo.io/age"
 	"filippo.io/age/agessh"
 	"filippo.io/age/armor"
+	"github.com/cli/go-gh/v2/pkg/api"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/taco3064/gh-nibfin/internal/runnerreq"
@@ -346,7 +348,8 @@ func hasItem(items []Check, id string) bool {
 }
 
 func TestRunnerAddRouteChoice(t *testing.T) {
-	// Neither admin nor push: refused before any write or request.
+	// Neither admin nor push (also a repository the login cannot see; see
+	// TestRepoPermissionsREST): refused before any write or request.
 	f := &fakeHost{}
 	fx := useRequest(t, f)
 	fx.gh.perms = &repoPerms{}
@@ -641,5 +644,40 @@ func TestReleaseDownload(t *testing.T) {
 	}
 	if _, err := releaseDownload(context.Background(), "riscv"); Code(err) != CodeRunnerDownloadFailed {
 		t.Errorf("no asset: %v", err)
+	}
+}
+
+// TestRepoPermissionsREST reads the gh login's permissions: a repository the
+// login cannot see (GitHub answers 404) gives none, any other failure is an
+// error.
+func TestRepoPermissionsREST(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/o/r":
+			io.WriteString(w, `{"permissions":{"admin":false,"push":true}}`)
+		case "/api/v3/repos/o/hidden":
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"message":"Not Found"}`)
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+			io.WriteString(w, `{"message":"Bad Gateway"}`)
+		}
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	c, err := api.NewRESTClient(api.ClientOptions{Host: "ghe.example", AuthToken: "x", Transport: rewrite{u}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := restGitHub{c}
+	ctx := context.Background()
+	if p, err := g.RepoPermissions(ctx, "ghe.example/o/r"); err != nil || p != (repoPerms{Push: true}) {
+		t.Errorf("write: %+v, %v", p, err)
+	}
+	if p, err := g.RepoPermissions(ctx, "ghe.example/o/hidden"); err != nil || p != (repoPerms{}) {
+		t.Errorf("hidden: %+v, %v", p, err)
+	}
+	if _, err := g.RepoPermissions(ctx, "ghe.example/o/down"); Code(err) != CodeGitHubAPIFailed || !strings.Contains(err.Error(), "502") {
+		t.Errorf("502: %v", err)
 	}
 }

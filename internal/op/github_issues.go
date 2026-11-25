@@ -62,6 +62,11 @@ func (g restGitHub) RepoPermissions(ctx context.Context, repo string) (repoPerms
 		Permissions repoPerms `json:"permissions"`
 	}
 	err := g.c.DoWithContext(ctx, http.MethodGet, repoPath(repo), nil, &r)
+	if notFound(err) {
+		// GitHub hides a repository the login cannot see: it has no
+		// permissions there.
+		return repoPerms{}, nil
+	}
 	return r.Permissions, apiError("read the permissions on "+repo, err)
 }
 
