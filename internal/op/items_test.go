@@ -163,18 +163,19 @@ func TestRunnerRemoveItems(t *testing.T) {
 	if want := []string{"started runner:claude-2", "done runner:claude-2"}; !reflect.DeepEqual(rec.lines(), want) {
 		t.Errorf("events = %q", rec.lines())
 	}
-	if c := checkByID(t, r, "runner:claude-2"); !c.Confirmed {
+	if c := checkByID(t, r, "runner:claude-2"); !c.Confirmed || c.State != "absent" {
 		t.Errorf("slot = %+v", c)
 	}
 
-	// A slot left on the host is not confirmed, next to not_applied.
+	// A slot left on the host is not confirmed, next to not_applied, and
+	// its state is what was read back.
 	f, _ = removeHost(t)
 	f.purgeNoop = true
 	_, r, err = Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "claude", Count: 1}), &yes{})
 	if Code(err) != CodeNotApplied || r == nil {
 		t.Fatalf("r %v, err %v", r, err)
 	}
-	if c := checkByID(t, r, "runner:claude-2"); c.Confirmed || !strings.Contains(c.Reason, "still on the host") {
+	if c := checkByID(t, r, "runner:claude-2"); c.Confirmed || !strings.Contains(c.Reason, "still on the host") || c.State != "on the host" {
 		t.Errorf("slot = %+v", c)
 	}
 }

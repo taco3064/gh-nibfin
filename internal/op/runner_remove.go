@@ -687,19 +687,20 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 				listed = listed || strings.EqualFold(g.Name, s.gh.Name)
 			}
 		}
-		why := ""
+		// state is what was read back; why is the reason it is not confirmed.
+		why, state := "", "absent"
 		switch {
 		case local && listed:
-			why = "still on the host and on GitHub"
+			why, state = "still on the host and on GitHub", "on the host and on GitHub"
 		case local:
-			why = "still on the host"
+			why, state = "still on the host", "on the host"
 		case listed:
-			why = "still registered on GitHub"
+			why, state = "still registered on GitHub", "registered on GitHub"
 		}
 		if why != "" {
 			left = append(left, s.Slot+" ("+why+")")
 		}
-		checks.Set(removeSlotStep(s.Slot), why == "", "absent", why)
+		checks.Set(removeSlotStep(s.Slot), why == "", state, why)
 	}
 	remaining := len(env.mine)
 	res["removed"], res["remaining"], res["runners"] = removed, remaining, states
