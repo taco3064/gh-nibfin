@@ -1,0 +1,103 @@
+import { describe, expect, it } from 'vitest'
+
+import { createGitHub, GitHubError, requestBudget, searchPath } from './github'
+import { FakeGitHub, token } from './testing'
+
+const path = 'repos/taco3064/gh-nibfin/issues?state=open&per_page=100&page=1'
+
+describe('createGitHub', () => {
+  it('sends the read headers and If-None-Match only with a known ETag', async () => {
+    const fake = new FakeGitHub()
+    fake.set(path, [{ number: 1 }], 'W/"a"')
+    const gh = createGitHub({ token, fetch: fake.fetch })
+    const first = await gh.get(path)
+    expect(first).toMatchObject({ status: 200, etag: 'W/"a"', body: [{ number: 1 }] })
+    const h = fake.requests[0].headers
+    expect(h.Authorization).toBe(`Bearer ${token}`)
+    expect(h.Accept).toBe('application/vnd.github+json')
+    expect(h['X-GitHub-Api-Version']).toBe('2022-11-28')
+    expect(h['User-Agent']).toBe('nibfin-live')
+    expect('If-None-Match' in h).toBe(false)
+    const again = await gh.get(path, 'W/"a"')
+    expect(again.status).toBe(304)
+    expect(fake.requests[1].headers['If-None-Match']).toBe('W/"a"')
+  })
+
+  it('reads x-poll-interval from 200 and 304 answers', async () => {
+    const fake = new FakeGitHub()
+    fake.set(path, [], 'W/"a"', { 'x-poll-interval': '120' })
+    const gh = createGitHub({ token, fetch: fake.fetch })
+    expect((await gh.get(path)).pollInterval).toBe(120)
+    expect(await gh.get(path, 'W/"a"')).toEqual({ status: 304, pollInterval: 120 })
+  })
+
+  it('turns a failure into a GitHubError with Retry-After and no token', async () => {
+    const fake = new FakeGitHub()
+    fake.fail(path, 403, 'API rate limit exceeded', { 'retry-after': '60' })
+    const gh = createGitHub({ token, fetch: fake.fetch })
+    const err = await gh.get(path).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(GitHubError)
+    const g = err as GitHubError
+    expect(g.status).toBe(403)
+    expect(g.retryAfter).toBe(60)
+    expect(g.notFound).toBe(false)
+    expect(g.apiError).toEqual({ code: 'github_api_failed', message: `GET ${path}: HTTP 403: API rate limit exceeded` })
+    expect(JSON.stringify(g.apiError)).not.toContain(token)
+  })
+
+  it('tells a 404 apart', async () => {
+    const fake = new FakeGitHub()
+    const gh = createGitHub({ token, fetch: fake.fetch })
+    const err = (await gh.get('repos/x/y/actions/workflows/none.yml/runs').catch((e: unknown) => e)) as GitHubError
+    expect(err.notFound).toBe(true)
+  })
+
+  it('turns a network failure into a GitHubError', async () => {
+    const gh = createGitHub({
+      token,
+      fetch: async () => {
+        throw new TypeError('connection reset')
+      },
+    })
+    const err = (await gh.get(path).catch((e: unknown) => e)) as GitHubError
+    expect(err.status).toBe(0)
+    expect(err.apiError.message).toContain('connection reset')
+  })
+
+  it('stops at the request budget without fetching', async () => {
+    const fake = new FakeGitHub()
+    const gh = createGitHub({ token, fetch: fake.fetch })
+    for (let i = 0; i < requestBudget; i++) await gh.get(path)
+    const err = (await gh.get(path).catch((e: unknown) => e)) as GitHubError
+    expect(err.apiError.message).toContain('request budget of this check reached')
+    expect(fake.requests).toHaveLength(requestBudget)
+    await expect(gh.graphql('query { viewer { login } }', {})).rejects.toBeInstanceOf(GitHubError)
+    expect(fake.requests).toHaveLength(requestBudget)
+  })
+
+  it('makes no request without a token', async () => {
+    const fake = new FakeGitHub()
+    for (const t of [undefined, '']) {
+      const gh = createGitHub({ token: t, fetch: fake.fetch })
+      expect(gh.hasToken).toBe(false)
+      const err = (await gh.get(path).catch((e: unknown) => e)) as GitHubError
+      expect(err.apiError).toEqual({ code: 'auth_unavailable', message: 'the Worker has no GITHUB_TOKEN secret' })
+    }
+    expect(fake.requests).toHaveLength(0)
+  })
+
+  it('returns GraphQL data with the error paths', async () => {
+    const fake = new FakeGitHub()
+    fake.graphqlErrors = [{ message: 'Could not resolve', path: ['r0', 'i1'] }]
+    const gh = createGitHub({ token, fetch: fake.fetch })
+    const ans = await gh.graphql('query($r0o: String!, $r0n: String!) { r0: repository(owner: $r0o, name: $r0n) { i0: issue(number: 3) { x } } }', { r0o: 'a', r0n: 'b' })
+    expect(ans.errors).toEqual([{ message: 'Could not resolve', path: ['r0', 'i1'] }])
+    expect(ans.data).toHaveProperty('r0')
+    expect(fake.requests[0].method).toBe('POST')
+    expect(fake.requests[0].headers.Authorization).toBe(`Bearer ${token}`)
+  })
+
+  it('encodes a search query', () => {
+    expect(searchPath('repo:a/b is:issue created:>=2026-11-21T00:00:00+08:00')).toBe('search/issues?per_page=1&q=repo%3Aa%2Fb+is%3Aissue+created%3A%3E%3D2026-11-21T00%3A00%3A00%2B08%3A00')
+  })
+})
