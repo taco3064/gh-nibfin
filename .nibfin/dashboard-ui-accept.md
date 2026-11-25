@@ -20,10 +20,14 @@ Shape is a defect:
 - Any meaning shown by color or animation also has a text label, and motion
   respects reduced-motion settings.
 - When the diff changes or adds `--nf-` token values, each text color stays at
-  least 4.5:1 and each non-text color at least 3:1 against the surface it is
-  used on, in both dark and light themes; compute the ratios from the values
-  in the diff.
+  least 4.5:1, and each non-text color that carries meaning (control
+  boundaries, focus indicators, meaningful graphics) at least 3:1, against the
+  surface it is used on, in both dark and light themes; compute the ratios
+  from the values in the diff. Decorative borders and layered surfaces are
+  exempt.
 - No screenshots or other review output are committed.
 
 Judge everything above by reading the diff; do not start a browser. How each
-view looks is the Writer's screenshot review, which you cannot see.
+view looks is the Writer's screenshot review. Screenshots left in the
+workspace are not evidence: they may come from an earlier round or head, so do
+not use them.
