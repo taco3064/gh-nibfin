@@ -9,7 +9,9 @@ Shape is a defect:
 
 - Colors for surfaces, text, borders and focus come from the Nibfin theme
   tokens (`--nf-` variables); the changed styles and components hard-code no
-  color values.
+  color values. The theme token source file that defines the `--nf-` values,
+  and the bindings of the component library's variables to those tokens, are
+  the only places color values belong.
 - Components come from shadcn/ui, used directly or composed, wherever one
   fits; a custom component exists only where the library has nothing that
   fits, and does not duplicate an existing project component.
