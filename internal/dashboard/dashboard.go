@@ -43,6 +43,8 @@ type Options struct {
 	Ready func(sessionURL string)
 	// SessionOpened is called when the session proof is exchanged.
 	SessionOpened func()
+	// Commands is the schema GET /api/commands serves.
+	Commands []Command
 }
 
 // Header names of the session proof and the session.
@@ -112,6 +114,7 @@ func newServer(o Options, port int) *server {
 	s.mux = http.NewServeMux()
 	s.mux.HandleFunc("GET /{$}", s.page)
 	s.mux.HandleFunc("POST /api/session", s.exchange)
+	s.mux.HandleFunc("GET /api/commands", s.commands)
 	s.mux.HandleFunc("POST /api/commands/{command}/plan", s.plan)
 	s.mux.HandleFunc("POST /api/plans/{id}/apply", s.apply)
 	s.mux.HandleFunc("POST /api/plans/{id}/code", s.code)
