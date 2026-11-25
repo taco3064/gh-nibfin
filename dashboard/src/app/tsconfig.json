@@ -1,0 +1,12 @@
+{
+  // The site's own TypeScript project. It sets its own include and exclude:
+  // inheriting tsconfig.app.json's exclude of src/app would check no site file.
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.site.tsbuildinfo",
+    "types": ["astro/client"],
+    "paths": { "@/*": ["../*"] }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../../.astro/types.d.ts"],
+  "exclude": []
+}

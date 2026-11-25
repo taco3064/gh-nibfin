@@ -4,15 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -b && vite build",
-    "typecheck": "tsc -b",
+    "build": "astro sync && tsc -b && vite build && astro build",
+    "typecheck": "astro sync && tsc -b",
     "lint": "oxlint",
     "test": "vitest run",
-    "screenshots": "tsc -b && vite build --mode screenshots && playwright test"
+    "screenshots": "astro sync && tsc -b && vite build --mode screenshots && astro build && playwright test"
   },
   "dependencies": {
+    "@astrojs/react": "^7.1.9",
+    "@astrojs/starlight": "^0.43.1",
+    "@astrojs/starlight-tailwind": "^5.0.0",
     "@fontsource-variable/dm-sans": "5.3.0",
     "@fontsource-variable/space-grotesk": "5.3.0",
+    "astro": "^7.4.13",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "get-nonce": "^1.0.1",
