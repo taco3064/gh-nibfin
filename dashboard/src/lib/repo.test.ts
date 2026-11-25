@@ -7,7 +7,7 @@ import { ownerRepo, repoHost, type NibfinRepo, type PersonView, type RepoView } 
 const entry = (repo: string): NibfinRepo => ({ repo, url: `https://x/${repo}`, visibility: 'PRIVATE', permission: 'ADMIN', execution: false })
 
 const person = (over: Partial<PersonView> = {}): PersonView => ({
-  host: { host: {}, runners: { runners: [] } },
+  host: { host: {}, memory: { totalKB: 0, availableKB: 0 }, runners: { runners: [] }, providers: [] },
   latestImage: {},
   githubHost: 'github.com',
   repos: [],
@@ -17,7 +17,7 @@ const person = (over: Partial<PersonView> = {}): PersonView => ({
 })
 
 const repoView = (over: Partial<RepoView> = {}): RepoView => ({
-  host: { host: {}, runners: { runners: [] } },
+  host: { host: {}, memory: { totalKB: 0, availableKB: 0 }, runners: { runners: [] }, providers: [] },
   latestImage: {},
   repo: 'ghe.example.test/corp/api',
   image: { set: 'none', ref: null, latest: null },
