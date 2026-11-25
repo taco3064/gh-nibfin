@@ -255,8 +255,8 @@ for (const theme of themes) {
       await change(page)
       await openManual(page, 'acme/new')
       await expect(summary.locator('[data-image]')).toHaveText('No Nibfin workflows')
-      await expect(run).toContainText('Not initialized')
-      await expect(run).toContainText('No generated nibfin-issue.yml on the default branch')
+      await expect(run).toContainText('Does not use Nibfin')
+      await expect(run).toContainText('No nibfin-issue.yml on the default branch')
       await expect(summary.locator('[data-action=init]')).toBeEnabled()
       await expect(summary.locator('[data-action=upgrade]')).toHaveCount(0)
       await expect(page.locator('[data-empty=issues]')).toHaveText('This repository has no open Issues.')
@@ -266,8 +266,8 @@ for (const theme of themes) {
       await change(page)
       await pick(page, 'acme/app')
       await expect(summary.locator('[data-image]')).toHaveText('Latest imageghcr.io/acme/nibfin:v1.4.0')
-      await expect(run.locator('[data-state=succeeded]')).toContainText('A Nibfin run succeeded after init')
-      await expect(run.locator('[data-slot=init]')).toContainText('Init PR #42')
+      await expect(run.locator('[data-state=succeeded]')).toContainText('A Nibfin run succeeded after the last change')
+      await expect(run.locator('[data-slot=change]')).toContainText('nibfin-issue.yml last changed in PR #42(opens on GitHub in a new tab), merged')
       await expect(run.getByRole('link', { name: /Successful run/ })).toHaveAttribute('href', 'https://github.com/acme/app/actions/runs/8801')
       await expect(summary.locator('[data-action=upgrade]')).toBeEnabled()
       await expect(summary.locator('[data-action=init]')).toHaveCount(0)
@@ -278,7 +278,7 @@ for (const theme of themes) {
       await change(page)
       await pick(page, 'acme/docs')
       await expect(summary.locator('[data-image]')).toContainText('Not the latest image')
-      await expect(run.locator('[data-state=not-succeeded]')).toContainText('No successful Nibfin run since init')
+      await expect(run.locator('[data-state=not-succeeded]')).toContainText('No successful Nibfin run since the last change')
       // The docs read carries its own list error for the picker.
       await change(page)
       await expect(picker(page).locator('[data-note=repos-error]')).toHaveText(
@@ -291,7 +291,7 @@ for (const theme of themes) {
       await change(page)
       await openManual(page, 'github.com/acme/infra')
       await expect(summary.locator('[data-image]')).toContainText('Image could not be read')
-      await expect(run.locator('[data-state=error]')).toContainText('github_api_failed: list the commits of nibfin-issue.yml of acme/infra: HTTP 502')
+      await expect(run.locator('[data-state=error]')).toContainText('github_api_failed: list the commits of .github/workflows/nibfin-issue.yml of acme/infra: HTTP 502')
       await expect(summary.locator('[data-action=init]')).toBeEnabled()
       await expect(summary.locator('[data-action=upgrade]')).toBeEnabled()
       await expect(page.locator('[data-note=issues-error]')).toHaveText('Issues could not be read: github_error: listing the Issues of acme/infra: HTTP 502')
@@ -301,7 +301,7 @@ for (const theme of themes) {
       await change(page)
       await openManual(page, 'github.com/acme/site')
       await expect(summary.locator('[data-image]')).toHaveText('Peer set: no image pin')
-      await expect(run.locator('[data-slot=init]')).toContainText('Init commit c0ffee1')
+      await expect(run.locator('[data-slot=change]')).toContainText('nibfin-issue.yml last changed in commit c0ffee1')
       await expectClean(w, ['Failed to load resource: the server responded with a status of 400'])
     })
   }
@@ -411,7 +411,7 @@ test('the reading states of the list and of a repository', async ({ page }) => {
   await expect(picker(page).locator('[data-repo-entry]')).toHaveCount(5)
 
   const held = new Promise<void>((r) => (release = r))
-  await page.route('**/api/commands/status/plan', async (route) => {
+  await page.route('**/api/commands/status/read', async (route) => {
     await held
     await route.fallback()
   })
@@ -429,7 +429,7 @@ test('a stale repository answer is dropped', async ({ page }) => {
   const { w } = await open(page, 1280, 'dark')
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
-  await page.route('**/api/commands/status/plan', async (route) => {
+  await page.route('**/api/commands/status/read', async (route) => {
     const body = route.request().postDataJSON() as { repo?: string }
     if (body.repo === 'github.com/acme/docs') await held
     await route.fallback()

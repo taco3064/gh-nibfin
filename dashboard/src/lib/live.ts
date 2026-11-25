@@ -6,7 +6,10 @@ import { currentSession, type ApiError } from '@/lib/session'
 import type { PersonView, StatusIssue } from '@/lib/status'
 
 // LiveEvent is one event of the stream. at is the server's RFC 3339 time.
+// partial comes before the first snapshot only: the part of the first read
+// done so far, with what is still loading.
 export type LiveEvent =
+  | { event: 'partial'; at: string; result: unknown; loading: string[] }
   | { event: 'snapshot'; at: string; result: PersonView }
   | { event: 'issue'; at: string; repo: string; issue: StatusIssue }
   | { event: 'checked'; at: string }

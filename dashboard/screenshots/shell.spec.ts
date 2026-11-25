@@ -248,7 +248,7 @@ test('refresh shows its progress and a failure keeps the data', async ({ page })
   await tab(page, 'Repositories').click()
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
-  await page.route('**/api/commands/status/plan', async (route) => {
+  await page.route('**/api/commands/status/read', async (route) => {
     await held
     await route.fallback()
   })

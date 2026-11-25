@@ -22,7 +22,7 @@ const repoView = (over: Partial<RepoView> = {}): RepoView => ({
   repo: 'ghe.example.test/corp/api',
   image: { set: 'none', ref: null, latest: null },
   issues: [],
-  nibfinRun: { initialized: false, succeeded: false },
+  nibfinRun: { usesNibfin: false, succeeded: false },
   permission: 'ADMIN',
   nibfinRepos: [entry('corp/web')],
   ...over,

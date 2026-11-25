@@ -19,7 +19,18 @@ export const unauthorized = 'Failed to load resource: the server responded with 
 
 // StatusAnswer is one answer of the mocked status read: a result, or an
 // error with its HTTP status.
-export type StatusAnswer = { result: unknown } | { error: { code: string; message: string }; httpStatus: number }
+// partials, when given, come first: the status read route's partial lines,
+// or the live stream's partial frames before its snapshot.
+export type StatusAnswer =
+  | { result: unknown; partials?: PartialRead[] }
+  | { error: { code: string; message: string }; httpStatus: number }
+
+// PartialRead is one partial read: the sections read so far and those still
+// loading.
+export interface PartialRead {
+  result: unknown
+  loading: string[]
+}
 
 export interface Watch {
   violations: () => Promise<string[]>
@@ -35,7 +46,7 @@ export interface Watch {
   // repoStatus answers the repository-view reads by the body's repo; a repo
   // without an entry answers invalid_repo.
   repoStatus: Record<string, StatusAnswer>
-  // statusBodies are the request bodies of the plan status reads, in order.
+  // statusBodies are the request bodies of the status read route, in order.
   statusBodies: Record<string, unknown>[]
 }
 
@@ -57,7 +68,9 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
     w.statusReads++
     const a = w.status
     if ('error' in a) return { frames: [frame({ event: 'error', source: 'status', error: a.error })], open: false }
-    return { frames: [frame({ event: 'snapshot', at: new Date().toISOString(), result: a.result })], open: true }
+    const at = new Date().toISOString()
+    const partials = (a.partials ?? []).map((p) => frame({ event: 'partial', at, result: p.result, loading: p.loading }))
+    return { frames: [...partials, frame({ event: 'snapshot', at, result: a.result })], open: true }
   })
   let exchanges = 0
   await page.route('**/api/session', (route) => {
@@ -76,7 +89,7 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
   })
   // The command schema the runner view reads; a spec may route it again.
   await page.route('**/api/commands', (route) => route.fulfill({ json: { commands } }))
-  await page.route('**/api/commands/status/plan', (route) => {
+  await page.route('**/api/commands/status/read', (route) => {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
     w.statusReads++
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>
@@ -89,7 +102,8 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
           })
         : w.status
     if ('error' in a) return route.fulfill({ status: a.httpStatus, json: { error: a.error } })
-    return route.fulfill({ json: { plan: { operation: 'status', readOnly: true }, result: a.result } })
+    const lines = [...(a.partials ?? []).map((p) => ({ event: 'partial', result: p.result, loading: p.loading })), { event: 'result', result: a.result }]
+    return route.fulfill({ contentType: 'application/x-ndjson', body: lines.map((l) => `${JSON.stringify(l)}\n`).join('') })
   })
   await page.addInitScript(() => {
     const w = window as unknown as { __csp: string[] }
@@ -124,4 +138,54 @@ export async function expectNonce(page: Page, res: Response | null) {
   const meta = await page.evaluate(() => document.querySelector<HTMLMetaElement>('meta[property=csp-nonce]')?.nonce)
   expect(meta).toBe(m![1])
   return m![1]
+}
+
+// mockHeldReads lets a spec answer the status read route itself, line by
+// line, on a stream that stays open: once holdReads(page, true) runs, the
+// page's next status reads are answered in the page and pushRead sends
+// their lines. Before that, and after holdReads(page, false), reads go to
+// prepare's mock. Call it before the page loads.
+export async function mockHeldReads(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __nibfinHold?: boolean; __nibfinRead?: ReadableStreamDefaultController<Uint8Array> }
+    const real = window.fetch.bind(window)
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (!w.__nibfinHold || new URL(url, location.href).pathname !== '/api/commands/status/read') return real(input, init)
+      let ctl: ReadableStreamDefaultController<Uint8Array> | undefined
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          ctl = c
+          w.__nibfinRead = c
+        },
+      })
+      init?.signal?.addEventListener('abort', () => {
+        try {
+          ctl?.error(new DOMException('aborted', 'AbortError'))
+        } catch {
+          // Already closed.
+        }
+      })
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } })
+    }
+  })
+}
+
+export async function holdReads(page: Page, on: boolean) {
+  await page.evaluate((v) => {
+    ;(window as unknown as { __nibfinHold?: boolean }).__nibfinHold = v
+  }, on)
+}
+
+// pushRead sends lines on the held status read, and closes it with end.
+export async function pushRead(page: Page, lines: unknown[], end = false) {
+  await page.evaluate(
+    ([ls, e]) => {
+      const c = (window as unknown as { __nibfinRead?: ReadableStreamDefaultController<Uint8Array> }).__nibfinRead
+      const enc = new TextEncoder()
+      for (const l of ls as string[]) c?.enqueue(enc.encode(l))
+      if (e) c?.close()
+    },
+    [lines.map((l) => `${JSON.stringify(l)}\n`), end] as const,
+  )
 }

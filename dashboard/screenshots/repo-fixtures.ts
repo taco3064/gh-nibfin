@@ -51,24 +51,28 @@ const image = {
 
 const runs = {
   succeeded: {
-    initialized: true,
-    initCommit: '4f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a39',
-    initPR: { number: 42, url: `${gh}/acme/app/pull/42` },
-    mergedAt: '2026-10-01T12:00:00Z',
+    usesNibfin: true,
+    commit: '4f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a39',
+    pr: { number: 42, url: `${gh}/acme/app/pull/42` },
+    changedAt: '2026-10-01T12:00:00Z',
     succeeded: true,
     run: `${gh}/acme/app/actions/runs/8801`,
     at: '2026-10-02T08:30:00Z',
   },
   notSucceeded: {
-    initialized: true,
-    initCommit: '9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b',
-    initPR: { number: 3, url: `${gh}/acme/docs/pull/3` },
-    mergedAt: '2026-11-20T16:45:00Z',
+    usesNibfin: true,
+    commit: '9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b',
+    pr: { number: 3, url: `${gh}/acme/docs/pull/3` },
+    changedAt: '2026-11-20T16:45:00Z',
     succeeded: false,
   },
-  commitOnly: { initialized: true, initCommit: 'c0ffee1234567890abcdef1234567890abcdef12', mergedAt: '2026-09-12T10:00:00Z', succeeded: false },
-  none: { initialized: false, succeeded: false },
-  error: { initialized: false, succeeded: false, error: error('github_api_failed', 'list the commits of nibfin-issue.yml of acme/infra: HTTP 502') },
+  commitOnly: { usesNibfin: true, commit: 'c0ffee1234567890abcdef1234567890abcdef12', changedAt: '2026-09-12T10:00:00Z', succeeded: false },
+  none: { usesNibfin: false, succeeded: false },
+  error: {
+    usesNibfin: true,
+    succeeded: false,
+    error: error('github_api_failed', 'list the commits of .github/workflows/nibfin-issue.yml of acme/infra: HTTP 502'),
+  },
 }
 
 function repoView(repo: string, over: Record<string, unknown>) {

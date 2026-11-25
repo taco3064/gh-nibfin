@@ -3,6 +3,7 @@ import { Check, Search, X } from 'lucide-react'
 
 import { BlockerItem, IssueItem } from '@/components/issue'
 import { Note } from '@/components/shell/note'
+import { SectionLoading } from '@/components/shell/section-loading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,7 +22,8 @@ import {
   type GraphNode,
   type LayoutEdge,
 } from '@/lib/graph'
-import { stageLabels, type Change, type Stage } from '@/lib/issue'
+import { accessOf, stageLabels, type Change, type Stage } from '@/lib/issue'
+import { useLoading } from '@/lib/loading-context'
 import type { RepoPermission, RepoView } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -43,6 +45,8 @@ function joinLabels(labels: readonly string[]): string {
 // what blocks it. Search and filters hide Issues but keep every blocker of
 // a shown one visible, labelled as context.
 export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
+  const loading = useLoading()
+  const blockersLoading = loading.has('blockedBy')
   const graph = useMemo(() => buildGraph(data), [data])
   const [filter, setFilter] = useState<GraphFilter>(emptyFilter)
   const filtered = useMemo(() => filterGraph(graph, filter), [graph, filter])
@@ -57,7 +61,7 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
     for (const e of layout.edges) m.set(e.to, [...(m.get(e.to) ?? []), nodeLabel(graph, graph.nodes.get(e.from)!)])
     return m
   }, [graph, layout])
-  const access: RepoPermission = { permission: data.permission, ...(data.permissionError ? { permissionError: data.permissionError } : {}) }
+  const access: RepoPermission = accessOf(data, loading)
   // Issues without a shown edge are split: those whose blockers could not
   // be read are never listed as having no dependencies.
   const [unreadAlone, unlinked] = useMemo(() => {
@@ -89,12 +93,13 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
         </h2>
         <p className="text-sm text-muted-foreground">Open Issues and what blocks them. Stages come from labels only.</p>
       </div>
+      {loading.has('issues') && <SectionLoading label="Reading open Issues…" data-loading="issues" />}
       {data.issuesError && (
         <Note tone="danger" data-note="issues-error">
           Issues could not be read: {data.issuesError.code}: {data.issuesError.message}
         </Note>
       )}
-      {total === 0 && !data.issuesError && (
+      {!loading.has('issues') && total === 0 && !data.issuesError && (
         <p className="rounded-md border border-dashed border-border-subtle px-4 py-8 text-center text-sm text-muted-foreground" data-empty="issues">
           This repository has no open Issues.
         </p>
@@ -106,7 +111,8 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
             onFilter={setFilter}
             count={`Showing ${filtered.matched.length} of ${total} open Issues · ${filtered.context.length} shown as context`}
           />
-          {graph.unread.length > 0 && (
+          {blockersLoading && <SectionLoading label="Reading blockers… edges appear once they are read." data-loading="blockedBy" />}
+          {!blockersLoading && graph.unread.length > 0 && (
             <Note tone="warning" data-note="unread">
               Blockers of {joinLabels(graph.unread.map((i) => `#${i.number}`))} could not be read; edges may be missing.
             </Note>
@@ -124,7 +130,7 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
           {layout.columns.length > 0 && <GraphRegion layout={layout} renderNode={renderNode} />}
           {unreadAlone.length > 0 && (
             <div className="flex flex-col gap-3" data-slot="unread">
-              <h3 className="text-base font-semibold">Issues whose blockers could not be read</h3>
+              <h3 className="text-base font-semibold">{blockersLoading ? 'Issues whose blockers are being read' : 'Issues whose blockers could not be read'}</h3>
               <ul className="flex flex-col gap-3">{unreadAlone.map((k) => renderNode(k, false))}</ul>
             </div>
           )}

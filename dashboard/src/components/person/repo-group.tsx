@@ -2,9 +2,11 @@ import { ExternalLink } from 'lucide-react'
 
 import { IssueItem } from '@/components/issue'
 import { tones } from '@/components/issue/tones'
+import { SectionLoading } from '@/components/shell/section-loading'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import type { Change } from '@/lib/issue'
+import { accessOf, type Change } from '@/lib/issue'
+import { useLoading } from '@/lib/loading-context'
 import { imageState } from '@/lib/person'
 import type { LatestImage, RepoIssues } from '@/lib/status'
 
@@ -22,10 +24,13 @@ export interface RepoGroupProps {
 // RepoGroup is one repository of the person view: its link, Issue count and
 // image state, then its Issues as the shared Issue element.
 export function RepoGroup({ group, githubHost, latestImage, selected, onSelect, onChanged }: RepoGroupProps) {
+  const loading = useLoading()
   const image = imageState(group.image, latestImage)
   const ImageIcon = imageIcons[image.kind]
+  // A pin is compared with the latest image once that is read.
+  const comparing = loading.has('latestImage') && group.image.set === 'execution' && group.image.ref !== null && group.image.latest === null
   const issues = group.issues ?? []
-  const access = { permission: group.permission, ...(group.permissionError ? { permissionError: group.permissionError } : {}) }
+  const access = accessOf(group, loading)
   return (
     <Card className="gap-4 border-border-subtle py-4" data-repo={group.repo}>
       <CardHeader className="flex flex-col gap-2 px-4 sm:px-5">
@@ -46,13 +51,19 @@ export function RepoGroup({ group, githubHost, latestImage, selected, onSelect, 
             {issues.length === 1 ? '1 Issue' : `${issues.length} Issues`}
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" data-image={image.kind}>
-          <Badge variant="outline" className={tones[image.tone]}>
-            <ImageIcon aria-hidden="true" />
-            {image.label}
-          </Badge>
-          {image.detail && <span className="min-w-0 break-words text-muted-foreground">{image.detail}</span>}
-        </div>
+        {loading.has('image') ? (
+          <SectionLoading label="Reading the image pin…" data-loading="image" />
+        ) : comparing ? (
+          <SectionLoading label="Comparing with the latest image…" data-loading="latestImage" />
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" data-image={image.kind}>
+            <Badge variant="outline" className={tones[image.tone]}>
+              <ImageIcon aria-hidden="true" />
+              {image.label}
+            </Badge>
+            {image.detail && <span className="min-w-0 break-words text-muted-foreground">{image.detail}</span>}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="px-4 sm:px-5">
         {issues.length === 0 ? (

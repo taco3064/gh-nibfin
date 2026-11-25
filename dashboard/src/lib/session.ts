@@ -88,12 +88,14 @@ export type StreamOutcome<T> =
   | { ok: true; value: T }
   | { ok: false; error: ApiError; unknown?: boolean; status?: number; result?: T }
 
-// StreamLine is one parsed NDJSON line of an apply: progress, login_step,
-// result or error.
+// StreamLine is one parsed NDJSON line: of an apply, progress, login_step,
+// result or error; of the status read, partial (with loading), result or
+// error.
 export interface StreamLine {
   event?: string
   progress?: unknown
   step?: unknown
+  loading?: unknown
   result?: unknown
   error?: Partial<ApiError>
 }
@@ -104,21 +106,58 @@ export interface StreamLine {
 // and a non-2xx answer before the stream is a failure with its status. An
 // aborted signal ends the request, which cancels the apply on the server;
 // it comes out as unknown.
-export async function applyStream<T>(
+export function applyStream<T>(
   id: string,
   confirm: boolean,
   onEvent: (line: StreamLine) => void,
   fetcher: Fetch = fetch,
   signal?: AbortSignal,
 ): Promise<StreamOutcome<T>> {
+  return postStream<T>(`/api/plans/${encodeURIComponent(id)}/apply`, { confirm }, 'the apply failed', onEvent, fetcher, signal)
+}
+
+// readStatus reads status through the status read route, the repository
+// view of repo or, with repo empty, the person view. Each partial line goes
+// to onPartial with its result and the sections still loading; the result
+// line is the outcome. An aborted signal cancels the read on the server.
+export function readStatus<T>(
+  repo: string,
+  onPartial: (result: unknown, loading: string[]) => void,
+  fetcher: Fetch = fetch,
+  signal?: AbortSignal,
+): Promise<StreamOutcome<T>> {
+  return postStream<T>(
+    '/api/commands/status/read',
+    repo ? { repo } : {},
+    'the status read failed',
+    (line) => {
+      if (line.event === 'partial' && line.result && typeof line.result === 'object') {
+        onPartial(line.result, Array.isArray(line.loading) ? line.loading.filter((k) => typeof k === 'string') : [])
+      }
+    },
+    fetcher,
+    signal,
+  )
+}
+
+// postStream posts body as JSON to an NDJSON route with the session and
+// reads the stream as applyStream describes; failed is the message of an
+// error line without one.
+async function postStream<T>(
+  path: string,
+  body: unknown,
+  failed: string,
+  onEvent: (line: StreamLine) => void,
+  fetcher: Fetch,
+  signal?: AbortSignal,
+): Promise<StreamOutcome<T>> {
   if (session === null) return failure('session_required', 'no session is open')
-  const path = `/api/plans/${encodeURIComponent(id)}/apply`
   let res: Response
   try {
     res = await fetcher(path, {
       method: 'POST',
       headers: { 'X-Nibfin-Session': session, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm }),
+      body: JSON.stringify(body),
       signal,
     })
   } catch (e) {
@@ -146,7 +185,7 @@ export async function applyStream<T>(
     if (ev === null || typeof ev !== 'object') return
     if (ev.event === 'result') last = { ok: true, value: ev.result as T }
     else if (ev.event === 'error') {
-      const f: StreamOutcome<T> = failure(ev.error?.code ?? 'error', ev.error?.message ?? 'the apply failed')
+      const f: StreamOutcome<T> = failure(ev.error?.code ?? 'error', ev.error?.message ?? failed)
       if (ev.result !== undefined && ev.result !== null) f.result = ev.result as T
       last = f
     }

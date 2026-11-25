@@ -4,6 +4,7 @@
 
 import { api, applyPlan, deletePlan, type ApiError } from '@/lib/session'
 import type { Blocker, RepoPermission, Run, StatusIssue } from '@/lib/status'
+import type { Loading } from '@/lib/partial'
 
 type Fetch = typeof fetch
 
@@ -37,9 +38,17 @@ export type Access = { enabled: true } | { enabled: false; reason: string }
 const changing = new Set(['TRIAGE', 'TRIAGE_PLUS', 'MODERATE', 'WRITE', 'MAINTAIN', 'ADMIN'])
 const below = new Set(['READ'])
 
+// accessOf is the account's access on one repository as read: its
+// permission, or that it could not be read or is still being read.
+export function accessOf(p: RepoPermission, loading: Loading): RepoPermission {
+  if (loading.has('permission')) return { permission: null, permissionLoading: true }
+  return { permission: p.permission, ...(p.permissionError ? { permissionError: p.permissionError } : {}) }
+}
+
 // changeAccess says whether the account may pause or resume Issues of repo.
 // GitHub still authorizes every write; this only enables the action.
 export function changeAccess(access: RepoPermission, repo: string): Access {
+  if (access.permissionLoading) return { enabled: false, reason: `Reading the permission on ${repo}…` }
   if (access.permissionError) {
     const e = access.permissionError
     return { enabled: false, reason: `Permission on ${repo} could not be read: ${e.code}: ${e.message}.` }

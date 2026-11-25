@@ -1,7 +1,8 @@
 // Pure logic of the repository view: which read supplies the picker list,
 // and the sequencing that drops answers for a repository no longer chosen.
 
-import { repoHost, type ApiError, type NibfinRepo, type PersonView, type RepoView } from '@/lib/status'
+import { complete, type Loading } from '@/lib/partial'
+import { repoHost, type ApiError, type NibfinRepo, type NibfinRun, type PersonView, type RepoView } from '@/lib/status'
 
 // PickerSource is the list of the account's Nibfin repositories and the
 // host it was read on. Both always come from the same read.
@@ -13,16 +14,22 @@ export interface PickerSource {
 
 // pickerSource takes the list of the repository read when it has data, else
 // the person read's, else none. It never mixes a list with another read's
-// host, so a listed entry opens on the host it was listed on.
-export function pickerSource(repoData: RepoView | undefined, personData: PersonView | undefined): PickerSource | undefined {
-  if (repoData) {
+// host, so a listed entry opens on the host it was listed on. A read whose
+// list is still loading supplies none.
+export function pickerSource(
+  repoData: RepoView | undefined,
+  personData: PersonView | undefined,
+  repoLoading: Loading = complete,
+  personLoading: Loading = complete,
+): PickerSource | undefined {
+  if (repoData && !repoLoading.has('nibfinRepos')) {
     return {
       host: repoHost(repoData.repo),
       repos: repoData.nibfinRepos,
       ...(repoData.nibfinReposError ? { error: repoData.nibfinReposError } : {}),
     }
   }
-  if (personData) {
+  if (personData && !personLoading.has('nibfinRepos')) {
     return {
       host: personData.githubHost,
       repos: personData.nibfinRepos,
@@ -59,4 +66,22 @@ export function filterRepos(repos: readonly NibfinRepo[], query: string): Nibfin
 export function offeredActions(image: RepoView['image']): ('init' | 'upgrade')[] {
   if (image.error) return ['init', 'upgrade']
   return image.set === 'none' ? ['init'] : ['upgrade']
+}
+
+// RunLook is how the summary shows the Nibfin run: its state, tone and
+// label.
+export interface RunLook {
+  state: 'error' | 'not-used' | 'succeeded' | 'not-succeeded'
+  tone: 'danger' | 'neutral' | 'success' | 'warning'
+  label: string
+}
+
+// runLook says whether a Nibfin run succeeded after nibfin-issue.yml last
+// changed on the default branch, or that the repository does not use
+// Nibfin (no nibfin-issue.yml there).
+export function runLook(run: NibfinRun): RunLook {
+  if (run.error) return { state: 'error', tone: 'danger', label: 'Could not be read' }
+  if (!run.usesNibfin) return { state: 'not-used', tone: 'neutral', label: 'Does not use Nibfin' }
+  if (run.succeeded) return { state: 'succeeded', tone: 'success', label: 'A Nibfin run succeeded after the last change' }
+  return { state: 'not-succeeded', tone: 'warning', label: 'No successful Nibfin run since the last change' }
 }
