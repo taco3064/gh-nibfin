@@ -56,7 +56,11 @@ type RunnersReport struct {
 	// GitHubError is set when GitHub's runner list could not be read; the
 	// local fields are still reported.
 	GitHubError *Error `json:"githubError,omitempty"`
-	Error       *Error `json:"error,omitempty"`
+	// GitHubNeedsAdmin is set when GitHub's runner list (online/busy) was
+	// not read because the gh login is not admin of Repo; the local fields
+	// are reported.
+	GitHubNeedsAdmin bool   `json:"githubNeedsAdmin,omitempty"`
+	Error            *Error `json:"error,omitempty"`
 }
 
 // ProviderReport is one provider's login on the host.
@@ -131,10 +135,21 @@ func readRunners(ctx context.Context, h runnerHost) RunnersReport {
 		return rep
 	}
 	gh, err := newGitHub(repoHost(repo))
-	var list []ghRunner
+	var perms repoPerms
 	if err == nil {
-		list, err = gh.ListRunners(ctx, repo)
+		perms, err = gh.RepoPermissions(ctx, repo)
 	}
+	if err != nil {
+		rep.GitHubError = AsError(err)
+		return rep
+	}
+	// GitHub's runner list needs admin; a collaborator's runners are
+	// reported from the host only.
+	if !perms.Admin {
+		rep.GitHubNeedsAdmin = true
+		return rep
+	}
+	list, err := gh.ListRunners(ctx, repo)
 	if err != nil {
 		rep.GitHubError = AsError(err)
 		return rep

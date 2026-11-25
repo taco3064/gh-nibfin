@@ -130,6 +130,8 @@ func writeHost(w io.Writer, h op.HostReport) {
 			}
 			gh := "not listed"
 			switch {
+			case h.Runners.GitHubNeedsAdmin:
+				gh = "needs admin"
 			case h.Runners.GitHubError != nil || h.Runners.Repo == "":
 				gh = "unknown"
 			case rs.Listed:
@@ -141,6 +143,9 @@ func writeHost(w io.Writer, h op.HostReport) {
 				}
 			}
 			fmt.Fprintf(w, "  %s  %s  github: %s\n", clean(rs.Slot), active, clean(gh))
+		}
+		if h.Runners.GitHubNeedsAdmin {
+			fmt.Fprintf(w, "runners github: GitHub's online/busy state needs admin of %s; the local service state is shown\n", clean(h.Runners.Repo))
 		}
 	}
 	writeErr(w, "runners", h.Runners.Error)

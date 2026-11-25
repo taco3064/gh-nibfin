@@ -174,3 +174,46 @@ func TestProbeMemAvailable(t *testing.T) {
 		t.Error("probeScript does not read MemAvailable")
 	}
 }
+
+func TestReadHostNeedsAdmin(t *testing.T) {
+	// A collaborator's runners: GitHub's runner list needs admin, so it is
+	// not read, and the local states are reported without an error.
+	f := &fakeHost{volumes: map[string]bool{}}
+	fx := useRunnerHost(t, f)
+	fx.gh.perms = &repoPerms{Push: true}
+	fx.gh.listErr = Errorf(CodeGitHubAPIFailed, "ListRunners must not be called")
+	rep := ReadHost(context.Background())
+	if !rep.Runners.GitHubNeedsAdmin || rep.Runners.GitHubError != nil || rep.Runners.Error != nil ||
+		rep.Runners.Repo != "github.com/o/r" || len(rep.Runners.Runners) != 2 {
+		t.Fatalf("runners = %+v", rep.Runners)
+	}
+	for _, r := range rep.Runners.Runners {
+		if r.Listed || !r.Active || !r.Configured || r.Name == "" {
+			t.Errorf("runner = %+v", r)
+		}
+	}
+	b, err := json.Marshal(rep.Runners)
+	if err != nil || !strings.Contains(string(b), `"githubNeedsAdmin":true`) || strings.Contains(string(b), "githubError") {
+		t.Errorf("json = %s, %v", b, err)
+	}
+
+	// No permission at all (a repository the login cannot see) is the same.
+	fx.gh.perms = &repoPerms{}
+	if rep := ReadHost(context.Background()); !rep.Runners.GitHubNeedsAdmin || rep.Runners.GitHubError != nil {
+		t.Errorf("no permission: %+v", rep.Runners)
+	}
+
+	// A failed permission read is a GitHub error; the local states stay.
+	fx.gh.permsErr = Errorf(CodeGitHubAPIFailed, "read the permissions on github.com/o/r: HTTP 502")
+	rep = ReadHost(context.Background())
+	if Code(rep.Runners.GitHubError) != CodeGitHubAPIFailed || rep.Runners.GitHubNeedsAdmin || len(rep.Runners.Runners) != 2 {
+		t.Errorf("permission error: %+v", rep.Runners)
+	}
+
+	// Admin reads the list as before.
+	fx.gh.perms, fx.gh.permsErr, fx.gh.listErr = &repoPerms{Admin: true, Push: true}, nil, nil
+	rep = ReadHost(context.Background())
+	if rep.Runners.GitHubNeedsAdmin || rep.Runners.GitHubError != nil || !rep.Runners.Runners[0].Listed {
+		t.Errorf("admin: %+v", rep.Runners)
+	}
+}

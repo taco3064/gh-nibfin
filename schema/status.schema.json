@@ -216,6 +216,9 @@
         "githubError": {
           "$ref": "#/$defs/op.Error"
         },
+        "githubNeedsAdmin": {
+          "type": "boolean"
+        },
         "error": {
           "$ref": "#/$defs/op.Error"
         }
