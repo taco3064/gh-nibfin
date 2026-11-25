@@ -1,0 +1,77 @@
+/* Nibfin bindings shared by the Dashboard (theme.css) and the site
+   (src/app/styles/site.css): the dark variant, fonts, radius, the shadcn/ui
+   aliases of the --nf- tokens and the Tailwind theme mapping.
+   Color values live only in tokens.css; everything here aliases them. */
+
+/* shadcn's dark: variant follows the same attribute as tokens.css. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+:root {
+  color-scheme: dark;
+  --nf-font-body: 'DM Sans Variable', system-ui, sans-serif;
+  --nf-font-heading: 'Space Grotesk Variable', system-ui, sans-serif;
+  --radius: 0.625rem;
+
+  /* Full CSS color aliases of the --nf- tokens, as in the legacy theme. */
+  --background: var(--nf-background);
+  --foreground: var(--nf-text);
+  --card: var(--nf-surface);
+  --card-foreground: var(--nf-text);
+  --popover: var(--nf-surface);
+  --popover-foreground: var(--nf-text);
+  --primary: var(--nf-accent);
+  --primary-foreground: var(--nf-on-accent);
+  --secondary: var(--nf-surface);
+  --secondary-foreground: var(--nf-text);
+  --muted: var(--nf-raised);
+  --muted-foreground: var(--nf-secondary);
+  --accent: var(--nf-accent);
+  --accent-foreground: var(--nf-on-accent);
+  --destructive: var(--nf-danger);
+  --destructive-foreground: var(--nf-danger-bg);
+  --border: var(--nf-border);
+  --border-subtle: var(--nf-border-subtle);
+  --input: var(--nf-border-subtle);
+  --ring: var(--nf-focus);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: var(--nf-font-body);
+  --font-heading: var(--nf-font-heading);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-info: var(--nf-info);
+  --color-info-bg: var(--nf-info-bg);
+  --color-success: var(--nf-success);
+  --color-success-bg: var(--nf-success-bg);
+  --color-warning: var(--nf-warning);
+  --color-warning-bg: var(--nf-warning-bg);
+  --color-danger: var(--nf-danger);
+  --color-danger-bg: var(--nf-danger-bg);
+  --color-link: var(--nf-link);
+}
