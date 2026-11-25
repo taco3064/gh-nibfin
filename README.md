@@ -323,11 +323,21 @@ session in memory only. It then opens the live stream below, which keeps the
 person view current without reloading (see [Live updates](#live-updates)). It
 shows three views: Person (your open Issues with `scope`, grouped by
 repository, each with whether its workflows use the latest image),
-Repositories and Runners. A freshness indicator shows the time of the data and
-turns stale after five minutes. The page opens on the Runners view, with a
-guide to `runner add` then `init`, when this host has no complete Runner (or no
-Podman or machine), and on the Person view otherwise. Its
-Dark, Light and System theme choice is the only thing it stores (in the
+Repositories and Runners. The Repositories view picks a repository from a
+searchable list of your repositories that use Nibfin on the current host (the
+person read's host, or the open repository's), or by `[HOST/]OWNER/REPO`
+entered by hand, and reads its repository-view `status` once, and again on
+Refresh; it has no live updates. It shows the image its workflows pin, whether
+a Nibfin run succeeded after the init PR merged, Init or Upgrade through the
+operation dialog with the repository filled in, and a dependency graph of its
+open Issues: each points to its blockers, including closed ones and those in
+other repositories. Search and stage, paused, pending and blocked filters hide
+Issues but keep the blockers of those shown visible as context. A freshness
+indicator shows the time of the data shown (the open repository's read on the
+Repositories view) and turns stale after five minutes. The page opens on the
+Runners view, with a guide to `runner add` then `init`, when this host has no
+complete Runner (or no Podman or machine), and on the Person view otherwise.
+Its Dark, Light and System theme choice is the only thing it stores (in the
 browser).
 
 The Runners view shows the host (the podman machine state and its free
