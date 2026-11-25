@@ -79,6 +79,34 @@ Windows and macOS.
 - A rerun after an interruption completes the provider's unfinished slots
   first; they count toward N.
 
+On Windows and macOS the Runners are online only while the `podman machine`
+VM runs, so the command also sets up the host to keep the machine up while
+the host is on. Each change is listed in the plan, made only when it is
+missing (a rerun changes nothing already set), and read back:
+
+- Windows, WSL machine: `[wsl2] vmIdleTimeout=-1` in
+  `%UserProfile%\.wslconfig`. Every other key and section is kept; the file or
+  the section is created when missing. This needs WSL 2.x (`wsl --version`);
+  an older WSL is refused (`unsupported_host`) with the hint to run
+  `wsl --update`. A key set while the VM runs takes effect after the next
+  `wsl --shutdown`; the command never shuts the VM down.
+- Windows: the per-user Task Scheduler task `Nibfin podman machine`, which
+  runs `podman machine start <machine>` without a window (through
+  `conhost.exe --headless`) at the user's logon and on resume from sleep
+  (System log, `Microsoft-Windows-Power-Troubleshooter` event 1). It runs with
+  the user's normal privileges and on battery, without repetition, and ignores
+  a new start while one runs. It needs no admin rights; a refused registration
+  stops the command (`autostart_failed`) before any Runner step.
+- macOS: the per-user LaunchAgent
+  `~/Library/LaunchAgents/io.github.taco3064.nibfin.podman-machine.plist`
+  (`RunAtLoad`), which runs `podman machine start <machine>` at login.
+- A stopped machine is started through that task or LaunchAgent
+  (`launchctl kickstart`), so the VM does not depend on the terminal or app
+  that ran `gh`. The command continues once that start ends.
+
+Linux needs none of this: the Runners are systemd user services with linger.
+Power and sleep settings are never changed.
+
 The command only advises, and writes nothing, about:
 
 - On a Linux host, cgroup v2 delegation: when `cpu`, `memory` or `pids` is not
@@ -111,6 +139,10 @@ N of the provider's Runners on this host, all of them without `--count`.
 - A count above the existing number is refused with that number.
 - `--delete-login` deletes the `nibfin-home-<provider>` volume only when no
   Runner of the provider remains on this host; otherwise it is kept.
+- When no Runner of any provider remains on the host, the command also
+  removes the task or LaunchAgent that starts the machine. It leaves
+  `%UserProfile%\.wslconfig` as it is, since other WSL users may rely on
+  `vmIdleTimeout`, and says so. A Runner left busy keeps the entry.
 - An interrupted removal is finished by running `runner remove` again. Do that
   before `runner add`, which would otherwise restart a Runner whose
   registration is already gone.
@@ -153,6 +185,10 @@ Every view shows the runner host:
 
 - the Podman host and whether its machine is running, with the host's total
   and available memory (`MemAvailable`);
+- whether the task or LaunchAgent that starts the machine is present
+  (`autostart: ... present`, marked outdated when it differs from the one
+  `runner add` registers; `absent`; or not needed on Linux), read also while
+  the machine is stopped;
 - each Runner's systemd service (active or not) against GitHub's
   online/offline and busy, as listed for the repository the Runners serve;
 - each provider's login, from the CLI's own check run with `--pull=never`
