@@ -70,6 +70,30 @@ func writeErr(w io.Writer, part string, e *op.Error) {
 	}
 }
 
+// writeAutostart prints whether the entry that starts the podman machine at
+// logon is present.
+func writeAutostart(w io.Writer, a op.AutostartReport) {
+	what := "task"
+	switch {
+	case a.Error != nil:
+		writeErr(w, "autostart", a.Error)
+		return
+	case a.Kind == "":
+		fmt.Fprintln(w, "autostart: not needed (systemd user services with linger)")
+		return
+	case !a.Present:
+		fmt.Fprintln(w, "autostart: absent")
+		return
+	case a.Kind == "launchagent":
+		what = "LaunchAgent"
+	}
+	line := fmt.Sprintf("autostart: %s %q present", what, clean(a.Name))
+	if !a.Current {
+		line += " (outdated: run gh nibfin runner add)"
+	}
+	fmt.Fprintln(w, line)
+}
+
 func writeHost(w io.Writer, h op.HostReport) {
 	if h.Host.Error != nil {
 		writeErr(w, "host", h.Host.Error)
@@ -84,6 +108,7 @@ func writeHost(w io.Writer, h op.HostReport) {
 		}
 		fmt.Fprintf(w, "host: %s, %s\n", clean(name), state)
 	}
+	writeAutostart(w, h.Autostart)
 	if h.Memory.Error != nil {
 		writeErr(w, "memory", h.Memory.Error)
 	} else if h.Host.Error == nil {

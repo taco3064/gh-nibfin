@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/taco3064/gh-nibfin/internal/host"
 	"github.com/taco3064/gh-nibfin/internal/runners"
 )
 
@@ -99,6 +100,9 @@ type runnerRemove struct {
 	removed []slotState
 	// deleteVolume is true when the applied plan deletes the login volume.
 	deleteVolume bool
+	// removeEntry is true when the applied plan removes the autostart
+	// entry once no runner remains on the host.
+	removeEntry bool
 }
 
 // remoteRunner is a GitHub runner of a repository.
@@ -175,6 +179,10 @@ func (r *runnerRemove) Plan(ctx context.Context) (Plan, error) {
 		return plan, err
 	}
 	where := r.host.Describe()
+	as, err := r.host.Autostart(ctx)
+	if err != nil {
+		return plan, autostartError(ctx, err)
+	}
 	if r.host.NeedsStart() {
 		// Nothing can be asked of a stopped machine; Apply derives the
 		// slots after the start.
@@ -189,19 +197,22 @@ func (r *runnerRemove) Plan(ctx context.Context) (Plan, error) {
 		if r.p.DeleteLogin {
 			plan.Steps = append(plan.Steps, Step{Action: actDeleteVolume, Target: r.prov.volume(), Detail: "if no " + r.prov.name + " runner remains"})
 		}
+		if as.Present {
+			plan.Steps = append(plan.Steps, r.entrySteps(as, "if no runner remains on the host")...)
+		}
 		return plan, nil
 	}
 	env, err := r.load(ctx, nil)
 	if err != nil {
 		return plan, err
 	}
-	plan.Repo, plan.Steps, err = r.steps(ctx, env)
+	plan.Repo, plan.Steps, err = r.steps(ctx, env, as)
 	if err != nil {
 		return plan, err
 	}
 	plan.ReadOnly = true
 	for _, s := range plan.Steps {
-		if s.Action != actKeepVolume {
+		if s.Action != actKeepVolume && s.Action != actKeepWSLConfig {
 			plan.ReadOnly = false
 		}
 	}
@@ -297,18 +308,34 @@ func pick(slots []slotState, n int) []slotState {
 	return out[:n]
 }
 
-func (r *runnerRemove) steps(ctx context.Context, env *removeEnv) (string, []Step, error) {
+// entrySteps remove the autostart entry and, on a WSL machine, say that
+// .wslconfig stays as it is.
+func (r *runnerRemove) entrySteps(as host.Autostart, detail string) []Step {
+	steps := []Step{{Action: actRemoveAutostart, Target: entryName(as), Detail: detail}}
+	if r.host.WSL() {
+		steps = append(steps, Step{Action: actKeepWSLConfig, Target: host.WSLConfig, Detail: keepWSLConfig})
+	}
+	return steps
+}
+
+func (r *runnerRemove) steps(ctx context.Context, env *removeEnv, as host.Autostart) (string, []Step, error) {
 	where := r.host.Describe()
 	k := len(env.mine)
 	if r.p.Count > k {
 		return "", nil, Errorf(CodeInvalidArgument, "only %d %s runners on %s", k, r.prov.name, where)
 	}
-	if k == 0 && !r.p.DeleteLogin {
-		return "", nil, Errorf(CodeNoRunners, "no %s runners on %s", r.prov.name, where)
-	}
+	// The removal of the last runner on the host takes the autostart
+	// entry with it; a rerun finishes an interrupted one.
 	n := r.p.Count
 	if n == 0 {
 		n = k
+	}
+	lastGoes := as.Present && len(env.all)-n == 0
+	if k == 0 && !r.p.DeleteLogin {
+		if lastGoes {
+			return "", r.entrySteps(as, "no runner remains on "+where), nil
+		}
+		return "", nil, Errorf(CodeNoRunners, "no %s runners on %s", r.prov.name, where)
 	}
 	steps := []Step{}
 	repos := map[string]string{}
@@ -335,6 +362,9 @@ func (r *runnerRemove) steps(ctx context.Context, env *removeEnv) (string, []Ste
 		default:
 			steps = append(steps, Step{Action: actDeleteVolume, Target: r.prov.volume(), Detail: where})
 		}
+	}
+	if lastGoes {
+		steps = append(steps, r.entrySteps(as, "no runner remains on "+where)...)
 	}
 	repo := ""
 	if len(repos) == 1 {
@@ -374,7 +404,11 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 		if env, err = r.load(ctx, nil); err != nil {
 			return err
 		}
-		if _, steps, err = r.steps(ctx, env); err != nil {
+		as, err := r.host.Autostart(ctx)
+		if err != nil {
+			return autostartError(ctx, err)
+		}
+		if _, steps, err = r.steps(ctx, env, as); err != nil {
 			return err
 		}
 	} else if env, err = r.load(ctx, nil); err != nil {
@@ -394,6 +428,9 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 		case s.Action == actDeleteVolume && s.Target == r.prov.volume():
 			r.deleteVolume = true
 		case s.Action == actKeepVolume && s.Target == r.prov.volume():
+		case s.Action == actRemoveAutostart:
+			r.removeEntry = true
+		case s.Action == actKeepWSLConfig && s.Target == host.WSLConfig:
 		default:
 			return Errorf(CodeInvalidArgument, "unknown runner remove step %q %q", s.Action, s.Target)
 		}
@@ -438,7 +475,28 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 		return Errorf(CodeRunnerBusy, "GitHub reports %s busy, but no Job of it runs on %s; it takes no new nibfin Job now: run gh nibfin runner remove again to finish it", strings.Join(stuck, ", "), r.host.Describe())
 	}
 	if r.deleteVolume {
-		return r.removeVolume(ctx)
+		if err := r.removeVolume(ctx); err != nil {
+			return err
+		}
+	}
+	if r.removeEntry {
+		return r.removeAutostart(ctx)
+	}
+	return nil
+}
+
+// removeAutostart removes the autostart entry when no runner of any
+// provider remains on the host.
+func (r *runnerRemove) removeAutostart(ctx context.Context) error {
+	inv, err := listRunners(ctx, r.host)
+	if err != nil {
+		return err
+	}
+	if len(inv.Runners) > 0 {
+		return nil
+	}
+	if err := r.host.RemoveAutostart(ctx); err != nil {
+		return autostartError(ctx, err)
 	}
 	return nil
 }
@@ -567,6 +625,10 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 	case r.deleteVolume:
 		login = map[string]string{"volume": "deleted", "reason": "no " + r.prov.name + " runner remains"}
 	}
+	as, err := r.host.Autostart(ctx)
+	if err != nil {
+		return nil, autostartError(ctx, err)
+	}
 	res := Result{
 		"host":      r.host.Describe(),
 		"provider":  r.prov.name,
@@ -574,12 +636,19 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 		"remaining": remaining,
 		"runners":   states,
 		"login":     login,
+		"autostart": map[string]any{"kind": as.Kind, "name": as.Name, "present": as.Present},
+	}
+	if r.removeEntry && r.host.WSL() {
+		res["wslconfig"] = keepWSLConfig
 	}
 	if len(left) > 0 {
 		return res, Errorf(CodeNotApplied, "runners not removed: %s", strings.Join(left, ", "))
 	}
 	if r.deleteVolume && has && remaining == 0 {
 		return res, Errorf(CodeNotApplied, "%s still exists after runner remove", r.prov.volume())
+	}
+	if r.removeEntry && as.Present && len(env.all) == 0 {
+		return res, Errorf(CodeNotApplied, "the autostart %s is still present after runner remove", entryName(as))
 	}
 	return res, nil
 }

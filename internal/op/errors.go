@@ -43,6 +43,9 @@ const (
 	CodeRunnerMissing        = "runner_missing"
 	CodeRunnerBusy           = "runner_busy"
 	CodeRunnerRemoveFailed   = "runner_remove_failed"
+	// CodeAutostartFailed is a refused autostart entry registration or
+	// removal, a launchctl failure, or a .wslconfig gh nibfin cannot edit.
+	CodeAutostartFailed = "autostart_failed"
 	// CodeMachineStopped marks a status part not read because the podman
 	// machine is stopped; status never starts it.
 	CodeMachineStopped = "machine_stopped"

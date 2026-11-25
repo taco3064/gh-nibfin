@@ -447,11 +447,11 @@ func TestRunnerAddStoppedMachine(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 	// After the start: logged in already, so no login; two new slots.
-	wantEvents := []string{"linger", "create volume nibfin-tools", "token",
+	wantEvents := []string{"start via autostart", "linger", "create volume nibfin-tools", "token",
 		"extract claude-1", "configure claude-1", "unit nibfin-runner-claude-1.service",
 		"extract claude-2", "configure claude-2", "unit nibfin-runner-claude-2.service"}
-	if f.starts != 1 || !reflect.DeepEqual(f.events, wantEvents) || fx.gh.tokens != 1 {
-		t.Errorf("starts %d, events %v", f.starts, f.events)
+	if f.autoStarts != 1 || f.starts != 0 || !reflect.DeepEqual(f.events, wantEvents) || fx.gh.tokens != 1 {
+		t.Errorf("starts %d %d, events %v", f.autoStarts, f.starts, f.events)
 	}
 	if _, err := o.ReadBack(context.Background(), p); err != nil {
 		t.Errorf("ReadBack: %v", err)

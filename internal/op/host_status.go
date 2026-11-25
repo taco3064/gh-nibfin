@@ -15,6 +15,19 @@ type HostReport struct {
 	Memory    MemoryReport     `json:"memory"`
 	Runners   RunnersReport    `json:"runners"`
 	Providers []ProviderReport `json:"providers"`
+	Autostart AutostartReport  `json:"autostart"`
+}
+
+// AutostartReport is the entry that starts the podman machine at logon (a
+// Task Scheduler task on Windows, a LaunchAgent on macOS). Kind is empty on
+// the local Linux host, which needs none.
+type AutostartReport struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name,omitempty"`
+	Present bool   `json:"present"`
+	// Current is true when the entry is the one runner add registers.
+	Current bool   `json:"current"`
+	Error   *Error `json:"error,omitempty"`
 }
 
 // HostInfo is the runner host itself.
@@ -61,7 +74,7 @@ func ReadHost(ctx context.Context) HostReport {
 	h, err := detectHost(ctx)
 	if err != nil {
 		e := AsError(err)
-		rep.Host.Error, rep.Memory.Error, rep.Runners.Error = e, e, e
+		rep.Host.Error, rep.Memory.Error, rep.Runners.Error, rep.Autostart.Error = e, e, e, e
 		for _, p := range providerTable {
 			rep.Providers = append(rep.Providers, ProviderReport{Provider: p.name, Error: e})
 		}
@@ -71,6 +84,13 @@ func ReadHost(ctx context.Context) HostReport {
 	rep.Host.Running = !h.NeedsStart()
 	if hh, ok := h.(*host.Host); ok {
 		rep.Host.Machine, rep.Host.VMType = hh.Machine, hh.VMType
+	}
+	// The entry is read from the host scheduler or launchd, also on a
+	// stopped machine.
+	if as, err := h.Autostart(ctx); err != nil {
+		rep.Autostart = AutostartReport{Kind: as.Kind, Name: as.Name, Error: AsError(autostartError(ctx, err))}
+	} else {
+		rep.Autostart = AutostartReport{Kind: as.Kind, Name: as.Name, Present: as.Present, Current: as.Current}
 	}
 	if !rep.Host.Running {
 		e := AsError(Errorf(CodeMachineStopped, "%s is stopped; status does not start it", h.Describe()))

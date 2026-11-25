@@ -107,6 +107,14 @@ type runnerHost interface {
 	Local() bool
 	WSL() bool
 	Describe() string
+	// The autostart entry and the .wslconfig key (see internal/host).
+	Autostart(ctx context.Context) (host.Autostart, error)
+	EnsureAutostart(ctx context.Context) (host.Autostart, error)
+	StartViaAutostart(ctx context.Context) error
+	RemoveAutostart(ctx context.Context) error
+	IdleTimeoutSet() (bool, error)
+	EnsureIdleTimeout() (bool, error)
+	CheckWSL(ctx context.Context) error
 }
 
 // listRunners discovers the runners on the host.
@@ -139,6 +147,7 @@ func hostError(err error) error {
 		{host.ErrMachineStart, CodeMachineStartFailed},
 		{host.ErrUnsupported, CodeUnsupportedHost},
 		{host.ErrPodman, CodePodmanFailed},
+		{host.ErrAutostart, CodeAutostartFailed},
 	} {
 		if errors.Is(err, m.target) {
 			return Wrap(m.code, err)

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/taco3064/gh-nibfin/internal/host"
 	"github.com/taco3064/gh-nibfin/internal/runners"
 )
 
@@ -77,6 +78,11 @@ type runnerAdd struct {
 	host runnerHost
 	// applied are the slots Apply acted on, for ReadBack.
 	applied []string
+	// entry is the autostart entry as Plan read it.
+	entry host.Autostart
+	// wslPending is true when Apply set the .wslconfig key while the VM
+	// ran, so it takes effect after the next wsl --shutdown.
+	wslPending bool
 }
 
 // addEnv is what runner add learns from the host and GitHub.
@@ -129,11 +135,20 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 		return plan, err
 	}
 	where := a.host.Describe()
+	hostSteps, err := a.hostSteps(ctx)
+	if err != nil {
+		return plan, err
+	}
+	plan.Steps = append(plan.Steps, hostSteps...)
 	if a.host.NeedsStart() {
 		// Nothing can be asked of a stopped machine; Apply derives the
 		// rest after the start.
+		start := Step{Action: actStart, Target: where}
+		if a.entry.Kind != "" {
+			start.Detail = "through " + entryName(a.entry)
+		}
 		plan.Steps = append(plan.Steps,
-			Step{Action: actStart, Target: where},
+			start,
 			Step{Action: actLinger, Target: where},
 			Step{Action: actCreateVolume, Target: toolsVolume, Detail: where},
 		)
@@ -154,8 +169,70 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 		return plan, err
 	}
 	plan.Repo = env.repo
-	plan.Steps, err = a.steps(ctx, env)
+	steps, err := a.steps(ctx, env)
+	plan.Steps = append(plan.Steps, steps...)
 	return plan, err
+}
+
+// hostSteps are the host changes that keep the machine and its runners up
+// while the host is on: the .wslconfig key on a WSL machine and the
+// autostart entry, each only when it is missing. They only read.
+func (a *runnerAdd) hostSteps(ctx context.Context) ([]Step, error) {
+	steps := []Step{}
+	if a.host.WSL() {
+		if err := a.host.CheckWSL(ctx); err != nil {
+			return nil, autostartError(ctx, err)
+		}
+		set, err := a.host.IdleTimeoutSet()
+		if err != nil {
+			return nil, autostartError(ctx, err)
+		}
+		if !set {
+			d := wslConfigValue
+			if !a.host.NeedsStart() {
+				d += "; takes effect after the next wsl --shutdown; runner add does not shut down the VM"
+			}
+			steps = append(steps, Step{Action: actSetWSLConfig, Target: host.WSLConfig, Detail: d})
+		}
+	}
+	as, err := a.host.Autostart(ctx)
+	if err != nil {
+		return nil, autostartError(ctx, err)
+	}
+	a.entry = as
+	if as.Kind != "" && !as.Current {
+		d := entryTriggers(as.Kind)
+		if as.Present {
+			d += "; replaces the registered one: " + as.Outdated
+		}
+		steps = append(steps, Step{Action: actRegisterAutostart, Target: entryName(as), Detail: d})
+	}
+	return steps, nil
+}
+
+// applyHostSteps applies the plan's host steps.
+func (a *runnerAdd) applyHostSteps(ctx context.Context, steps []Step) error {
+	for _, s := range steps {
+		switch s.Action {
+		case actSetWSLConfig:
+			changed, err := a.host.EnsureIdleTimeout()
+			if err != nil {
+				return autostartError(ctx, err)
+			}
+			if changed && !a.host.NeedsStart() {
+				a.wslPending = true
+			}
+		case actRegisterAutostart:
+			as, err := a.host.EnsureAutostart(ctx)
+			if err != nil {
+				return autostartError(ctx, err)
+			}
+			if as.Kind != "" && !as.Current {
+				return Errorf(CodeAutostartFailed, "%s was registered, but reads back different: %s", entryName(as), as.Outdated)
+			}
+		}
+	}
+	return nil
 }
 
 // load discovers the runners, picks the repository, probes the host and
@@ -302,9 +379,20 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 	steps := plan.Steps
 	var env *addEnv
 	var err error
-	if len(steps) > 0 && steps[0].Action == actStart {
-		if err := a.host.Start(ctx); err != nil {
-			return hostError(err)
+	for _, s := range steps {
+		if (s.Action == actSetWSLConfig && s.Target != host.WSLConfig) || (s.Action == actRegisterAutostart && s.Target == "") {
+			return Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
+		}
+	}
+	// The host steps come first; none needs the VM.
+	if err := a.applyHostSteps(ctx, steps); err != nil {
+		return err
+	}
+	if hasStep(steps, actStart) {
+		// Started through the autostart entry, so the VM does not depend
+		// on the process that ran gh.
+		if err := a.host.StartViaAutostart(ctx); err != nil {
+			return autostartError(ctx, err)
 		}
 		if env, err = a.load(ctx); err != nil {
 			return err
@@ -333,7 +421,7 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 			logins = append(logins, s)
 		case s.Action == actAddRunner && slotRE.MatchString(s.Target):
 			slots = append(slots, s.Target)
-		case s.Action == actAdvise:
+		case s.Action == actAdvise, s.Action == actSetWSLConfig, s.Action == actRegisterAutostart:
 		default:
 			return Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
 		}
@@ -548,18 +636,47 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	as, err := a.host.Autostart(ctx)
+	if err != nil {
+		return nil, autostartError(ctx, err)
+	}
 	r := Result{
-		"host":    a.host.Describe(),
-		"repo":    repo,
-		"runners": states,
-		"login":   map[string]any{a.prov.name: map[string]bool{"loggedIn": in}},
-		"advice":  a.advice(pr, len(inv.Runners)),
+		"host":      a.host.Describe(),
+		"repo":      repo,
+		"runners":   states,
+		"login":     map[string]any{a.prov.name: map[string]bool{"loggedIn": in}},
+		"advice":    a.advice(pr, len(inv.Runners)),
+		"autostart": as,
+	}
+	wslSet := true
+	if a.host.WSL() {
+		if wslSet, err = a.host.IdleTimeoutSet(); err != nil {
+			return nil, autostartError(ctx, err)
+		}
+		w := map[string]string{"vmIdleTimeout": "", "effective": ""}
+		if wslSet {
+			w["vmIdleTimeout"], w["effective"] = "-1", "now"
+			if a.wslPending {
+				w["effective"] = "after wsl --shutdown"
+			}
+		}
+		r["wslconfig"] = w
 	}
 	if len(missing) > 0 {
 		return r, Errorf(CodeRunnerMissing, "runners not configured, not running or not registered on GitHub: %s", strings.Join(missing, ", "))
 	}
 	if !in {
 		return r, Errorf(CodeNotLoggedIn, "%s is not logged in after runner add", a.prov.name)
+	}
+	if as.Kind != "" && !as.Current {
+		why := "is not registered"
+		if as.Present {
+			why = "differs: " + as.Outdated
+		}
+		return r, Errorf(CodeNotApplied, "the autostart %s %s after runner add", entryName(as), why)
+	}
+	if !wslSet {
+		return r, Errorf(CodeNotApplied, "%s does not set %s after runner add", host.WSLConfig, wslConfigValue)
 	}
 	return r, nil
 }
