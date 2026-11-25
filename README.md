@@ -382,13 +382,21 @@ go build
 In `dashboard/`, `npm run typecheck`, `npm run lint` and `npm test` (unit tests,
 no browser) check the project; CI runs them with the build before the Go steps.
 
-`npm run screenshots` builds, starts `go run . dashboard` on port 4790 with a
-mocked API, captures the page at 375, 768, 1280 and 1920 px in the dark and
-light themes into the ignored `dashboard/.screenshots/`, and stops the server.
+`npm run screenshots` builds the page and a separate harness of the shared
+Issue element (`screenshots.html`) into the ignored `dashboard/.screenshots-dist/`,
+starts `go run -tags dashboardscreenshots . dashboard` on port 4790, which serves
+that folder instead of the embedded UI, with a mocked API, captures the pages
+at 375, 768, 1280 and 1920 px in the dark and light themes into the ignored
+`dashboard/.screenshots/`, and stops the server. No other build has the tag, so
+the harness never reaches `internal/dashboard/dist/` or a product binary.
 It fails on a console error or a Content-Security-Policy violation. Install its
 browser first with `npx playwright install --only-shell chromium`; the
 lockfile's Playwright version decides the build.
 
-The page's Content-Security-Policy allows only same-origin files and no inline
-`<style>` element. A component that injects one, such as the scroll lock of
-shadcn/ui menus, dialogs, sheets and selects, needs a CSP change first.
+The page's Content-Security-Policy allows only same-origin files. Scripts have
+no inline exception; `<style>` elements are allowed only with a nonce that the
+server makes fresh for every page response. The build marks the page with the
+placeholder `NIBFIN_CSP_NONCE` (Vite's `html.cspNonce`); the server replaces it
+in `meta[property=csp-nonce]` and in the policy's `style-src`, and the client
+passes it to the scroll lock of shadcn/ui dialogs, menus and selects through
+`get-nonce`'s `setNonce`.

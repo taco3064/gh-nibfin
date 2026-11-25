@@ -76,6 +76,7 @@
   --color-warning-bg: var(--nf-warning-bg);
   --color-danger: var(--nf-danger);
   --color-danger-bg: var(--nf-danger-bg);
+  --color-link: var(--nf-link);
 }
 
 @layer base {
