@@ -485,6 +485,44 @@ session never goes in the URL) answers `text/event-stream`. Each event is one
 `at` is the server's RFC 3339 time. A session has one stream: a new request
 ends the one before. The stream ends when the page leaves or the server stops.
 
+### Public live data Worker
+
+`dashboard/src/worker/` is a Cloudflare Worker that plays the Dashboard
+server's role for the public read-only site. One Durable Object serves every
+visitor at `wss://<worker>/live` (a WebSocket upgrade is required, otherwise
+`426`; other paths are `404`). It reads `taco3064/nibfin-core`,
+`taco3064/gh-nibfin` and `taco3064/nibfin-e2e` with a read-only fine-grained
+token (Issues, Actions and Administration read) held only as the Worker secret
+`GITHUB_TOKEN`; the token never reaches a page, a message or the stored state.
+It never writes to GitHub. `.github/workflows/worker.yml` deploys it from
+`dashboard/src/worker/wrangler.jsonc` and sets the secret.
+
+A Durable Object alarm checks GitHub every 30 seconds or more, only while a
+page is connected, with conditional requests (`ETag`, `If-None-Match`),
+honouring `x-poll-interval` and `Retry-After`. GitHub usage is the same for
+one page or many. When anything changed, every page receives the same message.
+Each WebSocket text message is one event of the [Live updates](#live-updates)
+format: `snapshot` `{at, result}`, `checked` `{at}` and `error`
+`{source: "github", error}`; `issue` and `podman` are not sent. A new page
+first gets the last snapshot, then `checked` or the last errors. A failed
+check keeps the last good data, sends `error` and stops the `checked` time.
+Before the secret is set, pages get `auth_unavailable` and no request is made.
+
+`result` (`LiveData`, typed in `dashboard/src/worker/messages.ts`) holds:
+
+- `repos`: per repository `repo` (`github.com/OWNER/REPO`), `issues` and
+  `issuesError`, as in `status --json`'s repo view: the open Issues with
+  labels, `pause`, `pending`, blockers and the Nibfin runs from each
+  workflow's newest 100 runs (`runsTruncated` when older ones may exist).
+  `pendingComment`, image, init-run, permission and repository-list data are
+  not included;
+- `summary`: `created`, the Issues created since 2026-11-21 (Asia/Taipei),
+  and `delivered`, the Issues closed since then with `delivered` whenever they
+  were created, summed over the three repositories from search totals;
+- `runners`: per repository each runner's GitHub `status` and `busy`, and
+  for a busy runner its running job's repository, Issue or ref, and stage,
+  read from the job's run title.
+
 ### Building the Dashboard UI
 
 The UI is a Vite, React, TypeScript, Tailwind and shadcn/ui project in
