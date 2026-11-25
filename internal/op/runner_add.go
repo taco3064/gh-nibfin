@@ -67,6 +67,18 @@ mv -f "$1/$2.tmp" "$1/$2"
 systemctl --user daemon-reload
 systemctl --user enable --now "$2"
 `
+	// unitDirScript gives the user ownership of the unit directory $1 and
+	// its default.target.wants when they exist but are not writable, as
+	// podman's WSL provisioning leaves them (created by root). It never
+	// recurses, follows a symlinked directory or touches a file, and uses
+	// sudo only without a prompt.
+	unitDirScript = `set -e
+for d in "$1" "$1/default.target.wants"; do
+  if [ -d "$d" ] && [ ! -L "$d" ] && [ ! -w "$d" ]; then
+    sudo -n chown "$(id -u):$(id -g)" "$d"
+  fi
+done
+`
 )
 
 // currentRepo resolves the current directory's repository; tests replace it.
@@ -601,12 +613,27 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step) erro
 			if err != nil {
 				return err
 			}
+			if !a.host.Local() {
+				if err := a.unitDir(ctx, s, env.inv.UnitDir); err != nil {
+					return err
+				}
+			}
 			_, err = a.script(ctx, "install the service of "+s, unitScript, strings.NewReader(unit), "", env.inv.UnitDir, runners.UnitName(s))
 			return err
 		})
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// unitDir makes the unit directory dir usable by the VM user for the slot s
+// on a machine host; a failure names the remedy inside the VM.
+func (a *runnerAdd) unitDir(ctx context.Context, s, dir string) error {
+	_, err := a.script(ctx, "make the unit directory of "+s+" writable", unitDirScript, nil, "", dir)
+	if err != nil {
+		return Errorf(CodeRunnerInstallFailed, "%w; inside the VM, run: sudo chown $(id -u):$(id -g) %s %s/default.target.wants", err, dir, dir)
 	}
 	return nil
 }
