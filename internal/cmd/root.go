@@ -290,7 +290,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"session, with the same access as your gh login on this machine, and the terminal\n" +
 			"prints \"session opened\". Keep the URL private until then; restart for a new one.\n" +
 			"--no-browser prints the session URL instead of opening a browser.\n\n" +
-			"The page is a placeholder until the Dashboard UI; the API is under /api/.",
+			"The page is the Dashboard UI built from dashboard/; a binary built without it serves\n" +
+			"a placeholder page. The API is under /api/.",
 		// dashboard starts the server that serves the Dashboard API, so it
 		// has no API equivalent and runs no operation through op.Run.
 		RunE: func(c *cobra.Command, _ []string) error {
