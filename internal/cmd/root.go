@@ -122,19 +122,29 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	var removeCount int
 	var removeYes, deleteLogin bool
 	runnerRemove := &cobra.Command{
-		Use:       "remove <claude|codex>",
-		Short:     "Remove Runners for a provider",
+		Use:   "remove <claude|codex>",
+		Short: "Remove Runners for a provider on this host",
+		Long: "Remove Runners for a provider on this host (the Linux host, or the podman machine VM).\n\n" +
+			"Without --count every Runner of the provider is removed. Idle Runners go first. A busy\n" +
+			"Runner loses its nibfin labels, so it takes no new nibfin Job, and is removed after its\n" +
+			"Job ends; the command waits for it. Each removal deletes the GitHub registration, the\n" +
+			"service and the Runner's directory. A count above the number of Runners is refused.\n\n" +
+			"--delete-login deletes the provider's login (the nibfin-home-<provider> volume) only\n" +
+			"when no Runner of the provider remains on this host.",
 		Args:      providerArgs(1, 1),
 		ValidArgs: providers,
 		RunE: func(c *cobra.Command, args []string) error {
-			if err := checkCount(removeCount); err != nil {
-				return err
+			// Without --count, Count 0 removes them all.
+			if c.Flags().Changed("count") {
+				if err := checkCount(removeCount); err != nil {
+					return err
+				}
 			}
 			return run(c, ops.RunnerRemove(op.RunnerRemoveParams{Provider: args[0], Count: removeCount, DeleteLogin: deleteLogin}), removeYes)
 		},
 	}
-	runnerRemove.Flags().IntVar(&removeCount, "count", 1, "number of Runners")
-	runnerRemove.Flags().BoolVar(&deleteLogin, "delete-login", false, "also delete the provider login")
+	runnerRemove.Flags().IntVar(&removeCount, "count", 0, "number of Runners (default: all)")
+	runnerRemove.Flags().BoolVar(&deleteLogin, "delete-login", false, "also delete the provider login when no Runner of it remains")
 	addYesFlag(runnerRemove, &removeYes)
 	runner.AddCommand(runnerAdd, runnerRemove)
 

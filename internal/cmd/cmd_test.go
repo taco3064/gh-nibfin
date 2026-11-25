@@ -46,7 +46,6 @@ func fakeRepo(t *testing.T) *[]string {
 func TestEveryCommandIsNotImplemented(t *testing.T) {
 	fakeRepo(t)
 	for _, args := range [][]string{
-		{"runner", "remove", "claude", "--delete-login"},
 		{"init"},
 		{"init", "-R", "o/r", "--yes"},
 		{"dashboard", "--port", "8080", "--no-browser"},
@@ -71,6 +70,8 @@ func TestBadInvocationsFail(t *testing.T) {
 		{"runner", "add", "claude", "--count", "0"},
 		{"runner", "add", "claude", "--count", "x"},
 		{"runner", "remove"},
+		{"runner", "remove", "claude", "--count", "0"},
+		{"runner", "remove", "claude", "--count", "-1"},
 		{"login", "gemini"},
 		{"login", "claude", "codex"},
 		{"init", "extra"},
@@ -182,6 +183,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		{"runner", "add", "codex", "--count", "3"},
 		{"runner", "add", "claude", "--yes"},
 		{"runner", "remove", "claude", "--count", "2", "--delete-login"},
+		{"runner", "remove", "codex", "--yes"},
 		{"login", "claude"},
 		{"login"},
 		{"init", "-R", "o/r"},
@@ -201,6 +203,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		op.RunnerAddParams{Provider: "codex", Count: 3},
 		op.RunnerAddParams{Provider: "claude", Count: 2},
 		op.RunnerRemoveParams{Provider: "claude", Count: 2, DeleteLogin: true},
+		op.RunnerRemoveParams{Provider: "codex"},
 		op.LoginParams{Provider: "claude"},
 		op.LoginParams{},
 		"init:github.com/o/r",
