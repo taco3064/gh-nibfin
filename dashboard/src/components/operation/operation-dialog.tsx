@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, CircleHelp, LoaderCircle } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleHelp, CircleStop, LoaderCircle } from 'lucide-react'
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 
 import { tones, type Tone } from '@/components/issue/tones'
@@ -27,10 +27,13 @@ import {
   type Plan,
   type ProgressEvent,
   type Summary,
+  type Values,
 } from '@/lib/operation'
+import { endsAt, loginReducer, running, timeoutReason, waiting, type LoginStep } from '@/lib/login'
 import { applyStream, deletePlan, planRequest, type ApiError } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
+import { LoginPanel } from './login-panel'
 import { OperationFields } from './operation-fields'
 import { Notes, OperationItems } from './operation-items'
 
@@ -43,15 +46,27 @@ export interface OperationDialogProps {
   // onFinished is called once the dialog closes after an apply was sent,
   // whatever its outcome, so the opener can read the status again.
   onFinished?: () => void
+  // initial replaces the defaults of the fields with its keys; keys no field
+  // has are ignored. Openers find the keys through the schema.
+  initial?: Values
   fetcher?: Fetch
 }
 
 // OperationDialog runs one changing command: inputs from its schema, the
 // plan's preview, confirm or cancel, the apply's progress and the read-back.
-export function OperationDialog({ command, open, onOpenChange, onFinished, fetcher }: OperationDialogProps) {
+// While a login waits for the person, closing it ends the login.
+export function OperationDialog({ command, open, onOpenChange, onFinished, initial, fetcher }: OperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {open && <OperationContent command={command} onClose={() => onOpenChange(false)} onFinished={onFinished} fetcher={fetcher} />}
+      {open && (
+        <OperationContent
+          command={command}
+          initial={initial}
+          onClose={() => onOpenChange(false)}
+          onFinished={onFinished}
+          fetcher={fetcher}
+        />
+      )}
     </Dialog>
   )
 }
@@ -111,23 +126,32 @@ const summaryLook: Record<Summary['kind'], [Tone, typeof CircleAlert]> = {
   notConfirmed: ['danger', CircleAlert],
   failed: ['danger', CircleAlert],
   unknown: ['warning', CircleHelp],
+  ended: ['warning', CircleStop],
 }
+
+export const endedInDialog = 'you chose End login'
 
 function OperationContent({
   command,
+  initial,
   onClose,
   onFinished,
   fetcher,
 }: {
   command: Command
+  initial?: Values
   onClose: () => void
   onFinished?: () => void
   fetcher?: Fetch
 }) {
   const fields = useMemo(() => fieldsOf(command), [command])
-  const [values, setValues] = useState(() => initialValues(fields))
+  const [values, setValues] = useState(() => initialValues(fields, initial))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [state, dispatch] = useReducer(runReducer, initialRun)
+  const [logins, loginDispatch] = useReducer(loginReducer, [])
+  // controller aborts the running apply's request, which cancels the apply
+  // on the server; it is set only while an apply streams.
+  const controller = useRef<AbortController | null>(null)
   // stored is the id of a plan the server holds that was not applied;
   // closing the dialog drops it.
   const stored = useRef<string | null>(null)
@@ -143,6 +167,10 @@ function OperationContent({
 
   useEffect(() => {
     return () => {
+      // Closing while an apply streams can only happen during a login
+      // wait: it ends the request.
+      controller.current?.abort()
+      controller.current = null
       if (stored.current) void deletePlan(stored.current, fetchRef.current)
       stored.current = null
       if (applied.current) finished.current?.()
@@ -193,18 +221,54 @@ function OperationContent({
     stored.current = null
     applied.current = true
     dispatch({ type: 'apply' })
+    const ac = new AbortController()
+    controller.current = ac
     const o = await applyStream<OpResult>(
       id,
       true,
       (line) => {
         if (line.event === 'progress' && line.progress) dispatch({ type: 'progress', event: line.progress as ProgressEvent })
+        else if (line.event === 'login_step' && line.step) loginDispatch({ type: 'step', step: line.step as LoginStep, at: Date.now() })
       },
       fetcher,
+      ac.signal,
     )
+    if (controller.current === ac) controller.current = null
+    // An aborted apply already has its ending, or the dialog is gone.
+    if (ac.signal.aborted) return
     // A refused apply leaves the plan stored, except when it is gone.
     if (!o.ok && o.status !== undefined && o.status !== 404) stored.current = id
+    loginDispatch({ type: 'outcome', outcome: o })
     dispatch({ type: 'applied', outcome: o })
   }
+
+  // endLogin aborts the apply while a login waits, for the reason given.
+  const endLogin = (reason: string) => {
+    const ac = controller.current
+    if (!ac) return
+    controller.current = null
+    dispatch({ type: 'aborted', reason })
+    loginDispatch({ type: 'ended', reason })
+    ac.abort()
+  }
+  const endRef = useRef(endLogin)
+  useEffect(() => {
+    endRef.current = endLogin
+  })
+
+  // The timeout: one timer per running login, until 15 minutes after its
+  // first step. A login that succeeded or failed, the outcome and unmount
+  // clear it.
+  const phaseNow = state.phase
+  useEffect(() => {
+    if (phaseNow !== 'applying') return
+    const timers = logins
+      .filter(running)
+      .map((s) => setTimeout(() => endRef.current(timeoutReason), Math.max(0, endsAt(s) - Date.now())))
+    return () => {
+      for (const t of timers) clearTimeout(t)
+    }
+  }, [logins, phaseNow])
 
   const cancel = () => {
     if (stored.current) void deletePlan(stored.current, fetcher)
@@ -223,12 +287,30 @@ function OperationContent({
   const kept = plan ? (plan.steps ?? []).length - changing : 0
   const refused = state.refused
   const canRetry = refused === undefined || refused.status === 409
+  // A login waiting for the person may be ended by closing; any other
+  // running apply keeps the dialog open.
+  const loginWait = phase === 'applying' && waiting(logins)
+  const locked = phase === 'applying' && !loginWait
+  const panels =
+    logins.length > 0 && (phase === 'applying' || phase === 'finished') ? (
+      <div className="flex flex-col gap-3" data-slot="logins">
+        {logins.map((s) => (
+          <LoginPanel
+            key={s.provider}
+            state={s}
+            planId={state.planId}
+            fetcher={fetcher}
+            onCodeSent={(p) => loginDispatch({ type: 'codeSent', provider: p })}
+          />
+        ))}
+      </div>
+    ) : null
 
   return (
     <DialogContent
-      showCloseButton={phase !== 'applying'}
+      showCloseButton={!locked}
       onEscapeKeyDown={(e) => {
-        if (phase === 'applying') e.preventDefault()
+        if (locked) e.preventDefault()
       }}
       onInteractOutside={(e) => {
         if (phase === 'applying') e.preventDefault()
@@ -299,8 +381,16 @@ function OperationContent({
         {phase === 'applying' && (
           <>
             <Message tone="info" icon={LoaderCircle} slot="applying" role="status">
-              Applying. The dialog stays open until the result is read back.
+              {loginWait
+                ? 'Applying. Sign in below to continue.'
+                : 'Applying. The dialog stays open until the result is read back.'}
             </Message>
+            {panels}
+            {loginWait && (
+              <p data-slot="end-login-note" className="text-sm break-words text-muted-foreground">
+                Ending the login cancels this {command.path}; run it again to continue.
+              </p>
+            )}
             <OperationItems rows={state.rows} phase={phase} label="Items" />
           </>
         )}
@@ -322,6 +412,7 @@ function OperationContent({
                 <ErrorLine error={state.error} />
               </p>
             )}
+            {panels}
             <OperationItems rows={state.rows} phase={phase} label="Items read back" />
             <Notes notes={readBackNotes(state)} />
           </>
@@ -353,6 +444,12 @@ function OperationContent({
               Close
             </Button>
           ))}
+        {loginWait && (
+          <Button variant="outline" onClick={() => endLogin(endedInDialog)} data-action="end-login">
+            <CircleStop aria-hidden="true" />
+            End login
+          </Button>
+        )}
         {phase === 'applying' && (
           <Button disabled>
             <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />

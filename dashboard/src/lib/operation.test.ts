@@ -329,7 +329,13 @@ describe('aborted', () => {
     plan: { operation: 'login', steps: [{ id: 'login:alpha', action: 'log in', target: 'alpha', noChange: false, afterStart: false }], confirm: false, readOnly: false },
   }
   it('ends an applying dialog and is never confirmed', () => {
-    const s = [plannedAction, { type: 'apply' } as RunAction, { type: 'aborted', reason: 'timed out after 15 minutes' } as RunAction].reduce(runReducer, initialRun)
+    const started: RunAction = { type: 'progress', event: { id: 'login:alpha', action: 'log in', target: 'alpha', phase: 'started' } }
+    const s = [plannedAction, { type: 'apply' } as RunAction, started, { type: 'aborted', reason: 'timed out after 15 minutes' } as RunAction].reduce(
+      runReducer,
+      initialRun,
+    )
+    // The item that was in progress is no longer shown running.
+    expect(s.rows.map((r) => r.progress)).toEqual(['waiting'])
     expect(s).toMatchObject({ phase: 'finished', ending: 'ended', endedReason: 'timed out after 15 minutes' })
     expect(s.rows.every((r) => r.check === undefined)).toBe(true)
     expect(summary(s)).toEqual({ kind: 'ended', text: endedSummary('timed out after 15 minutes') })

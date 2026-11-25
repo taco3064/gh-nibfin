@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { commands } from './command-fixtures'
 import { expectClean, expectNonce, prepare, shot, storageKey, widths } from './support'
 
 // Screenshots and checks of the operation dialog (#351) in its harness
@@ -7,68 +8,6 @@ import { expectClean, expectNonce, prepare, shot, storageKey, widths } from './s
 // plan, apply and delete routes are mocked with fictional bodies.
 
 const themes = ['dark', 'light'] as const
-
-const providerArg = { name: 'provider', required: true, repeatable: false, allowed: ['claude', 'codex'], param: 'provider' }
-const yes = { name: 'yes', shorthand: 'y', type: 'bool', default: 'false', usage: 'apply without asking for confirmation', required: false }
-const json = { name: 'json', shorthand: '', type: 'bool', default: 'false', usage: 'print the result as JSON', required: false }
-const repo = {
-  name: 'repo',
-  shorthand: 'R',
-  type: 'string',
-  default: '',
-  usage: 'the repository as [HOST/]OWNER/REPO (default: the current directory)',
-  required: false,
-  param: 'repo',
-}
-
-const commands = [
-  {
-    path: 'runner add',
-    api: 'runner-add',
-    short: 'Add Runners for a provider on this host',
-    long: 'Add Runners for a provider on this host.\n\nThe machine starts when it is stopped, and the provider login is created when it is missing.',
-    flags: [{ name: 'count', shorthand: '', type: 'int', default: '2', usage: 'number of Runners', required: false, param: 'count' }, yes, json],
-    args: [providerArg],
-  },
-  {
-    path: 'runner remove',
-    api: 'runner-remove',
-    short: 'Remove Runners for a provider on this host',
-    long: '',
-    flags: [
-      { name: 'count', shorthand: '', type: 'int', default: '0', usage: 'number of Runners (default: all)', required: false, param: 'count' },
-      {
-        name: 'delete-login',
-        shorthand: '',
-        type: 'bool',
-        default: 'false',
-        usage: 'also delete the provider login when no Runner of it remains',
-        required: false,
-        param: 'deleteLogin',
-      },
-      yes,
-      json,
-    ],
-    args: [providerArg],
-  },
-  {
-    path: 'login',
-    api: 'login',
-    short: 'Log in to a provider for the Runners',
-    long: '',
-    flags: [json],
-    args: [{ ...providerArg, required: false }],
-  },
-  { path: 'init', api: 'init', short: 'Set up a repository for Nibfin', long: '', flags: [repo, yes, json], args: [] },
-  { path: 'upgrade', api: 'upgrade', short: 'Upgrade the Nibfin workflows of a repository', long: '', flags: [repo, yes, json], args: [] },
-  {
-    path: 'dashboard',
-    short: 'Start the local Dashboard',
-    long: '',
-    flags: [{ name: 'port', shorthand: '', type: 'int', default: '0', usage: 'port', required: false }],
-    args: [],
-  },
-]
 
 const step = (id: string, action: string, target: string, extra: Record<string, unknown> = {}) => ({
   id,
@@ -176,16 +115,115 @@ const applyLines: Record<string, string[]> = {
   PLANINIT: [progress('label:scope', 'create label', 'acme/app scope', 'started'), progress('label:scope', 'create label', 'acme/app scope', 'done'), '{"event":"res'],
 }
 
+// The login streams (#354): a provider login without a terminal, as the
+// server emits it, in fictional values. loginLines(provider, end) is the
+// progress start, the URL, the code step, then end.
+const loginStep = (provider: string, kind: string, extra: Record<string, unknown> = {}) =>
+  JSON.stringify({ event: 'login_step', step: { provider, kind, ...extra } })
+
+const claudeURL =
+  'https://claude.ai/oauth/authorize?code=true&client_id=00000000-fict-ional-0000-000000000000&response_type=code&redirect_uri=https%3A%2F%2Fconsole.example%2Foauth%2Fcode%2Fcallback&state=FICTIONALSTATEVALUE'
+const codexURL = 'https://auth.openai.com/codex/device'
+const deviceCode = 'WXYZ-7K3Q9'
+
+const loginPlan = (provider: string, extra: Record<string, unknown> = {}) => ({
+  operation: 'login',
+  steps: [
+    step('host', 'start', 'podman machine nibfin-dev', { current: 'running', next: 'running', noChange: true }),
+    step(`volume:nibfin-home-${provider}`, 'create volume', `nibfin-home-${provider}`, { current: 'present', next: 'present', noChange: true }),
+    step(`login:${provider}`, 'log in', provider, {
+      detail: 'podman machine nibfin-dev; logs in again when already logged in',
+      current: 'not logged in',
+      next: 'logged in',
+    }),
+  ],
+  confirm: false,
+  readOnly: false,
+  ...extra,
+})
+
+const loginItems = (provider: string, confirmed: boolean) => [
+  check('host', 'start', 'podman machine nibfin-dev', true, 'running'),
+  check(`volume:nibfin-home-${provider}`, 'create volume', `nibfin-home-${provider}`, true, 'present'),
+  check(`login:${provider}`, 'log in', provider, confirmed, confirmed ? 'logged in' : 'not logged in', confirmed ? undefined : `${provider} is not logged in`),
+]
+
+const loginLines: Record<string, string[]> = {
+  // Held at 3: waiting for the pasted code.
+  PLANLOGINCLAUDE: [
+    progress('login:claude', 'log in', 'claude', 'started'),
+    loginStep('claude', 'open_url', { url: claudeURL, message: 'open this URL in a browser and sign in' }),
+    loginStep('claude', 'code_requested', { message: 'paste the code shown in your browser' }),
+    loginStep('claude', 'succeeded', { message: 'claude login finished' }),
+    progress('login:claude', 'log in', 'claude', 'done'),
+    JSON.stringify({ event: 'result', result: { host: 'podman machine nibfin-dev', providers: { claude: { loggedIn: true } }, items: loginItems('claude', true) } }),
+  ],
+  // Held at 3: the one-time code is shown; 4 is the CLI's success.
+  PLANLOGINCODEX: [
+    progress('login:codex', 'log in', 'codex', 'started'),
+    loginStep('codex', 'open_url', { url: codexURL, message: 'open this URL in a browser and sign in' }),
+    loginStep('codex', 'device_code', { code: deviceCode, message: 'enter this one-time code at the URL' }),
+    loginStep('codex', 'succeeded', { message: 'codex login finished' }),
+    progress('login:codex', 'log in', 'codex', 'done'),
+    JSON.stringify({ event: 'result', result: { host: 'podman machine nibfin-dev', providers: { codex: { loggedIn: true } }, items: loginItems('codex', true) } }),
+  ],
+  // runner add logs codex in, and the CLI fails.
+  PLANADDCODEX: [
+    progress('login:codex', 'log in', 'codex', 'started'),
+    loginStep('codex', 'open_url', { url: codexURL, message: 'open this URL in a browser and sign in' }),
+    loginStep('codex', 'device_code', { code: deviceCode, message: 'enter this one-time code at the URL' }),
+    loginStep('codex', 'failed', { message: 'codex login exited with status 1' }),
+    progress('login:codex', 'log in', 'codex', 'failed', { code: 'login_failed', message: 'codex login exited with status 1' }),
+    JSON.stringify({
+      event: 'error',
+      error: { code: 'login_failed', message: 'codex login exited with status 1' },
+      result: { login: { codex: { loggedIn: false } }, items: [check('login:codex', 'log in', 'codex', false, 'not logged in', 'codex is not logged in')] },
+    }),
+  ],
+  // A busy Runner: its item stays in progress until its Job ends (held at 1).
+  PLANREMOVEBUSY: [
+    progress('slot:codex-1', 'remove Runner', 'codex-1', 'started'),
+    progress('slot:codex-1', 'remove Runner', 'codex-1', 'done'),
+    JSON.stringify({ event: 'result', result: { removed: 1, items: [check('slot:codex-1', 'remove Runner', 'codex-1', true, 'absent')] } }),
+  ],
+}
+
+const providerPlans: Record<string, { id: string; plan: unknown }> = {
+  'login:claude': { id: 'PLANLOGINCLAUDE', plan: loginPlan('claude') },
+  'login:codex': { id: 'PLANLOGINCODEX', plan: loginPlan('codex') },
+  'runner-add:codex': {
+    id: 'PLANADDCODEX',
+    plan: {
+      operation: 'runner add',
+      steps: [step('login:codex', 'log in', 'codex', { current: 'not logged in', next: 'logged in' }), step('slots', 'start Runners', '1 new slot', { next: 'running' })],
+      confirm: true,
+      readOnly: false,
+    },
+  },
+  'runner-remove:codex': {
+    id: 'PLANREMOVEBUSY',
+    plan: {
+      operation: 'runner remove',
+      steps: [step('slot:codex-1', 'remove Runner', 'codex-1', { detail: 'nibfin-codex-1, busy: waits for its Job to end', current: 'busy', next: 'absent' })],
+      confirm: true,
+      readOnly: false,
+    },
+  },
+}
+
 interface Api {
   plans: { api: string; body: unknown }[]
   applies: { id: string; body: unknown }[]
   deletes: string[]
   // refuse, when set, answers the next apply with this status.
   refuse?: number
+  codes: { id: string; body: unknown }[]
+  // codeStatus answers the code route; 204 by default.
+  codeStatus?: number
 }
 
 async function mockOps(page: Page): Promise<Api> {
-  const api: Api = { plans: [], applies: [], deletes: [] }
+  const api: Api = { plans: [], applies: [], deletes: [], codes: [] }
   await page.route('**/api/commands', (route) => {
     expect(route.request().method()).toBe('GET')
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
@@ -196,6 +234,8 @@ async function mockOps(page: Page): Promise<Api> {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
     const body = route.request().postDataJSON() as Record<string, unknown>
     api.plans.push({ api: name, body })
+    const pp = typeof body.provider === 'string' ? providerPlans[`${name}:${body.provider}`] : undefined
+    if (pp) return route.fulfill({ json: pp })
     if (name === 'login') {
       return route.fulfill({
         json: {
@@ -231,6 +271,12 @@ async function mockOps(page: Page): Promise<Api> {
       api.deletes.push(id)
       return route.fulfill({ status: 204 })
     }
+    if (parts[4] === 'code') {
+      api.codes.push({ id, body: req.postDataJSON() })
+      const status = api.codeStatus ?? 204
+      if (status === 204) return route.fulfill({ status })
+      return route.fulfill({ status, json: { error: { code: 'invalid_argument', message: 'no code requested' } } })
+    }
     expect(parts[4]).toBe('apply')
     api.applies.push({ id, body: req.postDataJSON() })
     if (api.refuse) {
@@ -246,7 +292,7 @@ async function mockOps(page: Page): Promise<Api> {
         },
       })
     }
-    const lines = applyLines[id]
+    const lines = applyLines[id] ?? loginLines[id]
     const cut = id === 'PLANINIT'
     return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: lines.join('\n') + (cut ? '' : '\n') })
   })
@@ -507,3 +553,192 @@ test('the in-progress icon does not spin when reduced motion is requested', asyn
   await expect(dialog.locator('[data-summary]')).toBeVisible()
   await expectClean(w)
 })
+
+// The login steps (#354) in the dialog.
+
+const hold = (page: Page, n: number) => page.evaluate((x) => (window as unknown as { __holdApply: (n: number) => void }).__holdApply(x), n)
+const release = (page: Page) => page.evaluate(() => (window as unknown as { __releaseApply: () => void }).__releaseApply())
+const aborts = (page: Page) => page.evaluate(() => (window as unknown as { __aborts: number }).__aborts)
+const panel = (dialog: Locator, provider: string) => dialog.locator(`section[data-login="${provider}"]`)
+const currentStep = (dialog: Locator, provider: string) => panel(dialog, provider).locator('[aria-current=step]')
+
+async function startLogin(page: Page, path: string, provider: string, held?: number): Promise<Locator> {
+  const dialog = await openDialog(page, path)
+  await dialog.getByRole('radio', { name: provider }).click()
+  await dialog.getByRole('button', { name: 'Preview' }).click()
+  await expect(dialog.getByRole('button', { name: 'Apply' })).toBeVisible()
+  if (held !== undefined) await hold(page, held)
+  await dialog.getByRole('button', { name: 'Apply' }).click()
+  return dialog
+}
+
+for (const width of widths) {
+  for (const theme of themes) {
+    test(`login steps at ${width}px, ${theme}`, async ({ page }) => {
+      const { w, api } = await open(page, width, theme)
+      const sfx = `${theme}-${width}`
+
+      // Claude: the URL, Open and the code field while waiting.
+      let dialog = await startLogin(page, 'login', 'claude', 3)
+      const claude = panel(dialog, 'claude')
+      await expect(currentStep(dialog, 'claude')).toContainText('Waiting for authorization')
+      await expect(claude.locator('[data-slot=login-url]')).toHaveText(/^https:\/\/claude\.ai\/oauth\/authorize\?/)
+      const link = claude.getByRole('link', { name: 'Open sign-in page' })
+      await expect(link).toHaveAttribute('href', /^https:\/\/claude\.ai\/oauth\/authorize\?/)
+      await expect(link).toHaveAttribute('target', '_blank')
+      await expect(link).toHaveAttribute('rel', 'noreferrer noopener')
+      const field = claude.getByLabel('Authorization code')
+      await expect(field).toBeEditable()
+      await expect(field).toHaveAttribute('autocomplete', 'off')
+      await expect(claude.locator('[data-slot=login-timeout]')).toContainText('if not authorized')
+      await expect(dialog.getByRole('button', { name: 'End login' })).toBeVisible()
+      await expect(dialog.locator('[data-slot=end-login-note]')).toHaveText('Ending the login cancels this login; run it again to continue.')
+      await expect(page.getByRole('button', { name: 'Close' })).toBeVisible()
+      await expectNonceStyles(page)
+      await expectNoPageScroll(page)
+      await shot(page, `login-claude-waiting-${sfx}`, false)
+
+      // A refused code shows its error and keeps the field.
+      api.codeStatus = 409
+      await field.fill('FICTIONAL-CODE-0000')
+      await claude.getByRole('button', { name: 'Submit code' }).click()
+      await expect(claude.locator('[data-slot=code-error]')).toHaveText('invalid_argument: no code requested')
+      await expect(field).toBeEditable()
+      await shot(page, `login-code-refused-${sfx}`, false)
+
+      // The code goes once; then Verifying, and the field is cleared.
+      api.codeStatus = 204
+      await claude.getByRole('button', { name: 'Submit code' }).click()
+      await expect(currentStep(dialog, 'claude')).toContainText('Verifying')
+      await expect(field).toBeDisabled()
+      await expect(field).toHaveValue('')
+      expect(api.codes).toEqual([
+        { id: 'PLANLOGINCLAUDE', body: { code: 'FICTIONAL-CODE-0000' } },
+        { id: 'PLANLOGINCLAUDE', body: { code: 'FICTIONAL-CODE-0000' } },
+      ])
+      // Outside a login wait the running apply cannot be dismissed.
+      await expect(dialog.getByRole('button', { name: 'End login' })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeVisible()
+      await expectNoPageScroll(page)
+      await shot(page, `login-verifying-${sfx}`, false)
+
+      // Done only after the read-back.
+      await release(page)
+      await expect(dialog.locator('[data-summary]')).toHaveAttribute('data-summary', 'confirmed')
+      await expect(claude).toHaveAttribute('data-stage', 'done')
+      await expect(currentStep(dialog, 'claude')).toContainText('Done')
+      await expect(claude.locator('[data-slot=login-message]')).toContainText('confirmed by the read-back')
+      await expectNoPageScroll(page)
+      await shot(page, `login-done-${sfx}`, false)
+      await footer(dialog).getByRole('button', { name: 'Close' }).click()
+      await expect(dialog).toBeHidden()
+
+      // Codex: the URL and the one-time code with Copy, and no input.
+      dialog = await startLogin(page, 'login', 'codex', 3)
+      const codex = panel(dialog, 'codex')
+      await expect(codex.locator('[data-slot=device-code]')).toHaveText('WXYZ-7K3Q9')
+      await expect(codex.getByRole('link', { name: 'Open sign-in page' })).toHaveAttribute('href', 'https://auth.openai.com/codex/device')
+      await expect(codex.getByRole('textbox')).toHaveCount(0)
+      await codex.getByRole('button', { name: /Copy code/ }).click()
+      await expect(codex.locator('[data-action=copy-code], [data-slot=copy-state]').filter({ hasText: /Copied|Copy failed: select the code/ })).toHaveCount(1)
+      await expectNoPageScroll(page)
+      await shot(page, `login-codex-waiting-${sfx}`, false)
+      await hold(page, 4)
+      await expect(currentStep(dialog, 'codex')).toContainText('Verifying')
+      await expect(codex.locator('[data-slot=device-code]')).toHaveCount(0)
+      await release(page)
+      await expect(codex).toHaveAttribute('data-stage', 'done')
+      await shot(page, `login-codex-done-${sfx}`, false)
+      await footer(dialog).getByRole('button', { name: 'Close' }).click()
+
+      // runner add logs codex in with the same panel; the CLI fails.
+      dialog = await startLogin(page, 'runner add', 'codex')
+      await expect(panel(dialog, 'codex')).toHaveAttribute('data-stage', 'failed')
+      await expect(panel(dialog, 'codex').locator('[data-slot=login-message]')).toHaveText('Failed: codex login exited with status 1')
+      await expect(dialog.locator('[data-summary]')).toHaveAttribute('data-summary', 'notConfirmed')
+      await expect(dialog.getByText('Confirmed', { exact: true })).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await shot(page, `login-failed-${sfx}`, false)
+      await footer(dialog).getByRole('button', { name: 'Close' }).click()
+
+      // A busy Runner's removal waits for its Job: the item stays in progress.
+      dialog = await openDialog(page, 'runner remove')
+      await dialog.getByRole('radio', { name: 'codex' }).click()
+      await dialog.getByRole('button', { name: 'Preview' }).click()
+      await expect(item(dialog, 'slot:codex-1')).toContainText('busy: waits for its Job to end')
+      await hold(page, 1)
+      await dialog.getByRole('button', { name: 'Apply' }).click()
+      await expect(item(dialog, 'slot:codex-1').locator('[data-badge=progress]')).toHaveText('In progress')
+      await expect(item(dialog, 'slot:codex-1')).toContainText('busy: waits for its Job to end')
+      await expect(page.getByRole('button', { name: 'Close' })).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await shot(page, `remove-busy-${sfx}`, false)
+      await release(page)
+      await expect(dialog.locator('[data-summary]')).toHaveText('Confirmed: the item was read back.')
+      await footer(dialog).getByRole('button', { name: 'Close' }).click()
+
+      // End login during the wait: the request is aborted, nothing confirmed.
+      dialog = await startLogin(page, 'login', 'claude', 3)
+      await expect(currentStep(dialog, 'claude')).toContainText('Waiting for authorization')
+      await dialog.getByRole('button', { name: 'End login' }).click()
+      await expect(dialog.locator('[data-summary]')).toHaveAttribute('data-summary', 'ended')
+      await expect(dialog.locator('[data-summary]')).toContainText('The login was ended (you chose End login).')
+      await expect(panel(dialog, 'claude')).toHaveAttribute('data-stage', 'ended')
+      await expect(dialog.locator('[data-badge=readback]')).toHaveText(['Not read back', 'Not read back', 'Not read back'])
+      expect(await aborts(page)).toBe(1)
+      await expectNoPageScroll(page)
+      await shot(page, `login-ended-${sfx}`, false)
+      await footer(dialog).getByRole('button', { name: 'Close' }).click()
+
+      expect(api.applies.map((a) => a.id)).toEqual(['PLANLOGINCLAUDE', 'PLANLOGINCODEX', 'PLANADDCODEX', 'PLANREMOVEBUSY', 'PLANLOGINCLAUDE'])
+      await expectClean(w, ['Failed to load resource: the server responded with a status of 409'])
+    })
+  }
+}
+
+test('Escape during a login wait ends the request and closes the dialog', async ({ page }) => {
+  const { w, api } = await open(page, 375)
+  const dialog = await startLogin(page, 'login', 'codex', 3)
+  await expect(panel(dialog, 'codex').locator('[data-slot=device-code]')).toBeVisible()
+  // An outside click stays blocked.
+  await page.mouse.click(2, 2)
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect.poll(() => aborts(page)).toBe(1)
+  await expect(page.locator('[data-finished="1"]')).toHaveCount(1)
+  expect(api.applies.map((a) => a.id)).toEqual(['PLANLOGINCODEX'])
+  expect(api.codes).toEqual([])
+  await expectClean(w)
+})
+
+test('the close button during a login wait ends the request', async ({ page }) => {
+  const { w, api } = await open(page, 1280, 'light')
+  const dialog = await startLogin(page, 'login', 'claude', 3)
+  await expect(currentStep(dialog, 'claude')).toContainText('Waiting for authorization')
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+  await expect.poll(() => aborts(page)).toBe(1)
+  expect(api.applies).toHaveLength(1)
+  await expectClean(w)
+})
+
+for (const theme of themes) {
+  test(`a login wait times out after 15 minutes, ${theme}`, async ({ page }) => {
+    await page.clock.install()
+    const { w, api } = await open(page, 768, theme)
+    const dialog = await startLogin(page, 'login', 'claude', 3)
+    await expect(currentStep(dialog, 'claude')).toContainText('Waiting for authorization')
+    await page.clock.fastForward('14:59')
+    await expect(dialog.locator('[data-summary]')).toHaveCount(0)
+    await page.clock.fastForward('00:01')
+    await expect(dialog.locator('[data-summary]')).toContainText('The login was ended (timed out after 15 minutes).')
+    await expect(panel(dialog, 'claude').locator('[data-slot=login-message]')).toHaveText('Ended: timed out after 15 minutes')
+    expect(await aborts(page)).toBe(1)
+    expect(api.applies).toHaveLength(1)
+    await expectNoPageScroll(page)
+    await shot(page, `login-timeout-${theme}-768`, false)
+    await expectClean(w)
+  })
+}

@@ -325,7 +325,14 @@ export function runReducer(state: RunState, a: RunAction): RunState {
       return { ...state, rows: withProgress(state.rows, a.event) }
     case 'aborted':
       if (state.phase !== 'applying') return state
-      return { ...state, phase: 'finished', ending: 'ended', endedReason: a.reason }
+      // An item still in progress has no known end: it is not shown running.
+      return {
+        ...state,
+        phase: 'finished',
+        ending: 'ended',
+        endedReason: a.reason,
+        rows: state.rows.map((r) => (r.progress === 'started' ? { ...r, progress: 'waiting' } : r)),
+      }
     case 'applied': {
       if (state.phase !== 'applying') return state
       const o = a.outcome
