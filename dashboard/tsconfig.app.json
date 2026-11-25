@@ -25,5 +25,5 @@
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src"],
-  "exclude": ["src/worker"]
+  "exclude": ["src/worker", "src/app"]
 }

@@ -1,0 +1,92 @@
+---
+title: How it works
+description: The stages an Issue goes through, the labels that steer them, and the key points of Nibfin's architecture and security.
+---
+
+import { LabelStates } from '../../components/LabelStates'
+
+Nibfin keeps no state of its own. Every run reads the Issue, its labels, branches,
+pull requests and checks from GitHub, decides what runs next, and writes its result
+back to GitHub. A person steers it with the same labels, Assignees and pull requests.
+
+## The stages
+
+1. **Scope.** Approved requirements are split into ordered Issues, each with its
+   outcome, boundaries and `Blocked by` dependencies. The `scope` label marks an
+   Issue for Nibfin.
+2. **Shape.** The Shape Author investigates the Issue and writes its
+   implementation plan, the Shape. A separate Shape Validator checks it with only
+   the sources and the Shape, and sends findings back until it approves. Nibfin then
+   publishes the Shape as a marked comment and adds `shaped`.
+3. **Deliver and Accept.** The Writer implements the approved Shape on the branch
+   `nibfin/issue-<n>`. A fresh Acceptor, which sees only the Issue, the Shape and the
+   diff, checks the result; defects go back to the Writer. After a pass Nibfin opens
+   the pull request. If the Writer finds the Shape wrong, the Issue returns to Shape
+   with the reason.
+4. **Review and merge.** When the required checks pass, a reviewer checks the pull
+   request against the Issue and the Shape. Problems go back to Deliver; a clean
+   review merges it with a method the repository allows. GitHub enforces the
+   repository's own rules, such as required approvals.
+5. **CD and closing.** After the merge, Nibfin waits for the CD runs. A failure goes
+   back to Deliver on a new fix branch. When CD passes, Nibfin writes the marked
+   `delivered` comment with the pull requests, checks and CD runs, adds `delivered`,
+   closes the Issue and wakes the Issues it blocked.
+
+## Labels and states
+
+Nibfin checks an Issue's state in this order and stops at the first match. The
+first seven states run nothing; the rest are the stages above.
+
+<LabelStates />
+
+## Pending and pause
+
+- **`pending`** means Nibfin needs a person. When a run fails, Nibfin writes a
+  marked comment on the Issue with the error, the run link and what to do, and adds
+  `pending`. While it is set nothing runs. Removing `pending` resumes the Issue from
+  its GitHub state, so the stages pick up where they stopped.
+- **`pause`** stops an Issue on purpose. `gh nibfin pause <issue>` adds it;
+  `gh nibfin resume <issue>` removes `pause` and `pending`. Several Issues can be
+  given at once, as numbers or URLs.
+- **Consent.** Before the first run on the Runners of an Assignee who does not own
+  the execution repository, Nibfin adds `pause` and asks that Assignee in a comment.
+  Removing `pause` is the go-ahead.
+
+## Architecture
+
+- **Workflows.** `gh nibfin init` and `upgrade` write the Nibfin workflows into the
+  repository through a pull request. They call nothing in other repositories and run
+  the Nibfin image `ghcr.io/taco3064/nibfin`, pinned to the digest of its latest
+  attested build.
+- **Events only wake.** Issue, review, check and push events wake the Issue they
+  belong to. A route run derives what runs next from GitHub state and dispatches it.
+- **The Assignee's Runner.** Each stage Job runs on a self-hosted Runner labelled
+  `nibfin-<user id>` of the Issue's only Assignee, in a Podman container. The
+  provider, Claude or Codex, comes from that Runner's own configuration, never from a
+  repository variable.
+- **Execution and peer repositories.** The repository whose Runners run the Jobs
+  gets the execution set of workflows; another repository gets the peer set, which
+  wakes the execution repository.
+
+## Security
+
+- **The token.** `init` stores your gh login as the Secret `NIBFIN_GITHUB_TOKEN`,
+  passing it to `gh secret set` on its standard input. It is never printed. Agents
+  never receive it: Nibfin pushes, opens pull requests and merges for them.
+- **Event text.** Issue text and other event data reach the workflow scripts only as
+  quoted environment variables, never inside a script.
+- **Who can start work.** `init` limits pull request creation to collaborators and
+  requires approval for workflows of fork pull requests. Issue events and reviews
+  wake an Issue only when the person who caused them has write or admin permission;
+  reviews from forks are not routed.
+- **Protected paths.** Agents cannot change their own execution policy: a branch that
+  changes `.github/workflows/`, `.nibfin.json`, `.nibfin/`, `.rulesync/`, the
+  CODEOWNERS files or the configured role skills is stopped before it is pushed.
+- **The Dashboard.** `gh nibfin dashboard` listens on `127.0.0.1` only. Its URL holds
+  a single-use proof for the one session, and its page allows only same-origin files.
+- **The Runners.** A Runner's registration token reaches its configuration only on
+  standard input and is never stored. gh nibfin stores no provider token: the provider
+  CLI keeps its own login in the `nibfin-home-<provider>` Podman volume.
+
+For the details, see the [gh nibfin README](https://github.com/taco3064/gh-nibfin#readme)
+and the [Nibfin Core stages](https://github.com/taco3064/nibfin-core/blob/main/src/stages/README.md).

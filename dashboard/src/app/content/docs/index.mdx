@@ -1,0 +1,41 @@
+---
+title: Nibfin
+description: Nibfin takes a GitHub Issue from scope to a merged, delivered change with AI agents on your own Runners.
+template: splash
+hero:
+  title: Issues in, delivered changes out
+  tagline: Nibfin runs AI agents on your own self-hosted Runners to shape, build, review and merge the GitHub Issues you mark for it. Its state lives in Git and GitHub.
+  image:
+    file: ../../../../public/apple-touch-icon.png
+    alt: The Nibfin "b" mark
+  actions:
+    - text: Quick start
+      link: quick-start/
+      icon: right-arrow
+    - text: How it works
+      link: how-it-works/
+      variant: minimal
+---
+
+import { IssueFlow } from '../../components/IssueFlow'
+import { LiveSummary } from '../../components/LiveSummary'
+
+## What Nibfin is
+
+**Nibfin Core** runs the Scope, Shape, Deliver and Accept roles against a GitHub
+repository. Every decision it makes reads Issues, labels, branches, pull requests
+and checks from GitHub, and every result is written back there. Nothing is kept
+anywhere else.
+
+**gh nibfin** is the operator's side: a GitHub CLI extension and a local Dashboard.
+It installs the Runners where the agents work, logs their provider CLI in, prepares
+a repository with `init`, and shows where each Issue stands.
+
+## From Issue to merge
+
+An Issue with the `scope` label and one Assignee runs on that Assignee's Runners.
+Each stage hands over through GitHub, and a person can stop it at any point.
+
+<IssueFlow />
+
+<LiveSummary />

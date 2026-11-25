@@ -722,12 +722,25 @@ go build
 In `dashboard/`, `npm run typecheck`, `npm run lint` and `npm test` (unit tests,
 no browser) check the project; CI runs them with the build before the Go steps.
 
+The same project holds the public site, an Astro and Starlight site in
+`dashboard/src/app/` that shares `src/components`, `src/lib`, `src/styles`,
+`src/assets` and `public/` with the Dashboard (whose entry is
+`src/dashboard/`). `npm run build` also writes it to the ignored
+`dashboard/dist-site/`, under the base path `WEBSITE_BASE` (default
+`/gh-nibfin/`) of the origin `WEBSITE_SITE` (default
+`https://taco3064.github.io`). `npm run build` and `npm run typecheck` first
+run `astro sync`, which generates the ignored `dashboard/.astro/` types that
+`tsc` checks the site with. `.github/workflows/website.yml` builds and deploys
+it to GitHub Pages.
+
 `npm run screenshots` builds the page and a separate harness of the shared
 Issue element (`screenshots.html`) into the ignored `dashboard/.screenshots-dist/`,
 starts `go run -tags dashboardscreenshots . dashboard` on port 4790, which serves
 that folder instead of the embedded UI, with a mocked API, captures the pages
 at 375, 768, 1280 and 1920 px in the dark and light themes into the ignored
-`dashboard/.screenshots/`, and stops the server. No other build has the tag, so
+`dashboard/.screenshots/`, and stops the server. It also builds the site and
+serves `dist-site/` with `vite preview` on port 4791 under `/gh-nibfin/`, and
+captures its pages, its mobile menu and its search the same way. No other build has the tag, so
 the harness never reaches `internal/dashboard/dist/` or a product binary.
 It fails on a console error or a Content-Security-Policy violation. Install its
 browser first with `npx playwright install --only-shell chromium`; the

@@ -1,0 +1,119 @@
+/* Nibfin theme for the site. Starlight owns the reset and the document layout;
+   Tailwind adds only its theme and utilities, without preflight, for the
+   shared shadcn/ui components. Color values live only in tokens.css. */
+@layer base, starlight, theme, components, utilities;
+
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@import '@fontsource-variable/dm-sans/wght.css';
+@import '@fontsource-variable/space-grotesk/wght.css';
+@import '../../styles/tokens.css';
+@import '../../styles/bindings.css';
+
+/* Generate the classes of the site and of the shared components only. */
+@source '..';
+@source '../../components/ui';
+@source '../../components/issue/tones.ts';
+
+/* Unlayered, so these win over Starlight's and starlight-tailwind's defaults
+   in both themes; tokens.css switches the --nf- values by data-theme. */
+:root {
+  --sl-font: var(--nf-font-body);
+  --sl-color-white: var(--nf-text);
+  --sl-color-black: var(--nf-background);
+  --sl-color-gray-1: var(--nf-text);
+  --sl-color-gray-2: var(--nf-secondary);
+  --sl-color-gray-3: var(--nf-secondary);
+  --sl-color-gray-4: var(--nf-border);
+  --sl-color-gray-5: var(--nf-raised);
+  --sl-color-gray-6: var(--nf-surface);
+  --sl-color-gray-7: var(--nf-surface);
+  --sl-color-text: var(--nf-text);
+  --sl-color-text-accent: var(--nf-link);
+  --sl-color-text-invert: var(--nf-on-accent);
+  --sl-color-bg: var(--nf-background);
+  --sl-color-bg-nav: var(--nf-surface);
+  --sl-color-bg-sidebar: var(--nf-surface);
+  --sl-color-bg-inline-code: var(--nf-code-bg);
+  --sl-color-bg-accent: var(--nf-accent);
+  --sl-color-accent: var(--nf-accent);
+  --sl-color-accent-high: var(--nf-link);
+  --sl-color-accent-low: var(--nf-raised);
+  --sl-color-hairline: var(--nf-border-subtle);
+  --sl-color-hairline-light: var(--nf-border-subtle);
+  --sl-color-hairline-shade: var(--nf-border-subtle);
+  --sl-color-blue: var(--nf-info);
+  --sl-color-blue-high: var(--nf-info);
+  --sl-color-blue-low: var(--nf-info-bg);
+  --sl-color-green: var(--nf-success);
+  --sl-color-green-high: var(--nf-success);
+  --sl-color-green-low: var(--nf-success-bg);
+  --sl-color-orange: var(--nf-warning);
+  --sl-color-orange-high: var(--nf-warning);
+  --sl-color-orange-low: var(--nf-warning-bg);
+  --sl-color-red: var(--nf-danger);
+  --sl-color-red-high: var(--nf-danger);
+  --sl-color-red-low: var(--nf-danger-bg);
+  --sl-color-purple: var(--nf-accent);
+  --sl-color-purple-high: var(--nf-link);
+  --sl-color-purple-low: var(--nf-raised);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--nf-font-heading);
+  overflow-wrap: anywhere;
+}
+.sl-markdown-content {
+  overflow-wrap: anywhere;
+}
+:focus-visible {
+  outline: 3px solid var(--nf-focus);
+  outline-offset: 3px;
+}
+a:hover {
+  color: var(--nf-hover);
+}
+a[aria-current='page']:hover {
+  color: var(--nf-on-accent);
+}
+.hero a {
+  text-decoration: none;
+}
+.sl-markdown-content :not(pre) > code {
+  color: var(--nf-code);
+}
+
+/* Code blocks use the code tokens; syntax colors give way to one readable color. */
+:root[data-theme] .expressive-code[data-theme],
+:root[data-theme] .expressive-code:not([data-theme]) {
+  --ec-codeBg: var(--nf-code-bg);
+  --ec-codeFg: var(--nf-code);
+  --ec-brdCol: var(--nf-border);
+  --ec-focusBrd: var(--nf-focus);
+  --ec-uiSelBg: var(--nf-raised);
+  --ec-uiSelFg: var(--nf-text);
+  --ec-frm-tooltipSuccessBg: var(--nf-success-bg);
+  --ec-frm-tooltipSuccessFg: var(--nf-success);
+  --ec-frm-trmTtbBg: var(--nf-surface);
+  --ec-frm-trmTtbFg: var(--nf-text);
+}
+:root[data-theme] .expressive-code .ec-line span[style] {
+  color: var(--nf-code);
+}
+
+#starlight__search {
+  --pagefind-ui-primary: var(--nf-link);
+  --pagefind-ui-text: var(--nf-text);
+  --pagefind-ui-background: var(--nf-background);
+  --pagefind-ui-border: var(--nf-border);
+  --pagefind-ui-font: var(--nf-font-body);
+}
+#starlight__search :is(.pagefind-ui__message, .pagefind-ui__result-excerpt) {
+  opacity: 1;
+}
