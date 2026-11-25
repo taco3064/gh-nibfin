@@ -2,6 +2,9 @@ module github.com/taco3064/gh-nibfin
 
 go 1.27.1
 
+// npm packages can ship .go files; keep them out of ./... patterns.
+ignore ./dashboard/node_modules
+
 require (
 	github.com/cli/go-gh/v2 v2.17.0
 	github.com/spf13/cobra v1.10.2
