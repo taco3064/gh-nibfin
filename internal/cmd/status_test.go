@@ -229,3 +229,32 @@ func TestStatusBlockedByText(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusRunnersNeedAdmin(t *testing.T) {
+	// A collaborator's runners: the local service state, and GitHub's
+	// online/busy state named as needing admin, not as an error.
+	h := hostReport()
+	h.Runners = op.RunnersReport{Repo: "github.com/o/r", GitHubNeedsAdmin: true, Runners: []op.RunnerState{
+		{Runner: runners.Runner{Slot: "claude-1", Active: true}},
+		{Runner: runners.Runner{Slot: "claude-2"}},
+	}}
+	r := op.Result{
+		"host":        h,
+		"latestImage": status.LatestImage{Ref: digestA},
+		"githubHost":  "github.com",
+		"user":        "me",
+		"truncated":   false,
+		"repos":       []status.RepoIssues{},
+	}
+	out, _ := runStatus(t, []string{"status"}, r)
+	want := "runners (github.com/o/r):\n  claude-1  active  github: needs admin\n  claude-2  inactive  github: needs admin\n" +
+		"runners github: GitHub's online/busy state needs admin of github.com/o/r; the local service state is shown\n"
+	if !strings.Contains(out, want) || strings.Contains(out, "github_api_failed") {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+
+	out, _ = runStatus(t, []string{"status", "--json"}, r)
+	if !strings.Contains(out, `"githubNeedsAdmin": true`) || strings.Contains(out, "githubError") {
+		t.Errorf("json:\n%s", out)
+	}
+}

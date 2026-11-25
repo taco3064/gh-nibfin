@@ -109,10 +109,14 @@ func TestSchemaContract(t *testing.T) {
 	routes[runsPath("o/r", ">=2026-11-02T00:00:00+00:00", 1)] = map[string]any{"workflow_runs": []any{
 		runJSONOf("Nibfin · o/r#1 · wake", "2026-11-05T00:00:00Z", "u1")}}
 	fx = setup(t, routes)
-	readHost = runners("github.com/o/r")
+	// The gh login writes to o/r but is not admin: GitHub's runner list is
+	// not read and the local slots are reported.
+	readHost = func(context.Context) op.HostReport {
+		return op.HostReport{Runners: op.RunnersReport{Repo: "github.com/o/r", GitHubNeedsAdmin: true, Runners: []op.RunnerState{{}}}}
+	}
 	fx.graph.repo("o/r", "WRITE").blockers[1] = []map[string]any{blocker("o/r", 2, "OPEN")}
 	fx.graph.viewer = []map[string]any{nibfinNode("o/r", "WRITE", true)}
-	check("repo read", run(t, "github.com/o/r"), "usesNibfin", "changedAt", "pr", "permission", "blockedBy", "runs", "execution")
+	check("repo read", run(t, "github.com/o/r"), "usesNibfin", "changedAt", "pr", "permission", "blockedBy", "runs", "execution", "githubNeedsAdmin")
 
 	// Person view, every part failed.
 	var items []any
