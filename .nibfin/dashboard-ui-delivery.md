@@ -23,7 +23,9 @@ Issue's scope and checks.
   design skill), learn how they solve the same problem, and adapt the good
   parts. Name the references used in your final result report.
 - Use the Nibfin theme tokens (`--nf-` variables) and fonts for surfaces, text,
-  borders and focus; do not hard-code colors. Keep text contrast at least
+  borders and focus; do not hard-code colors. The only exceptions are the theme
+  token source file that defines the `--nf-` values and the bindings of the
+  component library's variables to those tokens. Keep text contrast at least
   4.5:1 and non-text contrast at least 3:1 in both dark and light themes, and
   keep visible keyboard focus.
 
@@ -38,9 +40,12 @@ the Issue that creates them reviews its views once they exist.
    chromium`. The lockfile decides the Playwright version. Leave
    `PLAYWRIGHT_BROWSERS_PATH` as Core sets it: the browser lives in Core's
    tool cache, outside the repository.
-2. Build and serve the candidate, then run the project's screenshot script
-   for every changed view at several widths, at least 375, 768, 1280 and
-   1920 px, in dark and light themes where the change affects color.
+2. Run the project's screenshot script for every changed view at several
+   widths, at least 375, 768, 1280 and 1920 px, in dark and light themes where
+   the change affects color. The script builds, serves and stops the candidate
+   itself within one foreground command (for example Playwright's `webServer`
+   setting); never start a server in the background. The Issue that creates
+   the script writes it that way.
 3. Look at every screenshot. Check layout, wrapping, overflow, alignment,
    contrast, empty, loading and failed states, and the open state of changed
    dialogs and menus. Fix what is wrong and repeat the same captures.
