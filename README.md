@@ -278,8 +278,14 @@ copied URL finds the proof used (`proof_invalid`); restart the server for a
 new session URL. Nothing is stored: the proof, the session and the plans live
 in the server's memory.
 
-The page is a placeholder until the Dashboard UI. Its only script removes the
-proof from the address bar and exchanges it.
+The page is the Dashboard UI, built from `dashboard/` and embedded in the
+binary. It removes the proof from the address bar, exchanges it, keeps the
+session in memory only and checks the connection with a `status` read. Its
+Dark, Light and System theme choice is the only thing it stores (in the
+browser). A binary built without the UI serves a placeholder page whose only
+script does the same exchange. The page and its files need no session; they
+keep the Host and Origin checks below, and other paths outside `/api/` are
+`not_found`.
 
 ### API
 
@@ -327,3 +333,33 @@ are `{"error": {"code", "message"}}` with the codes the CLI prints: `400` for
 a malformed request, `401`/`403` for the checks above, `404` for an unknown
 command, route or plan, `409` for a conflict, and `422` for an error from the
 operation itself.
+
+### Building the Dashboard UI
+
+The UI is a Vite, React, TypeScript, Tailwind and shadcn/ui project in
+`dashboard/`. Node is needed only to build it; the binary embeds the output and
+runs without Node. Build it before `go build` to embed it:
+
+```sh
+cd dashboard
+npm ci
+npm run build   # writes internal/dashboard/dist/
+cd ..
+go build
+```
+
+`internal/dashboard/dist/` is not committed; only its `.gitignore` is, so
+`go build` and `go test` work without a build (the placeholder page is served).
+In `dashboard/`, `npm run typecheck`, `npm run lint` and `npm test` (unit tests,
+no browser) check the project; CI runs them with the build before the Go steps.
+
+`npm run screenshots` builds, starts `go run . dashboard` on port 4790 with a
+mocked API, captures the page at 375, 768, 1280 and 1920 px in the dark and
+light themes into the ignored `dashboard/.screenshots/`, and stops the server.
+It fails on a console error or a Content-Security-Policy violation. Install its
+browser first with `npx playwright install --only-shell chromium`; the
+lockfile's Playwright version decides the build.
+
+The page's Content-Security-Policy allows only same-origin files and no inline
+`<style>` element. A component that injects one, such as the scroll lock of
+shadcn/ui menus, dialogs, sheets and selects, needs a CSP change first.
