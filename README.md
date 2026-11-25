@@ -229,7 +229,8 @@ Windows and macOS.
     Issue as not planned. A rerun that only finishes configured Runners opens
     no request. GitHub's runner list needs admin, so the read-back confirms a
     collaborator's Runners from the host only.
-  - Without write access the command stops before any change
+  - Without write access (also when the gh login cannot see the
+    repository) the command stops before any change
     (`runner_request_refused`): the repository's owner must add the user as
     a collaborator with write access.
 - Each Runner lives in `${XDG_DATA_HOME:-~/.local/share}/nibfin/runners/<provider>-<n>`
@@ -304,6 +305,19 @@ N of the provider's Runners on this host, all of them without `--count`.
 - Each removal deletes the GitHub registration (this needs admin access to
   the repository), the systemd user service and the Runner's directory. The
   command then reads back how many Runners of the provider remain.
+- The command takes the same two routes as `runner add`, by the gh login's
+  admin access to the Runners' repository (a repository the login cannot see
+  counts as no access). For a collaborator (the request route) GitHub's runner
+  list and registrations need admin, so the removal is local only: each
+  chosen Runner (`local` in the plan, after unfinished ones) waits for a
+  running Job to end, then its service and directory are deleted; nothing is
+  read, changed or deleted on GitHub. The plan and the result name the
+  registrations that stay: the repository's owner removes them under
+  **Settings** → **Actions** → **Runners**
+  (`https://<host>/<owner>/<repo>/settings/actions/runners`), and GitHub
+  removes a runner that has been offline for more than 14 days. Without the
+  labels step a Job GitHub gives the Runner just before its service stops
+  may be interrupted.
 - A count above the existing number is refused with that number.
 - `--delete-login` deletes the `nibfin-home-<provider>` volume only when no
   Runner of the provider remains on this host; otherwise it is kept.
@@ -360,7 +374,10 @@ Every view shows the runner host:
   `runner add` registers; `absent`; or not needed on Linux), read also while
   the machine is stopped;
 - each Runner's systemd service (active or not) against GitHub's
-  online/offline and busy, as listed for the repository the Runners serve;
+  online/offline and busy, as listed for the repository the Runners serve.
+  GitHub's runner list needs admin of that repository; for a collaborator the
+  local service state is shown, GitHub as `needs admin`, with one line saying
+  so (`"githubNeedsAdmin": true` in `--json`), not as an error;
 - each provider's login, from the CLI's own check run with `--pull=never`
   (no `nibfin-home-<provider>` volume means not logged in).
 
