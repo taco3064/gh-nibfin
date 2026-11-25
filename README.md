@@ -107,7 +107,7 @@ and closes the Issue as not planned. Both comments are written by the
 workflow's `GITHUB_TOKEN`; a rerun updates the workflow's earlier comment of
 the same kind instead of adding one, and stops when the Issue is closed. Only
 `opened` starts the workflow, so editing a request does nothing. The token
-expires after an hour. `internal/templates/runnerrequest.go` holds the same
+expires after an hour. `internal/runnerreq` holds the same
 contract for `gh nibfin runner add`.
 
 ## Init
@@ -180,11 +180,46 @@ Windows and macOS.
   repository. Later Runners reuse the repository the existing Runners use, from
   any directory; Runners that disagree stop the command
   (`runner_repo_conflict`).
-- Each Runner is the official GitHub Actions runner, downloaded through the
-  repository's runner downloads and checked against their SHA-256. It is
-  registered with the labels `nibfin` and `nibfin-<user id>-<provider>` (the
-  user id of the current gh login) besides GitHub's default labels. This needs
-  admin access to the repository.
+- Each Runner is the official GitHub Actions runner, checked against its
+  published SHA-256. It is registered with the custom label `nibfin-<user id>`
+  (the user id of the current gh login), which the stage Job of an Issue
+  assigned to that user runs on, besides GitHub's default labels
+  (`self-hosted` among them). Only an admin's Runners also get `nibfin`, which
+  routing runs on, so routing never runs on a collaborator's host.
+- Each Runner's `.env` holds `NIBFIN_PROVIDER=<provider>` before its service
+  first starts; the stage Job reads the provider from it. Runners that were
+  already complete keep their labels and `.env` as they are.
+- The command takes one of two routes by the gh login's access to the
+  repository:
+  - **Admin**: the runner archive comes from the repository's runner
+    downloads and the registration token from GitHub directly.
+  - **Write collaborator** (the request route): the archive comes from the
+    latest public `actions/runner` release (its asset `digest`), and the token
+    through a request Issue that `nibfin-runner-request.yml` answers. The
+    command needs a local SSH key pair in `~/.ssh` (`ssh-ed25519` or
+    `ssh-rsa`) whose public key is on the user's GitHub account; otherwise it
+    stops before any change (`ssh_key_missing`) and names the steps:
+    `ssh-keygen -t ed25519`, then `gh ssh-key add ~/.ssh/id_ed25519.pub`
+    (`gh auth refresh -s write:public_key` when gh asks), then run
+    `runner add` again. A key with a passphrase is unlocked on the terminal
+    without echo, in at most three tries, before the Issue is opened; without
+    a terminal (the Dashboard, piped input) or after three wrong tries it
+    stops (`ssh_key_locked`). The command then opens the Issue
+    `Nibfin runner request`, waits up to 10 minutes for the workflow's
+    encrypted answer, decrypts it in memory with the key and registers. Only
+    a comment by `github-actions[bot]` for this user, this key and a future
+    expiry counts. Afterwards it comments the registered runner names and
+    closes the Issue as completed. A refusal stops with its reason
+    (`runner_request_refused`); no answer in time closes the Issue as not
+    planned (`runner_request_timeout`, run `runner add` again); an Issue
+    closed by someone, a malformed answer or one that does not decrypt is
+    `runner_request_failed`. Every other failure or a cancel also closes the
+    Issue as not planned. A rerun that only finishes configured Runners opens
+    no request. GitHub's runner list needs admin, so the read-back confirms a
+    collaborator's Runners from the host only.
+  - Without write access the command stops before any change
+    (`runner_request_refused`): the repository's owner must add the user as
+    a collaborator with write access.
 - Each Runner lives in `${XDG_DATA_HOME:-~/.local/share}/nibfin/runners/<provider>-<n>`
   and runs as the systemd user service
   `${XDG_CONFIG_HOME:-~/.config}/systemd/user/nibfin-runner-<provider>-<n>.service`.
@@ -239,7 +274,8 @@ The command only advises, and writes nothing, about:
   default) per Runner, then run `wsl --shutdown`.
 
 The registration token is fetched for each run and reaches the runner's
-`config.sh` only on its stdin; it is never stored or printed.
+`config.sh` only on its stdin; it is never stored, printed or passed as an
+argument. The SSH private key and its passphrase never leave the gh process.
 
 `gh nibfin runner remove <claude|codex> [--count N] [--delete-login]` removes
 N of the provider's Runners on this host, all of them without `--count`.
