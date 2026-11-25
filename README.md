@@ -729,14 +729,16 @@ passes it to the scroll lock of shadcn/ui dialogs, menus and selects through
 needs GitHub is replaced: the registration token is a fixed test value, the
 runner download is a stand-in archive (`internal/op/testdata/hostsmoke/`)
 served from a local TLS server and checked by its sha256 as usual, and the
-GitHub runner list holds one runner per configured slot. Its `config.sh`
-writes `.runner`, `.env` and `.path` without storing the token, and its
-`runsvc.sh` keeps running until the unit stops it. No GitHub call is made and
-no gh login is read; the provider login is left out, so `runner add`'s
-read-back may report only `not_logged_in`.
+GitHub runner list holds one runner per configured slot. The faked gh login is
+admin of the repository, so `runner add` takes the admin route and opens no
+request Issue. Its `config.sh` writes `.runner`, `.env` and `.path` without
+storing the token, and its `runsvc.sh` keeps running until the unit stops it.
+No GitHub call is made and no gh login is read; the provider login is left
+out, so `runner add`'s read-back may report only `not_logged_in`.
 
 It checks, by reading the VM itself: `runner add claude --count 2` creates both
-slots, their `.runner`, `.env` and unit files, enables and starts the units,
+slots, their `.runner`, `.env` (holding `NIBFIN_PROVIDER=claude` once) and unit
+files, enables and starts the units,
 leaves the unit directory and `default.target.wants` owned by the VM user and
 podman machine's own `podman-mnt-bindings.service` as it was, and registers the
 autostart task; a rerun after an interrupted add (a configured slot without its

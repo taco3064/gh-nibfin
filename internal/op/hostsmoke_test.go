@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,7 @@ const (
 	smokeProvider = "claude"
 	smokeRepo     = "github.com/nibfin-smoke/placeholder"
 	smokeUser     = 4242
+	smokeLogin    = "nibfin-smoke"
 	// smokeToken is a fixed, non-secret registration token.
 	smokeToken = "NIBFINSMOKETOKEN"
 	// smokeBindings is podman machine's own user unit, which runner add
@@ -56,9 +58,12 @@ printf 'vm bindings-hash %s\n' "$h"
 printf 'vm bindings-link %s\n' "$(readlink "$u/default.target.wants/$b" 2>/dev/null || echo -)"
 for n do
   s="$d/$n"
+  p=${n%-*}
   printf '%s dir %s\n' "$n" "$(if [ -d "$s" ]; then echo 1; else echo 0; fi)"
   printf '%s runner %s\n' "$n" "$(has "$s/.runner")"
   printf '%s env %s\n' "$n" "$(has "$s/.env")"
+  c=$(grep -cxF "NIBFIN_PROVIDER=$p" "$s/.env" 2>/dev/null) || :
+  printf '%s provider %s\n' "$n" "${c:-0}"
   printf '%s unitfile %s\n' "$n" "$(has "$u/nibfin-runner-$n.service")"
   c=0
   [ -f "$s/.configured" ] && c=$(wc -l < "$s/.configured" | tr -cd '0-9')
@@ -79,9 +84,12 @@ rm -f -- "$1/$2"
 systemctl --user daemon-reload
 `
 
-// smokeGitHub fakes the GitHub side of the runner commands. Its runner list
-// is one online, idle runner per configured slot that discovery on the real
-// host reports, minus those DeleteRunner removed.
+// smokeGitHub fakes the GitHub side of the runner commands. The gh login is
+// admin of the repository, so runner add takes the admin route, whose
+// download list and registration token come from this fake; the request
+// route's Issue calls fail. Its runner list is one online, idle runner per
+// configured slot that discovery on the real host reports, minus those
+// DeleteRunner removed.
 type smokeGitHub struct {
 	h         runnerHost
 	downloads []runnerDownload
@@ -93,7 +101,41 @@ type smokeGitHub struct {
 	unlabeled, deletes []int64
 }
 
-func (g *smokeGitHub) User(context.Context) (int64, error) { return smokeUser, nil }
+func (g *smokeGitHub) User(context.Context) (ghUser, error) {
+	return ghUser{ID: smokeUser, Login: smokeLogin}, nil
+}
+
+func (g *smokeGitHub) RepoPermissions(context.Context, string) (repoPerms, error) {
+	return repoPerms{Admin: true, Push: true}, nil
+}
+
+// errSmokeRequest is what the request route's calls return: the admin route
+// the smoke test takes never makes them.
+var errSmokeRequest = errors.New("host smoke test: the admin route makes no request-route call")
+
+func (g *smokeGitHub) UserKeys(context.Context, string) ([]ghKey, error) {
+	return nil, errSmokeRequest
+}
+
+func (g *smokeGitHub) CreateIssue(context.Context, string, string, string) (ghIssue, error) {
+	return ghIssue{}, errSmokeRequest
+}
+
+func (g *smokeGitHub) Issue(context.Context, string, int) (ghIssue, error) {
+	return ghIssue{}, errSmokeRequest
+}
+
+func (g *smokeGitHub) IssueComments(context.Context, string, int) ([]ghComment, error) {
+	return nil, errSmokeRequest
+}
+
+func (g *smokeGitHub) CreateComment(context.Context, string, int, string) error {
+	return errSmokeRequest
+}
+
+func (g *smokeGitHub) CloseIssue(context.Context, string, int, string) error {
+	return errSmokeRequest
+}
 
 func (g *smokeGitHub) Downloads(context.Context, string) ([]runnerDownload, error) {
 	g.downloadCalls++
@@ -127,7 +169,7 @@ func (g *smokeGitHub) ListRunners(ctx context.Context, repo string) ([]ghRunner,
 		out = append(out, ghRunner{ID: id, Name: r.Name, Status: "online", Labels: []ghLabel{
 			{Name: "self-hosted", Type: "read-only"},
 			{Name: nibfinLabel, Type: "custom"},
-			{Name: "nibfin-4242-" + smokeProvider, Type: "custom"},
+			{Name: "nibfin-4242", Type: "custom"},
 		}})
 	}
 	return out, nil
@@ -224,10 +266,11 @@ func expectVM(t *testing.T, step string, v smokeVM, want map[string]map[string]s
 }
 
 // readySlot is the VM read of a slot runner add completed: its directory,
-// .runner, .env and unit file exist, config.sh ran once, and the unit is
-// enabled and active.
+// .runner, .env and unit file exist, .env sets NIBFIN_PROVIDER to the
+// slot's provider exactly once, config.sh ran once, and the unit is enabled
+// and active.
 func readySlot() map[string]string {
-	return map[string]string{"dir": "1", "runner": "1", "env": "1", "unitfile": "1", "configured": "1", "enabled": "enabled", "active": "active"}
+	return map[string]string{"dir": "1", "runner": "1", "env": "1", "provider": "1", "unitfile": "1", "configured": "1", "enabled": "enabled", "active": "active"}
 }
 
 func autostartPresent(t *testing.T, ctx context.Context, h runnerHost) host.Autostart {
