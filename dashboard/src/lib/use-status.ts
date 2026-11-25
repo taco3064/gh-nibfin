@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Change } from '@/lib/issue'
 import { openLive, type LiveEvent } from '@/lib/live'
 import { applyPersonChanges, replaceIssue } from '@/lib/person'
-import { api, openSession, readProof, type ApiError } from '@/lib/session'
+import { complete, dropPartial, fillPersonView, takePartial, type Loading, type Shown } from '@/lib/partial'
+import { openSession, readProof, readStatus, type ApiError } from '@/lib/session'
 import type { PersonView } from '@/lib/status'
 
 export type Connection =
@@ -24,8 +25,11 @@ export interface Podman {
 
 export interface Status {
   connection: Connection
-  // data is the last person view read; a failed refresh keeps it.
+  // data is the last person view read, or the part of the first read done
+  // so far; a failed refresh keeps a complete read.
   data?: PersonView
+  // loading names what of data is still being read; empty once complete.
+  loading: Loading
   // readAt is the time in ms the data is known current at: when its read
   // began, or the last GitHub check that found nothing new.
   readAt?: number
@@ -55,10 +59,12 @@ const time = (at: string) => {
 
 // useStatus opens the session, then the live stream, which keeps the data
 // current. When the stream ends before its first snapshot, the status is
-// read once instead. Nothing reconnects by itself; Refresh does.
+// read once instead. Until the first read is complete, each section shows as
+// it arrives. Nothing reconnects by itself; Refresh does.
 export function useStatus(): Status {
   const [connection, setConnection] = useState<Connection>(proof ? { state: 'connecting' } : { state: 'no-proof' })
-  const [data, setData] = useState<PersonView>()
+  const [shown, setShown] = useState<Shown<PersonView>>({ loading: complete })
+  const setData = useCallback((f: (d: PersonView) => PersonView) => setShown((s) => (s.data ? { ...s, data: f(s.data) } : s)), [])
   const [readAt, setReadAt] = useState<number>()
   const [reading, setReading] = useState(false)
   const [readError, setReadError] = useState<ApiError>()
@@ -76,14 +82,21 @@ export function useStatus(): Status {
     busy.current = true
     setReading(true)
     const sent = Date.now()
-    void api<{ result?: PersonView }>('/api/commands/status/plan', {}).then((r) => {
+    const onPartial = (result: unknown, loading: string[]) => {
+      if (mounted.current) setShown((s) => takePartial(s, fillPersonView(result), loading))
+    }
+    void readStatus<PersonView>('', onPartial).then((r) => {
       busy.current = false
       if (!mounted.current) return
       setReading(false)
-      if (!r.ok) setReadError(r.error)
-      else if (r.value.result === undefined) setReadError({ code: 'error', message: 'the status read returned no result' })
-      else {
-        setData(r.value.result)
+      if (!r.ok) {
+        setReadError(r.error)
+        setShown(dropPartial)
+      } else if (r.value === undefined || r.value === null) {
+        setReadError({ code: 'error', message: 'the status read returned no result' })
+        setShown(dropPartial)
+      } else {
+        setShown({ data: r.value, loading: complete })
         setReadAt(sent)
         setReadError(undefined)
       }
@@ -101,19 +114,22 @@ export function useStatus(): Status {
     const onEvent = (e: LiveEvent) => {
       if (ctl.signal.aborted || !mounted.current) return
       switch (e.event) {
+        case 'partial':
+          if (!snapshot) setShown((s) => takePartial(s, fillPersonView(e.result), e.loading))
+          break
         case 'snapshot':
           if (!snapshot) {
             snapshot = true
             setLive({ state: 'on' })
             setReading(false)
           }
-          setData(e.result)
+          setShown({ data: e.result, loading: complete })
           setReadAt(time(e.at))
           setReadError(undefined)
           setLiveReadError(undefined)
           break
         case 'issue':
-          setData((d) => (d ? replaceIssue(d, e.repo, e.issue) : d))
+          setData((d) => replaceIssue(d, e.repo, e.issue))
           setLiveReadError(undefined)
           break
         case 'checked':
@@ -141,7 +157,7 @@ export function useStatus(): Status {
       // The page works as without the stream: one read.
       if (!snapshot) read()
     })
-  }, [read])
+  }, [read, setData])
 
   useEffect(() => {
     mounted.current = true
@@ -172,10 +188,10 @@ export function useStatus(): Status {
   const onChanged = useCallback(
     (changes: Change[]) => {
       if (changes.length === 0) refresh()
-      else setData((d) => (d ? applyPersonChanges(d, changes) : d))
+      else setData((d) => applyPersonChanges(d, changes))
     },
-    [refresh],
+    [refresh, setData],
   )
 
-  return { connection, data, readAt, reading, readError, live, podman, checkError, liveReadError, refresh, onChanged }
+  return { connection, data: shown.data, loading: shown.loading, readAt, reading, readError, live, podman, checkError, liveReadError, refresh, onChanged }
 }

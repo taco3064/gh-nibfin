@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { applyChanges, type Change } from '@/lib/issue'
+import { complete, dropPartial, fillRepoView, takePartial, type Loading, type Shown } from '@/lib/partial'
 import { Sequence } from '@/lib/repo'
-import { api, type ApiError } from '@/lib/session'
+import { readStatus, type ApiError } from '@/lib/session'
 import type { RepoView } from '@/lib/status'
 
 export interface RepoStatus {
   // repo is the value sent for the open repository, as entered or picked.
   repo?: string
-  // data is the last read of repo; a failed refresh keeps it.
+  // data is the last read of repo, or the part of the first read done so
+  // far; a failed refresh keeps a complete read.
   data?: RepoView
-  // readAt is when the request that read data was sent, in ms.
+  // loading names what of data is still being read; empty once complete.
+  loading: Loading
+  // readAt is when the request that read data was sent, in ms; unset while
+  // data is partial.
   readAt?: number
   reading: boolean
   readError?: ApiError
@@ -22,28 +27,43 @@ export interface RepoStatus {
 }
 
 // useRepoStatus reads the repository view of status for the chosen
-// repository, once on open() and again on refresh(). An answer for a
-// repository that is no longer the chosen one is dropped. Nothing is stored.
+// repository through the status read route, once on open() and again on
+// refresh(), showing each section as it arrives until the first read is
+// complete. An answer for a repository that is no longer the chosen one is
+// dropped and its request cancelled. Nothing is stored.
 export function useRepoStatus(): RepoStatus {
   const [repo, setRepo] = useState<string>()
-  const [data, setData] = useState<RepoView>()
+  const [shown, setShown] = useState<Shown<RepoView>>({ loading: complete })
   const [readAt, setReadAt] = useState<number>()
   const [reading, setReading] = useState(false)
   const [readError, setReadError] = useState<ApiError>()
   const seq = useRef(new Sequence())
   const current = useRef<string | undefined>(undefined)
+  const request = useRef<AbortController | null>(null)
 
   const read = useCallback((target: string) => {
     const n = seq.current.next()
+    request.current?.abort()
+    const ctl = new AbortController()
+    request.current = ctl
     setReading(true)
     const sent = Date.now()
-    void api<{ result?: RepoView }>('/api/commands/status/plan', { repo: target }).then((r) => {
+    const onPartial = (result: unknown, loading: string[]) => {
       if (!seq.current.current(n)) return
+      setShown((s) => takePartial(s, fillRepoView(result, target), loading))
+    }
+    void readStatus<RepoView>(target, onPartial, fetch, ctl.signal).then((r) => {
+      if (!seq.current.current(n)) return
+      request.current = null
       setReading(false)
-      if (!r.ok) setReadError(r.error)
-      else if (r.value.result === undefined) setReadError({ code: 'error', message: 'the status read returned no result' })
-      else {
-        setData(r.value.result)
+      if (!r.ok) {
+        setReadError(r.error)
+        setShown(dropPartial)
+      } else if (r.value === undefined || r.value === null) {
+        setReadError({ code: 'error', message: 'the status read returned no result' })
+        setShown(dropPartial)
+      } else {
+        setShown({ data: r.value, loading: complete })
         setReadAt(sent)
         setReadError(undefined)
       }
@@ -54,7 +74,7 @@ export function useRepoStatus(): RepoStatus {
     (target: string) => {
       current.current = target
       setRepo(target)
-      setData(undefined)
+      setShown({ loading: complete })
       setReadAt(undefined)
       setReadError(undefined)
       read(target)
@@ -68,16 +88,19 @@ export function useRepoStatus(): RepoStatus {
 
   useEffect(() => {
     const s = seq.current
-    return () => s.drop()
+    return () => {
+      s.drop()
+      request.current?.abort()
+    }
   }, [])
 
   const onChanged = useCallback(
     (changes: Change[]) => {
       if (changes.length === 0) refresh()
-      else setData((d) => (d?.issues ? { ...d, issues: applyChanges(d.issues, changes) } : d))
+      else setShown((s) => (s.data?.issues ? { ...s, data: { ...s.data, issues: applyChanges(s.data.issues, changes) } } : s))
     },
     [refresh],
   )
 
-  return { repo, data, readAt, reading, readError, open, refresh, onChanged }
+  return { repo, data: shown.data, loading: shown.loading, readAt, reading, readError, open, refresh, onChanged }
 }

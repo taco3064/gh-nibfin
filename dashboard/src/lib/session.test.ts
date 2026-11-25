@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { api, apiGet, applyPlan, applyStream, openSession, planRequest, readProof, resetSession, sendCode } from './session'
+import { api, apiGet, applyPlan, applyStream, openSession, planRequest, readProof, readStatus, resetSession, sendCode } from './session'
 
 vi.stubGlobal('location', { pathname: '/', search: '' })
 
@@ -299,5 +299,37 @@ describe('applyStream abort', () => {
     expect((f.mock.calls[0] as unknown as [string, RequestInit])[1].signal).toBe(ac.signal)
     expect(seen).toEqual(['login_step'])
     expect(r).toMatchObject({ ok: false, unknown: true, error: { code: 'network_error' } })
+  })
+})
+
+describe('readStatus', () => {
+  it('posts the repository to the status read route and hands each partial to onPartial', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const lines = [
+      '{"event":"partial","result":{"repo":"github.com/o/r","issues":[]},"loading":["image","runs"]}',
+      '{"event":"partial","result":{"repo":"github.com/o/r","issues":[],"image":{"set":"none"}},"loading":["runs"]}',
+      '{"event":"result","result":{"repo":"github.com/o/r","done":true}}',
+    ]
+    const f = vi.fn(async () => new Response(`${lines.join('\n')}\n`, { status: 200 }))
+    const seen: [unknown, string[]][] = []
+    const r = await readStatus('o/r', (result, loading) => seen.push([result, loading]), f)
+    expect(r).toEqual({ ok: true, value: { repo: 'github.com/o/r', done: true } })
+    expect(seen).toEqual([
+      [{ repo: 'github.com/o/r', issues: [] }, ['image', 'runs']],
+      [{ repo: 'github.com/o/r', issues: [], image: { set: 'none' } }, ['runs']],
+    ])
+    const [path, init] = f.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/commands/status/read')
+    expect(init.body).toBe('{"repo":"o/r"}')
+    expect((init.headers as Record<string, string>)['X-Nibfin-Session']).toBe('S1')
+  })
+
+  it('returns an error line as the failure and skips malformed partials', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const text = '{"event":"partial","loading":["host"]}\n{"event":"error","error":{"code":"auth_unavailable","message":"no login"}}\n'
+    const seen: unknown[] = []
+    const r = await readStatus('', (result) => seen.push(result), vi.fn(async () => new Response(text, { status: 200 })))
+    expect(r).toEqual({ ok: false, error: { code: 'auth_unavailable', message: 'no login' } })
+    expect(seen).toEqual([])
   })
 })

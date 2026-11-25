@@ -11,6 +11,8 @@ import { RunnerView } from '@/components/runner/runner-view'
 import { ThemeControl } from '@/components/theme-control'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { LoadingContext } from '@/lib/loading-context'
+import type { Loading } from '@/lib/partial'
 import { pickerSource } from '@/lib/repo'
 import { landingView, viewLabels, views, type View } from '@/lib/shell'
 import type { PersonView as PersonData } from '@/lib/status'
@@ -28,7 +30,8 @@ export function App() {
   // first successful read. Neither is stored, and a refresh changes neither.
   const [picked, setPicked] = useState<View>()
   const [landing, setLanding] = useState<View>()
-  if (status.data && landing === undefined) setLanding(landingView(status.data))
+  // The landing view needs the host, which a partial read may still lack.
+  if (status.data && !status.loading.has('host') && landing === undefined) setLanding(landingView(status.data))
   const view = picked ?? landing ?? 'person'
   const connected = status.connection.state === 'connected'
   // On the repository view with a repository open, the header's freshness
@@ -98,11 +101,13 @@ function Shell({ status, repoStatus }: { status: Status; repoStatus: RepoStatus 
           {v === 'repo' ? (
             <RepoView
               status={repoStatus}
-              source={pickerSource(repoStatus.data, data)}
+              source={pickerSource(repoStatus.data, data, repoStatus.loading, status.loading)}
               listReading={status.reading || repoStatus.reading}
             />
           ) : data ? (
-            <ViewContent view={v} data={data} onChanged={status.onChanged} refresh={status.refresh} />
+            <LoadingContext value={status.loading}>
+              <ViewContent view={v} data={data} loading={status.loading} onChanged={status.onChanged} refresh={status.refresh} />
+            </LoadingContext>
           ) : (
             <NoData reading={status.reading} />
           )}
@@ -115,11 +120,13 @@ function Shell({ status, repoStatus }: { status: Status; repoStatus: RepoStatus 
 function ViewContent({
   view,
   data,
+  loading,
   onChanged,
   refresh,
 }: {
   view: Exclude<View, 'repo'>
   data: PersonData
+  loading: Loading
   onChanged: Status['onChanged']
   refresh: Status['refresh']
 }) {
@@ -127,16 +134,18 @@ function ViewContent({
     case 'person':
       return <PersonView data={data} onChanged={onChanged} />
     case 'runner':
+      // The Runners view is the host's; it waits for the host read.
+      if (loading.has('host')) return <NoData reading label="Reading the host…" />
       return <RunnerView data={data} onFinished={refresh} />
   }
 }
 
-function NoData({ reading }: { reading: boolean }) {
+function NoData({ reading, label = 'Reading status…' }: { reading: boolean; label?: string }) {
   if (!reading) return <p className="text-sm text-muted-foreground">No status data. Use Refresh to read it again.</p>
   return (
     <p role="status" data-state="reading" className="flex items-center gap-2 text-sm text-muted-foreground">
       <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-      Reading status…
+      {label}
     </p>
   )
 }

@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 import { IssueBulkActions, type SelectedIssue } from '@/components/issue'
 import { Note } from '@/components/shell/note'
-import type { Change } from '@/lib/issue'
+import { SectionLoading } from '@/components/shell/section-loading'
+import { accessOf, type Change } from '@/lib/issue'
+import { useLoading } from '@/lib/loading-context'
 import { keepSelection } from '@/lib/person'
 import type { PersonView as PersonData } from '@/lib/status'
 
@@ -16,6 +18,8 @@ export interface PersonViewProps {
 // PersonView lists the open Issues with scope assigned to the current gh
 // account, grouped by repository in the order of the data.
 export function PersonView({ data, onChanged }: PersonViewProps) {
+  const loading = useLoading()
+  const listing = loading.has('repos')
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   // A new read drops the selected Issues it no longer lists.
   const [seen, setSeen] = useState(data)
@@ -31,7 +35,7 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
       .map((issue) => ({
         issue,
         repo: r.repo,
-        access: { permission: r.permission, ...(r.permissionError ? { permissionError: r.permissionError } : {}) },
+        access: accessOf(r, loading),
       })),
   )
   const onSelect = (url: string, on: boolean) =>
@@ -48,7 +52,9 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
         <h2 id="person-heading" className="text-lg font-semibold tracking-tight">
           Your open Issues
         </h2>
-        {data.userError ? (
+        {loading.has('user') ? (
+          <SectionLoading label="Reading your account…" data-loading="user" />
+        ) : data.userError ? (
           <Note tone="danger">
             Account could not be read: {data.userError.code}: {data.userError.message}
           </Note>
@@ -69,7 +75,8 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
           GitHub's search returns at most 1,000 Issues; some may be missing.
         </Note>
       )}
-      {repos.length === 0 && !data.issuesError && (
+      {listing && <SectionLoading label="Reading your Issues…" data-loading="repos" />}
+      {!listing && repos.length === 0 && !data.issuesError && (
         <p className="rounded-md border border-dashed border-border-subtle px-4 py-8 text-center text-sm text-muted-foreground" data-empty="issues">
           No open Issues with scope are assigned to you.
         </p>

@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
+import { SectionLoading } from '@/components/shell/section-loading'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -26,6 +27,7 @@ import {
   type Change,
   type Stage,
 } from '@/lib/issue'
+import { useLoading } from '@/lib/loading-context'
 import type { RepoPermission, StatusIssue } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -70,6 +72,7 @@ export function ExternalMark({ label }: { label: string }) {
 }
 
 function StageBadges({ issue }: { issue: StatusIssue }) {
+  const loading = useLoading()
   const stage = stageOf(issue.labels)
   const look = stageLook[stage]
   const StageIcon = look.icon
@@ -98,7 +101,8 @@ function StageBadges({ issue }: { issue: StatusIssue }) {
               {`Reason comment could not be read: ${pending.error.code}: ${pending.error.message}`}
             </span>
           )}
-          {pending.kind === 'notFound' && <span className="text-sm text-muted-foreground">Reason comment not found</span>}
+          {pending.kind === 'notFound' && loading.has('pendingComment') && <SectionLoading label="Reading the reason…" data-loading="pendingComment" />}
+          {pending.kind === 'notFound' && !loading.has('pendingComment') && <span className="text-sm text-muted-foreground">Reason comment not found</span>}
         </span>
       )}
       <Badge variant="outline" data-badge="stage" data-stage={stage} className={tones[look.tone]}>
@@ -111,6 +115,14 @@ function StageBadges({ issue }: { issue: StatusIssue }) {
 }
 
 function Blockers({ issue }: { issue: StatusIssue }) {
+  const loading = useLoading()
+  if (loading.has('blockedBy')) {
+    return (
+      <div data-slot="blockers" className="text-sm">
+        <SectionLoading label="Reading blockers…" data-loading="blockedBy" />
+      </div>
+    )
+  }
   const v = blockersView(issue)
   if (v.open.length === 0 && !v.failed && !v.notRead) return null
   return (
@@ -149,6 +161,7 @@ function Blockers({ issue }: { issue: StatusIssue }) {
 // It renders only from its props; the placing view applies onChanged.
 export function IssueItem({ issue, repo, access, selected, onSelectedChange, onChanged, stacked = false, className }: IssueItemProps) {
   const id = useId()
+  const loading = useLoading()
   const change = useChange(onChanged)
   const gate = changeAccess(access, repo)
   // resume clears both pause and pending.
@@ -192,7 +205,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
         </div>
         <div className={cn('flex shrink-0 flex-col gap-2', !stacked && 'sm:items-end')}>
           <div className="flex flex-wrap items-center gap-2">
-            <IssueRunsDialog issue={issue} />
+            {loading.has('runs') ? <SectionLoading label="Reading runs…" data-loading="runs" /> : <IssueRunsDialog issue={issue} />}
             <Button
               variant="outline"
               size="sm"
@@ -206,7 +219,15 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
             </Button>
           </div>
           <div className={cn('flex max-w-full flex-col gap-2', !stacked && 'sm:max-w-xs')}>
-            <DisabledReason id={`${id}-reason`} access={gate} />
+            {/* While the permission is read, the reason is for screen readers only:
+                every row would repeat it. */}
+            {access.permissionLoading && !gate.enabled ? (
+              <span id={`${id}-reason`} className="sr-only">
+                {gate.reason}
+              </span>
+            ) : (
+              <DisabledReason id={`${id}-reason`} access={gate} />
+            )}
             <ChangeMessage outcome={change.outcome} />
           </div>
         </div>

@@ -60,6 +60,9 @@ export interface StatusIssue {
 export interface RepoPermission {
   permission: string | null
   permissionError?: ApiError
+  // permissionLoading is the page's own: the permission is still being
+  // read in a partial read. It is never in the status data.
+  permissionLoading?: boolean
 }
 
 // LatestImage is the newest Nibfin image release (status.LatestImage).
@@ -161,13 +164,18 @@ export interface PullRequest {
   url: string
 }
 
-// NibfinRun says whether a Nibfin run succeeded after the init PR merged
-// (status.NibfinRun).
+// NibfinRun says whether a Nibfin run succeeded after nibfin-issue.yml last
+// changed on the default branch (status.NibfinRun).
 export interface NibfinRun {
-  initialized: boolean
-  initCommit?: string
-  initPR?: PullRequest
-  mergedAt?: string
+  // usesNibfin is true when the default branch has nibfin-issue.yml,
+  // generated or maintained by hand.
+  usesNibfin: boolean
+  // commit is the newest commit that changed the file on the default
+  // branch, pr its merged PR when there is one, and changedAt the PR's merge
+  // time, or else the commit's committer time.
+  commit?: string
+  pr?: PullRequest
+  changedAt?: string
   succeeded: boolean
   // run is the URL of the successful run, at its creation time.
   run?: string
