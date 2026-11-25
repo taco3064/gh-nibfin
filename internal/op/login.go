@@ -397,10 +397,17 @@ func providerOfVolume(v string) (provider, bool) {
 	return provider{}, false
 }
 
+// Pull policies of runArgs: login and its check refresh the image; status
+// never pulls.
+const (
+	pullNewer = "newer"
+	pullNever = "never"
+)
+
 // runArgs is the one argv builder for every container login and check runs.
-func runArgs(p provider, name string, interactive, tty bool, argv []string) []string {
+func runArgs(p provider, pull, name string, interactive, tty bool, argv []string) []string {
 	a := []string{
-		"run", "--rm", "--pull=newer",
+		"run", "--rm", "--pull=" + pull,
 		"--userns=keep-id:uid=1000,gid=1000",
 		"--name", name, "--replace",
 		"--volume", p.volume() + ":" + loginHome,
@@ -417,11 +424,18 @@ func runArgs(p provider, name string, interactive, tty bool, argv []string) []st
 }
 
 func loginArgs(p provider, tty bool) []string {
-	return runArgs(p, "nibfin-login-"+p.name, true, tty, p.login)
+	return runArgs(p, pullNewer, "nibfin-login-"+p.name, true, tty, p.login)
 }
 
 func checkArgs(p provider) []string {
-	return runArgs(p, "nibfin-check-"+p.name, false, false, p.check)
+	return runArgs(p, pullNewer, "nibfin-check-"+p.name, false, false, p.check)
+}
+
+// statusCheckArgs is status's login check: it never pulls the image and has
+// its own container name, so it never replaces a check login or runner add
+// is running.
+func statusCheckArgs(p provider) []string {
+	return runArgs(p, pullNever, "nibfin-status-"+p.name, false, false, p.check)
 }
 
 // exitCode returns the child's exit status, or -1 when it did not exit.
@@ -488,7 +502,12 @@ func createVolume(ctx context.Context, h runnerHost, volume string) error {
 // check runs the provider CLI's own login check. Only its exit status is
 // used; its output can carry account fields and is discarded.
 func (l *login) check(ctx context.Context, p provider) (bool, error) {
-	code, stderr, err := quiet(ctx, l.host, checkArgs(p)...)
+	return runCheck(ctx, l.host, p, checkArgs(p))
+}
+
+// runCheck runs the login check argv on h; only its exit status is used.
+func runCheck(ctx context.Context, h runnerHost, p provider, argv []string) (bool, error) {
+	code, stderr, err := quiet(ctx, h, argv...)
 	switch {
 	case err != nil:
 		return false, err
