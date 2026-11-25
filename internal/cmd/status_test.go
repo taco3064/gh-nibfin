@@ -185,3 +185,39 @@ func TestWriteAutostart(t *testing.T) {
 		t.Errorf("status:\n%s", out)
 	}
 }
+
+func TestStatusBlockedByText(t *testing.T) {
+	perm := "ADMIN"
+	no := "failure"
+	r := op.Result{
+		"host":        hostReport(),
+		"latestImage": status.LatestImage{Ref: digestA},
+		"repo":        "github.com/o/r",
+		"image":       status.RepoImage{Set: "peer"},
+		"permission":  &perm,
+		"issues": []status.Issue{
+			{Number: 1, Title: "One", BlockedBy: []status.Blocker{
+				{Repo: "o/r", Number: 2, Title: "Two\x1b[31m", State: "OPEN"},
+				{Repo: "x/y", Number: 3, Title: "Closed one", State: "CLOSED"},
+				{Repo: "x/y", Number: 4, Title: "Four", State: "OPEN"},
+			}, Runs: []status.Run{{Repo: "o/r", Name: "Nibfin · o/r#1 · wake", Conclusion: &no, URL: "https://github.com/o/r/actions/runs/77"}}},
+			{Number: 5, Title: "Five", BlockedBy: []status.Blocker{{Repo: "o/r", Number: 6, State: "CLOSED"}}},
+			{Number: 7, Title: "Seven", BlockedByError: &op.Error{Code: op.CodeGitHubAPIFailed, Err: errStop}},
+		},
+		"nibfinRun":   status.NibfinRun{},
+		"nibfinRepos": []status.NibfinRepo{{Repo: "o/listed", URL: "https://github.com/o/listed"}},
+	}
+	out, _ := runStatus(t, []string{"status", "-R", "o/r"}, r)
+	for _, want := range []string{
+		"  #1 One\n    blocked by: o/r#2 Two[31m, x/y#4 Four\n  #5 Five\n  #7 Seven\n    blocked by: github_api_failed: stop\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	for _, not := range []string{"Closed one", "actions/runs/77", "ADMIN", "o/listed"} {
+		if strings.Contains(out, not) {
+			t.Errorf("output has %q:\n%s", not, out)
+		}
+	}
+}

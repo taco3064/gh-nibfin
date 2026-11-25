@@ -214,6 +214,16 @@ func writeIssues(w io.Writer, issues []status.Issue) {
 		}
 		fmt.Fprintln(w, line)
 		writeErr(w, "    pending comment", is.PendingCommentError)
+		var open []string
+		for _, b := range is.BlockedBy {
+			if strings.EqualFold(b.State, "OPEN") {
+				open = append(open, fmt.Sprintf("%s#%d %s", clean(b.Repo), b.Number, clean(b.Title)))
+			}
+		}
+		if len(open) > 0 {
+			fmt.Fprintf(w, "    blocked by: %s\n", strings.Join(open, ", "))
+		}
+		writeErr(w, "    blocked by", is.BlockedByError)
 	}
 }
 
