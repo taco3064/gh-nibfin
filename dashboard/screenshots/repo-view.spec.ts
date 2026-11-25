@@ -148,7 +148,12 @@ for (const theme of themes) {
         '#122, #123 and #124 block each other in a cycle.',
       ])
       await expect(page.locator('[data-note=unread]')).toHaveText('Blockers of #125 could not be read; edges may be missing.')
-      await expect(page.locator('[data-slot=unlinked] article[data-issue]')).toHaveCount(7 + 25 + 1)
+      await expect(page.locator('[data-slot=unlinked] article[data-issue]')).toHaveCount(7 + 25)
+      // An Issue whose blockers could not be read is never listed as having
+      // no dependencies.
+      await expect(page.locator('[data-slot=unread] > h3')).toHaveText('Issues whose blockers could not be read')
+      await expect(page.locator('[data-slot=unread] article[data-issue]')).toHaveCount(1)
+      await expect(page.locator('[data-slot=unread] article[data-issue$="/issues/125"]')).toHaveCount(1)
       // The graph region scrolls by itself; the page does not.
       await expectNoPageScroll(page)
       const region = graphRegion(page)
