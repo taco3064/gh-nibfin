@@ -67,7 +67,6 @@ var (
 const (
 	secretName   = "NIBFIN_GITHUB_TOKEN"
 	varExecRepo  = "NIBFIN_EXECUTION_REPO"
-	varProvider  = "NIBFIN_PROVIDER"
 	issueFile    = "nibfin-issue.yml"
 	policyCollab = "collaborators_only"
 	allExternal  = "all_external_contributors"
@@ -86,9 +85,6 @@ var labels = []struct{ name, color, description string }{
 	{"pause", "fbca04", "Nibfin: paused until resumed"},
 	{"pending", "d93f0b", "Nibfin: waiting for a person"},
 }
-
-// providers are the values NIBFIN_PROVIDER may hold.
-var providers = []string{"claude", "codex"}
 
 // The plan steps whose Apply is derived from state rather than performed
 // one by one.
@@ -445,6 +441,13 @@ func (i *initRepo) derive(ctx context.Context, runners op.RunnerHostInfo) error 
 		if exec.FullName == "" {
 			return op.Errorf(op.CodeRepoUnreadable, "read the execution repository %s: no name", runners.Repo)
 		}
+		// Only the execution repository's admin may store their login as
+		// another repository's Secret; a collaborator's Runners serve a
+		// repository they do not administer.
+		if !exec.Permissions.Admin {
+			return op.Errorf(op.CodeRunnerRepoNotAdmin, "the runners on %s serve %s, where the current gh login is not admin; init will not store this login as the Secret %s of %s",
+				runners.Describe, exec.FullName, secretName, i.p.Repo)
+		}
 		i.execRepo = exec.FullName
 	}
 	v, err := i.readVariable(ctx, varExecRepo)
@@ -453,22 +456,6 @@ func (i *initRepo) derive(ctx context.Context, runners op.RunnerHostInfo) error 
 	}
 	v.want = i.execRepo
 	i.vars = append(i.vars, v)
-	if i.set == templates.Execution {
-		v, err := i.readVariable(ctx, varProvider)
-		if err != nil {
-			return err
-		}
-		switch {
-		case v.exists && slices.Contains(providers, v.old):
-			v.want = v.old
-		case len(runners.Providers) == 1:
-			v.want = runners.Providers[0]
-		default:
-			return op.Errorf(op.CodeProviderAmbiguous, "the runners on %s serve %s with more than one provider (%s); set NIBFIN_PROVIDER with gh variable set NIBFIN_PROVIDER -R %s --body <claude|codex> and run init again",
-				runners.Describe, i.p.Repo, strings.Join(runners.Providers, ", "), i.p.Repo)
-		}
-		i.vars = append(i.vars, v)
-	}
 	return i.planWorkflows(ctx)
 }
 
@@ -579,7 +566,9 @@ func (i *initRepo) planFork(ctx context.Context) error {
 // planWorkflows reads the default branch and, unless the repository is
 // initialized, renders the set and reads the init branch and PR.
 func (i *initRepo) planWorkflows(ctx context.Context) error {
-	all := []string{path.Join(templates.Dir, issueFile), path.Join(templates.Dir, "nibfin-shared-runner.yml"), path.Join(templates.Dir, "nibfin-job.yml")}
+	// Every path of the execution set, which holds the peer set; the first
+	// is nibfin-issue.yml.
+	all := templates.Files(templates.Execution)
 	onDefault, err := i.repo.ReadFiles(ctx, all, "", i.info.DefaultBranch)
 	if err != nil {
 		return err
@@ -944,9 +933,6 @@ func (i *initRepo) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 		}
 		checks.Set(varStep(want), ok, state, "variable "+want.name+" is "+state+", want "+want.want)
 		vars[v.name] = v.old
-		if v.name == varProvider {
-			r["provider"] = v.old
-		}
 	}
 	r["variables"] = vars
 

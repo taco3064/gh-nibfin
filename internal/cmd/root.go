@@ -206,12 +206,14 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		"limited to collaborators; approval required for fork PR workflows (all external\n" +
 		"contributors on a public repository, \"Require approval for fork pull request\n" +
 		"workflows\" on a private one); \"Automatically delete head branches\" off; the\n" +
-		"variables NIBFIN_EXECUTION_REPO (and NIBFIN_PROVIDER in the execution repository);\n" +
-		"and the Secret NIBFIN_GITHUB_TOKEN from the current gh login, which needs the\n" +
-		"workflow scope (gh auth refresh -s workflow).\n\n" +
+		"variable NIBFIN_EXECUTION_REPO; and the Secret NIBFIN_GITHUB_TOKEN from the current\n" +
+		"gh login, which needs the workflow scope (gh auth refresh -s workflow). It neither\n" +
+		"writes nor reads NIBFIN_PROVIDER: each Runner names its provider in its .env.\n\n" +
 		"The PR on branch nibfin/init holds the execution set when this host's Runners serve\n" +
 		"the repository, the peer set otherwise. Without Runners it stops and points to\n" +
-		"gh nibfin runner add. An initialized repository gets no PR; use gh nibfin upgrade.\n\n" +
+		"gh nibfin runner add. For the peer set the gh login must be admin of the Runners'\n" +
+		"repository too; otherwise init stops before any write. An initialized repository\n" +
+		"gets no PR; use gh nibfin upgrade.\n\n" +
 		"GitHub offers Issues \"Creation allowed by: Collaborators only\" only in the web UI;\n" +
 		"init prints the Settings link to set it there."
 	upgradeCmd := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })

@@ -25,6 +25,9 @@ const (
 	issueP   = ".github/workflows/nibfin-issue.yml"
 	sharedP  = ".github/workflows/nibfin-shared-runner.yml"
 	jobP     = ".github/workflows/nibfin-job.yml"
+	requestP = ".github/workflows/nibfin-runner-request.yml"
+	// oldProvider is the variable init no longer writes or reads.
+	oldProvider = "NIBFIN_PROVIDER"
 )
 
 type fakePR struct {
@@ -50,6 +53,7 @@ type fakeGitHub struct {
 	secret        bool
 	scopes        *string // nil: no X-OAuth-Scopes header
 	repos         map[string]string
+	notAdmin      map[string]bool // repos paths where the login is not admin
 	defaultBranch string
 	commits       map[string]map[string]string
 	refs          map[string]string
@@ -154,7 +158,8 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 		}
 		return r, nil
 	case method == http.MethodGet && f.repos[strings.ToLower(p)] != "":
-		return map[string]any{"full_name": f.repos[strings.ToLower(p)], "default_branch": "main"}, nil
+		return map[string]any{"full_name": f.repos[strings.ToLower(p)], "default_branch": "main",
+			"permissions": map[string]bool{"admin": !f.notAdmin[strings.ToLower(p)]}}, nil
 	case method == http.MethodPatch && p == base:
 		for k, v := range in {
 			switch k {
@@ -443,18 +448,18 @@ func TestInitExecutionSet(t *testing.T) {
 		"create label scope", "create label shaped", "create label delivered", "create label pause", "create label pending",
 		"set pull requests collaborators_only", "set delete head branches false",
 		"set fork PR approval all external contributors",
-		"create variable NIBFIN_EXECUTION_REPO", "create variable NIBFIN_PROVIDER",
+		"create variable NIBFIN_EXECUTION_REPO",
 		"set secret NIBFIN_GITHUB_TOKEN",
-		"add " + issueP, "add " + sharedP, "add " + jobP,
+		"add " + issueP, "add " + sharedP, "add " + jobP, "add " + requestP,
 		"write branch " + Branch, "open PR " + Branch + " into main",
 	}
 	if !slices.Equal(actions(p), want) || !p.Confirm || !slices.Equal(p.Notes, []string{"set in the web UI https://github.com/o/app/settings: " + issuesManual}) {
 		t.Errorf("plan = %q", actions(p))
 	}
-	if f.vars[varExecRepo] != "o/app" || f.vars[varProvider] != "claude" || *f.prPolicy != policyCollab || f.deleteOnMerge || f.approval != allExternal {
+	if f.vars[varExecRepo] != "o/app" || len(f.vars) != 1 || *f.prPolicy != policyCollab || f.deleteOnMerge || f.approval != allExternal {
 		t.Errorf("state: vars %v, policy %v, delete %v, approval %v", f.vars, *f.prPolicy, f.deleteOnMerge, f.approval)
 	}
-	if r["set"] != "execution" || r["executionRepo"] != "o/app" || r["provider"] != "claude" || r["pr"] != "https://github.com/o/app/pull/10" ||
+	if r["set"] != "execution" || r["executionRepo"] != "o/app" || r["provider"] != nil || r["pr"] != "https://github.com/o/app/pull/10" ||
 		r["secret"] != "set" || r["image"] != imageRef || r["visibility"] != "public" || r["scopes"] != nil {
 		t.Errorf("result = %v", r)
 	}
@@ -465,7 +470,7 @@ func TestInitExecutionSet(t *testing.T) {
 		t.Errorf("manual = %v", m)
 	}
 	files := f.commits[f.refs[Branch]]
-	for _, p := range []string{issueP, sharedP, jobP} {
+	for _, p := range []string{issueP, sharedP, jobP, requestP} {
 		if !strings.HasPrefix(files[p], templates.GeneratedPrefix) {
 			t.Errorf("%s on the branch: %.40q", p, files[p])
 		}
@@ -518,7 +523,7 @@ func TestInitExecutionSet(t *testing.T) {
 
 func TestInitPeerSet(t *testing.T) {
 	f := newFake("lib")
-	f.vars[varProvider] = "codex" // left alone
+	f.vars[oldProvider] = "codex" // left alone
 	stub(t, f, execRunners())
 	p, r, err := runOn("lib")
 	if err != nil {
@@ -531,11 +536,35 @@ func TestInitPeerSet(t *testing.T) {
 	if _, ok := files[sharedP]; ok || files[issueP] == "" {
 		t.Errorf("branch files = %v", files)
 	}
-	if f.vars[varExecRepo] != "o/app" || r["set"] != "peer" || r["provider"] != nil || f.vars[varProvider] != "codex" {
+	if f.vars[varExecRepo] != "o/app" || r["set"] != "peer" || r["provider"] != nil || f.vars[oldProvider] != "codex" {
 		t.Errorf("vars %v, result %v", f.vars, r)
 	}
 	if !slices.ContainsFunc(f.calls, func(c string) bool { return strings.EqualFold(c, "GET repos/o/app") }) {
 		t.Errorf("execution repository not read: %q", f.calls)
+	}
+}
+
+// TestInitPeerNotAdminOfRunnerRepo checks that a host whose Runners serve a
+// repository where the login is not admin (a collaborator's) never stores
+// that login as another repository's Secret.
+func TestInitPeerNotAdminOfRunnerRepo(t *testing.T) {
+	f := newFake("lib")
+	f.notAdmin = map[string]bool{"repos/o/app": true}
+	fx := stub(t, f, execRunners())
+	_, _, err := runOn("lib")
+	if op.Code(err) != op.CodeRunnerRepoNotAdmin || !strings.Contains(err.Error(), "o/app") || !strings.Contains(err.Error(), "not admin") {
+		t.Errorf("err = %v", err)
+	}
+	if len(f.writes()) != 0 || len(*fx.secrets) != 0 {
+		t.Errorf("writes %q, gh %+v", f.writes(), *fx.secrets)
+	}
+
+	// After a machine start the same check runs before any repository write.
+	f = newFake("lib")
+	f.notAdmin = map[string]bool{"repos/o/app": true}
+	fx = stub(t, f, &fakeRunners{stopped: true, repo: "github.com/o/app", providers: []string{"claude"}})
+	if _, _, err = runOn("lib"); op.Code(err) != op.CodeRunnerRepoNotAdmin || !slices.Equal(f.writes(), []string{"HOST start=true"}) || len(*fx.secrets) != 0 {
+		t.Errorf("stopped: %v, writes %q", err, f.writes())
 	}
 }
 
@@ -575,7 +604,7 @@ func TestInitStoppedMachine(t *testing.T) {
 	if acts := actions(p); acts[0] != "start fake" || !slices.Contains(acts, actDerive+" github.com/o/app") || slices.Contains(acts, "create variable NIBFIN_EXECUTION_REPO") {
 		t.Errorf("plan = %q", acts)
 	}
-	if fx.runners.starts != 1 || f.vars[varProvider] != "codex" || r["set"] != "execution" || r["pr"] == nil {
+	if fx.runners.starts != 1 || f.vars[varExecRepo] != "o/app" || r["set"] != "execution" || r["pr"] == nil {
 		t.Errorf("starts %d, vars %v, result %v", fx.runners.starts, f.vars, r)
 	}
 	if i := slices.Index(f.calls, "HOST start=true"); i < 0 || i > slices.Index(f.calls, "POST repos/o/app/labels") {
@@ -784,32 +813,32 @@ func TestInitForkFailures(t *testing.T) {
 }
 
 func TestInitVariables(t *testing.T) {
-	// An existing value is updated; a valid provider is kept even with two
-	// providers.
-	f := newFake("app")
-	f.vars = map[string]string{varExecRepo: "o/old", varProvider: "codex"}
-	stub(t, f, &fakeRunners{repo: "github.com/o/app", providers: []string{"claude", "codex"}})
-	p, r, err := run(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(actions(p), "update variable NIBFIN_EXECUTION_REPO") || slices.ContainsFunc(actions(p), func(a string) bool { return strings.HasSuffix(a, varProvider) }) {
-		t.Errorf("plan = %q", actions(p))
-	}
-	if f.vars[varExecRepo] != "o/app" || f.vars[varProvider] != "codex" || r["provider"] != "codex" {
-		t.Errorf("vars = %v", f.vars)
-	}
-
-	// Two providers and no valid value: init does not choose.
-	f = newFake("app")
-	f.vars = map[string]string{varProvider: "gemini"}
-	stub(t, f, &fakeRunners{repo: "github.com/o/app", providers: []string{"claude", "codex"}})
-	if _, _, err := run(t); op.Code(err) != op.CodeProviderAmbiguous || !strings.Contains(err.Error(), "gh variable set NIBFIN_PROVIDER") || len(f.writes()) != 0 {
-		t.Errorf("ambiguous: %v, %q", err, f.writes())
+	// An existing value is updated. Runners of two providers do not stop
+	// init, and an old NIBFIN_PROVIDER is neither read nor changed.
+	for _, old := range []string{"codex", "gemini"} {
+		f := newFake("app")
+		f.vars = map[string]string{varExecRepo: "o/old", oldProvider: old}
+		stub(t, f, &fakeRunners{repo: "github.com/o/app", providers: []string{"claude", "codex"}})
+		p, r, err := run(t)
+		if err != nil {
+			t.Fatalf("%s: %v", old, err)
+		}
+		if !slices.Contains(actions(p), "update variable NIBFIN_EXECUTION_REPO") || slices.ContainsFunc(allActions(p), func(a string) bool { return strings.HasSuffix(a, oldProvider) }) {
+			t.Errorf("%s: plan = %q", old, allActions(p))
+		}
+		if f.vars[varExecRepo] != "o/app" || f.vars[oldProvider] != old || r["provider"] != nil {
+			t.Errorf("%s: vars = %v, result %v", old, f.vars, r)
+		}
+		if vars := r["variables"].(map[string]string); len(vars) != 1 {
+			t.Errorf("%s: read back %v", old, vars)
+		}
+		if slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasSuffix(c, "/actions/variables/"+oldProvider) }) {
+			t.Errorf("%s: %s read: %q", old, oldProvider, f.calls)
+		}
 	}
 
 	// A variable created between Plan and Apply is updated.
-	f = newFake("app")
+	f := newFake("app")
 	stub(t, f, execRunners())
 	o := New(op.RepoParams{Repo: "github.com/o/app"})
 	plan, err := o.Plan(context.Background())
