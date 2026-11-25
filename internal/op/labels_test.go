@@ -482,3 +482,82 @@ func takeItems(t *testing.T, r Result) []Check {
 	delete(r, ResultNotes)
 	return items
 }
+
+func TestPauseProgress(t *testing.T) {
+	f := newFake(t)
+	r := f.repo("o/r", "pause")
+	one := r.issue("o/r", 1)
+	two := r.issue("o/r", 2, "pause")
+	ctx, rec := record(context.Background())
+	if _, _, err := Run(ctx, Pause(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1", "2"}}), noConfirm()); err != nil {
+		t.Fatal(err)
+	}
+	// The Issue already paused is no item of the apply.
+	if want := []string{"started issue:" + one.url, "done issue:" + one.url}; !reflect.DeepEqual(rec.lines(), want) {
+		t.Errorf("events = %q (no-change %s)", rec.lines(), two.url)
+	}
+}
+
+func TestPartialMutationFailureProgress(t *testing.T) {
+	f := newFake(t)
+	r := f.repo("o/r", "pause")
+	good := r.issue("o/r", 1)
+	bad := r.issue("o/r", 2)
+	f.failIDs[bad.id] = true
+	ctx, rec := record(context.Background())
+	_, res, err := Run(ctx, Pause(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1", "2"}}), noConfirm())
+	if Code(err) != CodeGitHubError || res != nil {
+		t.Fatalf("res %v, err %v", res, err)
+	}
+	want := []string{"started issue:" + good.url, "started issue:" + bad.url, "failed issue:" + bad.url, "failed issue:" + good.url}
+	if !reflect.DeepEqual(rec.lines(), want) {
+		t.Fatalf("events = %q", rec.lines())
+	}
+	// The Issue the error names fails with it; the other one's outcome is
+	// unknown, so it is never reported done.
+	if e, _ := rec.find(PhaseFailed, "issue:"+bad.url); e.Code != CodeGitHubError || !strings.Contains(e.Message, bad.url) {
+		t.Errorf("named = %+v", e)
+	}
+	if e, _ := rec.find(PhaseFailed, "issue:"+good.url); e.Code != CodeGitHubError || !strings.Contains(e.Message, "outcome for this Issue is unknown") {
+		t.Errorf("unknown = %+v", e)
+	}
+}
+
+func TestPauseReadBackPartlyFails(t *testing.T) {
+	f := newFake(t)
+	r := f.repo("o/r", "pause")
+	one := r.issue("o/r", 1)
+	two := r.issue("o/r", 2)
+	// Issue 2 loses its label again before the read-back.
+	f.afterMut = func() { two.labels = nil }
+	_, res, err := Run(context.Background(), Pause(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1", "2"}}), noConfirm())
+	if Code(err) != CodeNotApplied || res == nil {
+		t.Fatalf("res %v, err %v", res, err)
+	}
+	items := takeItems(t, res)
+	if len(items) != 2 || items[0].ID != "issue:"+one.url || !items[0].Confirmed ||
+		items[1].ID != "issue:"+two.url || items[1].Confirmed || items[1].State != "no pause" || items[1].Reason == "" {
+		t.Errorf("items = %+v", items)
+	}
+
+	// A failed read returns every item not confirmed, with the error.
+	f = newFake(t)
+	r = f.repo("o/r", "pause")
+	r.issue("o/r", 1)
+	o := Pause(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}})
+	p, err := o.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Apply(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	f.transport = fmt.Errorf("offline")
+	res, err = o.ReadBack(context.Background(), p)
+	if Code(err) != CodeGitHubError || res == nil {
+		t.Fatalf("res %v, err %v", res, err)
+	}
+	if items := takeItems(t, res); len(items) != 1 || items[0].Confirmed || !strings.Contains(items[0].Reason, "offline") {
+		t.Errorf("items = %+v", items)
+	}
+}

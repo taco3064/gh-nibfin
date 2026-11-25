@@ -31,6 +31,14 @@ of each command is tracked as a scope Issue in this repository.
 `-R, --repo` defaults to the current directory's repository; for `status` it
 selects the repository view instead (see [Status](#status)). A changing
 command shows its plan and asks to confirm; `--yes` skips the question.
+The plan lists every item the command considers, marking `[no change]` for
+those already in place and `[after start]` for those only known after the
+machine starts, then its notes. While it applies, each item prints
+`started:`, then `done:` or `failed:` on stderr. The result then lists each
+item as `[confirmed]` or `[not confirmed]` with the reason, also when the
+read-back fails; the error still follows on stderr as `<code>: <message>`
+and the exit code is 1. These lines come from the same items the
+[Dashboard API](#api) returns.
 
 ## Workflow templates
 
@@ -348,16 +356,46 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   - `status` `{"repo"}` (empty: the person view; set: the repository view);
   - `pause`, `resume` `{"repo", "issues"}`.
 
-  A read-only plan (`status`) returns `{"plan", "result"}`, the result being
-  the object `status --json` prints. Any other returns `{"id", "plan"}`.
+  A plan is `{"operation", "repo", "steps", "notes", "confirm",
+  "readOnly"}`. Every changing command lists each item it considers in
+  `steps`, including those already in place. A step is `{"id", "action",
+  "target", "detail", "current", "next", "noChange", "afterStart"}`: `id`
+  names the item in the plan, its progress and its read-back; `current` is
+  the state read at plan time (absent when unknown) and `next` the resulting
+  state; `noChange` marks an item already in place, which nothing applies;
+  `afterStart` marks an item whose target or state is only known after the
+  machine starts (such as the slots `runner add` chooses). A Secret's states
+  are only `set` or `absent`. `notes` are advice and steps only you can take,
+  such as the web-UI setting of `init`; they are not items.
+
+  A read-only plan returns `{"plan", "result"}` and is read back at once:
+  `status`, whose result is the object `status --json` prints, and a
+  changing command with no changing item (`upgrade` when current, `login`
+  with nothing to do, `runner remove` when every item is kept). When that
+  read-back fails, the response is the error body with `plan` and, when the
+  read-back returned one, `result`, status `422`. Any other plan returns
+  `{"id", "plan"}`.
+
+  The result of every changing command has `items` and `notes` next to its
+  command keys. `items` holds one `{"id", "action", "target", "confirmed",
+  "state", "reason"}` per item, including the no-change ones, which are read
+  again: `state` is the state read back and `reason` says why an item is not
+  confirmed. An item a failed read never reached is not confirmed, with that
+  error as its reason.
 - `POST /api/plans/<id>/apply` with `{"confirm": true}` applies a stored plan
   once. A plan with `"confirm": true` that is applied without it fails with
   `confirmation_required`, writes nothing and stays stored. The response is
-  NDJSON: `{"event":"login_step","step":{...}}` for each login step
-  (`open_url`, `device_code`, `code_requested`, `succeeded`, `failed`), then
-  one `{"event":"result","result":{...}}` or
-  `{"event":"error","error":{"code","message"}}`. Closing the request cancels
-  the apply, as Ctrl-C cancels a command.
+  NDJSON: `{"event":"progress","progress":{"id","action","target","phase",
+  "code","message"}}` for each item as it is `started`, then `done` or
+  `failed` (with the error's `code` and `message`; an Issue of `pause` or
+  `resume` whose outcome is unknown after a failed mutation is `failed`, never
+  `done`); `{"event":"login_step","step":{...}}` for each login step
+  (`open_url`, `device_code`, `code_requested`, `succeeded`, `failed`),
+  between the `started` and `done` of its log-in item; then one
+  `{"event":"result","result":{...}}` or
+  `{"event":"error","error":{"code","message"},"result":{...}}`, where
+  `result` is present when the read-back returned one. Closing the request
+  cancels the apply, as Ctrl-C cancels a command.
 - `POST /api/plans/<id>/code` with `{"code": "..."}` hands a pasted code to the
   login that asked for it. It is accepted once the `code_requested` line has
   been sent, and `409` means no code is requested.
