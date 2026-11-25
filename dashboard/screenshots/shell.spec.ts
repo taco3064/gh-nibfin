@@ -271,11 +271,8 @@ test('the loading state before the first read', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 })
   const w = await prepare(page)
   let release!: () => void
-  const held = new Promise<void>((r) => (release = r))
-  await page.route('**/api/commands/status/plan', async (route) => {
-    await held
-    await route.fallback()
-  })
+  // The first data comes from the live stream's snapshot.
+  w.live.hold = new Promise<void>((r) => (release = r))
   await page.goto('/#proof=SCREENSHOT')
   await expect(page.locator('[role=status][data-state=reading]')).toHaveText('Reading status…')
   await expect(freshness(page)).toHaveText('No data yet')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyPersonChanges, imageState, keepSelection } from '@/lib/person'
+import { applyPersonChanges, imageState, keepSelection, replaceIssue } from '@/lib/person'
 import type { PersonView, RepoIssues, StatusIssue } from '@/lib/status'
 
 const err = { code: 'github_error', message: 'HTTP 502' }
@@ -85,5 +85,22 @@ describe('keepSelection', () => {
     const v = view([repo('a/x', [issue('u1', [])]), repo('a/y', null)])
     expect([...keepSelection(new Set(['u1', 'u2']), v)]).toEqual(['u1'])
     expect(keepSelection(new Set(['u1']), view(null)).size).toBe(0)
+  })
+})
+
+describe('replaceIssue', () => {
+  it('replaces the listed Issue of the same URL in its repository', () => {
+    const v = view([repo('a/x', [issue('u1', ['scope']), issue('u2', ['scope'])]), repo('a/y', [issue('u3', [])])])
+    const next = replaceIssue(v, 'A/X', issue('u2', ['scope', 'pause']))
+    expect(next.repos![0].issues!.map((i) => i.pause)).toEqual([false, true])
+    expect(next.repos![1]).toBe(v.repos![1])
+    expect(v.repos![0].issues![1].pause).toBe(false)
+  })
+  it('keeps the view when the Issue is not listed there', () => {
+    const v = view([repo('a/x', [issue('u1', [])])])
+    expect(replaceIssue(v, 'a/x', issue('u9', []))).toBe(v)
+    expect(replaceIssue(v, 'a/y', issue('u1', []))).toBe(v)
+    const empty = view(null)
+    expect(replaceIssue(empty, 'a/x', issue('u1', []))).toBe(empty)
   })
 })

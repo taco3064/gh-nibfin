@@ -230,3 +230,8 @@ async function send<T>(
 function failure(code: string, message: string): { ok: false; error: ApiError } {
   return { ok: false, error: { code, message } }
 }
+
+// currentSession is the open session, or null before the exchange.
+export function currentSession(): string | null {
+  return session
+}

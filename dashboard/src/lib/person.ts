@@ -2,7 +2,7 @@
 // updates of its Issues.
 
 import { applyChanges, type Change } from '@/lib/issue'
-import type { ApiError, LatestImage, PersonView, RepoImage } from '@/lib/status'
+import type { ApiError, LatestImage, PersonView, RepoImage, StatusIssue } from '@/lib/status'
 
 export type ImageTone = 'neutral' | 'success' | 'warning' | 'danger'
 
@@ -52,4 +52,16 @@ export function applyPersonChanges(view: PersonView, changes: readonly Change[])
 export function keepSelection(selected: ReadonlySet<string>, view: PersonView): Set<string> {
   const listed = new Set((view.repos ?? []).flatMap((r) => (r.issues ?? []).map((i) => i.url)))
   return new Set([...selected].filter((u) => listed.has(u)))
+}
+
+// replaceIssue returns view with repo's Issue of the same URL replaced by
+// issue; a view that does not list it is returned unchanged.
+export function replaceIssue(view: PersonView, repo: string, issue: StatusIssue): PersonView {
+  let found = false
+  const repos = (view.repos ?? []).map((r) => {
+    if (r.repo.toLowerCase() !== repo.toLowerCase() || !r.issues?.some((i) => i.url === issue.url)) return r
+    found = true
+    return { ...r, issues: r.issues.map((i) => (i.url === issue.url ? issue : i)) }
+  })
+  return found ? { ...view, repos } : view
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Change } from '@/lib/issue'
-import { applyPersonChanges } from '@/lib/person'
+import { openLive, type LiveEvent } from '@/lib/live'
+import { applyPersonChanges, replaceIssue } from '@/lib/person'
 import { api, openSession, readProof, type ApiError } from '@/lib/session'
 import type { PersonView } from '@/lib/status'
 
@@ -11,14 +12,33 @@ export type Connection =
   | { state: 'connected' }
   | { state: 'failed'; error: ApiError }
 
+// Live is the live stream: connecting until its first snapshot, on while it
+// runs, off with the reason once it ended.
+export type Live = { state: 'connecting' } | { state: 'on' } | { state: 'off'; error: ApiError }
+
+// Podman is whether the server follows this host's Job events.
+export interface Podman {
+  watching: boolean
+  error?: ApiError
+}
+
 export interface Status {
   connection: Connection
   // data is the last person view read; a failed refresh keeps it.
   data?: PersonView
-  // readAt is when the request that read data was sent, in ms.
+  // readAt is the time in ms the data is known current at: when its read
+  // began, or the last GitHub check that found nothing new.
   readAt?: number
   reading: boolean
   readError?: ApiError
+  live: Live
+  podman?: Podman
+  // checkError is the last failed GitHub check, until a check succeeds.
+  checkError?: ApiError
+  // liveReadError is the last failed live re-read, until the next one.
+  liveReadError?: ApiError
+  // refresh reconnects an ended stream, whose snapshot is the refresh, or
+  // reads the status once.
   refresh: () => void
   // onChanged applies confirmed changes; an empty list (unknown result)
   // reads the status again.
@@ -28,18 +48,30 @@ export interface Status {
 // The proof is read once per page load, before the first render.
 const proof = readProof(location.hash, history)
 
-// useStatus opens the session, then reads the person-view status once. It
-// reads again only on refresh() or after an unknown change result.
+const time = (at: string) => {
+  const t = Date.parse(at)
+  return Number.isNaN(t) ? Date.now() : t
+}
+
+// useStatus opens the session, then the live stream, which keeps the data
+// current. When the stream ends before its first snapshot, the status is
+// read once instead. Nothing reconnects by itself; Refresh does.
 export function useStatus(): Status {
   const [connection, setConnection] = useState<Connection>(proof ? { state: 'connecting' } : { state: 'no-proof' })
   const [data, setData] = useState<PersonView>()
   const [readAt, setReadAt] = useState<number>()
   const [reading, setReading] = useState(false)
   const [readError, setReadError] = useState<ApiError>()
+  const [live, setLive] = useState<Live>({ state: 'connecting' })
+  const [podman, setPodman] = useState<Podman>()
+  const [checkError, setCheckError] = useState<ApiError>()
+  const [liveReadError, setLiveReadError] = useState<ApiError>()
   const busy = useRef(false)
   const mounted = useRef(true)
+  const liveOff = useRef(false)
+  const stream = useRef<AbortController | null>(null)
 
-  const refresh = useCallback(() => {
+  const read = useCallback(() => {
     if (busy.current) return
     busy.current = true
     setReading(true)
@@ -58,24 +90,84 @@ export function useStatus(): Status {
     })
   }, [])
 
+  const connect = useCallback(() => {
+    stream.current?.abort()
+    const ctl = new AbortController()
+    stream.current = ctl
+    liveOff.current = false
+    let snapshot = false
+    setLive({ state: 'connecting' })
+    setReading(true)
+    const onEvent = (e: LiveEvent) => {
+      if (ctl.signal.aborted || !mounted.current) return
+      switch (e.event) {
+        case 'snapshot':
+          if (!snapshot) {
+            snapshot = true
+            setLive({ state: 'on' })
+            setReading(false)
+          }
+          setData(e.result)
+          setReadAt(time(e.at))
+          setReadError(undefined)
+          setLiveReadError(undefined)
+          break
+        case 'issue':
+          setData((d) => (d ? replaceIssue(d, e.repo, e.issue) : d))
+          setLiveReadError(undefined)
+          break
+        case 'checked':
+          setReadAt((t) => Math.max(t ?? 0, time(e.at)))
+          setCheckError(undefined)
+          break
+        case 'podman':
+          setPodman({ watching: e.watching, ...(e.error ? { error: e.error } : {}) })
+          break
+        case 'error':
+          if (e.source === 'github') setCheckError(e.error)
+          else setLiveReadError(e.error)
+          break
+      }
+    }
+    void openLive(onEvent, ctl.signal).then((end) => {
+      if (end.reason === 'aborted' || stream.current !== ctl || !mounted.current) return
+      stream.current = null
+      liveOff.current = true
+      setLive({ state: 'off', error: end.error })
+      setLiveReadError(undefined)
+      setCheckError(undefined)
+      setPodman(undefined)
+      setReading(false)
+      // The page works as without the stream: one read.
+      if (!snapshot) read()
+    })
+  }, [read])
+
   useEffect(() => {
     mounted.current = true
     if (!proof) return
-    let live = true
+    let active = true
     void openSession(proof).then((opened) => {
-      if (!live) return
+      if (!active) return
       if (!opened.ok) {
         setConnection({ state: 'failed', error: opened.error })
         return
       }
       setConnection({ state: 'connected' })
-      refresh()
+      connect()
     })
     return () => {
-      live = false
+      active = false
       mounted.current = false
+      stream.current?.abort()
+      stream.current = null
     }
-  }, [refresh])
+  }, [connect])
+
+  const refresh = useCallback(() => {
+    if (liveOff.current) connect()
+    else read()
+  }, [connect, read])
 
   const onChanged = useCallback(
     (changes: Change[]) => {
@@ -85,5 +177,5 @@ export function useStatus(): Status {
     [refresh],
   )
 
-  return { connection, data, readAt, reading, readError, refresh, onChanged }
+  return { connection, data, readAt, reading, readError, live, podman, checkError, liveReadError, refresh, onChanged }
 }
