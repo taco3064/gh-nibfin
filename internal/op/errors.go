@@ -49,6 +49,11 @@ const (
 	// CodeMachineStopped marks a status part not read because the podman
 	// machine is stopped; status never starts it.
 	CodeMachineStopped = "machine_stopped"
+	// CodeScopeMissing is a gh login without a scope the command needs.
+	CodeScopeMissing = "scope_missing"
+	// CodeProviderAmbiguous is an execution repository whose Runners serve
+	// more than one provider while NIBFIN_PROVIDER names none.
+	CodeProviderAmbiguous = "provider_ambiguous"
 )
 
 // Error is an error with a machine-readable cause code.
