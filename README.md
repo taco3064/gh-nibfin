@@ -319,8 +319,8 @@ The page is the Dashboard UI, built from `dashboard/` and embedded in the
 binary. It removes the proof from the address bar, exchanges it and keeps the
 session in memory only. It then opens the live stream below, which keeps the
 person view current without reloading (see [Live updates](#live-updates)). It
-shows three views: Person (your open Issues with `scope`,
-grouped by repository, each with whether its workflows use the latest image),
+shows three views: Person (your open Issues with `scope`, grouped by
+repository, each with whether its workflows use the latest image),
 Repositories and Runners. A freshness indicator shows the time of the data and
 turns stale after five minutes. The page opens on the Runners view, with a
 guide to `runner add` then `init`, when this host has no complete Runner (or no
