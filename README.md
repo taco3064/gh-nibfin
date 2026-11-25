@@ -92,7 +92,6 @@ The command only advises, and writes nothing, about:
 The registration token is fetched for each run and reaches the runner's
 `config.sh` only on its stdin; it is never stored or printed.
 
-
 ## Login
 
 `gh nibfin login [claude|codex]` logs a provider CLI in where the Runners run.
