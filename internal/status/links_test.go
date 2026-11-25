@@ -472,7 +472,7 @@ func TestIssueOfTitle(t *testing.T) {
 		"Nibfin · r#12 · wake":             "",
 		"CI · o/r#12 · wake":               "",
 	} {
-		if got := issueOfTitle(in); got != want {
+		if got := IssueOfTitle(in); got != want {
 			t.Errorf("%q = %q, want %q", in, got, want)
 		}
 	}
