@@ -40,6 +40,12 @@ var ops = dashboard.Ops{
 
 var providers = []string{"claude", "codex"}
 
+// providerArg declares the provider positional of runner add, runner remove
+// and login.
+func providerArg(required bool) dashboard.Arg {
+	return dashboard.Arg{Name: "provider", Required: required, Allowed: providers, Param: "provider"}
+}
+
 // Execute runs gh nibfin with args and returns the process exit code. An
 // error goes to stderr as "<code>: <message>"; with --json it is also written
 // to stdout as {"code","message"}.
@@ -93,17 +99,13 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		Use:   "runner",
 		Short: "Add or remove local Runners",
 		// Without RunE cobra shows help and exits 0 for an unknown
-		// subcommand, so both a missing and an unknown one fail here.
-		Args: func(c *cobra.Command, args []string) error {
-			if len(args) > 0 {
-				return op.Errorf(op.CodeInvalidArgument, "unknown command %q for %q", args[0], c.CommandPath())
-			}
-			return nil
-		},
+		// subcommand, so a missing one fails
+		// here and the declared NoArgs refuses an unknown one.
 		RunE: func(c *cobra.Command, _ []string) error {
 			return op.Errorf(op.CodeInvalidArgument, "%q requires a subcommand: add or remove", c.CommandPath())
 		},
 	}
+	declareArgs(runner)
 
 	var addCount int
 	var addYes bool
@@ -114,8 +116,6 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"The first Runner on the host registers to the current directory's repository; later\n" +
 			"Runners reuse the repository the existing Runners use. Each Runner carries the labels\n" +
 			"nibfin and nibfin-<user id>-<provider>, and runs as a systemd user service.",
-		Args:      providerArgs(1, 1),
-		ValidArgs: providers,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := checkCount(addCount); err != nil {
 				return err
@@ -125,7 +125,10 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			return run(c, ops.RunnerAdd(p), addYes)
 		},
 	}
+	declareArgs(runnerAdd, providerArg(true))
+	declareAPI(runnerAdd, "runner-add")
 	runnerAdd.Flags().IntVar(&addCount, "count", op.DefaultRunnerAddCount, "number of Runners")
+	declareParam(runnerAdd, "count", "count")
 	addYesFlag(runnerAdd, &addYes)
 
 	var removeCount int
@@ -140,8 +143,6 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"service and the Runner's directory. A count above the number of Runners is refused.\n\n" +
 			"--delete-login deletes the provider's login (the nibfin-home-<provider> volume) only\n" +
 			"when no Runner of the provider remains on this host.",
-		Args:      providerArgs(1, 1),
-		ValidArgs: providers,
 		RunE: func(c *cobra.Command, args []string) error {
 			// Without --count, Count 0 removes them all.
 			if c.Flags().Changed("count") {
@@ -152,16 +153,18 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			return run(c, ops.RunnerRemove(op.RunnerRemoveParams{Provider: args[0], Count: removeCount, DeleteLogin: deleteLogin}), removeYes)
 		},
 	}
+	declareArgs(runnerRemove, providerArg(true))
+	declareAPI(runnerRemove, "runner-remove")
 	runnerRemove.Flags().IntVar(&removeCount, "count", 0, "number of Runners (default: all)")
+	declareParam(runnerRemove, "count", "count")
 	runnerRemove.Flags().BoolVar(&deleteLogin, "delete-login", false, "also delete the provider login when no Runner of it remains")
+	declareParam(runnerRemove, "delete-login", "deleteLogin")
 	addYesFlag(runnerRemove, &removeYes)
 	runner.AddCommand(runnerAdd, runnerRemove)
 
 	login := &cobra.Command{
-		Use:       "login [claude|codex]",
-		Short:     "Log in to a provider for the Runners",
-		Args:      providerArgs(0, 1),
-		ValidArgs: providers,
+		Use:   "login [claude|codex]",
+		Short: "Log in to a provider for the Runners",
 		RunE: func(c *cobra.Command, args []string) error {
 			p := op.LoginParams{}
 			if len(args) == 1 {
@@ -171,6 +174,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			return run(c, ops.Login(p), false)
 		},
 	}
+	declareArgs(login, providerArg(false))
+	declareAPI(login, "login")
 
 	repoCmd := func(use, short string, entry func(op.RepoParams) op.Operation) *cobra.Command {
 		var repo string
@@ -178,7 +183,6 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		c := &cobra.Command{
 			Use:   use,
 			Short: short,
-			Args:  noArgs,
 			RunE: func(c *cobra.Command, _ []string) error {
 				r, err := repoResolver(repo)
 				if err != nil {
@@ -187,6 +191,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 				return run(c, entry(op.RepoParams{Repo: r}), yes)
 			},
 		}
+		declareArgs(c)
+		declareAPI(c, use)
 		addRepoFlag(c, &repo)
 		addYesFlag(c, &yes)
 		return c
@@ -218,7 +224,6 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"pause/pending, the pending comment and whether each repository uses the latest image.\n" +
 			"With -R (the repository view): all open Issues of that repository, its image and\n" +
 			"whether a Nibfin run succeeded after the init PR merged.",
-		Args: noArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			// Without -R the person view needs no repository.
 			var r string
@@ -240,7 +245,10 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			return nil
 		},
 	}
+	declareArgs(statusCmd)
+	declareAPI(statusCmd, "status")
 	statusCmd.Flags().StringVarP(&statusRepo, "repo", "R", "", "show the repository view of [HOST/]OWNER/REPO (default: the person view)")
+	declareParam(statusCmd, "repo", "repo")
 	addJSONFlag(statusCmd, jsonOut)
 
 	issuesCmd := func(use, short string, entry func(op.IssuesParams) op.Operation) *cobra.Command {
@@ -250,7 +258,6 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			Short: short,
 			Long: short + ".\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\n" +
 				"Several issues can be given at once; there is no confirmation step.",
-			Args: wrapArgs(cobra.MinimumNArgs(1)),
 			RunE: func(c *cobra.Command, args []string) error {
 				// Only numbers need a repository, so URL-only calls work
 				// outside a checkout.
@@ -264,6 +271,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 				return run(c, entry(op.IssuesParams{Repo: r, Issues: args}), false)
 			},
 		}
+		declareArgs(c, dashboard.Arg{Name: "issue", Required: true, Repeatable: true, Param: "issues"})
+		declareAPI(c, use)
 		addRepoFlag(c, &repo)
 		return c
 	}
@@ -282,7 +291,6 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"prints \"session opened\". Keep the URL private until then; restart for a new one.\n" +
 			"--no-browser prints the session URL instead of opening a browser.\n\n" +
 			"The page is a placeholder until the Dashboard UI; the API is under /api/.",
-		Args: noArgs,
 		// dashboard starts the server that serves the Dashboard API, so it
 		// has no API equivalent and runs no operation through op.Run.
 		RunE: func(c *cobra.Command, _ []string) error {
@@ -310,9 +318,11 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 					}()
 				},
 				SessionOpened: func() { fmt.Fprintln(out, "session opened") },
+				Commands:      commandSchema(c.Root()),
 			})
 		},
 	}
+	declareArgs(dashboard)
 	dashboard.Flags().IntVar(&port, "port", 0, "port to listen on (default: any free port)")
 	dashboard.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open a browser")
 
@@ -325,16 +335,6 @@ func wrapArgs(v cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(c *cobra.Command, args []string) error {
 		return op.Wrap(op.CodeInvalidArgument, v(c, args))
 	}
-}
-
-var noArgs = wrapArgs(cobra.NoArgs)
-
-func providerArgs(min, max int) cobra.PositionalArgs {
-	n := cobra.RangeArgs(min, max)
-	if min == max {
-		n = cobra.ExactArgs(min)
-	}
-	return wrapArgs(cobra.MatchAll(n, cobra.OnlyValidArgs))
 }
 
 func checkCount(n int) error {
