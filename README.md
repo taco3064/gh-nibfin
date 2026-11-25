@@ -24,8 +24,8 @@ gh nibfin dashboard [--port N] [--no-browser]
 an Issue URL, and several can be given at once. Both commands write all
 changes in one GraphQL mutation, read them back, and ask no confirmation.
 
-`login`, `upgrade`, `runner add`, `runner remove` and `status` are also
-implemented. Every other command currently reports `not_implemented`. The
+`login`, `init`, `upgrade`, `runner add`, `runner remove` and `status` are
+also implemented. `dashboard` currently reports `not_implemented`. The
 behaviour of each command is tracked as a scope Issue in this repository.
 
 `-R, --repo` defaults to the current directory's repository; for `status` it
@@ -40,6 +40,48 @@ into a repository: the execution set (`nibfin-issue.yml`,
 (`nibfin-issue.yml`). They call nothing in other repositories; the Job runs
 `ghcr.io/taco3064/nibfin` pinned to the digest of the latest attested main
 image.
+
+## Init
+
+`gh nibfin init [-R OWNER/REPO]` prepares one repository for Nibfin and opens
+one PR that imports its workflows. It needs admin access to the repository and
+a gh login with the `workflow` scope; without that scope it stops before any
+write and asks for `gh auth refresh -s workflow`.
+
+It reads this host's Runners first. Without Runners it stops and points to
+`gh nibfin runner add`. When the Runners serve the target repository it uses
+the execution set; otherwise the peer set, which wakes the Runners'
+repository. A stopped podman machine is started (through the autostart entry
+when one is registered); init registers no entry, installs no Runner, logs
+nothing in and creates no volume.
+
+It then sets, only where they differ:
+
+- the labels `scope`, `shaped`, `delivered`, `pause` and `pending` (an
+  existing label keeps its colour and description; one that differs only in
+  case is renamed);
+- pull request creation limited to collaborators;
+- approval required for fork PR workflows: on a public repository the policy
+  "Require approval for all external contributors"; on a private repository
+  "Require approval for fork pull request workflows" when fork PR workflows
+  run (where they are off, they stay off). When an organization or enterprise
+  manages this policy and GitHub refuses the change, init stops before the
+  variables, the Secret and the PR; require approval there and run init again;
+- "Automatically delete head branches" off;
+- the variable `NIBFIN_EXECUTION_REPO` (the Runners' repository) and, in the
+  execution repository, `NIBFIN_PROVIDER` (kept when it is `claude` or
+  `codex`, otherwise the one provider of the Runners; with Runners of both
+  providers set it yourself with `gh variable set NIBFIN_PROVIDER`);
+- the Secret `NIBFIN_GITHUB_TOKEN` from the current gh login, every time. The
+  token goes to `gh secret set` on its standard input and is never printed.
+
+The workflows, pinned to the latest attested image, go to the branch
+`nibfin/init` and one PR into the default branch; a rerun keeps that PR.
+A repository that already has `nibfin-issue.yml` on its default branch gets
+its prerequisites but no PR: use `gh nibfin upgrade`.
+
+GitHub offers Issues "Creation allowed by: Collaborators only" only in the web
+UI, so init prints the repository's Settings link and asks you to set it there.
 
 ## Upgrade
 
