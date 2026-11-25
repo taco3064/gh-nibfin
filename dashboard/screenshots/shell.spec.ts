@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { commands } from './command-fixtures'
 import { hosts, issueURL, personView } from './person-fixtures'
 import { expectClean, expectNonce, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
 
@@ -14,12 +15,19 @@ type Theme = (typeof themes)[number]
 interface Ops {
   plans: { action: string; issues: string[] }[]
   mode: 'result' | 'cut'
+  // commandReads counts the schema reads.
+  commandReads: number
 }
 
 // mockOps answers the pause and resume plans and applies; the status read
 // falls through to prepare's mock.
 async function mockOps(page: Page): Promise<Ops> {
-  const ops: Ops = { plans: [], mode: 'result' }
+  const ops: Ops = { plans: [], mode: 'result', commandReads: 0 }
+  await page.route('**/api/commands', (route) => {
+    expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
+    ops.commandReads++
+    return route.fulfill({ json: { commands } })
+  })
   await page.route('**/api/commands/*/plan', async (route) => {
     const action = new URL(route.request().url()).pathname.split('/')[3]
     if (action === 'status') return route.fallback()
@@ -83,7 +91,7 @@ for (const theme of themes) {
       await expectNoPageScroll(page)
       await shot(page, `shell-repo-${theme}-${width}`, false)
       await tab(page, 'Runners').click()
-      await expect(page.locator('[data-note=not-built]')).toHaveText('The runner view is not built yet.')
+      await expect(page.locator('[data-card=host]')).toContainText('local podman')
       await expectNoPageScroll(page)
       expect(w.statusReads).toBe(1)
       await expectClean(w)
@@ -119,7 +127,12 @@ test('a stopped machine lands on the person view', async ({ page }) => {
   const { w } = await open(page, 1280, 'dark', { result: personView({ host: hosts.machineStopped }) })
   await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
   await tab(page, 'Runners').click()
-  await expect(page.locator('[data-note=not-built]')).toHaveText('The runner view is not built yet.')
+  const host = page.locator('[data-card=host]')
+  await expect(host.locator('[data-badge=machine]')).toHaveText('Stopped')
+  await expect(host).toContainText('machine_stopped: podman machine nibfin-dev is stopped')
+  await expect(page.locator('[data-provider=claude] [data-slot=login-state]')).toContainText('machine_stopped')
+  await expect(page.locator('[data-provider=claude]')).toContainText('No Runners of claude on this host.')
+  await shot(page, 'shell-runner-stopped-dark-1280')
   await expectClean(w)
 })
 
@@ -314,5 +327,143 @@ test('a bulk resume across two repositories is one operation', async ({ page }) 
   await expect(item(page, 'acme/app', 102).locator('[data-badge=paused]')).toHaveCount(0)
   await expect(item(page, 'acme/infra', 12).locator('[data-badge=paused]')).toHaveCount(0)
   expect(w.statusReads).toBe(1)
+  await expectClean(w)
+})
+
+// The runner view (#354): the host, each provider's login and Runner slots,
+// and the operation dialogs it opens.
+
+const provider = (page: Page, p: string) => page.locator(`[data-provider="${p}"]`)
+const slotRow = (page: Page, slot: string) => page.locator(`li[data-slot-id="${slot}"]`)
+
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`runner view at ${width}px, ${theme}`, async ({ page }) => {
+      const { w, ops } = await open(page, width, theme, { result: personView({ host: hosts.mixed }) })
+      await tab(page, 'Runners').click()
+      const host = page.locator('[data-card=host]')
+      await expect(host.getByRole('heading', { level: 2 })).toHaveText('podman machine nibfin-dev')
+      await expect(host).toContainText('Machine nibfin-dev · VM type applehv')
+      await expect(host.locator('[data-badge=machine]')).toHaveText('Running')
+      await expect(host.locator('[data-slot=memory]')).toHaveText('5.2 GiB of 15.5 GiB')
+      await expect(host.getByRole('meter', { name: 'Free memory' })).toHaveAttribute('aria-valuenow', '33')
+      await expect(host.locator('[data-slot=repo]')).toHaveText('Runners serve acme/app')
+
+      await expect(provider(page, 'claude').locator('[data-badge=login]')).toHaveText('Logged in')
+      await expect(provider(page, 'codex').locator('[data-badge=login]')).toHaveText('Not logged in')
+      const cases: [string, string, string][] = [
+        ['claude-1', 'Service active', 'Online · Busy'],
+        ['claude-2', 'Service active', 'Online · Idle'],
+        ['claude-3', 'Service inactive', 'Offline'],
+        ['codex-1', 'Service active', 'Not listed on GitHub'],
+        ['codex-2', 'Incomplete: not configured, no unit, not enabled', 'Not listed on GitHub'],
+      ]
+      for (const [slot, service, github] of cases) {
+        await expect(slotRow(page, slot).locator('[data-badge=service]')).toHaveText(service)
+        await expect(slotRow(page, slot).locator('[data-badge=github]')).toHaveText(github)
+      }
+      for (const p of ['claude', 'codex']) {
+        for (const name of ['Log in…', 'Add Runners…', 'Remove Runners…']) {
+          await expect(provider(page, p).getByRole('button', { name })).toBeEnabled()
+        }
+      }
+      await expectNoPageScroll(page)
+      await shot(page, `shell-runner-${theme}-${width}`)
+
+      // Each button opens its dialog with the provider chosen.
+      for (const [name, path] of [
+        ['Log in…', 'login'],
+        ['Add Runners…', 'runner add'],
+        ['Remove Runners…', 'runner remove'],
+      ] as const) {
+        await provider(page, 'codex').getByRole('button', { name }).click()
+        const dialog = page.getByRole('dialog')
+        await expect(dialog.getByRole('heading', { level: 2 })).toHaveText(path)
+        await expect(dialog.getByRole('radio', { name: 'codex' })).toBeChecked()
+        await expect(dialog.getByRole('radio', { name: 'claude' })).not.toBeChecked()
+        await expectNoPageScroll(page)
+        await shot(page, `shell-runner-dialog-${path.replace(' ', '-')}-${theme}-${width}`, false)
+        await dialog.getByRole('button', { name: 'Cancel' }).click()
+        await expect(dialog).toBeHidden()
+      }
+      expect(ops.commandReads).toBe(1)
+      // Nothing was applied, so the status is not read again.
+      expect(w.statusReads).toBe(1)
+      await expectClean(w)
+    })
+  }
+}
+
+for (const width of widths) {
+  test(`runner view with a GitHub error at ${width}px`, async ({ page }) => {
+    const { w } = await open(page, width, 'light', { result: personView({ host: hosts.githubError }) })
+    await tab(page, 'Runners').click()
+    await expect(page.locator('[data-note=github-error]')).toHaveCount(1)
+    await expect(page.locator('[data-note=github-error]')).toContainText('github_error: listing the runners of acme/app: HTTP 502')
+    await expect(page.locator('[data-badge=github]')).toHaveText(['GitHub not read', 'GitHub not read', 'GitHub not read'])
+    await expect(slotRow(page, 'claude-2').locator('[data-badge=service]')).toHaveText('Service inactive')
+    await expectNoPageScroll(page)
+    await shot(page, `shell-runner-github-error-light-${width}`)
+    await expectClean(w)
+  })
+}
+
+test('the no-Runner guide opens runner add per provider', async ({ page }) => {
+  const { w } = await open(page, 375, 'dark', { result: personView({ host: hosts.incomplete }) })
+  const guide = page.locator('[data-guide=no-runner]')
+  await guide.getByRole('button', { name: 'Add Codex Runners…' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('heading', { level: 2 })).toHaveText('runner add')
+  await expect(dialog.getByRole('radio', { name: 'codex' })).toBeChecked()
+  await shot(page, 'shell-runner-guide-dialog-dark-375', false)
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expectClean(w)
+})
+
+test('a failed schema read disables the operations', async ({ page }) => {
+  const { w } = await open(page, 1280, 'dark', { result: personView({ host: hosts.mixed }) })
+  await page.route('**/api/commands', (route) =>
+    route.fulfill({ status: 500, json: { error: { code: 'internal_error', message: 'the schema could not be built' } } }),
+  )
+  await tab(page, 'Runners').click()
+  await expect(page.locator('[data-note=commands-error]')).toHaveText('Commands could not be read: internal_error: the schema could not be built')
+  await expect(provider(page, 'claude').getByRole('button', { name: 'Log in…' })).toBeDisabled()
+  await shot(page, 'shell-runner-commands-error-dark-1280', false)
+  await expectClean(w, ['Failed to load resource: the server responded with a status of 500'])
+})
+
+test('closing a dialog after an apply reads the status again', async ({ page }) => {
+  const { w } = await open(page, 1280, 'dark', { result: personView({ host: hosts.mixed }) })
+  await page.route('**/api/commands/runner-remove/plan', (route) =>
+    route.fulfill({
+      json: {
+        id: 'PLANRM',
+        plan: {
+          operation: 'runner remove',
+          steps: [{ id: 'slot:claude-3', action: 'remove Runner', target: 'claude-3', current: 'offline', next: 'absent', noChange: false, afterStart: false }],
+          confirm: true,
+          readOnly: false,
+        },
+      },
+    }),
+  )
+  await page.route('**/api/plans/PLANRM/apply', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/x-ndjson',
+      body:
+        JSON.stringify({ event: 'result', result: { removed: 1, items: [{ id: 'slot:claude-3', action: 'remove Runner', target: 'claude-3', confirmed: true, state: 'absent' }] } }) + '\n',
+    }),
+  )
+  await tab(page, 'Runners').click()
+  await provider(page, 'claude').getByRole('button', { name: 'Remove Runners…' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('radio', { name: 'claude' })).toBeChecked()
+  await dialog.getByRole('button', { name: 'Preview' }).click()
+  await dialog.getByRole('button', { name: 'Apply' }).click()
+  await expect(dialog.locator('[data-summary]')).toHaveText('Confirmed: the item was read back.')
+  expect(w.statusReads).toBe(1)
+  await dialog.locator('[data-slot=dialog-footer]').getByRole('button', { name: 'Close' }).click()
+  await expect.poll(() => w.statusReads).toBe(2)
   await expectClean(w)
 })

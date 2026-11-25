@@ -38,18 +38,80 @@ function slot(n: number, over: Record<string, unknown> = {}) {
   }
 }
 
-const hostOK = { running: true }
+function codexSlot(n: number, over: Record<string, unknown> = {}) {
+  return slot(n, { slot: `codex-${n}`, provider: 'codex', name: `nibfin-codex-${n}`, ...over })
+}
+
+const machine = { describe: 'podman machine nibfin-dev', machine: 'nibfin-dev', vmType: 'applehv', running: true }
+const memory = { totalKB: 16_303_136, availableKB: 5_452_596 }
+const loggedIn = [
+  { provider: 'claude', loggedIn: true },
+  { provider: 'codex', loggedIn: false },
+]
+const hostOK = { describe: 'local podman', running: true }
+const stoppedErr = error('machine_stopped', 'podman machine nibfin-dev is stopped; status does not start it')
+const podmanErr = error('podman_missing', 'podman is not installed; install it from https://podman.io')
 
 export const hosts = {
-  complete: { host: hostOK, runners: { repo: 'acme/app', runners: [slot(1), slot(2, { configured: false, unit: false })] } },
-  incomplete: { host: hostOK, runners: { runners: [slot(1, { unit: false, enabled: false, active: false, listed: false })] } },
+  complete: {
+    host: hostOK,
+    memory,
+    runners: { repo: 'acme/app', runners: [slot(1), slot(2, { configured: false, unit: false })] },
+    providers: loggedIn,
+  },
+  // mixed is every slot state: active and inactive, online busy and idle,
+  // offline, not listed and incomplete.
+  mixed: {
+    host: machine,
+    memory,
+    runners: {
+      repo: 'acme/app',
+      runners: [
+        slot(1, { busy: true }),
+        slot(2),
+        slot(3, { active: false, status: 'offline' }),
+        codexSlot(1, { listed: false, status: undefined }),
+        codexSlot(2, { configured: false, unit: false, enabled: false, active: false, listed: false, status: undefined }),
+      ],
+    },
+    providers: loggedIn,
+  },
+  githubError: {
+    host: machine,
+    memory,
+    runners: {
+      repo: 'acme/app',
+      runners: [slot(1), slot(2, { active: false }), codexSlot(1)],
+      githubError: error('github_error', 'listing the runners of acme/app: HTTP 502'),
+    },
+    providers: [
+      { provider: 'claude', loggedIn: true },
+      { provider: 'codex', loggedIn: true },
+    ],
+  },
+  incomplete: {
+    host: hostOK,
+    memory,
+    runners: { runners: [slot(1, { unit: false, enabled: false, active: false, listed: false })] },
+    providers: loggedIn,
+  },
   podmanMissing: {
-    host: { running: false, error: error('podman_missing', 'podman is not installed; install it from https://podman.io') },
-    runners: { runners: null, error: error('podman_missing', 'podman is not installed; install it from https://podman.io') },
+    host: { running: false, error: podmanErr },
+    memory: { totalKB: 0, availableKB: 0, error: podmanErr },
+    runners: { runners: null, error: podmanErr },
+    providers: [
+      { provider: 'claude', loggedIn: false, error: podmanErr },
+      { provider: 'codex', loggedIn: false, error: podmanErr },
+    ],
   },
   machineStopped: {
-    host: { running: false },
-    runners: { runners: [], error: error('machine_stopped', 'the podman machine podman-machine-default is stopped') },
+    host: { ...machine, running: false },
+    memory: { totalKB: 0, availableKB: 0, error: stoppedErr },
+    runners: { runners: [], error: error('machine_stopped', 'the podman machine nibfin-dev is stopped') },
+    providers: [
+      { provider: 'claude', loggedIn: false, error: stoppedErr },
+      { provider: 'codex', loggedIn: false, error: stoppedErr },
+    ],
   },
 }
 
