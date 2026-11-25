@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -178,6 +179,12 @@ func (g *smokeGitHub) ListRunners(ctx context.Context, repo string) ([]ghRunner,
 func (g *smokeGitHub) RemoveCustomLabels(_ context.Context, _ string, id int64) error {
 	g.unlabeled = append(g.unlabeled, id)
 	return nil
+}
+
+// SetCustomLabels is part of the github interface; the smoke test does not
+// run upgrade, so a call is a test failure.
+func (g *smokeGitHub) SetCustomLabels(_ context.Context, _ string, id int64, _ []string) error {
+	return fmt.Errorf("smoke: unexpected SetCustomLabels for runner %d", id)
 }
 
 func (g *smokeGitHub) DeleteRunner(_ context.Context, _ string, id int64) error {
