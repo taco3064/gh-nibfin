@@ -230,8 +230,23 @@ func TestReadFile(t *testing.T) {
 }
 
 func TestCIWorkflowsMissingFile(t *testing.T) {
-	f := &fakeREST{workflows: []wf{{"CI", ".github/workflows/ci.yml", "active"}}}
-	if _, err := CIWorkflows(context.Background(), f, "github.com/o/r"); op.Code(err) != op.CodeWorkflowsUnreadable {
-		t.Errorf("missing workflow file: %v", err)
+	// GitHub keeps listing a workflow that once ran from a since-deleted
+	// branch; its file is not on the default branch.
+	f := &fakeREST{
+		workflows: []wf{
+			{"CI", ".github/workflows/ci.yml", "active"},
+			{"Probe", ".github/workflows/probe.yml", "active"},
+		},
+		files: map[string]string{".github/workflows/ci.yml": "on: pull_request\n"},
+	}
+	got, err := CIWorkflows(context.Background(), f, "github.com/o/r")
+	if err != nil {
+		t.Fatalf("missing workflow file: %v", err)
+	}
+	if want := []string{"CI"}; !slices.Equal(got, want) {
+		t.Errorf("CIWorkflows = %q, want %q", got, want)
+	}
+	if !slices.Contains(f.requests, "GET repos/o/r/contents/.github/workflows/probe.yml") {
+		t.Errorf("the missing file was not read: %q", f.requests)
 	}
 }

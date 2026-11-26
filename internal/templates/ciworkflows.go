@@ -51,8 +51,10 @@ type fileContent struct {
 // CIWorkflows returns the names of repo's CI/CD workflows: the active
 // workflows under .github/workflows/, other than Nibfin's own nibfin-* files,
 // whose default-branch file is triggered by push, pull_request,
-// pull_request_target or merge_group. repo is HOST/OWNER/REPO; client must be
-// a client for HOST.
+// pull_request_target or merge_group. A listed workflow whose file is not on
+// the default branch (for example one that only ever ran from a since-deleted
+// branch) is not a CI/CD workflow and is skipped. repo is HOST/OWNER/REPO;
+// client must be a client for HOST.
 func CIWorkflows(ctx context.Context, client RESTClient, repo string) ([]string, error) {
 	base, err := repoBase(repo)
 	if err != nil {
@@ -95,14 +97,15 @@ func candidate(p string) bool {
 }
 
 // triggersCI reads the workflow file from the default branch and reports
-// whether its on: has one of ciEvents.
+// whether its on: has one of ciEvents. A file missing from the default branch
+// gives false and no error; any other read or parse failure is returned.
 func triggersCI(ctx context.Context, client RESTClient, base, p string) (bool, error) {
 	raw, found, err := readFile(ctx, client, base, p, "")
 	if err != nil {
 		return false, err
 	}
 	if !found {
-		return false, fmt.Errorf("%s was not found", p)
+		return false, nil
 	}
 	events, err := triggers(raw)
 	if err != nil {
