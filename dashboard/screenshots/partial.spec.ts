@@ -147,6 +147,10 @@ for (const theme of themes) {
       await expect(view.locator('[data-loading=runs]').first()).toHaveText('Reading runs…')
       await expect(view.locator('[data-loading=blockedBy]').first()).toHaveText('Reading blockers…')
       await expect(view.locator('[data-slot=disabled-reason]')).toHaveCount(0)
+      // The tiles count what is read and label what is still being read.
+      await expect(view.locator('[data-tile=issues] [data-slot=tile-count]')).toHaveText('9Issues')
+      await expect(view.locator('[data-tile=runs] [data-loading=runs]')).toHaveText('Reading runs…')
+      await expect(view.locator('[data-tile=runners] [data-loading=host]')).toHaveText('Reading the host…')
       await expectNoPageScroll(page)
       await shot(page, `partial-person-${theme}-${width}`)
 
@@ -157,6 +161,7 @@ for (const theme of themes) {
 
       await push(page, { event: 'snapshot', at: new Date().toISOString(), result: person })
       await expect(view.locator('[data-slot=section-loading]')).toHaveCount(0)
+      await expect(view.locator('[data-tile=runners] [data-slot=runner-counts]')).toHaveText('2 online · 0 busy')
       await expect(page.locator('[data-slot=live]')).toHaveAttribute('data-state', 'on')
       await expectClean(w)
     })

@@ -90,13 +90,13 @@ export function App() {
         </div>
       </header>
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 sm:py-8">
-        {connected ? <Shell status={status} repoStatus={repoStatus} /> : <ConnectionCard connection={status.connection} />}
+        {connected ? <Shell status={status} repoStatus={repoStatus} onShowRunners={() => setPicked('runner')} /> : <ConnectionCard connection={status.connection} />}
       </main>
     </Tabs>
   )
 }
 
-function Shell({ status, repoStatus }: { status: Status; repoStatus: RepoStatus }) {
+function Shell({ status, repoStatus, onShowRunners }: { status: Status; repoStatus: RepoStatus; onShowRunners: () => void }) {
   const { data, readError } = status
   return (
     <>
@@ -122,7 +122,14 @@ function Shell({ status, repoStatus }: { status: Status; repoStatus: RepoStatus 
             />
           ) : data ? (
             <LoadingContext value={status.loading}>
-              <ViewContent view={v} data={data} loading={status.loading} onChanged={status.onChanged} refresh={status.refresh} />
+              <ViewContent
+                view={v}
+                data={data}
+                loading={status.loading}
+                onChanged={status.onChanged}
+                refresh={status.refresh}
+                onShowRunners={onShowRunners}
+              />
             </LoadingContext>
           ) : (
             <NoData reading={status.reading} />
@@ -139,16 +146,18 @@ function ViewContent({
   loading,
   onChanged,
   refresh,
+  onShowRunners,
 }: {
   view: Exclude<View, 'repo'>
   data: PersonData
   loading: Loading
   onChanged: Status['onChanged']
   refresh: Status['refresh']
+  onShowRunners: () => void
 }) {
   switch (view) {
     case 'person':
-      return <PersonView data={data} onChanged={onChanged} />
+      return <PersonView data={data} onChanged={onChanged} onShowRunners={onShowRunners} />
     case 'runner':
       // The Runners view is the host's; it waits for the host read.
       if (loading.has('host')) return <NoData reading label="Reading the host…" />
