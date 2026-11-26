@@ -192,55 +192,64 @@ func (i *initRepo) send(ctx context.Context, method, p string, body, out any) er
 func (i *initRepo) Plan(ctx context.Context) (op.Plan, error) {
 	plan := op.Plan{Operation: "init", Repo: i.p.Repo, Steps: []op.Step{}}
 	*i = initRepo{p: i.p}
+	// add appends items whose values are final and reports them.
+	add := func(steps ...op.Step) {
+		plan.Steps = append(plan.Steps, steps...)
+		op.Checked(ctx, steps...)
+	}
 	if err := i.connect(); err != nil {
 		return plan, err
 	}
+	op.Checking(ctx, "repository "+i.p.Repo)
 	if err := i.readRepo(ctx); err != nil {
 		return plan, err
 	}
 	if !i.info.Permissions.Admin {
 		return plan, op.Errorf(op.CodeRepoWriteFailed, "init needs admin access to %s", i.p.Repo)
 	}
+	op.Checking(ctx, "gh login scopes")
 	if err := i.checkScope(ctx); err != nil {
 		return plan, err
 	}
 
+	op.Checking(ctx, "host")
 	runners, err := hostRunners(ctx, false)
 	if err != nil {
 		return plan, err
 	}
 	i.stopped = runners.Stopped
 	if i.stopped {
-		plan.Steps = append(plan.Steps, hostStep(runners.Describe, "stopped"))
+		add(hostStep(runners.Describe, "stopped"))
 	} else if err := i.derive(ctx, runners); err != nil {
 		return plan, err
 	}
 
+	op.Checking(ctx, "labels")
 	if err := i.planLabels(ctx); err != nil {
 		return plan, err
 	}
+	add(i.labelSteps()...)
 	i.planSettings()
+	add(i.settingSteps()...)
+	op.Checking(ctx, "fork PR approval")
 	if err := i.planFork(ctx); err != nil {
 		return plan, err
 	}
+	add(i.forkStep())
+	if i.stopped {
+		add(op.Step{ID: varItem(varExecRepo), Action: "set variable", Target: varExecRepo, Detail: "after start, from the Runners on " + runners.Describe, AfterStart: true})
+	} else {
+		add(i.varSteps()...)
+	}
+	op.Checking(ctx, "secret "+secretName)
 	if i.secretExists, err = i.exists(ctx, i.repo.Base+"/actions/secrets/"+secretName); err != nil {
 		return plan, apiErr("read the secret "+secretName+" of "+i.p.Repo, err)
 	}
-
-	plan.Steps = append(plan.Steps, i.labelSteps()...)
-	plan.Steps = append(plan.Steps, i.settingSteps()...)
-	plan.Steps = append(plan.Steps, i.forkStep())
+	add(i.secretStep())
 	if i.stopped {
-		v := op.Step{ID: varItem(varExecRepo), Action: "set variable", Target: varExecRepo, Detail: "after start, from the Runners on " + runners.Describe, AfterStart: true}
-		plan.Steps = append(plan.Steps, v)
+		add(op.Step{ID: "workflows", Action: actDerive, Target: i.p.Repo, Detail: "after start, from the Runners on " + runners.Describe, AfterStart: true})
 	} else {
-		plan.Steps = append(plan.Steps, i.varSteps()...)
-	}
-	plan.Steps = append(plan.Steps, i.secretStep())
-	if i.stopped {
-		plan.Steps = append(plan.Steps, op.Step{ID: "workflows", Action: actDerive, Target: i.p.Repo, Detail: "after start, from the Runners on " + runners.Describe, AfterStart: true})
-	} else {
-		plan.Steps = append(plan.Steps, i.wfSteps...)
+		add(i.wfSteps...)
 	}
 	plan.Notes = []string{i.manualNote()}
 	i.planned = true
@@ -433,6 +442,7 @@ func (i *initRepo) derive(ctx context.Context, runners op.RunnerHostInfo) error 
 		i.execRepo = i.info.FullName
 	} else {
 		i.set = templates.Peer
+		op.Checking(ctx, "execution repository "+runners.Repo)
 		var exec repoInfo
 		p := "repos/" + url.PathEscape(parts[1]) + "/" + url.PathEscape(parts[2])
 		if err := i.get(ctx, p, &exec); err != nil {
@@ -450,6 +460,7 @@ func (i *initRepo) derive(ctx context.Context, runners op.RunnerHostInfo) error 
 		}
 		i.execRepo = exec.FullName
 	}
+	op.Checking(ctx, "variable "+varExecRepo)
 	v, err := i.readVariable(ctx, varExecRepo)
 	if err != nil {
 		return err
@@ -569,6 +580,7 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 	// Every path of the execution set, which holds the peer set; the first
 	// is nibfin-issue.yml.
 	all := templates.Files(templates.Execution)
+	op.Checking(ctx, "default branch files")
 	onDefault, err := i.repo.ReadFiles(ctx, all, "", i.info.DefaultBranch)
 	if err != nil {
 		return err
@@ -587,9 +599,11 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 		return nil
 	}
 	i.initialized = false
+	op.Checking(ctx, "latest image")
 	if i.image, err = latestImage(ctx); err != nil {
 		return err
 	}
+	op.Checking(ctx, "CI workflows")
 	workflows, err := ciWorkflows(ctx, i.client, i.p.Repo)
 	if err != nil {
 		return err
@@ -615,6 +629,7 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 		OnDefault:     onDefault,
 		FileDetail:    setName(i.set) + " set, " + i.image,
 	}
+	op.Checking(ctx, "pull request")
 	if err := i.pr.Read(ctx); err != nil {
 		return err
 	}

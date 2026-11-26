@@ -209,6 +209,7 @@ func findGH(list []ghRunner, name string) *ghRunner {
 func (h *HostUpgrade) Plan(ctx context.Context) ([]Step, []string, error) {
 	*h = HostUpgrade{planned: true}
 	steps, notes := []Step{}, []string{}
+	Checking(ctx, "host")
 	hst, err := detectHost(ctx)
 	switch Code(err) {
 	case "":
@@ -243,9 +244,11 @@ func (h *HostUpgrade) Plan(ctx context.Context) ([]Step, []string, error) {
 	if h.gh, err = newGitHub(repoHost(repo)); err != nil {
 		return steps, notes, err
 	}
+	Checking(ctx, "GitHub login")
 	if h.user, err = h.gh.User(ctx); err != nil {
 		return steps, notes, err
 	}
+	Checking(ctx, "permissions on "+repo)
 	perms, err := h.gh.RepoPermissions(ctx, repo)
 	if err != nil {
 		return steps, notes, err
@@ -253,6 +256,7 @@ func (h *HostUpgrade) Plan(ctx context.Context) ([]Step, []string, error) {
 	h.admin = perms.Admin
 	var list []ghRunner
 	if h.admin {
+		Checking(ctx, "GitHub Runners of "+repo)
 		if list, err = h.gh.ListRunners(ctx, repo); err != nil {
 			return steps, notes, err
 		}
@@ -264,6 +268,7 @@ func (h *HostUpgrade) Plan(ctx context.Context) ([]Step, []string, error) {
 		if !r.Configured {
 			continue
 		}
+		Checking(ctx, r.Slot+" service")
 		sp, err := h.spec(ctx, inv, r, CodeRunnerInstallFailed)
 		if err != nil {
 			return steps, notes, err
@@ -290,6 +295,7 @@ func (h *HostUpgrade) Plan(ctx context.Context) ([]Step, []string, error) {
 			unit.Current, unit.NoChange = "current", true
 		}
 		steps = append(steps, env, unit)
+		Checked(ctx, env, unit)
 		if h.admin {
 			if s.gh = findGH(list, r.Name); s.gh == nil {
 				notes = append(notes, fmt.Sprintf("%s (%s) is not registered on GitHub; run gh nibfin runner remove and gh nibfin runner add", r.Slot, r.Name))
@@ -299,6 +305,7 @@ func (h *HostUpgrade) Plan(ctx context.Context) ([]Step, []string, error) {
 				ls.Detail = r.Name
 				ls.Current, ls.Next, ls.NoChange = labelList(custom), labelList(want), sameSet(custom, want)
 				steps = append(steps, ls)
+				Checked(ctx, ls)
 			}
 		}
 		h.slots = append(h.slots, s)

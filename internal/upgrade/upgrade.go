@@ -129,6 +129,7 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 	var info struct {
 		DefaultBranch string `json:"default_branch"`
 	}
+	op.Checking(ctx, "repository "+u.p.Repo)
 	if err := u.repo.Client.DoWithContext(ctx, http.MethodGet, u.repo.Base, nil, &info); err != nil {
 		return plan, workflowpr.ReadErr("read the repository "+u.p.Repo, err)
 	}
@@ -137,6 +138,7 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 	}
 	u.defaultBranch = info.DefaultBranch
 
+	op.Checking(ctx, "default branch files")
 	onDefault, err := u.repo.ReadFiles(ctx, u.paths(), "", u.defaultBranch)
 	if err != nil {
 		return plan, err
@@ -151,9 +153,11 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 		}
 	}
 
+	op.Checking(ctx, "latest image")
 	if u.image, err = latestImage(ctx); err != nil {
 		return plan, err
 	}
+	op.Checking(ctx, "CI workflows")
 	workflows, err := ciWorkflows(ctx, u.repo.Client, u.p.Repo)
 	if err != nil {
 		return plan, err
@@ -172,6 +176,7 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 		u.steps = workflowpr.KeptSteps(u.paths(), Branch, "the default branch holds the current set")
 		plan.Steps = u.steps
 		plan.ReadOnly = true
+		op.Checked(ctx, u.steps...)
 		return plan, nil
 	}
 
@@ -187,11 +192,13 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 		OnDefault:     onDefault,
 		FileDetail:    u.image,
 	}
+	op.Checking(ctx, "pull request")
 	if err := u.pr.Read(ctx); err != nil {
 		return plan, err
 	}
 	u.steps = u.pr.Steps()
 	plan.Steps = u.steps
+	op.Checked(ctx, u.steps...)
 	return plan, nil
 }
 

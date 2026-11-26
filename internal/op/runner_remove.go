@@ -203,10 +203,12 @@ func (r *runnerRemove) Plan(ctx context.Context) (Plan, error) {
 	if err := r.validate(); err != nil {
 		return plan, err
 	}
+	Checking(ctx, "host")
 	if err := r.detect(ctx); err != nil {
 		return plan, err
 	}
 	where := r.host.Describe()
+	Checking(ctx, "autostart entry")
 	as, err := r.host.Autostart(ctx)
 	if err != nil {
 		return plan, autostartError(ctx, err)
@@ -232,6 +234,7 @@ func (r *runnerRemove) Plan(ctx context.Context) (Plan, error) {
 			steps[0].AfterStart = true
 			plan.Steps = append(plan.Steps, steps...)
 		}
+		Checked(ctx, plan.Steps...)
 		return plan, nil
 	}
 	env, err := r.load(ctx, nil)
@@ -252,6 +255,7 @@ func (r *runnerRemove) Plan(ctx context.Context) (Plan, error) {
 		}
 	}
 	plan.Notes = localNotes(chosen)
+	Checked(ctx, plan.Steps...)
 	return plan, nil
 }
 
@@ -309,6 +313,7 @@ func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, er
 		}
 		// GitHub's runner endpoints need admin, as runner add's route
 		// does: a collaborator's runners came through the request route.
+		Checking(ctx, "permissions on "+repo)
 		perms, err := gh.RepoPermissions(ctx, repo)
 		if err != nil {
 			return nil, err
@@ -317,6 +322,7 @@ func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, er
 			env.local[repo] = true
 			continue
 		}
+		Checking(ctx, "GitHub Runners of "+repo)
 		if env.lists[repo], err = gh.ListRunners(ctx, repo); err != nil {
 			return nil, err
 		}

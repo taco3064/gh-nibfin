@@ -69,6 +69,7 @@ func hostScript(ctx context.Context, h runnerHost, code, what, script string, st
 
 // probeHost runs probeScript; a failure is code.
 func probeHost(ctx context.Context, h runnerHost, code string) (hostProbe, error) {
+	Checking(ctx, "host settings")
 	out, _, err := hostScript(ctx, h, code, "probe the runner host", probeScript, nil, "")
 	if err != nil {
 		return hostProbe{}, err
