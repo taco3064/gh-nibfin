@@ -154,8 +154,9 @@ func issues(ns ...int) []status.Issue {
 }
 
 var (
-	assignedPath = (&probe{kind: assigned}).path(1)
-	assigned2    = (&probe{kind: assigned}).path(2)
+	assignedPath = (&probe{kind: assigned, label: "scope"}).path(1)
+	requestPath  = (&probe{kind: assigned, label: "request"}).path(1)
+	assigned2    = (&probe{kind: assigned, label: "scope"}).path(2)
 	runsOne      = (&probe{kind: runs, repo: "a/one", workflow: issueWorkflow}).path(0)
 	folderOne    = (&probe{kind: folder, repo: "a/one"}).path(0)
 	runsExec     = (&probe{kind: runs, repo: "e/exec", workflow: sharedWorkflow}).path(0)
@@ -185,6 +186,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(func() { saved.restore() })
 	fx.gh = &fakeGH{fx: fx, bodies: map[string]any{
 		assignedPath: items(2),
+		requestPath:  items(1),
 		runsOne:      runList([2]string{"Nibfin · a/one#3 · wake", "2026-11-01T00:00:00Z"}),
 		folderOne:    []any{map[string]any{"name": "nibfin-issue.yml"}},
 		runsExec:     runList(),
@@ -370,14 +372,14 @@ func TestStartAndQuietTicks(t *testing.T) {
 	fx.started()
 	gh := fx.gh
 	gh.mu.Lock()
-	// The assigned Issues' baseline is taken before the read; then the
+	// The assigned Issues' baselines (scope, then request) are taken before the read; then the
 	// watch set's probes.
 	if gh.reqs[0] != assignedPath {
 		t.Errorf("first request %s", gh.reqs[0])
 	}
 	got := append([]string{}, gh.reqs...)
 	gh.mu.Unlock()
-	if !reflect.DeepEqual(got, []string{assignedPath, runsOne, folderOne, runsExec}) {
+	if !reflect.DeepEqual(got, []string{assignedPath, requestPath, runsOne, folderOne, runsExec}) {
 		t.Errorf("baselines = %v", got)
 	}
 
@@ -395,12 +397,12 @@ func TestStartAndQuietTicks(t *testing.T) {
 	}
 	// Every tick sent the last ETag of each probe.
 	gh.mu.Lock()
-	for _, h := range gh.headers[4:] {
+	for _, h := range gh.headers[5:] {
 		if strings.HasSuffix(h, " ") {
 			t.Errorf("unconditional %q", h)
 		}
 	}
-	if len(gh.reqs) != 4*4 {
+	if len(gh.reqs) != 5*4 {
 		t.Errorf("requests = %d", len(gh.reqs))
 	}
 	gh.mu.Unlock()
@@ -409,6 +411,7 @@ func TestStartAndQuietTicks(t *testing.T) {
 func TestFullReadTriggers(t *testing.T) {
 	for name, change := range map[string]func(*fixture){
 		"assigned": func(fx *fixture) { fx.gh.set(assignedPath, items(3)) },
+		"request":  func(fx *fixture) { fx.gh.set(requestPath, items(2)) },
 		"pages": func(fx *fixture) {
 			fx.gh.set(assignedPath, items(100))
 			fx.gh.set(assigned2, items(1))
