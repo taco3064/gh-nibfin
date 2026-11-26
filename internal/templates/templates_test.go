@@ -103,8 +103,8 @@ func TestRenderPinsImage(t *testing.T) {
 		t.Errorf("the image appears %d times, want once (in IMAGE_REF)", n)
 	}
 	pulls := regexp.MustCompile(`podman pull .*`).FindAllString(job, -1)
-	if len(pulls) != 2 {
-		t.Errorf("podman pull lines %q, want 2", pulls)
+	if len(pulls) != 3 {
+		t.Errorf("podman pull lines %q, want 3", pulls)
 	}
 	for _, l := range pulls {
 		if l != `podman pull "$IMAGE_REF"` {
@@ -113,8 +113,8 @@ func TestRenderPinsImage(t *testing.T) {
 	}
 	// Every podman run starts a container from "$IMAGE_REF".
 	runs := regexp.MustCompile(`(?s)podman run .*?nibfin (?:route|run) `).FindAllString(job, -1)
-	if len(runs) != 2 {
-		t.Fatalf("podman run commands %d, want 2", len(runs))
+	if len(runs) != 3 {
+		t.Fatalf("podman run commands %d, want 3", len(runs))
 	}
 	for _, r := range runs {
 		if !strings.Contains(r, `"$IMAGE_REF" nibfin `) {
@@ -155,6 +155,11 @@ var coreLines = []string{
 	`run: rm -rf "$GITHUB_WORKSPACE/nibfin-workspace" "$RUNNER_TEMP/nibfin-out"`,
 	`runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","nibfin"]') || 'ubuntu-24.04' }}`,
 	`runs-on: [self-hosted, "nibfin-${{ inputs.assignee }}"]`,
+	// The finish Job (core #755) runs no agent: no checkout, login volume or tools.
+	`runs-on: ${{ github.event.repository.private && fromJSON(format('["self-hosted","nibfin-{0}"]', inputs.assignee)) || 'ubuntu-24.04' }}`,
+	`--env NIBFIN_NEXT_FILE \`,
+	`"$IMAGE_REF" nibfin run --stage finish --repo "$REPO" --issue "$ISSUE"`,
+	`run: rm -rf "$RUNNER_TEMP/nibfin-out"`,
 	`PROVIDER="${NIBFIN_PROVIDER:-}"`,
 	`MODEL="${NIBFIN_MODEL:-}"`,
 	`NIBFIN_GITHUB_TOKEN: ${{ secrets.token }}`,
@@ -190,8 +195,8 @@ func TestRenderJobMirrorsCore(t *testing.T) {
 			t.Errorf("the Job has an extra container line %q", l)
 		}
 	}
-	if n := strings.Count(job, "podman run "); n != 2 {
-		t.Errorf("podman run appears %d times, want 2", n)
+	if n := strings.Count(job, "podman run "); n != 3 {
+		t.Errorf("podman run appears %d times, want 3", n)
 	}
 }
 
@@ -202,8 +207,8 @@ func TestRenderJobLabelsContainers(t *testing.T) {
 	job := string(render(t, Execution, params())[".github/workflows/nibfin-job.yml"])
 	const label = `--label "io.github.taco3064.nibfin.repo=$REPO" --label "io.github.taco3064.nibfin.issue=$ISSUE" \`
 	runs := strings.Split(job, "podman run ")[1:]
-	if len(runs) != 2 {
-		t.Fatalf("podman run appears %d times, want 2", len(runs))
+	if len(runs) != 3 {
+		t.Fatalf("podman run appears %d times, want 3", len(runs))
 	}
 	for i, run := range runs {
 		// The command ends at its first line without a continuation.
@@ -229,7 +234,7 @@ func TestRenderSharedRunner(t *testing.T) {
 		"  queue: max\n",
 		"    uses: ./.github/workflows/nibfin-job.yml\n",
 		"      token: ${{ secrets.NIBFIN_GITHUB_TOKEN }}\n",
-		"        options: [route, shape, deliver, review]\n",
+		"        options: [route, shape, deliver, review, finish]\n",
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("nibfin-shared-runner.yml has no %q", want)

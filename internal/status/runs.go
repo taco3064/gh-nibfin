@@ -164,7 +164,7 @@ func IssueOfTitle(title string) string {
 }
 
 // stages are the stage values of the shared-runner template's run titles.
-var stages = map[string]bool{"route": true, "shape": true, "deliver": true, "review": true}
+var stages = map[string]bool{"route": true, "shape": true, "deliver": true, "review": true, "finish": true}
 
 // TitleJob returns the Issue's OWNER/REPO and number, as the title writes
 // them, and the stage of a run title "Nibfin · OWNER/REPO#N · <stage>".

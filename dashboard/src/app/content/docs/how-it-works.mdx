@@ -64,6 +64,10 @@ first seven states run nothing; the rest are the stages above.
   execution repository is public it runs on a GitHub-hosted runner, which costs
   nothing there, so it never waits behind a stage Job. When it is private it runs on
   the Owner's Runners and uses no Actions minutes.
+- **Finish runs start no agent either.** Merging a pull request whose review already
+  passed, closing a delivered Issue and waking the Issues it blocked run as a finish
+  run, in the same place as a route run on a public execution repository. On a
+  private one it runs on the Assignee's Runners.
 - **The Assignee's Runner.** Each stage Job runs on a self-hosted Runner labelled
   `nibfin-<user id>` of the Issue's only Assignee, in a Podman container. The
   provider, Claude or Codex, comes from that Runner's own configuration, never from a

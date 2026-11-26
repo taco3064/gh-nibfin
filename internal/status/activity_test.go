@@ -67,6 +67,7 @@ func TestTitleJob(t *testing.T) {
 	for in, want := range map[string]string{
 		"Nibfin · Acme/App#12 · deliver": "Acme/App 12 deliver",
 		"NIBFIN · o/r#3 · Review":        "o/r 3 review",
+		"Nibfin · o/r#4 · finish":        "o/r 4 finish",
 		"Nibfin · o/r#3 · wake":          "o/r 3 ",
 		"Nibfin · o/r@main · route":      "!",
 		"Nibfin · o/r#03 · shape":        "!",
