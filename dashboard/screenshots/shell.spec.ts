@@ -81,7 +81,7 @@ for (const theme of themes) {
     test(`person landing and the three views at ${width}px, ${theme}`, async ({ page }) => {
       const { w } = await open(page, width, theme)
       await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
-      await expect(page.locator('[data-view=person]')).toContainText('Open Issues with scope assigned to octo-dev on github.com')
+      await expect(page.locator('[data-view=person]')).toContainText('Open Issues with scope or request assigned to octo-dev on github.com')
       await expect(freshness(page)).toHaveAttribute('data-state', 'current')
       await expect(freshness(page)).toContainText('Current')
       await shot(page, `shell-person-${theme}-${width}`)
@@ -211,7 +211,7 @@ for (const theme of themes) {
 
       w.status = { result: personView({ repos: [] }) }
       await page.getByRole('button', { name: 'Refresh' }).click()
-      await expect(view.locator('[data-empty]')).toHaveText('No open Issues with scope are assigned to you.')
+      await expect(view.locator('[data-empty]')).toHaveText('No open Issues with scope or request are assigned to you.')
       await expectNoPageScroll(page)
       await shot(page, `shell-person-empty-${theme}-${width}`)
       await expectClean(w)

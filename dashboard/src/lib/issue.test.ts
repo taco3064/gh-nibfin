@@ -44,6 +44,10 @@ describe('stageOf', () => {
     [['bug'], 'none'],
     [['shaped'], 'none'],
     [['delivered', 'shaped'], 'none'],
+    [['request'], 'scope'],
+    [['Request', 'pause'], 'scope'],
+    [['request', 'scope'], 'shape'],
+    [['request', 'scope', 'shaped'], 'deliver'],
     [['scope'], 'shape'],
     [['Scope'], 'shape'],
     [['SCOPE', 'pause', 'pending'], 'shape'],
@@ -281,10 +285,11 @@ describe('changeIssues', () => {
 describe('stageSteps', () => {
   const states = (stage: Parameters<typeof stageSteps>[0]) => stageSteps(stage).map((s) => `${s.label}:${s.state}`)
   it.each([
-    ['none', ['Shape:upcoming', 'Deliver:upcoming', 'Done:upcoming']],
-    ['shape', ['Shape:current', 'Deliver:upcoming', 'Done:upcoming']],
-    ['deliver', ['Shape:complete', 'Deliver:current', 'Done:upcoming']],
-    ['done', ['Shape:complete', 'Deliver:complete', 'Done:current']],
+    ['none', ['Scope:upcoming', 'Shape:upcoming', 'Deliver:upcoming', 'Done:upcoming']],
+    ['scope', ['Scope:current', 'Shape:upcoming', 'Deliver:upcoming', 'Done:upcoming']],
+    ['shape', ['Scope:complete', 'Shape:current', 'Deliver:upcoming', 'Done:upcoming']],
+    ['deliver', ['Scope:complete', 'Shape:complete', 'Deliver:current', 'Done:upcoming']],
+    ['done', ['Scope:complete', 'Shape:complete', 'Deliver:complete', 'Done:current']],
   ] as const)('%s', (stage, want) => {
     expect(states(stage)).toEqual(want)
   })
