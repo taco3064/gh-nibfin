@@ -192,11 +192,11 @@ function HostCard({ host, activity, now }: { host: HostReport; activity?: Activi
         <CardTitle>
           <h2 className="flex items-center gap-2 text-base">
             <Server aria-hidden="true" className="size-5 shrink-0" />
-            <span className="min-w-0 break-words">{h.describe || 'This host'}</span>
+            <span className="min-w-0 wrap-anywhere">{h.describe || 'This host'}</span>
           </h2>
         </CardTitle>
         {(h.machine || h.vmType) && (
-          <CardDescription className="break-words">
+          <CardDescription className="wrap-anywhere">
             {h.machine && (
               <>
                 Machine <span className="font-medium text-foreground">{h.machine}</span>
