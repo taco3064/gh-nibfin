@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyPersonChanges, imageState, keepSelection, replaceIssue } from '@/lib/person'
-import type { PersonView, RepoIssues, StatusIssue } from '@/lib/status'
+import {
+  applyPersonChanges,
+  filterNeedsYou,
+  imageState,
+  keepSelection,
+  needsYou,
+  needsYouCount,
+  replaceIssue,
+  runCounts,
+  runnerCounts,
+  stageCounts,
+} from '@/lib/person'
+import type { HostReport, PersonView, RepoIssues, Run, RunnerState, StatusIssue } from '@/lib/status'
 
 const err = { code: 'github_error', message: 'HTTP 502' }
 
@@ -103,5 +114,111 @@ describe('replaceIssue', () => {
     expect(replaceIssue(v, 'a/y', issue('u1', []))).toBe(v)
     const empty = view(null)
     expect(replaceIssue(empty, 'a/x', issue('u1', []))).toBe(empty)
+  })
+})
+
+const run = (conclusion: string | null): Run => ({
+  repo: 'a/x',
+  name: 'n',
+  workflow: 'w',
+  status: conclusion === null ? 'in_progress' : 'completed',
+  conclusion,
+  createdAt: '2026-11-02T00:00:00Z',
+  url: 'https://x/run',
+})
+
+describe('stageCounts', () => {
+  it('counts the listed Issues by stage from labels, other stages as other', () => {
+    const v = view([
+      repo('a/x', [issue('u1', ['scope']), issue('u2', ['scope', 'shaped']), issue('u3', ['scope', 'shaped', 'delivered'])]),
+      repo('a/y', [issue('u4', []), issue('u5', ['scope', 'shaped', 'pause'])]),
+      repo('a/z', null),
+    ])
+    expect(stageCounts(v)).toEqual({ total: 5, shape: 1, deliver: 2, other: 2 })
+  })
+  it('counts zero Issues', () => {
+    expect(stageCounts(view(null))).toEqual({ total: 0, shape: 0, deliver: 0, other: 0 })
+    expect(stageCounts(view([]))).toEqual({ total: 0, shape: 0, deliver: 0, other: 0 })
+  })
+})
+
+describe('needsYou', () => {
+  it('is pending or pause', () => {
+    expect(needsYou(issue('u', ['pause']))).toBe(true)
+    expect(needsYou(issue('u', ['pending']))).toBe(true)
+    expect(needsYou(issue('u', ['scope']))).toBe(false)
+    const v = view([repo('a/x', [issue('u1', ['pause']), issue('u2', ['scope'])]), repo('a/y', [issue('u3', ['pending', 'pause'])])])
+    expect(needsYouCount(v)).toBe(2)
+  })
+})
+
+describe('runCounts', () => {
+  it('groups the conclusions of every listed Issue', () => {
+    const v = view([
+      repo('a/x', [
+        { ...issue('u1', []), runs: [run('success'), run('failure'), run(null)] },
+        { ...issue('u2', []), runs: [run('timed_out'), run('startup_failure'), run('cancelled'), run('success')] },
+      ]),
+    ])
+    expect(runCounts(v)).toEqual({ total: 7, succeeded: 2, failed: 3, running: 1, other: 1, incomplete: false })
+  })
+  it('marks missing, failed and truncated run reads as incomplete', () => {
+    const read = { ...issue('u1', []), runs: [run('success')] }
+    expect(runCounts(view([repo('a/x', [read])])).incomplete).toBe(false)
+    expect(runCounts(view([repo('a/x', [read, issue('u2', [])])])).incomplete).toBe(true)
+    expect(runCounts(view([repo('a/x', [{ ...issue('u2', []), runs: null }])])).incomplete).toBe(true)
+    expect(runCounts(view([repo('a/x', [{ ...read, runsError: err }])])).incomplete).toBe(true)
+    const cut = runCounts(view([repo('a/x', [{ ...read, runsTruncated: true }])]))
+    expect(cut).toMatchObject({ total: 1, succeeded: 1, incomplete: true })
+  })
+  it('counts no runs', () => {
+    expect(runCounts(view(null))).toEqual({ total: 0, succeeded: 0, failed: 0, running: 0, other: 0, incomplete: false })
+  })
+})
+
+describe('runnerCounts', () => {
+  const slot = (over: Partial<RunnerState>): RunnerState => ({
+    slot: 's',
+    provider: 'claude',
+    configured: true,
+    unit: true,
+    enabled: true,
+    active: true,
+    listed: true,
+    status: 'online',
+    busy: false,
+    ...over,
+  })
+  const host = (runners: RunnerState[] | null, memory = { totalKB: 8 * 1024 * 1024, availableKB: 2 * 1024 * 1024 }): HostReport => ({
+    host: {},
+    memory,
+    runners: { runners },
+    providers: [],
+  })
+  it('counts online and busy slots like the runner view', () => {
+    const h = host([slot({}), slot({ busy: true }), slot({ status: 'offline', busy: true }), slot({ status: undefined, listed: false })])
+    expect(runnerCounts(h)).toEqual({ online: 2, busy: 1, usedKB: 6 * 1024 * 1024, totalKB: 8 * 1024 * 1024 })
+  })
+  it('gives no memory when it was not read', () => {
+    expect(runnerCounts(host(null, { totalKB: 0, availableKB: 0 }))).toEqual({ online: 0, busy: 0, usedKB: null, totalKB: null })
+    expect(runnerCounts(host([], { totalKB: 100, availableKB: 50, error: err } as HostReport['memory']))).toMatchObject({ usedKB: null, totalKB: null })
+  })
+})
+
+describe('filterNeedsYou', () => {
+  it('keeps the Issues that need you and drops empty repositories', () => {
+    const v = view([
+      repo('a/x', [issue('u1', ['pause']), issue('u2', ['scope'])]),
+      repo('a/y', [issue('u3', ['scope'])]),
+      repo('a/z', null),
+      repo('a/w', [issue('u4', ['pending'])]),
+    ])
+    const f = filterNeedsYou(v)
+    expect(f.repos!.map((r) => [r.repo, r.issues!.map((i) => i.url)])).toEqual([
+      ['a/x', ['u1']],
+      ['a/w', ['u4']],
+    ])
+    expect(v.repos![0].issues).toHaveLength(2)
+    expect(filterNeedsYou(view(null)).repos).toEqual([])
   })
 })

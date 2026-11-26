@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { runsView, type RunsNote } from '@/lib/issue'
+import { runOutcome, runsView, type RunOutcome, type RunsNote } from '@/lib/issue'
 import type { Run, StatusIssue } from '@/lib/status'
 import { cn, formatTime } from '@/lib/utils'
 
@@ -27,21 +27,11 @@ function statusTone(status: string): Tone {
   return status === 'completed' ? 'neutral' : 'info'
 }
 
+const outcomeTones: Record<RunOutcome, Tone> = { running: 'info', succeeded: 'success', failed: 'danger', other: 'neutral' }
+
 function conclusionTone(c: string | null): Tone {
-  switch (c) {
-    case null:
-      return 'info'
-    case 'success':
-      return 'success'
-    case 'failure':
-    case 'timed_out':
-    case 'startup_failure':
-      return 'danger'
-    case 'action_required':
-      return 'warning'
-    default:
-      return 'neutral'
-  }
+  if (c === 'action_required') return 'warning'
+  return outcomeTones[runOutcome(c)]
 }
 
 function Note({ note }: { note: RunsNote }) {
