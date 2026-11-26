@@ -5,7 +5,7 @@ import { expect, type Page, type Response } from '@playwright/test'
 
 import { commands } from './command-fixtures'
 import { frame, mockLive, type LiveMock } from './live-mock'
-import { personView } from './person-fixtures'
+import { personView, runnerActivity } from './person-fixtures'
 
 // Shared checks of the screenshot specs: the API is mocked with fictional
 // bodies, CSP violations and console errors fail the spec.
@@ -48,6 +48,10 @@ export interface Watch {
   repoStatus: Record<string, StatusAnswer>
   // statusBodies are the request bodies of the status read route, in order.
   statusBodies: Record<string, unknown>[]
+  // activity answers GET /api/runner-activity: a body, or an error with
+  // its HTTP status; activityReads counts the reads.
+  activity: { result: unknown } | { error: { code: string; message: string }; httpStatus: number }
+  activityReads: number
 }
 
 // prepare mocks the API and records CSP violations and console errors. The
@@ -63,6 +67,8 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
     live: undefined as unknown as LiveMock,
     repoStatus: {},
     statusBodies: [],
+    activity: { result: runnerActivity() },
+    activityReads: 0,
   }
   w.live = await mockLive(page, () => {
     w.statusReads++
@@ -86,6 +92,12 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
             },
           },
         })
+  })
+  await page.route('**/api/runner-activity', (route) => {
+    expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
+    w.activityReads++
+    const a = w.activity
+    return 'error' in a ? route.fulfill({ status: a.httpStatus, json: { error: a.error } }) : route.fulfill({ json: a.result })
   })
   // The command schema the runner view reads; a spec may route it again.
   await page.route('**/api/commands', (route) => route.fulfill({ json: { commands } }))
