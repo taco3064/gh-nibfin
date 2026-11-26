@@ -162,7 +162,7 @@ nothing in and creates no volume.
 
 It then sets, only where they differ:
 
-- the labels `scope`, `shaped`, `delivered`, `pause` and `pending` (an
+- the labels `request`, `scope`, `shaped`, `delivered`, `pause` and `pending` (an
   existing label keeps its colour and description; one that differs only in
   case is renamed);
 - pull request creation limited to collaborators;
@@ -526,8 +526,8 @@ Every view shows the runner host:
 - each provider's login, from the CLI's own check run with `--pull=never`
   (no `nibfin-home-<provider>` volume means not logged in).
 
-Without `-R` it shows the person view: the open Issues labelled `scope` and
-assigned to you on gh's default host, across repositories (GitHub's issue
+Without `-R` it shows the person view: the open Issues labelled `scope` or
+`request` and assigned to you on gh's default host, across repositories (GitHub's issue
 search, up to its 1,000 results), grouped by repository. Each Issue shows
 `pause` and `pending`; a `pending` Issue links the oldest
 `<!-- nibfin:pending -->` comment by the account that added the `pending`
@@ -606,7 +606,7 @@ The page is the Dashboard UI, built from `dashboard/` and embedded in the
 binary. It removes the proof from the address bar, exchanges it and keeps the
 session in memory only. It then opens the live stream below, which keeps the
 person view current without reloading (see [Live updates](#live-updates)). It
-shows three views: Person (your open Issues with `scope`, grouped by
+shows three views: Person (your open Issues with `scope` or `request`, grouped by
 repository, each with whether its workflows use the latest image),
 Repositories and Runners. The Repositories view picks a repository from a
 searchable list of your repositories that use Nibfin on the current host (the
@@ -769,7 +769,7 @@ Core.
   is checked every 30 seconds or more with conditional requests (`ETag`,
   `If-None-Match`), honouring `x-poll-interval` and `Retry-After`. An
   unchanged answer is a `304`, which does not count against the primary rate
-  limit. The checks are the open `scope` Issues assigned to you (labels,
+  limit. The checks are the open `scope` and the open `request` Issues assigned to you (labels,
   state, assignment, title), the Nibfin runs (`nibfin-issue.yml` of each
   listed repository, `nibfin-shared-runner.yml` of the execution repository)
   and each listed repository's workflow files. A changed Issue list or

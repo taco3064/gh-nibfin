@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
@@ -82,18 +83,40 @@ func TestReadIssueListed(t *testing.T) {
 	}
 }
 
+// TestListedRequest: an open request Issue without scope is in the person
+// view (the Scope stage), as a scope Issue is.
+func TestListedRequest(t *testing.T) {
+	for name, labels := range map[string][]string{
+		"request":         {"request"},
+		"Request":         {"Request", "bug"},
+		"request & scope": {"request", "scope"},
+	} {
+		b, err := json.Marshal(single("a/one", 3, "open", []string{"me"}, labels...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var j issueStateJSON
+		if err := json.Unmarshal(b, &j); err != nil {
+			t.Fatal(err)
+		}
+		if !listedIssue(j, "a/one", "me") {
+			t.Errorf("%s: not listed", name)
+		}
+	}
+}
+
 func TestReadIssueNotListed(t *testing.T) {
 	pr := single("a/one", 3, "open", []string{"me"}, "scope")
 	pr["pull_request"] = map[string]any{}
 	moved := single("a/two", 3, "open", []string{"me"}, "scope")
 	for name, v := range map[string]any{
-		"closed":     single("a/one", 3, "closed", []string{"me"}, "scope"),
-		"unassigned": single("a/one", 3, "open", []string{"other"}, "scope"),
-		"no scope":   single("a/one", 3, "open", []string{"me"}, "pause"),
-		"pr":         pr,
-		"moved":      moved,
-		"404":        &api.HTTPError{StatusCode: http.StatusNotFound, Message: "Not Found"},
-		"410":        &api.HTTPError{StatusCode: http.StatusGone, Message: "Gone"},
+		"closed":              single("a/one", 3, "closed", []string{"me"}, "scope"),
+		"unassigned":          single("a/one", 3, "open", []string{"other"}, "scope"),
+		"no scope or request": single("a/one", 3, "open", []string{"me"}, "pause"),
+		"pr":                  pr,
+		"moved":               moved,
+		"404":                 &api.HTTPError{StatusCode: http.StatusNotFound, Message: "Not Found"},
+		"410":                 &api.HTTPError{StatusCode: http.StatusGone, Message: "Gone"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			fx := setup(t, map[string]any{"repos/a/one/issues/3": v})
