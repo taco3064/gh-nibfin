@@ -80,9 +80,14 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "nibfin",
-		Annotations:   map[string]string{cobra.CommandDisplayNameAnnotation: "gh nibfin"},
-		Short:         "Run and manage Nibfin from the GitHub CLI",
+		Use:         "nibfin",
+		Annotations: map[string]string{cobra.CommandDisplayNameAnnotation: "gh nibfin"},
+		Short:       "Run and manage Nibfin from the GitHub CLI",
+		Long: "Run and manage Nibfin from the GitHub CLI.\n\n" +
+			"Every GitHub API call is retried up to 3 times on any error, with one\n" +
+			"\"nibfin: GitHub API ... retry N of 3\" line on stderr per retry; the last\n" +
+			"attempt's error is the one reported. A 404 that means \"absent\" is an\n" +
+			"answer, not an error, and is not retried.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

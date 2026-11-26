@@ -139,7 +139,7 @@ func TestRenderRunnerRequest(t *testing.T) {
 	check := step(t, d, "Check the request")
 	if check.ID != "check" || !strings.Contains(check.Run, `if [ "$TITLE" != "`+RunnerRequestTitle+`" ]; then`) ||
 		!strings.Contains(check.Run, `'^`+RunnerKeyIDField+`:'`) ||
-		!strings.Contains(check.Run, `GH_TOKEN="$NIBFIN_TOKEN" gh api "repos/$REPO/collaborators/$LOGIN/permission" --jq .permission`) {
+		!strings.Contains(check.Run, `GH_TOKEN="$NIBFIN_TOKEN" gh_retry api "repos/$REPO/collaborators/$LOGIN/permission" --jq .permission`) {
 		t.Errorf("the check step does not check the contract:\n%s", check.Run)
 	}
 	for k, v := range map[string]string{"TITLE": "github.event.issue.title", "BODY": "github.event.issue.body", "USER_TYPE": "github.event.issue.user.type"} {
@@ -156,7 +156,7 @@ func TestRenderRunnerRequest(t *testing.T) {
 
 	// The token is masked before any other use and reaches age on stdin only.
 	tok := step(t, d, "Create and encrypt the registration token")
-	if !strings.Contains(tok.Run, `GH_TOKEN="$NIBFIN_TOKEN" gh api -X POST "repos/$REPO/actions/runners/registration-token"`) {
+	if !strings.Contains(tok.Run, `GH_TOKEN="$NIBFIN_TOKEN" gh_retry api -X POST "repos/$REPO/actions/runners/registration-token"`) {
 		t.Errorf("the token step does not create the token with the Nibfin token:\n%s", tok.Run)
 	}
 	var uses []string
@@ -193,7 +193,7 @@ func TestRenderRunnerRequest(t *testing.T) {
 		"marker='" + RunnerRefusedMarker + "'",
 		"marker='" + RunnerRegistrationMarker + "'",
 		`if [ "$marker" = '` + RunnerRefusedMarker + `' ]; then`,
-		`gh api -X PATCH "repos/$REPO/issues/$ISSUE" -f state=closed -f state_reason=not_planned`,
+		`gh_retry api -X PATCH "repos/$REPO/issues/$ISSUE" -f state=closed -f state_reason=not_planned`,
 		`gh api -X PATCH "repos/$REPO/issues/comments/$id"`,
 		`select(.user.login == "github-actions[bot]" and (.body | startswith($m)))`,
 		RunnerReasonField + `: the request workflow failed (%s)`,
@@ -250,7 +250,8 @@ func runScript(t *testing.T, script string, env []string) (string, error) {
 		t.Fatal(err)
 	}
 	c := exec.Command("bash", "--noprofile", "--norc", "-eo", "pipefail", f)
-	c.Env = env
+	// sleep is a no-op that logs its seconds, so retries do not wait.
+	c.Env = append([]string{`BASH_FUNC_sleep%%=() { echo "sleep $*" >&2; }`}, env...)
 	out, err := c.CombinedOutput()
 	return string(out), err
 }
@@ -346,13 +347,20 @@ case "$*" in
     printf '%s\n' "$FAKE_DEPLOY_KEYS" ;;
   "api -X POST repos/o/r/actions/runners/registration-token")
     printf '{"token":"%s","expires_at":"2026-11-25T13:00:00Z"}\n' "$FAKE_REG_TOKEN" ;;
-  "api --paginate repos/o/r/issues/7/comments") printf '%s\n' "$FAKE_COMMENTS" ;;
-  "api -X PATCH repos/o/r/issues/comments/"*" --input - --jq .html_url")
+  "api --paginate repos/o/r/issues/7/comments")
+    if [ -f "$GH_DIR/comments.json" ]; then cat "$GH_DIR/comments.json"; else printf '%s\n' "$FAKE_COMMENTS"; fi ;;
+  "api -X PATCH repos/o/r/issues/comments/"*" --input "*" --jq .html_url")
     id=${4##*/}
-    cat >"$GH_DIR/patch-$id.json"
+    cp "$6" "$GH_DIR/patch-$id.json"
     echo "https://github.com/o/r/issues/7#issuecomment-$id" ;;
-  "api -X POST repos/o/r/issues/7/comments --input - --jq .html_url")
-    cat >"$GH_DIR/post.json"
+  "api -X POST repos/o/r/issues/7/comments --input "*" --jq .html_url")
+    cp "$6" "$GH_DIR/post.json"
+    # FAKE_POST_LOST: the comment is created but the answer is lost.
+    if [ -n "$FAKE_POST_LOST" ]; then
+      jq -c '[{id: 6, user: {login: "github-actions[bot]"}, body: .body}]' "$6" >"$GH_DIR/comments.json"
+      echo "gh: Bad Gateway (HTTP 502)" >&2
+      exit 1
+    fi
     echo "https://github.com/o/r/issues/7#issuecomment-new" ;;
   "api -X PATCH repos/o/r/issues/7 -f state=closed -f state_reason=not_planned --jq .state")
     touch "$GH_DIR/closed"
@@ -593,6 +601,77 @@ func TestRunnerRequestAnswer(t *testing.T) {
 	}
 }
 
+// TestRunnerRequestAnswerLostReply checks that a comment whose reply was
+// lost is updated on the retry, not posted twice.
+func TestRunnerRequestAnswerLostReply(t *testing.T) {
+	needBash(t, "jq")
+	d, _ := requestWorkflow(t)
+	script := step(t, d, "Answer the request").Run
+	dir, env := fakeBin(t)
+	os.WriteFile(filepath.Join(dir, "nibfin-answer.md"), []byte(RunnerRegistrationMarker+"\nrequester: alice\n"), 0o644)
+	out, err := runScript(t, script, append(env, "JOB_STATUS=success", "STATE=ok", "FAKE_COMMENTS=[]", "FAKE_POST_LOST=1"))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	entries, _ := filepath.Glob(filepath.Join(dir, "p*.json"))
+	if len(entries) != 2 || !strings.HasSuffix(entries[0], "patch-6.json") || !strings.HasSuffix(entries[1], "post.json") {
+		t.Errorf("comment writes %q", entries)
+	}
+	if !strings.Contains(out, "retry 1 of 3") || !strings.Contains(out, "sleep 1") {
+		t.Errorf("output %q", out)
+	}
+}
+
+// TestGHRetry runs the gh_retry helper of the templates: any failure is
+// retried 3 times with 1, 2 and 4 seconds between, the output of a failed
+// attempt is dropped, and no body field is logged.
+func TestGHRetry(t *testing.T) {
+	needBash(t)
+	d, _ := requestWorkflow(t)
+	run := step(t, d, "Create and encrypt the registration token").Run
+	start := strings.Index(run, "gh_retry() {")
+	end := strings.Index(run[start:], "\n}\n") + start + len("\n}\n")
+	helper := run[start:end]
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	os.MkdirAll(bin, 0o755)
+	// The fake fails until its counter reaches FAKE_OK, printing an error body.
+	os.WriteFile(filepath.Join(bin, "gh"), []byte(`#!/bin/bash
+n=$(( $(cat "$COUNT" 2>/dev/null || echo 0) + 1 ))
+echo "$n" >"$COUNT"
+if [ "$n" -lt "$FAKE_OK" ]; then echo '{"message":"Bad Gateway"}'; exit 1; fi
+echo "answer $n"
+`), 0o755)
+	for _, c := range []struct {
+		ok    string
+		fail  bool
+		calls string
+		out   string
+	}{{"4", false, "4", "answer 4"}, {"9", true, "4", ""}, {"1", false, "1", "answer 1"}} {
+		count := filepath.Join(dir, "count-"+c.ok)
+		script := helper + "\nout=$(gh_retry api -X POST repos/o/r/keys -f key=SECRET)\necho \"got [$out]\"\n"
+		out, err := runScript(t, script, []string{"PATH=" + bin + ":" + os.Getenv("PATH"), "COUNT=" + count, "FAKE_OK=" + c.ok})
+		if (err != nil) != c.fail {
+			t.Errorf("FAKE_OK=%s: err %v\n%s", c.ok, err, out)
+		}
+		if b, _ := os.ReadFile(count); strings.TrimSpace(string(b)) != c.calls {
+			t.Errorf("FAKE_OK=%s: %s calls", c.ok, b)
+		}
+		if !c.fail && !strings.Contains(out, "got ["+c.out+"]") {
+			t.Errorf("FAKE_OK=%s: output %q", c.ok, out)
+		}
+		if strings.Contains(out, "SECRET") {
+			t.Errorf("FAKE_OK=%s: a body field is logged: %q", c.ok, out)
+		}
+	}
+	out, _ := runScript(t, helper+"\ngh_retry api -X POST repos/o/r/keys -f key=SECRET\n", []string{"PATH=" + bin + ":" + os.Getenv("PATH"), "COUNT=" + filepath.Join(dir, "c2"), "FAKE_OK=9"})
+	for _, want := range []string{"nibfin: GitHub API api repos/o/r/keys failed; retry 1 of 3", "sleep 1", "sleep 2", "sleep 4", "retry 3 of 3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output %q has no %q", out, want)
+		}
+	}
+}
+
 // ed25519Blob is the base64 wire format of an ssh-ed25519 public key with
 // the key bytes key (32 for a real key).
 func ed25519Blob(algo string, key []byte) string {
@@ -623,7 +702,7 @@ func TestRunnerRequestDeployKeyOrder(t *testing.T) {
 		t.Errorf("deploy key step if %q", add.If)
 	}
 	for _, want := range []string{
-		`GH_TOKEN="$NIBFIN_TOKEN" gh api -X POST "repos/$REPO/keys"`,
+		`GH_TOKEN="$NIBFIN_TOKEN" gh_retry api -X POST "repos/$REPO/keys"`,
 		`title="` + RunnerDeployKeyTitlePrefix + `$LOGIN"`,
 		`-F read_only=true`,
 	} {
@@ -748,7 +827,16 @@ func TestRunnerRequestAddDeployKey(t *testing.T) {
 				t.Errorf("%s: gh call without the Nibfin token: %q", c.name, l)
 			}
 		}
-		if wantCalls := map[bool]int{true: 1, false: 2}[c.post == "ok"]; len(lines) != wantCalls {
+		// A refused add is sent 4 times (3 retries), then the list is read,
+		// itself up to 4 times.
+		wantCalls := 1
+		if c.post != "ok" {
+			wantCalls = 5
+			if c.listFail {
+				wantCalls = 8
+			}
+		}
+		if len(lines) != wantCalls {
 			t.Errorf("%s: gh calls %q", c.name, lines)
 		}
 	}

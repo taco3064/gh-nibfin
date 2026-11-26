@@ -82,7 +82,7 @@ func TestIssueWakeScript(t *testing.T) {
 			name:  "review with a failed permission read",
 			env:   []string{"EVENT_NAME=pull_request_review", "REVIEW_BRANCH=nibfin/issue-5", "REVIEW_HEAD_REPO=o/r", "FAKE_PERMISSION=fail"},
 			fail:  true,
-			calls: []string{permission},
+			calls: []string{permission, permission, permission, permission},
 		},
 		{
 			name:  "issue event by a writer",
@@ -99,7 +99,7 @@ func TestIssueWakeScript(t *testing.T) {
 			name:  "issue event with a failed permission read",
 			env:   []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=bug", "ISSUE=7", `ISSUE_LABELS=["scope"]`, "FAKE_PERMISSION=fail"},
 			fail:  true,
-			calls: []string{permission},
+			calls: []string{permission, permission, permission, permission},
 		},
 		{
 			name:    "push to another branch without the execution variable",

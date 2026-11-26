@@ -9,7 +9,7 @@ import { createGitHub } from './github'
 import type { RepoData } from './messages'
 import { check } from './poller'
 import { initialState } from './state'
-import { FakeGitHub, issueJSON, issuesPath, runJSON, runsPath, token } from './testing'
+import { FakeGitHub, issueJSON, issuesPath, runJSON, runsPath, token, quick } from './testing'
 
 type Schema = { $defs: Record<string, { properties: Record<string, unknown> }> }
 const defs = (schemaFile as unknown as Schema).$defs
@@ -28,7 +28,7 @@ const cli = 'taco3064/gh-nibfin'
 const t0 = Date.parse('2026-11-25T00:00:00Z')
 
 async function built(fake: FakeGitHub): Promise<RepoData[]> {
-  const { state } = await check(initialState(), createGitHub({ token, fetch: fake.fetch }), t0)
+  const { state } = await check(initialState(), createGitHub({ token, fetch: fake.fetch, ...quick }), t0)
   return state.data?.repos ?? []
 }
 
