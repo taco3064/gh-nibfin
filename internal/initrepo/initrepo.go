@@ -103,7 +103,11 @@ type repoInfo struct {
 	Visibility    string  `json:"visibility"`
 	PRPolicy      *string `json:"pull_request_creation_policy"`
 	DeleteOnMerge bool    `json:"delete_branch_on_merge"`
-	Permissions   struct {
+	// The merge methods; nil when GitHub does not report one.
+	AllowRebase *bool `json:"allow_rebase_merge"`
+	AllowSquash *bool `json:"allow_squash_merge"`
+	AllowMerge  *bool `json:"allow_merge_commit"`
+	Permissions struct {
 		Admin bool `json:"admin"`
 	} `json:"permissions"`
 }
@@ -144,6 +148,9 @@ type initRepo struct {
 
 	labels   []labelPlan
 	settings map[string]any
+
+	// The up-to-date requirement on the default branch.
+	upToDate upToDatePlan
 
 	forkPolicy  string       // public route: the current approval_policy
 	forkPrivate privateForks // private route: the current settings
@@ -231,6 +238,11 @@ func (i *initRepo) Plan(ctx context.Context) (op.Plan, error) {
 	add(i.labelSteps()...)
 	i.planSettings()
 	add(i.settingSteps()...)
+	op.Checking(ctx, "rulesets and branch protection of "+i.info.DefaultBranch)
+	if i.upToDate, err = i.planUpToDate(ctx); err != nil {
+		return plan, err
+	}
+	add(i.upToDate.steps()...)
 	op.Checking(ctx, "fork PR approval")
 	if err := i.planFork(ctx); err != nil {
 		return plan, err
@@ -251,7 +263,7 @@ func (i *initRepo) Plan(ctx context.Context) (op.Plan, error) {
 	} else {
 		add(i.wfSteps...)
 	}
-	plan.Notes = []string{i.manualNote()}
+	plan.Notes = i.notes()
 	i.planned = true
 	plan.Confirm = true
 	return plan, nil
@@ -277,6 +289,12 @@ func (i *initRepo) manualNote() string {
 	return "set in the web UI " + i.settingsURL() + ": " + issuesManual
 }
 
+// notes are the plan's and the result's notes: the manual Issues setting and
+// every inherited ruleset that requires branches to be up to date.
+func (i *initRepo) notes() []string {
+	return append([]string{i.manualNote()}, i.upToDate.notes...)
+}
+
 // labelSteps are the five label items, each no change when present.
 func (i *initRepo) labelSteps() []op.Step {
 	var steps []op.Step
@@ -296,7 +314,7 @@ func labelStep(l labelPlan) op.Step {
 	return op.Step{ID: labelItem(l.name), Action: "create label", Target: l.name, Detail: l.desc, Current: "absent", Next: "present"}
 }
 
-// settingSteps are the two repository settings init writes in one PATCH.
+// settingSteps are the repository settings init writes in one PATCH.
 func (i *initRepo) settingSteps() []op.Step {
 	policy := "not reported by GitHub"
 	detail := policy
@@ -313,7 +331,46 @@ func (i *initRepo) settingSteps() []op.Step {
 	if !change {
 		del.Detail = "already false"
 	}
-	return []op.Step{pr, del}
+	_, change = i.settings["allow_rebase_merge"]
+	merge := op.Step{ID: settingItem("merge_method"), Action: "allow merge methods", Target: "rebase only", Current: mergeMethods(i.info), Next: "rebase", NoChange: !change}
+	merge.Detail = "from " + merge.Current
+	if !change {
+		merge.Detail = "already rebase only"
+	}
+	return []op.Step{pr, del, merge}
+}
+
+// mergeMethods lists the merge methods the repository allows, as GitHub
+// reports them.
+func mergeMethods(info repoInfo) string {
+	if info.AllowMerge == nil || info.AllowSquash == nil || info.AllowRebase == nil {
+		return "not reported by GitHub"
+	}
+	m := allowedMerges(info)
+	if len(m) == 0 {
+		return "none"
+	}
+	return strings.Join(m, ", ")
+}
+
+// allowedMerges are the methods GitHub reports as allowed.
+func allowedMerges(info repoInfo) []string {
+	m := []string{}
+	for _, x := range []struct {
+		name string
+		on   *bool
+	}{{"merge", info.AllowMerge}, {"squash", info.AllowSquash}, {"rebase", info.AllowRebase}} {
+		if x.on != nil && *x.on {
+			m = append(m, x.name)
+		}
+	}
+	return m
+}
+
+// rebaseOnly reports whether GitHub reports exactly rebase merge allowed.
+func rebaseOnly(info repoInfo) bool {
+	return info.AllowRebase != nil && *info.AllowRebase && info.AllowSquash != nil && !*info.AllowSquash &&
+		info.AllowMerge != nil && !*info.AllowMerge
 }
 
 // forkStep is the fork PR approval item.
@@ -534,6 +591,11 @@ func (i *initRepo) planSettings() {
 	if i.info.DeleteOnMerge {
 		i.settings["delete_branch_on_merge"] = false
 	}
+	if !rebaseOnly(i.info) {
+		i.settings["allow_rebase_merge"] = true
+		i.settings["allow_squash_merge"] = false
+		i.settings["allow_merge_commit"] = false
+	}
 }
 
 func (i *initRepo) forkPath() string {
@@ -708,6 +770,9 @@ func (i *initRepo) Apply(ctx context.Context, plan op.Plan) error {
 			return err
 		}
 	}
+	if err := i.applyUpToDate(ctx); err != nil {
+		return err
+	}
 	if i.forkWrite {
 		if err := op.Track(ctx, i.forkStep(), func() error {
 			var body any = map[string]any{"approval_policy": allExternal}
@@ -840,11 +905,12 @@ func (i *initRepo) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 	}
 	checks.Expect(i.labelSteps()...)
 	checks.Expect(i.settingSteps()...)
+	checks.Expect(i.upToDate.steps()...)
 	checks.Expect(i.forkStep())
 	checks.Expect(i.varSteps()...)
 	checks.Expect(i.secretStep())
 	checks.Expect(i.wfSteps...)
-	notes := []string{i.manualNote()}
+	notes := i.notes()
 	r := op.Result{"repo": i.p.Repo}
 	fail := func(err error) (op.Result, error) { return checks.Fill(r, notes, err), err }
 	if i.started {
@@ -908,6 +974,16 @@ func (i *initRepo) ReadBack(ctx context.Context, _ op.Plan) (op.Result, error) {
 		notApplied = append(notApplied, "delete_branch_on_merge is true")
 	}
 	checks.Set(settings[1], !i.info.DeleteOnMerge, fmt.Sprint(i.info.DeleteOnMerge), "delete_branch_on_merge is true")
+	r["mergeMethods"] = allowedMerges(i.info)
+	merges := mergeMethods(i.info)
+	if !rebaseOnly(i.info) {
+		notApplied = append(notApplied, "merge methods are "+merges)
+	}
+	checks.Set(settings[2], rebaseOnly(i.info), merges, "merge methods are "+merges+", want rebase only")
+
+	if err := i.readBackUpToDate(ctx, &checks, r, &notApplied); err != nil {
+		return fail(err)
+	}
 
 	policy, private, err := i.readFork(ctx)
 	if err != nil {
