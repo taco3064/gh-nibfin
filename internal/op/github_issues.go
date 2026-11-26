@@ -22,6 +22,9 @@ type ghUser struct {
 type repoPerms struct {
 	Admin bool `json:"admin"`
 	Push  bool `json:"push"`
+	// Private is the repository's own private flag, read beside the
+	// permissions.
+	Private bool `json:"-"`
 }
 
 // ghKey is a public SSH key of a GitHub user.
@@ -60,6 +63,7 @@ func jsonBody(v any) (io.Reader, error) {
 func (g restGitHub) RepoPermissions(ctx context.Context, repo string) (repoPerms, error) {
 	var r struct {
 		Permissions repoPerms `json:"permissions"`
+		Private     bool      `json:"private"`
 	}
 	err := g.c.DoWithContext(ctx, http.MethodGet, repoPath(repo), nil, &r)
 	if notFound(err) {
@@ -67,6 +71,7 @@ func (g restGitHub) RepoPermissions(ctx context.Context, repo string) (repoPerms
 		// permissions there.
 		return repoPerms{}, nil
 	}
+	r.Permissions.Private = r.Private
 	return r.Permissions, apiError("read the permissions on "+repo, err)
 }
 

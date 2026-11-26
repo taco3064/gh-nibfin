@@ -202,3 +202,10 @@ func errorsAs(err error, e **Error) bool {
 	*e = x
 	return ok
 }
+
+func TestDeployKeyPath(t *testing.T) {
+	inv := &Inventory{Dir: "/home/u/.local/share/nibfin/runners"}
+	if p := DeployKeyPath(inv, "github.com/Owner/Repo"); p != "/home/u/.local/share/nibfin/deploy-keys/github.com/owner/repo/id_ed25519" {
+		t.Errorf("path = %q", p)
+	}
+}

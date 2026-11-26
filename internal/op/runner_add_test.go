@@ -46,25 +46,32 @@ const (
 )
 
 var scriptNames = map[string]string{
-	runners.ListScript: "list",
-	probeScript:        "probe",
-	lingerScript:       "linger",
-	extractScript:      "extract",
-	configureScript:    "configure",
-	unitScript:         "unit",
-	unitDirScript:      "unitdir",
-	envScript:          "env",
-	envCheckScript:     "envcheck",
-	stopScript:         "stop",
-	purgeScript:        "purge",
-	slotSpecScript:     "spec",
-	slotUpgradeScript:  "upgrade",
+	runners.ListScript:   "list",
+	probeScript:          "probe",
+	lingerScript:         "linger",
+	extractScript:        "extract",
+	configureScript:      "configure",
+	unitScript:           "unit",
+	unitDirScript:        "unitdir",
+	envScript:            "env",
+	envCheckScript:       "envcheck",
+	stopScript:           "stop",
+	purgeScript:          "purge",
+	slotSpecScript:       "spec",
+	slotUpgradeScript:    "upgrade",
+	deployKeyReadScript:  "deploy-read",
+	deployKeyWriteScript: "deploy-write",
+	deployKeyCheckScript: "deploy-check",
 }
 
-// shellHelper is the child of a fake Shell: it checks its stdin against
-// HELPER_STDIN_SHA when set, prints HELPER_STDOUT (base64) and HELPER_STDERR
-// and exits with HELPER_EXIT.
+// shellHelper is the child of a fake Shell: it saves its stdin to
+// HELPER_STDIN_SAVE and checks it against HELPER_STDIN_SHA when set, prints
+// HELPER_STDOUT (base64) and HELPER_STDERR and exits with HELPER_EXIT.
 func shellHelper() {
+	if save := os.Getenv("HELPER_STDIN_SAVE"); save != "" {
+		in, _ := io.ReadAll(os.Stdin)
+		os.WriteFile(save, in, 0o600)
+	}
 	if want := os.Getenv("HELPER_STDIN_SHA"); want != "" {
 		in, _ := io.ReadAll(os.Stdin)
 		sum := sha256.Sum256(in)
@@ -128,7 +135,7 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		name = "unknown"
 	}
 	f.shells = append(f.shells, shellCall{name, args})
-	stdout, stdinSHA := "", ""
+	stdout, stdinSHA, stdinSave := "", "", ""
 	exit := f.shellExit[name]
 	slot := ""
 	if len(args) > 0 {
@@ -189,6 +196,18 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		}
 	case "spec", "upgrade":
 		stdout, stdinSHA = f.upgradeShell(name, slot, args, exit)
+	case "deploy-read":
+		stdout = f.deployPub
+	case "deploy-write":
+		f.events = append(f.events, "deploy-key "+args[0])
+		stdinSave = f.deployPriv
+		if exit == 0 {
+			f.deployPub, f.deployMode = args[1]+"\n", "600"
+		}
+	case "deploy-check":
+		if f.deployPub != "" {
+			stdout = "mode " + f.deployMode + "\n" + f.deployPub
+		}
 	case "purge":
 		f.events = append(f.events, "purge "+args[1])
 		if exit == 0 && !f.purgeNoop {
@@ -198,7 +217,7 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 	c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
 	c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=shell",
 		"HELPER_STDOUT="+base64.StdEncoding.EncodeToString([]byte(stdout)),
-		"HELPER_STDERR="+f.shellErr[name], "HELPER_EXIT="+strconv.Itoa(exit), "HELPER_STDIN_SHA="+stdinSHA)
+		"HELPER_STDERR="+f.shellErr[name], "HELPER_EXIT="+strconv.Itoa(exit), "HELPER_STDIN_SHA="+stdinSHA, "HELPER_STDIN_SAVE="+stdinSave)
 	return c
 }
 

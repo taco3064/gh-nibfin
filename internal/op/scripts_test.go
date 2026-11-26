@@ -253,3 +253,65 @@ func TestEnvScriptsUnderSh(t *testing.T) {
 		t.Errorf(".env = %q", b)
 	}
 }
+
+// TestDeployKeyScriptsUnderSh runs the real deploy key scripts: the pair is
+// written with the private key from stdin, mode 0600 in a 0700 directory,
+// read back, and a lone private key is not a pair.
+func TestDeployKeyScriptsUnderSh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the scripts run on the Linux runner host")
+	}
+	for _, tool := range []string{"sh", "stat"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip("no " + tool)
+		}
+	}
+	root := t.TempDir()
+	a := &runnerAdd{host: &localHost{}}
+	ctx := context.Background()
+	key := filepath.Join(root, "nibfin", "deploy-keys", "github.com", "o", "r", "id_ed25519")
+	read := func() string {
+		out, err := a.script(ctx, "read", deployKeyReadScript, nil, "", key)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		return out
+	}
+	if out := read(); out != "" {
+		t.Errorf("absent: %q", out)
+	}
+	const priv = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"
+	const pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtrampolinekeykeykeykeykeykeykeykeyk nibfin-deploy-key"
+	// A stale public key from before is replaced.
+	os.MkdirAll(filepath.Dir(key), 0o755)
+	os.WriteFile(key+".pub", []byte("old\n"), 0o644)
+	if _, err := a.script(ctx, "write", deployKeyWriteScript, strings.NewReader(priv), priv, key, pub); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if b, _ := os.ReadFile(key); string(b) != priv {
+		t.Errorf("private key %q", b)
+	}
+	for p, want := range map[string]os.FileMode{key: 0o600, filepath.Dir(key): 0o700 | os.ModeDir} {
+		if fi, err := os.Stat(p); err != nil || fi.Mode() != want {
+			t.Errorf("%s: mode %v, want %v (%v)", p, fi.Mode(), want, err)
+		}
+	}
+	if out := read(); out != pub+"\n" {
+		t.Errorf("read %q", out)
+	}
+	out, err := a.script(ctx, "check", deployKeyCheckScript, nil, "", key)
+	if err != nil || out != "mode 600\n"+pub+"\n" {
+		t.Errorf("check %q, %v", out, err)
+	}
+	if m, _ := filepath.Glob(key + "*.tmp"); len(m) != 0 {
+		t.Errorf("temporary files left: %v", m)
+	}
+	// A private key without its public key (an interrupted write) is no pair.
+	os.Remove(key + ".pub")
+	if out := read(); out != "" {
+		t.Errorf("lone private key: %q", out)
+	}
+	if out, err := a.script(ctx, "check", deployKeyCheckScript, nil, "", key); err != nil || out != "" {
+		t.Errorf("check lone: %q, %v", out, err)
+	}
+}

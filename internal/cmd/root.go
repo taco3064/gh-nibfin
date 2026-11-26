@@ -122,7 +122,11 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"as NIBFIN_PROVIDER in its .env, and runs as a systemd user service.\n\n" +
 			"An admin registers directly. A collaborator with write access gets the registration\n" +
 			"token through a \"Nibfin runner request\" Issue, encrypted to an SSH key of their GitHub\n" +
-			"account that is in ~/.ssh; the command waits up to 10 minutes for the answer.",
+			"account that is in ~/.ssh; the command waits up to 10 minutes for the answer. On a\n" +
+			"private repository the request also carries a read-only deploy key, created once per\n" +
+			"repository at ~/.local/share/nibfin/deploy-keys/<host>/<owner>/<name>/id_ed25519\n" +
+			"(under XDG_DATA_HOME when set); the owner removes the deploy key nibfin-runner-<login>\n" +
+			"under Settings > Deploy keys together with your Runners.",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := checkCount(addCount); err != nil {
 				return err
