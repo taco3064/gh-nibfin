@@ -9,7 +9,7 @@ interface Step {
 }
 
 const flow: Step[] = [
-  { title: 'Issue', steps: ['scope label', 'one Assignee'], labels: ['scope'] },
+  { title: 'Issue', steps: ['scope or request label', 'one Assignee'], labels: ['scope', 'request'] },
   { title: 'Shape', steps: ['Author', 'Validator', 'Shape published'], labels: ['shaped'] },
   { title: 'Deliver', steps: ['Writer', 'Accept', 'pull request'] },
   { title: 'CI', steps: ['required checks'] },
