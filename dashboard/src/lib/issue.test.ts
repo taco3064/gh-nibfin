@@ -7,8 +7,11 @@ import {
   changeAccess,
   changeIssues,
   pendingView,
+  recentRuns,
+  runBucket,
   runsView,
   stageOf,
+  stageSteps,
 } from './issue'
 import { openSession, resetSession } from './session'
 import type { Run, StatusIssue } from './status'
@@ -272,5 +275,53 @@ describe('changeIssues', () => {
       throw new TypeError('Failed to fetch')
     })
     expect(await changeIssues('pause', [url], f)).toMatchObject({ state: 'unknown', error: { code: 'network_error' } })
+  })
+})
+
+describe('stageSteps', () => {
+  const states = (stage: Parameters<typeof stageSteps>[0]) => stageSteps(stage).map((s) => `${s.label}:${s.state}`)
+  it.each([
+    ['none', ['Shape:upcoming', 'Deliver:upcoming', 'Done:upcoming']],
+    ['shape', ['Shape:current', 'Deliver:upcoming', 'Done:upcoming']],
+    ['deliver', ['Shape:complete', 'Deliver:current', 'Done:upcoming']],
+    ['done', ['Shape:complete', 'Deliver:complete', 'Done:current']],
+  ] as const)('%s', (stage, want) => {
+    expect(states(stage)).toEqual(want)
+  })
+})
+
+describe('runBucket', () => {
+  it.each([
+    [null, 'running'],
+    ['success', 'succeeded'],
+    ['failure', 'failed'],
+    ['timed_out', 'failed'],
+    ['startup_failure', 'failed'],
+    ['cancelled', 'skipped'],
+    ['skipped', 'skipped'],
+    ['neutral', 'skipped'],
+    ['stale', 'skipped'],
+    ['action_required', 'skipped'],
+    ['something_new', 'skipped'],
+  ] as const)('%s is %s', (conclusion, bucket) => {
+    expect(runBucket({ conclusion })).toBe(bucket)
+  })
+})
+
+describe('recentRuns', () => {
+  const at = (i: number) => new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString()
+  it('keeps the newest 20, oldest first', () => {
+    const runs = Array.from({ length: 25 }, (_, i) => run(at(i)))
+    const got = recentRuns(issue({ runs: [...runs].reverse() }))
+    expect(got).toHaveLength(20)
+    expect(got[0].createdAt).toBe(at(5))
+    expect(got[19].createdAt).toBe(at(24))
+  })
+  it('orders fewer runs oldest first', () => {
+    const got = recentRuns(issue({ runs: [run(at(2)), run(at(0)), run(at(1))] }))
+    expect(got.map((r) => r.createdAt)).toEqual([at(0), at(1), at(2)])
+  })
+  it('is empty without runs', () => {
+    expect(recentRuns(issue({ runs: null }))).toEqual([])
   })
 })
