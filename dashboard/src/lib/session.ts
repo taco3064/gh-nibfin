@@ -90,7 +90,9 @@ export type StreamOutcome<T> =
 
 // StreamLine is one parsed NDJSON line: of an apply, progress, login_step,
 // result or error; of the status read, partial (with loading), result or
-// error.
+// error; of the planning stream, checking (with check), checked (with
+// steps), planned (with id and plan), result (with plan) or error (with
+// plan).
 export interface StreamLine {
   event?: string
   progress?: unknown
@@ -98,6 +100,52 @@ export interface StreamLine {
   loading?: unknown
   result?: unknown
   error?: Partial<ApiError>
+  check?: unknown
+  steps?: unknown
+  id?: unknown
+  plan?: unknown
+}
+
+// planStream plans command through the planning stream route. Each
+// checking and checked line goes to onEvent as it arrives; the final line
+// is the outcome, shaped as planRequest's: planned and result lines are the
+// plan route's body, and an error line keeps the plan and the result it
+// carries. A non-2xx answer before the stream is a failure with its status.
+// An aborted signal ends the request, which cancels the plan on the server.
+export async function planStream<T>(
+  command: string,
+  body: unknown,
+  onEvent: (line: StreamLine) => void,
+  fetcher: Fetch = fetch,
+  signal?: AbortSignal,
+): Promise<PlanOutcome<T>> {
+  let final: StreamLine | null = null
+  const o = await postStream<unknown>(
+    `/api/commands/${encodeURIComponent(command)}/plan/stream`,
+    body,
+    'the plan failed',
+    (line) => {
+      if (line.event === 'planned' || line.event === 'result' || line.event === 'error') final = line
+      else onEvent(line)
+    },
+    fetcher,
+    signal,
+  )
+  const last = final as StreamLine | null
+  if (last && (last.event === 'planned' || last.event === 'result')) {
+    const { event: _event, ...value } = last
+    return { ok: true, value: value as T }
+  }
+  if (last && last.event === 'error') {
+    const out: PlanOutcome<T> = failure(last.error?.code ?? 'error', last.error?.message ?? 'the plan failed')
+    if (last.plan !== undefined && last.plan !== null) out.plan = last.plan
+    if (last.result !== undefined && last.result !== null) out.result = last.result
+    return out
+  }
+  if (o.ok) return failure('stream_incomplete', 'the planning stream ended without a plan')
+  const out: PlanOutcome<T> = { ok: false, error: o.error }
+  if (o.status !== undefined) out.status = o.status
+  return out
 }
 
 // applyStream applies the stored plan id and reads its NDJSON stream as it

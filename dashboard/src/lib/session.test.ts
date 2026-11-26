@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { api, apiGet, applyPlan, applyStream, openSession, planRequest, readProof, readStatus, resetSession, sendCode } from './session'
+import { api, apiGet, applyPlan, applyStream, openSession, planRequest, planStream, readProof, readStatus, resetSession, sendCode } from './session'
 
 vi.stubGlobal('location', { pathname: '/', search: '' })
 
@@ -331,5 +331,77 @@ describe('readStatus', () => {
     const r = await readStatus('', (result) => seen.push(result), vi.fn(async () => new Response(text, { status: 200 })))
     expect(r).toEqual({ ok: false, error: { code: 'auth_unavailable', message: 'no login' } })
     expect(seen).toEqual([])
+  })
+})
+
+describe('planStream', () => {
+  const step = { id: 'a', action: 'set', target: 'a', current: 'old', next: 'new', noChange: false, afterStart: false }
+  const plan = { operation: 'upgrade', steps: [step], confirm: true, readOnly: false }
+
+  it('hands checking and checked lines to onEvent and returns a stored plan', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const lines = [
+      '{"event":"checking","check":"latest image"}',
+      JSON.stringify({ event: 'checked', steps: [step] }),
+      JSON.stringify({ event: 'planned', id: 'P1', plan }),
+    ]
+    const f = vi.fn(async () => new Response(`${lines.join('\n')}\n`, { status: 200 }))
+    const seen: string[] = []
+    const r = await planStream('upgrade', { repo: 'o/r' }, (l) => seen.push(String(l.event)), f)
+    expect(r).toEqual({ ok: true, value: { id: 'P1', plan } })
+    expect(seen).toEqual(['checking', 'checked'])
+    const [path, init] = f.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/commands/upgrade/plan/stream')
+    expect(init.body).toBe('{"repo":"o/r"}')
+    expect((init.headers as Record<string, string>)['X-Nibfin-Session']).toBe('S1')
+  })
+
+  it('returns a read-only plan with its result', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const text = `{"event":"checking","check":"read back"}\n${JSON.stringify({ event: 'result', plan, result: { items: [] } })}\n`
+    const r = await planStream('upgrade', {}, () => {}, vi.fn(async () => new Response(text, { status: 200 })))
+    expect(r).toEqual({ ok: true, value: { plan, result: { items: [] } } })
+  })
+
+  it('keeps the plan and result of an error line', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const text = `${JSON.stringify({ event: 'error', error: { code: 'repo_unreadable', message: 'offline' }, plan, result: { items: [] } })}\n`
+    const r = await planStream('upgrade', {}, () => {}, vi.fn(async () => new Response(text, { status: 200 })))
+    expect(r).toEqual({ ok: false, error: { code: 'repo_unreadable', message: 'offline' }, plan, result: { items: [] } })
+    const bare = '{"event":"error","error":{"code":"auth_unavailable","message":"no login"}}\n'
+    expect(await planStream('upgrade', {}, () => {}, vi.fn(async () => new Response(bare, { status: 200 })))).toEqual({
+      ok: false,
+      error: { code: 'auth_unavailable', message: 'no login' },
+    })
+  })
+
+  it('returns a failure before the stream with its status, and a stream without a final line', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const r = await planStream('init', {}, () => {}, reply(422, { error: { code: 'invalid_repo', message: 'bad' } }))
+    expect(r).toEqual({ ok: false, status: 422, error: { code: 'invalid_repo', message: 'bad' } })
+    const cut = await planStream('init', {}, () => {}, vi.fn(async () => new Response('{"event":"checking","check":"x"}\n', { status: 200 })))
+    expect(cut).toMatchObject({ ok: false, error: { code: 'stream_incomplete' } })
+  })
+
+  it('passes the signal, and an abort ends the stream without a plan', async () => {
+    await openSession('P', reply(200, { session: 'S1' }))
+    const ac = new AbortController()
+    const enc = new TextEncoder()
+    const f = vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(enc.encode('{"event":"checking","check":"latest image"}\n'))
+          init?.signal?.addEventListener('abort', () => c.error(init.signal?.reason))
+        },
+      })
+      return new Response(body, { status: 200 })
+    })
+    const r = await planStream('upgrade', {}, () => ac.abort(), f, ac.signal)
+    expect((f.mock.calls[0] as unknown as [string, RequestInit])[1].signal).toBe(ac.signal)
+    expect(r).toMatchObject({ ok: false, error: { code: 'network_error' } })
+  })
+
+  it('needs a session', async () => {
+    expect(await planStream('upgrade', {}, () => {})).toMatchObject({ ok: false, error: { code: 'session_required' } })
   })
 })

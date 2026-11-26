@@ -20,30 +20,45 @@ applyTheme()
 
 const proof = readProof(location.hash, history)
 
-// The spec paces the apply stream: window.__holdApply(n) lets only the first
-// n lines through until window.__releaseApply() is called. Route mocks answer
-// a whole body at once, so this is the only way to show the stream mid-way.
-// A later __holdApply(n) lets the stream on to line n. An aborted request
-// errors its paced stream as a real aborted fetch does; window.__aborts
-// counts them.
-const gate = { allowed: Number.POSITIVE_INFINITY, waiters: [] as (() => void)[] }
-const w = window as unknown as { __holdApply: (n: number) => void; __releaseApply: () => void; __aborts: number }
-const wake = () => {
-  for (const f of gate.waiters.splice(0)) f()
+// The spec paces the apply and planning streams: window.__holdApply(n) (or
+// __holdPlan(n)) lets only the first n lines through until
+// window.__releaseApply() (or __releasePlan()) is called. Route mocks answer
+// a whole body at once, so this is the only way to show a stream mid-way.
+// A later hold lets the stream on to line n. An aborted request errors its
+// paced stream as a real aborted fetch does; window.__aborts counts them.
+interface Gate {
+  allowed: number
+  waiters: (() => void)[]
+}
+const gates: Record<'apply' | 'plan', Gate> = {
+  apply: { allowed: Number.POSITIVE_INFINITY, waiters: [] },
+  plan: { allowed: Number.POSITIVE_INFINITY, waiters: [] },
+}
+const w = window as unknown as {
+  __holdApply: (n: number) => void
+  __releaseApply: () => void
+  __holdPlan: (n: number) => void
+  __releasePlan: () => void
+  __aborts: number
+}
+const wakeAll = () => {
+  for (const g of Object.values(gates)) for (const f of g.waiters.splice(0)) f()
+}
+const hold = (g: Gate, n: number) => {
+  g.allowed = n
+  wakeAll()
 }
 w.__aborts = 0
-w.__holdApply = (n) => {
-  gate.allowed = n
-  wake()
-}
-w.__releaseApply = () => {
-  gate.allowed = Number.POSITIVE_INFINITY
-  wake()
-}
+w.__holdApply = (n) => hold(gates.apply, n)
+w.__releaseApply = () => hold(gates.apply, Number.POSITIVE_INFINITY)
+w.__holdPlan = (n) => hold(gates.plan, n)
+w.__releasePlan = () => hold(gates.plan, Number.POSITIVE_INFINITY)
 
 const paced: typeof fetch = async (input, init) => {
   const res = await fetch(input, init)
-  if (!String(input).endsWith('/apply') || !res.ok || !res.body) return res
+  const url = String(input)
+  const gate = url.endsWith('/apply') ? gates.apply : url.endsWith('/plan/stream') ? gates.plan : null
+  if (!gate || !res.ok || !res.body) return res
   const lines = (await res.text()).split(/(?<=\n)/)
   const enc = new TextEncoder()
   const signal = init?.signal
@@ -55,7 +70,7 @@ const paced: typeof fetch = async (input, init) => {
         aborted = true
         w.__aborts++
         c.error(signal.reason)
-        wake()
+        wakeAll()
       })
     },
     async pull(c) {

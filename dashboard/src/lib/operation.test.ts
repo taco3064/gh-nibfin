@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  afterPlan,
+  elapsedSeconds,
   endedSummary,
   fieldsOf,
   initialRun,
@@ -176,10 +178,11 @@ function run(...actions: RunAction[]): RunState {
 }
 
 const planned: RunAction = { type: 'planned', id: 'P1', plan }
+const planStart: RunAction = { type: 'plan', at: 1000 }
 
 describe('runReducer', () => {
   it('goes from planning to preview with one row per step', () => {
-    const s = run({ type: 'plan' }, planned)
+    const s = run(planStart, planned)
     expect(s.phase).toBe('preview')
     expect(s.planId).toBe('P1')
     expect(s.rows.map((r) => [r.id, r.progress])).toEqual([
@@ -189,8 +192,49 @@ describe('runReducer', () => {
     ])
   })
 
+  it('shows the checked items and the running check while planning', () => {
+    const [login, image, slots] = plan.steps!
+    let s = run(planStart)
+    expect(s).toMatchObject({ phase: 'planning', planStarted: 1000, rows: [] })
+    expect(s.checking).toBeUndefined()
+    s = run(planStart, { type: 'checking', check: 'login' }, { type: 'checked', steps: [login] }, { type: 'checking', check: 'image' })
+    expect(s.checking).toBe('image')
+    expect(s.rows.map((r) => [r.id, r.progress, r.step?.current])).toEqual([['login', 'waiting', 'absent']])
+    // The same id again replaces its row in place.
+    s = runReducer(s, { type: 'checked', steps: [image, { ...login, current: 'expired' }] })
+    expect(s.rows.map((r) => [r.id, r.step?.current])).toEqual([
+      ['login', 'expired'],
+      ['image', 'v1'],
+    ])
+    expect(s.rows[1].step?.noChange).toBe(true)
+    // The final plan replaces the rows, in its order, and ends the check.
+    s = runReducer(runReducer(s, { type: 'checked', steps: [slots] }), planned)
+    expect(s.phase).toBe('preview')
+    expect(s.rows.map((r) => [r.id, r.step?.current])).toEqual([
+      ['login', 'absent'],
+      ['image', 'v1'],
+      ['slots', undefined],
+    ])
+    expect(s.checking).toBeUndefined()
+    expect(s.planStarted).toBeUndefined()
+  })
+
+  it('ignores planning events outside planning', () => {
+    const s = run(planned, { type: 'checking', check: 'late' }, { type: 'checked', steps: [plan.steps![0]] })
+    expect(s.checking).toBeUndefined()
+    expect(s.rows).toHaveLength(3)
+    // A new Preview starts with no rows.
+    expect(run(planStart, { type: 'checked', steps: [plan.steps![0]] }, planStart).rows).toEqual([])
+  })
+
+  it('drops the checked items when the plan fails without a plan', () => {
+    const s = run(planStart, { type: 'checked', steps: [plan.steps![0]] }, { type: 'planFailed', error: { code: 'bad', message: 'm' } })
+    expect(s.rows).toEqual([])
+    expect(s.checking).toBeUndefined()
+  })
+
   it('keeps a plan error in planFailed', () => {
-    expect(run({ type: 'plan' }, { type: 'planFailed', error: { code: 'bad', message: 'm' } })).toMatchObject({
+    expect(run(planStart, { type: 'planFailed', error: { code: 'bad', message: 'm' } })).toMatchObject({
       phase: 'planFailed',
       error: { code: 'bad' },
     })
@@ -251,7 +295,7 @@ describe('runReducer', () => {
   })
 
   it('reads back a read-only plan at once', () => {
-    const s = run({ type: 'plan' }, {
+    const s = run(planStart, {
       type: 'readBack',
       plan: { ...plan, steps: [plan.steps![1]], readOnly: true },
       result: { items: [{ id: 'image', action: 'pull', target: 'image', confirmed: true, state: 'v1' }] },
@@ -355,5 +399,40 @@ describe('aborted', () => {
   it('is ignored outside an apply', () => {
     const s = runReducer(initialRun, { type: 'aborted', reason: 'x' })
     expect(s).toBe(initialRun)
+  })
+})
+
+describe('afterPlan', () => {
+  const body = { id: 'P1', plan }
+
+  it('stores a planned plan and shows its preview', () => {
+    expect(afterPlan({ ok: true, value: body }, false)).toEqual({ store: 'P1', action: { type: 'planned', id: 'P1', plan } })
+  })
+
+  it('reads back a read-only plan and an error that carries the plan', () => {
+    expect(afterPlan({ ok: true, value: { plan, result: { items: [] } } }, false)).toEqual({
+      action: { type: 'readBack', plan, result: { items: [] } },
+    })
+    const error = { code: 'repo_unreadable', message: 'offline' }
+    expect(afterPlan({ ok: false, error, plan, result: { items: [] } }, false)).toEqual({
+      action: { type: 'readBack', plan, result: { items: [] }, error },
+    })
+    expect(afterPlan({ ok: false, error, plan }, false)).toEqual({ action: { type: 'planFailed', error } })
+  })
+
+  it('stores nothing for an aborted plan and drops one stored before the abort arrived', () => {
+    const error = { code: 'network_error', message: 'aborted' }
+    expect(afterPlan({ ok: false, error }, true)).toEqual({})
+    expect(afterPlan({ ok: true, value: body }, true)).toEqual({ drop: 'P1' })
+    expect(afterPlan({ ok: true, value: { plan, result: {} } }, true)).toEqual({})
+  })
+})
+
+describe('elapsedSeconds', () => {
+  it('counts whole seconds and never goes below zero', () => {
+    expect(elapsedSeconds(1000, 1000)).toBe(0)
+    expect(elapsedSeconds(1000, 3999)).toBe(2)
+    expect(elapsedSeconds(5000, 1000)).toBe(0)
+    expect(elapsedSeconds(undefined, 9000)).toBe(0)
   })
 })

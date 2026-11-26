@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { commands } from './command-fixtures'
-import { expectClean, expectNonce, prepare, shot, storageKey, widths } from './support'
+import { expectClean, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths } from './support'
 
 // Screenshots and checks of the operation dialog (#351) in its harness
 // (operation.html), served by the real Go server with its CSP. The schema,
@@ -229,38 +229,34 @@ async function mockOps(page: Page): Promise<Api> {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
     return route.fulfill({ json: { commands } })
   })
-  await page.route('**/api/commands/*/plan', (route) => {
+  await page.route('**/api/commands/*/plan/stream', (route) => {
     const name = new URL(route.request().url()).pathname.split('/')[3]
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
     const body = route.request().postDataJSON() as Record<string, unknown>
     api.plans.push({ api: name, body })
     const pp = typeof body.provider === 'string' ? providerPlans[`${name}:${body.provider}`] : undefined
-    if (pp) return route.fulfill({ json: pp })
+    if (pp) return fulfillPlanStream(route, pp as { id: string; plan: { steps: [] } })
     if (name === 'login') {
-      return route.fulfill({
-        json: {
-          plan: { operation: 'login', steps: [step('login:claude', 'log in', 'claude', { current: 'logged in', next: 'logged in', noChange: true })], confirm: false, readOnly: true },
-          result: { items: [check('login:claude', 'log in', 'claude', true, 'logged in')], notes: ['Every provider is already logged in.'] },
-        },
+      return fulfillPlanStream(route, {
+        plan: { operation: 'login', steps: [step('login:claude', 'log in', 'claude', { current: 'logged in', next: 'logged in', noChange: true })], confirm: false, readOnly: true },
+        result: { items: [check('login:claude', 'log in', 'claude', true, 'logged in')], notes: ['Every provider is already logged in.'] },
       })
     }
     if (name === 'upgrade') {
       if (body.repo === 'acme/broken') {
-        return route.fulfill({
-          status: 422,
-          json: {
-            error: { code: 'github_error', message: 'reading the workflows of acme/broken: HTTP 502' },
-            plan: { operation: 'upgrade', repo: 'acme/broken', steps: [step('workflow', 'keep workflow', '.github/workflows/nibfin.yml', { noChange: true })], confirm: false, readOnly: true },
-            result: { items: [check('workflow', 'keep workflow', '.github/workflows/nibfin.yml', false, '', 'the read failed: HTTP 502')] },
-          },
+        return fulfillPlanStream(route, {
+          error: { code: 'github_error', message: 'reading the workflows of acme/broken: HTTP 502' },
+          plan: { operation: 'upgrade', repo: 'acme/broken', steps: [step('workflow', 'keep workflow', '.github/workflows/nibfin.yml', { noChange: true })], confirm: false, readOnly: true },
+          result: { items: [check('workflow', 'keep workflow', '.github/workflows/nibfin.yml', false, '', 'the read failed: HTTP 502')] },
         })
       }
+      // A repository that cannot be resolved fails before the stream.
       return route.fulfill({
         status: 422,
         json: { error: { code: 'not_a_repository', message: 'the directory is not a Git repository; run it in a repository or set --repo' } },
       })
     }
-    return route.fulfill({ json: { id: ids[name], plan: plans[name] } })
+    return fulfillPlanStream(route, { id: ids[name], plan: plans[name] as { steps: [] } })
   })
   await page.route('**/api/plans/**', async (route) => {
     const req = route.request()
@@ -476,6 +472,78 @@ for (const width of widths) {
     })
   }
 }
+
+const holdPlan = (page: Page, n: number) => page.evaluate((x) => (window as unknown as { __holdPlan: (n: number) => void }).__holdPlan(x), n)
+const releasePlan = (page: Page) => page.evaluate(() => (window as unknown as { __releasePlan: () => void }).__releasePlan())
+const planAborts = (page: Page) => page.evaluate(() => (window as unknown as { __aborts: number }).__aborts)
+
+// Planning progress (#410): the items checked so far and the check running
+// now, in the list the preview then completes.
+for (const width of widths) {
+  for (const theme of themes) {
+    test(`planning progress at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme)
+      const dialog = await openDialog(page, 'runner add')
+      await dialog.getByRole('radio', { name: 'claude' }).click()
+      // Two items checked; the third check runs.
+      await holdPlan(page, 5)
+      await dialog.getByRole('button', { name: 'Preview' }).click()
+      const checked = dialog.getByRole('list', { name: 'Items checked so far' })
+      await expect(checked.locator('li[data-item]')).toHaveCount(2)
+      await expect(item(dialog, 'machine').locator('[data-slot=transition]')).toContainText('stopped')
+      await expect(item(dialog, 'image').locator('[data-badge=no-change]')).toHaveText('No change needed')
+      await expect(dialog.locator('li[data-slot=checking]')).toContainText('claude')
+      await expect(dialog.locator('[data-badge=checking]')).toHaveText('Checking')
+      await expect(dialog.locator('[data-slot=elapsed]')).toHaveText(/^\d+ s$/)
+      await expect(footer(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled()
+      await expect(footer(dialog).getByRole('button', { name: /Planning/ })).toBeDisabled()
+      await expectNoPageScroll(page)
+      await shot(page, `operation-planning-${theme}-${width}`, false)
+
+      // The same items become the preview, in the plan's order.
+      await releasePlan(page)
+      const planned = dialog.getByRole('list', { name: 'Planned items' })
+      await expect(planned.locator('li[data-item]')).toHaveCount(4)
+      expect(await planned.locator('li[data-item]').evaluateAll((ls) => ls.map((l) => l.getAttribute('data-item')))).toEqual(['machine', 'image', 'login', 'slots'])
+      await expect(dialog.locator('[data-slot=planning]')).toHaveCount(0)
+      await expectClean(w)
+    })
+  }
+}
+
+test('Cancel or Escape while planning stops the planning and stores nothing', async ({ page }) => {
+  const { w, api } = await open(page, 375)
+  const dialog = await openDialog(page, 'init')
+  await dialog.getByLabel(/^repo/).fill('acme/app')
+  await holdPlan(page, 1)
+  await dialog.getByRole('button', { name: 'Preview' }).click()
+  await expect(dialog.locator('li[data-slot=checking]')).toContainText('acme/app scope')
+  // The time so far counts up.
+  await expect(dialog.locator('[data-slot=elapsed]')).toHaveText('1 s')
+  const before = await planAborts(page)
+  await footer(dialog).getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toBeHidden()
+  await expect.poll(() => planAborts(page)).toBe(before + 1)
+  await releasePlan(page)
+
+  const again = await openDialog(page, 'init')
+  await holdPlan(page, 1)
+  await again.getByRole('button', { name: 'Preview' }).click()
+  await expect(again.locator('li[data-slot=checking]')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(again).toBeHidden()
+  await expect.poll(() => planAborts(page)).toBe(before + 2)
+  await releasePlan(page)
+
+  // A Preview after reopening starts fresh.
+  const third = await openDialog(page, 'init')
+  await third.getByRole('button', { name: 'Preview' }).click()
+  await expect(third.getByRole('button', { name: 'Apply' })).toBeVisible()
+  expect(api.plans).toHaveLength(3)
+  expect(api.deletes).toEqual([])
+  expect(api.applies).toEqual([])
+  await expectClean(w)
+})
 
 test('Cancel in the preview drops the plan and applies nothing', async ({ page }) => {
   const { w, api } = await open(page, 375)

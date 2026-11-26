@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { expect, type Page, type Response } from '@playwright/test'
+import { expect, type Page, type Response, type Route } from '@playwright/test'
 
 import { commands } from './command-fixtures'
 import { frame, mockLive, type LiveMock } from './live-mock'
@@ -200,4 +200,31 @@ export async function pushRead(page: Page, lines: unknown[], end = false) {
     },
     [lines.map((l) => `${JSON.stringify(l)}\n`), end] as const,
   )
+}
+
+// PlanAnswer is a plan route's body: a stored plan, a read-only plan with
+// its result, or an error that may carry both.
+export interface PlanAnswer {
+  id?: string
+  plan?: { steps?: { target?: string; [k: string]: unknown }[] | null; readOnly?: boolean; [k: string]: unknown }
+  result?: unknown
+  error?: unknown
+}
+
+// planStreamLines are the planning stream of answer: a checking and a
+// checked line per step, the read-back check of a read-only plan, then the
+// final line with the plan route's body.
+export function planStreamLines(answer: PlanAnswer): string[] {
+  const lines: unknown[] = []
+  for (const s of answer.plan?.steps ?? []) {
+    lines.push({ event: 'checking', check: s.target ?? '' }, { event: 'checked', steps: [s] })
+  }
+  if (answer.plan?.readOnly) lines.push({ event: 'checking', check: 'read back' })
+  lines.push({ event: answer.error ? 'error' : answer.id ? 'planned' : 'result', ...answer })
+  return lines.map((l) => JSON.stringify(l))
+}
+
+// fulfillPlanStream answers a planning stream route with answer.
+export function fulfillPlanStream(route: Route, answer: PlanAnswer): Promise<void> {
+  return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: planStreamLines(answer).join('\n') + '\n' })
 }

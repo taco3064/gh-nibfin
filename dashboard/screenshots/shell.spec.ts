@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { commands } from './command-fixtures'
 import { hosts, issueURL, personView, runnerActivity } from './person-fixtures'
-import { expectClean, expectNonce, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
+import { expectClean, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
 
 // Screenshots and checks of the Dashboard shell (#352): the three views, the
 // landing rule, the freshness indicator, Refresh and the person view. The
@@ -527,16 +527,14 @@ test('a failed schema read disables the operations', async ({ page }) => {
 
 test('closing a dialog after an apply reads the status again', async ({ page }) => {
   const { w } = await open(page, 1280, 'dark', { result: personView({ host: hosts.mixed }) })
-  await page.route('**/api/commands/runner-remove/plan', (route) =>
-    route.fulfill({
-      json: {
-        id: 'PLANRM',
-        plan: {
-          operation: 'runner remove',
-          steps: [{ id: 'slot:claude-3', action: 'remove Runner', target: 'claude-3', current: 'offline', next: 'absent', noChange: false, afterStart: false }],
-          confirm: true,
-          readOnly: false,
-        },
+  await page.route('**/api/commands/runner-remove/plan/stream', (route) =>
+    fulfillPlanStream(route, {
+      id: 'PLANRM',
+      plan: {
+        operation: 'runner remove',
+        steps: [{ id: 'slot:claude-3', action: 'remove Runner', target: 'claude-3', current: 'offline', next: 'absent', noChange: false, afterStart: false }],
+        confirm: true,
+        readOnly: false,
       },
     }),
   )
