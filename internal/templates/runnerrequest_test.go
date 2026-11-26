@@ -90,6 +90,9 @@ func TestRenderRunsUseEnvOnly(t *testing.T) {
 		if strings.Contains(string(b), "vars.NIBFIN_PROVIDER") {
 			t.Errorf("%s reads the NIBFIN_PROVIDER variable", name)
 		}
+		if strings.Contains(string(b), "vars.NIBFIN_MODEL") {
+			t.Errorf("%s reads the NIBFIN_MODEL variable", name)
+		}
 	}
 }
 
@@ -281,6 +284,49 @@ func TestJobProviderCheck(t *testing.T) {
 		out, err := runScript(t, head, append([]string{"PATH=" + os.Getenv("PATH")}, env...))
 		if err == nil || !strings.Contains(out, "This Runner's .env must set NIBFIN_PROVIDER to claude or codex") || strings.Contains(out, "provider=") {
 			t.Errorf("%v: %v, %q", env, err, out)
+		}
+	}
+}
+
+// TestJobModel runs the stage script up to the container limits: the model is
+// the Runner's NIBFIN_MODEL, passed as --model only when it is set, and no
+// workflow env can set it.
+func TestJobModel(t *testing.T) {
+	needBash(t)
+	d := parseWorkflow(t, render(t, Execution, params())[".github/workflows/nibfin-job.yml"])
+	var script string
+	for _, s := range d.Jobs["stage"].Steps {
+		if s.Name == "Run the stage" {
+			script = s.Run
+			for _, k := range []string{"MODEL", "NIBFIN_MODEL"} {
+				if _, ok := s.Env[k]; ok {
+					t.Errorf("the stage step sets %s from the workflow", k)
+				}
+			}
+		}
+	}
+	if _, ok := d.Jobs["stage"].Env["NIBFIN_MODEL"]; ok {
+		t.Error("the stage job sets NIBFIN_MODEL from the workflow")
+	}
+	head, _, ok := strings.Cut(script, "# NIBFIN_CONTAINER_LIMITS")
+	if !ok || !strings.Contains(head, "options=(") {
+		t.Fatalf("the stage script does not build its options before the limits:\n%s", script)
+	}
+	head += `printf '%s\n' "${options[@]}"` + "\n"
+	base := []string{"PATH=" + os.Getenv("PATH"), "RUNNER_TEMP=" + t.TempDir(),
+		"NIBFIN_PROVIDER=codex", "STAGE=deliver", "REPO=o/r", "ISSUE=7"}
+	for _, c := range []struct {
+		env  []string
+		want string
+	}{
+		{[]string{"NIBFIN_MODEL=some model"}, "--stage\ndeliver\n--repo\no/r\n--issue\n7\n--provider\ncodex\n--model\nsome model\n"},
+		{nil, "--stage\ndeliver\n--repo\no/r\n--issue\n7\n--provider\ncodex\n"},
+		{[]string{"NIBFIN_MODEL="}, "--stage\ndeliver\n--repo\no/r\n--issue\n7\n--provider\ncodex\n"},
+		{[]string{"MODEL=from-workflow"}, "--stage\ndeliver\n--repo\no/r\n--issue\n7\n--provider\ncodex\n"},
+	} {
+		out, err := runScript(t, head, append(append([]string{}, base...), c.env...))
+		if err != nil || out != c.want {
+			t.Errorf("%v: %v, %q", c.env, err, out)
 		}
 	}
 }
