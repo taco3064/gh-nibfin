@@ -238,7 +238,11 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		"It sets the labels scope, shaped, delivered, pause and pending; pull request creation\n" +
 		"limited to collaborators; approval required for fork PR workflows (all external\n" +
 		"contributors on a public repository, \"Require approval for fork pull request\n" +
-		"workflows\" on a private one); \"Automatically delete head branches\" off; the\n" +
+		"workflows\" on a private one); \"Automatically delete head branches\" off; only\n" +
+		"rebase merge allowed; \"Require branches to be up to date before merging\" off in\n" +
+		"the repository rulesets and the branch protection on the default branch, with\n" +
+		"every other rule kept (it creates none, and lists inherited organization or\n" +
+		"enterprise rulesets as a note with their link); the\n" +
 		"variable NIBFIN_EXECUTION_REPO; and the Secret NIBFIN_GITHUB_TOKEN from the current\n" +
 		"gh login, which needs the workflow scope (gh auth refresh -s workflow). It neither\n" +
 		"writes nor reads NIBFIN_PROVIDER: each Runner names its provider in its .env.\n\n" +
