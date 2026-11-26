@@ -232,6 +232,10 @@ function RunnersTile({ data, onShowRunners }: { data: PersonView; onShowRunners?
         <p className="text-sm break-words text-warning" data-state="github-not-read">
           Online and busy not read: {errorText(r.githubError)}
         </p>
+      ) : c.github === 'needs-admin' ? (
+        <p className="text-sm break-words text-muted-foreground" data-state="github-needs-admin">
+          Online and busy not read: GitHub&apos;s Runner list needs admin of {r.repo ?? 'the repository'}.
+        </p>
       ) : (
         <p className="flex flex-wrap items-baseline gap-x-1.5 text-sm text-muted-foreground" data-slot="runner-counts">
           <CircleDot aria-hidden="true" className="size-3.5 self-center text-success" />

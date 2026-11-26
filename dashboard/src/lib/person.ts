@@ -124,6 +124,10 @@ export function runCounts(view: PersonView): RunCounts {
 }
 
 export interface RunnerCounts {
+  // github says whether online and busy come from GitHub's Runner list:
+  // 'error' when it could not be read, 'needs-admin' when the gh login is
+  // not admin of the Runners' repository. Only 'read' counts are measured.
+  github: 'read' | 'error' | 'needs-admin'
   online: number
   busy: number
   // usedKB and totalKB are the host's memory in use and in total; null when
@@ -135,11 +139,14 @@ export interface RunnerCounts {
 // runnerCounts counts this host's Runner slots the way the runner view
 // labels them: online when GitHub says online, busy when also busy.
 export function runnerCounts(host: HostReport): RunnerCounts {
-  const slots = host.runners.runners ?? []
+  const r = host.runners
+  const slots = r.runners ?? []
   const online = slots.filter((s) => s.status === 'online')
   const m = host.memory
   const read = !m.error && m.totalKB > 0
   return {
+    // A read error wins over needs-admin, as in the runner view.
+    github: r.githubError ? 'error' : r.githubNeedsAdmin ? 'needs-admin' : 'read',
     online: online.length,
     busy: online.filter((s) => s.busy).length,
     usedKB: read ? Math.max(0, m.totalKB - m.availableKB) : null,
