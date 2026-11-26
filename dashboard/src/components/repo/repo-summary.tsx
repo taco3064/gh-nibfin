@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { CircleAlert, CircleCheck, CircleMinus, ExternalLink, GitPullRequest, Rocket, TriangleAlert, Wrench, type LucideIcon } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleHelp, CircleMinus, ExternalLink, GitPullRequest, Rocket, TriangleAlert, Wrench, type LucideIcon } from 'lucide-react'
 
 import { ExternalMark } from '@/components/issue/issue-item'
 import { tones, type Tone } from '@/components/issue/tones'
@@ -15,11 +15,11 @@ import { useLoading } from '@/lib/loading-context'
 import type { Command } from '@/lib/operation'
 import { loadingLabels, type Loading } from '@/lib/partial'
 import { imageState } from '@/lib/person'
-import { offeredActions, runLook, type RunLook } from '@/lib/repo'
+import { offeredActions, runLook, workflowsLook, type RunLook, type WorkflowsLook } from '@/lib/repo'
 import { useReadOnly, type RepoViewData } from '@/lib/repo-source'
 import type { Outcome } from '@/lib/session'
 import { ownerRepo, repoHost, type LatestImage, type NibfinRun, type RepoImage } from '@/lib/status'
-import { formatTime } from '@/lib/utils'
+import { cn, formatTime } from '@/lib/utils'
 
 // The command schema is loaded once per page; a failed load is tried again
 // the next time a repository opens.
@@ -51,10 +51,11 @@ export interface RepoSummaryProps {
 }
 
 // RepoSummary heads the repository view: the repository's link on its own
-// host, the image its workflows pin, whether a Nibfin run succeeded after
-// nibfin-issue.yml last changed, and init or upgrade through the operation
-// dialog. Each section still loading shows its own loading state. A row
-// shows only when the source reads it; read-only, init and upgrade are not
+// host, three health lights (whether a Nibfin run succeeded after
+// nibfin-issue.yml last changed, the image the workflows pin, and the
+// Nibfin workflow set), and init or upgrade through the operation dialog.
+// Each light still loading shows its own loading state. A light shows only
+// when the source reads its data; read-only, init and upgrade are not
 // offered.
 export function RepoSummary({ data, onFinished }: RepoSummaryProps) {
   const loading = useLoading()
@@ -78,25 +79,14 @@ export function RepoSummary({ data, onFinished }: RepoSummaryProps) {
         </div>
         {!readOnly && image && !loading.has('image') && <Actions repo={data.repo} image={image} onFinished={onFinished} />}
       </CardHeader>
-      {(hasImage || nibfinRun || rest.length > 0) && (
+      {(image || nibfinRun || rest.length > 0) && (
         <CardContent className="flex flex-col gap-3 px-4 sm:px-5">
-          {(hasImage || nibfinRun) && (
-            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
-              {hasImage && (
-                <>
-                  <dt className="text-muted-foreground">Image</dt>
-                  <ImageState image={image} latestImage={latestImage} loading={loading} />
-                </>
-              )}
-              {nibfinRun && (
-                <>
-                  <dt className="text-muted-foreground">Nibfin run</dt>
-                  <dd className="min-w-0" data-slot="nibfin-run">
-                    {loading.has('nibfinRun') ? <SectionLoading label="Reading the Nibfin run…" data-loading="nibfinRun" /> : <RunState run={nibfinRun} />}
-                  </dd>
-                </>
-              )}
-            </dl>
+          {(image || nibfinRun) && (
+            <div className="grid gap-3 text-sm sm:grid-cols-3" data-slot="health">
+              {nibfinRun && <RunCard run={nibfinRun} loading={loading} />}
+              {hasImage && <ImageCard image={image} latestImage={latestImage} loading={loading} />}
+              {image && <WorkflowsCard image={image} loading={loading} />}
+            </div>
           )}
           {rest.length > 0 && <SectionLoading label={`Still reading: ${rest.join(', ')}`} data-loading="summary" />}
         </CardContent>
@@ -105,45 +95,123 @@ export function RepoSummary({ data, onFinished }: RepoSummaryProps) {
   )
 }
 
-function ImageState({ image: pin, latestImage, loading }: { image: RepoImage; latestImage: LatestImage; loading: Loading }) {
+// lights pairs each tone with the colour of its light. The light only
+// repeats what the icon and the label beside it say.
+const lights: Record<Tone, string> = {
+  neutral: 'bg-muted-foreground ring-muted',
+  info: 'bg-info ring-info-bg',
+  success: 'bg-success ring-success-bg',
+  warning: 'bg-warning ring-warning-bg',
+  danger: 'bg-danger ring-danger-bg',
+}
+
+type DataAttrs = Record<`data-${string}`, string>
+
+// HealthCard is one health light of the summary: its title beside a light
+// in the state's tone, then the state and its detail line. A card still
+// being read shows an empty light.
+function HealthCard({ title, tone, children, ...data }: { title: string; tone?: Tone; children: ReactNode } & DataAttrs) {
+  return (
+    <section aria-label={title} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border-subtle p-3" data-tone={tone ?? 'loading'} {...data}>
+      <h3 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <span aria-hidden="true" className={cn('size-3 shrink-0 rounded-full', tone ? cn('ring-4', lights[tone]) : 'border border-muted-foreground')} />
+        {title}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
+function StateBadge({ tone, icon: Icon, label }: { tone: Tone; icon: LucideIcon; label: string }) {
+  return (
+    <Badge variant="outline" className={cn('h-auto max-w-full text-left whitespace-normal', tones[tone])}>
+      <Icon aria-hidden="true" />
+      {label}
+    </Badge>
+  )
+}
+
+function RunCard({ run, loading }: { run: NibfinRun; loading: Loading }) {
+  if (loading.has('nibfinRun')) {
+    return (
+      <HealthCard title="Nibfin runs" data-slot="nibfin-run">
+        <SectionLoading label="Reading the Nibfin run…" data-loading="nibfinRun" />
+      </HealthCard>
+    )
+  }
+  const look = runLook(run)
+  return (
+    <HealthCard title="Nibfin runs" tone={look.tone} data-slot="nibfin-run">
+      <RunState run={run} look={look} />
+    </HealthCard>
+  )
+}
+
+function ImageCard({ image: pin, latestImage, loading }: { image: RepoImage; latestImage: LatestImage; loading: Loading }) {
   if (loading.has('image')) {
     return (
-      <dd className="min-w-0">
+      <HealthCard title="Image" data-slot="image">
         <SectionLoading label="Reading the image pin…" data-loading="image" />
-      </dd>
+      </HealthCard>
     )
   }
   // A pin is compared with the latest image once that is read.
   const comparing = loading.has('latestImage') && pin.set === 'execution' && pin.ref !== null && pin.latest === null
   const image = imageState(pin, latestImage)
-  const ImageIcon = imageIcons[image.kind]
   return (
-    <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-image={comparing ? 'comparing' : image.kind}>
-      {comparing ? (
-        <SectionLoading label="Comparing with the latest image…" data-loading="latestImage" />
-      ) : (
-        <Badge variant="outline" className={tones[image.tone]}>
-          <ImageIcon aria-hidden="true" />
-          {image.label}
-        </Badge>
-      )}
-      {pin.ref && <code className="min-w-0 font-mono text-xs break-all">{pin.ref}</code>}
-      {!comparing && image.detail && <span className="min-w-0 break-words text-muted-foreground">{image.detail}</span>}
-    </dd>
+    <HealthCard title="Image" tone={comparing ? undefined : image.tone} data-slot="image">
+      <div className="flex min-w-0 flex-col items-start gap-1" data-image={comparing ? 'comparing' : image.kind}>
+        {comparing ? (
+          <SectionLoading label="Comparing with the latest image…" data-loading="latestImage" />
+        ) : (
+          <StateBadge tone={image.tone} icon={imageIcons[image.kind]} label={image.label} />
+        )}
+        {pin.ref && <code className="max-w-full min-w-0 font-mono text-xs break-all">{pin.ref}</code>}
+        {!comparing && image.detail && <span className="min-w-0 break-words text-muted-foreground">{image.detail}</span>}
+      </div>
+    </HealthCard>
   )
 }
 
-function StateLine({ tone, icon: Icon, label, state, children }: { tone: Tone; icon: LucideIcon; label: string; state: string; children?: ReactNode }) {
+const workflowIcons: Record<WorkflowsLook['state'], LucideIcon> = {
+  error: CircleAlert,
+  execution: CircleCheck,
+  peer: CircleCheck,
+  none: CircleMinus,
+  unknown: CircleHelp,
+}
+
+// WorkflowsCard names the Nibfin workflow set and the files the status read
+// confirmed. It links no file: the read gives no file URL.
+function WorkflowsCard({ image, loading }: { image: RepoImage; loading: Loading }) {
+  if (loading.has('image')) {
+    return (
+      <HealthCard title="Workflows" data-slot="workflows">
+        <SectionLoading label="Reading the workflows…" data-loading="workflows" />
+      </HealthCard>
+    )
+  }
+  const look = workflowsLook(image)
   return (
-    <div className="flex min-w-0 flex-col gap-1" data-state={state}>
-      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Badge variant="outline" className={tones[tone]}>
-          <Icon aria-hidden="true" />
-          {label}
-        </Badge>
-      </span>
-      {children}
-    </div>
+    <HealthCard title="Workflows" tone={look.tone} data-slot="workflows" data-workflows={look.state}>
+      <StateBadge tone={look.tone} icon={workflowIcons[look.state]} label={look.label} />
+      {look.files.length > 0 && (
+        <span className="min-w-0 break-words text-muted-foreground" data-slot="workflow-files">
+          {look.files.map((f, i) => (
+            <span key={f}>
+              {i > 0 && ', '}
+              <code className="font-mono text-xs">{f}</code>
+            </span>
+          ))}{' '}
+          found
+        </span>
+      )}
+      {look.state === 'error' && image.error && (
+        <span className="break-words text-danger">
+          {image.error.code}: {image.error.message}
+        </span>
+      )}
+    </HealthCard>
   )
 }
 
@@ -154,11 +222,11 @@ const runIcons: Record<RunLook['state'], LucideIcon> = {
   'not-succeeded': TriangleAlert,
 }
 
-function RunState({ run }: { run: NibfinRun }) {
-  const look = runLook(run)
+function RunState({ run, look }: { run: NibfinRun; look: RunLook }) {
   const change = run.commit ? <ChangeLine run={run} /> : null
   return (
-    <StateLine tone={look.tone} icon={runIcons[look.state]} label={look.label} state={look.state}>
+    <div className="flex min-w-0 flex-col items-start gap-1" data-state={look.state}>
+      <StateBadge tone={look.tone} icon={runIcons[look.state]} label={look.label} />
       {look.state === 'not-used' ? (
         <span className="text-muted-foreground">
           No <code className="font-mono text-xs">nibfin-issue.yml</code> on the default branch
@@ -179,7 +247,7 @@ function RunState({ run }: { run: NibfinRun }) {
           </a>
         </span>
       )}
-    </StateLine>
+    </div>
   )
 }
 
@@ -195,9 +263,9 @@ function ChangeLine({ run }: { run: NibfinRun }) {
   ) : null
   if (run.pr) {
     return (
-      <span className="flex flex-wrap items-center gap-x-1 text-muted-foreground" data-slot="change">
-        <GitPullRequest aria-hidden="true" className="size-3.5" />
-        <span className="min-w-0 break-words">
+      <span className="min-w-0 break-words text-muted-foreground" data-slot="change">
+        <GitPullRequest aria-hidden="true" className="me-1 inline size-3.5 align-[-0.125em]" />
+        <span>
           {file} last changed in PR{' '}
           <a href={run.pr.url} target="_blank" rel="noreferrer" className={linkClass}>
             #{run.pr.number}

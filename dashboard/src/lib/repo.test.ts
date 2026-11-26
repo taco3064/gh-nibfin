@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { Sequence, filterRepos, offeredActions, pickerSource } from './repo'
+import { Sequence, filterRepos, offeredActions, pickerSource, workflowsLook } from './repo'
 import { ownerRepo, repoHost, type NibfinRepo, type PersonView, type RepoView } from './status'
 
 // Fictional data.
@@ -89,5 +89,28 @@ describe('offeredActions', () => {
     expect(offeredActions({ set: 'execution', ref: 'x', latest: true })).toEqual(['upgrade'])
     expect(offeredActions({ set: 'peer', ref: null, latest: null })).toEqual(['upgrade'])
     expect(offeredActions({ ref: null, latest: null, error: { code: 'e', message: 'm' } })).toEqual(['init', 'upgrade'])
+  })
+})
+
+describe('workflowsLook', () => {
+  it('names only the files the status read confirmed', () => {
+    expect(workflowsLook({ set: 'execution', ref: 'ghcr.io/x@sha256:1', latest: true })).toEqual({
+      state: 'execution',
+      tone: 'success',
+      label: 'Execution set',
+      files: ['nibfin-job.yml'],
+    })
+    expect(workflowsLook({ set: 'peer', ref: null, latest: null })).toEqual({ state: 'peer', tone: 'success', label: 'Peer set', files: ['nibfin-issue.yml'] })
+  })
+
+  it('shows no files without Nibfin workflows, on an error or an unknown set', () => {
+    expect(workflowsLook({ set: 'none', ref: null, latest: null })).toEqual({ state: 'none', tone: 'neutral', label: 'No Nibfin workflows', files: [] })
+    expect(workflowsLook({ ref: null, latest: null, error: { code: 'github_error', message: 'HTTP 502' } })).toEqual({
+      state: 'error',
+      tone: 'danger',
+      label: 'Could not be read',
+      files: [],
+    })
+    expect(workflowsLook({ set: 'other', ref: null, latest: null })).toEqual({ state: 'unknown', tone: 'neutral', label: 'Unknown workflow set other', files: [] })
   })
 })

@@ -2,7 +2,7 @@
 // and the sequencing that drops answers for a repository no longer chosen.
 
 import { complete, type Loading } from '@/lib/partial'
-import { repoHost, type ApiError, type NibfinRepo, type NibfinRun, type PersonView, type RepoView } from '@/lib/status'
+import { repoHost, type ApiError, type NibfinRepo, type NibfinRun, type PersonView, type RepoImage, type RepoView } from '@/lib/status'
 
 // PickerSource is the list of the account's Nibfin repositories and the
 // host it was read on. Both always come from the same read.
@@ -84,4 +84,31 @@ export function runLook(run: NibfinRun): RunLook {
   if (!run.usesNibfin) return { state: 'not-used', tone: 'neutral', label: 'Does not use Nibfin' }
   if (run.succeeded) return { state: 'succeeded', tone: 'success', label: 'A Nibfin run succeeded after the last change' }
   return { state: 'not-succeeded', tone: 'warning', label: 'No successful Nibfin run since the last change' }
+}
+
+// WorkflowsLook is how the summary shows a repository's Nibfin workflows:
+// their state, tone, label and the files the status read confirmed.
+export interface WorkflowsLook {
+  state: 'error' | 'execution' | 'peer' | 'none' | 'unknown'
+  tone: 'danger' | 'neutral' | 'success'
+  label: string
+  files: string[]
+}
+
+// workflowsLook names the workflow set the status read found. The read
+// looks for nibfin-job.yml first and stops there, so the execution set
+// confirms only that file; nibfin-issue.yml is confirmed only for the peer
+// set.
+export function workflowsLook(image: RepoImage): WorkflowsLook {
+  if (image.error) return { state: 'error', tone: 'danger', label: 'Could not be read', files: [] }
+  switch (image.set) {
+    case 'execution':
+      return { state: 'execution', tone: 'success', label: 'Execution set', files: ['nibfin-job.yml'] }
+    case 'peer':
+      return { state: 'peer', tone: 'success', label: 'Peer set', files: ['nibfin-issue.yml'] }
+    case 'none':
+      return { state: 'none', tone: 'neutral', label: 'No Nibfin workflows', files: [] }
+    default:
+      return { state: 'unknown', tone: 'neutral', label: `Unknown workflow set ${image.set ?? ''}`.trim(), files: [] }
+  }
 }
