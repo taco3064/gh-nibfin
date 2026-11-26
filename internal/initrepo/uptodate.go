@@ -3,11 +3,14 @@ package initrepo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/workflowpr"
@@ -111,10 +114,21 @@ type branchRule struct {
 	Source     string `json:"ruleset_source"`
 }
 
-// unavailable is a GitHub answer that means the feature does not apply: no
-// such rules or protection, or a plan without them.
+// unavailable is a GitHub answer that means the feature does not apply: a
+// 404 (no such rules or protection), or the 403 GitHub gives on a plan
+// without the feature ("Upgrade to GitHub Pro or make this repository public
+// to enable this feature."). Every other 403, for example a rate limit or a
+// missing permission, is a failure.
 func unavailable(err error) bool {
-	return workflowpr.IsStatus(err, http.StatusNotFound) || workflowpr.IsStatus(err, http.StatusForbidden)
+	if workflowpr.IsStatus(err, http.StatusNotFound) {
+		return true
+	}
+	var h *api.HTTPError
+	if !errors.As(err, &h) || h.StatusCode != http.StatusForbidden {
+		return false
+	}
+	msg := strings.ToLower(h.Message)
+	return strings.Contains(msg, "upgrade to github pro") || strings.Contains(msg, "make this repository public")
 }
 
 func (i *initRepo) branchPath() string {

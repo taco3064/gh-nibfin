@@ -229,12 +229,32 @@ func TestInitUpToDateNone(t *testing.T) {
 		}
 	}
 
-	// Another failure stops the plan.
+	// The protection endpoint's feature-unavailable 403 also means none.
 	f := newFake("app")
-	f.fail = map[string]error{"GET repos/o/app/branches/main/protection/required_status_checks": httpErr(502, "boom")}
+	f.fail = map[string]error{"GET repos/o/app/branches/main/protection/required_status_checks": httpErr(403, "Upgrade to GitHub Pro or make this repository public to enable this feature.")}
 	stub(t, f, execRunners())
-	if _, _, err := run(t); op.Code(err) != op.CodeGitHubAPIFailed || len(f.writes()) != 0 {
-		t.Errorf("502: %v, %q", err, f.writes())
+	if _, _, err := run(t); err != nil {
+		t.Errorf("protection 403 unavailable: %v", err)
+	}
+
+	// Another failure, including any other 403, stops the plan.
+	for _, path := range []string{
+		"GET repos/o/app/rules/branches/main",
+		"GET repos/o/app/branches/main/protection/required_status_checks",
+	} {
+		for _, e := range []error{
+			httpErr(502, "boom"),
+			httpErr(403, "You have exceeded a secondary rate limit."),
+			httpErr(403, "Resource not accessible by integration"),
+		} {
+			f := newFake("app")
+			f.rulesets[7] = repoRuleset(true)
+			f.fail = map[string]error{path: e}
+			stub(t, f, execRunners())
+			if _, _, err := run(t); op.Code(err) != op.CodeGitHubAPIFailed || len(f.writes()) != 0 {
+				t.Errorf("%s %v: %v, %q", path, e, err, f.writes())
+			}
+		}
 	}
 }
 
