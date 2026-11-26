@@ -1,7 +1,7 @@
 import { useId, useLayoutEffect, useMemo, useState, type ReactElement } from 'react'
 import { Check, Search, X } from 'lucide-react'
 
-import { BlockerItem, IssueItem } from '@/components/issue'
+import { BlockerItem, IssueItem, RunLegend } from '@/components/issue'
 import { Note } from '@/components/shell/note'
 import { SectionLoading } from '@/components/shell/section-loading'
 import { Button } from '@/components/ui/button'
@@ -112,6 +112,7 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
             onFilter={setFilter}
             count={`Showing ${filtered.matched.length} of ${total} open Issues · ${filtered.context.length} shown as context`}
           />
+          <RunLegend />
           {blockersLoading && <SectionLoading label="Reading blockers… edges appear once they are read." data-loading="blockedBy" />}
           {!blockersLoading && graph.unread.length > 0 && (
             <Note tone="warning" data-note="unread">

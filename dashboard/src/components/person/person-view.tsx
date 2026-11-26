@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { IssueBulkActions, type SelectedIssue } from '@/components/issue'
+import { IssueBulkActions, RunLegend, type SelectedIssue } from '@/components/issue'
 import { Note } from '@/components/shell/note'
 import { SectionLoading } from '@/components/shell/section-loading'
 import { accessOf, type Change } from '@/lib/issue'
@@ -65,6 +65,7 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
           </p>
         )}
       </div>
+      {repos.length > 0 && <RunLegend />}
       {data.issuesError && (
         <Note tone="danger" data-note="issues-error">
           Issue search failed: {data.issuesError.code}: {data.issuesError.message}

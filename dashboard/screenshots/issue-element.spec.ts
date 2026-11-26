@@ -75,7 +75,7 @@ function item(page: Page, repo: string, n: number): Locator {
 }
 
 async function openRuns(page: Page, it: Locator) {
-  const button = it.getByRole('button', { name: /^Runs/ })
+  const button = it.getByRole('button', { name: /^Run history of #/ })
   await button.click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
@@ -89,10 +89,16 @@ for (const width of widths) {
       await shot(page, `issue-list-${theme}-${width}`)
 
       // Stage from labels only, with pause and pending.
-      await expect(item(page, 'acme/app', 101).locator('[data-badge=stage]')).toHaveText('Stage: Deliver')
-      await expect(item(page, 'acme/app', 104).locator('[data-badge=stage]')).toHaveText('Stage: Done')
-      await expect(item(page, 'acme/app', 105).locator('[data-badge=stage]')).toHaveText('Stage: Not in Nibfin')
-      await expect(item(page, 'acme/legacy', 3).locator('[data-badge=stage]')).toHaveText('Stage: Shape')
+      const track = (repo: string, n: number) => item(page, repo, n).locator('[data-slot=stage-track]')
+      await expect(track('acme/app', 101)).toHaveAttribute('data-stage', 'deliver')
+      await expect(track('acme/app', 101).locator('[aria-current=step]')).toHaveText('Deliver (current)')
+      await expect(track('acme/app', 101).locator('[data-state=complete]')).toHaveText('Shape (completed)')
+      await expect(track('acme/app', 104)).toHaveAttribute('data-stage', 'done')
+      await expect(track('acme/app', 104).locator('[aria-current=step]')).toHaveText('Done (current)')
+      await expect(track('acme/app', 105)).toHaveText('Stage: Not in Nibfin')
+      await expect(track('acme/app', 105).locator('[aria-current]')).toHaveCount(0)
+      await expect(track('acme/legacy', 3).locator('[aria-current=step]')).toHaveText('Shape (current)')
+      await expect(track('acme/legacy', 3).locator('[data-state=upcoming]')).toHaveText(['Deliver', 'Done'])
       await expect(item(page, 'acme/app', 102).locator('[data-badge=paused]')).toHaveText('Paused')
       await expect(item(page, 'acme/app', 103).locator('[data-badge=pending] a')).toHaveAttribute(
         'href',
@@ -101,9 +107,11 @@ for (const width of widths) {
       await expect(item(page, 'acme/app', 104)).toContainText('Reason comment could not be read: github_error: comments of acme/app#104: HTTP 500')
       await expect(item(page, 'acme/docs', 7)).toContainText('Reason comment not found')
 
-      // Open blockers only; failed and unread are labelled, never "no blockers".
+      // Open blockers only, as "Waiting on" chips; failed and unread are labelled, never "no blockers".
       const blockers = item(page, 'acme/app', 101).locator('[data-slot=blockers]')
+      await expect(blockers).toContainText('Waiting on')
       await expect(blockers.getByRole('link')).toHaveCount(2)
+      await expect(blockers.locator('[data-slot=blocker-chip]')).toHaveCount(2)
       await expect(blockers).not.toContainText('#98')
       await expect(item(page, 'acme/app', 103).locator('[data-slot=blockers]')).toContainText('could not be read: github_error')
       await expect(item(page, 'acme/app', 105).locator('[data-slot=blockers]')).toContainText('not read')
@@ -114,6 +122,18 @@ for (const width of widths) {
       const title = item(page, 'acme/app', 101).getByRole('heading').getByRole('link')
       await expect(title).toHaveAttribute('href', url('acme/app', 101))
       await expect(title).toHaveAttribute('target', '_blank')
+
+      // The legend names the four run colors; the strip shows the runs
+      // oldest first, each bar named with its run, conclusion and time.
+      await expect(page.locator('[data-slot=run-legend] li')).toHaveText(['Succeeded', 'Failed', 'Skipped or cancelled', 'Running'])
+      const bars = item(page, 'acme/app', 101).locator('[data-slot=run-strip]').getByRole('img')
+      await expect(bars).toHaveCount(4)
+      await expect(bars.last()).toHaveAttribute('data-run', 'running')
+      await expect(bars.last()).toHaveAccessibleName(/, in progress, /)
+      await expect(bars.nth(2)).toHaveAttribute('data-run', 'failed')
+      await expect(bars.nth(2)).toHaveAccessibleName(/, failure, /)
+      await expect(item(page, 'acme/app', 102).locator('[data-slot=runs-incomplete]')).toHaveText('(incomplete)')
+      await expect(item(page, 'acme/app', 104).locator('[data-slot=run-strip]')).toContainText('No runs')
 
       // Runs from two repositories, newest first.
       let { button, dialog } = await openRuns(page, item(page, 'acme/app', 101))
