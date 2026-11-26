@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 // quiet replaces Log and Sleep for one test and records the waits.
@@ -255,6 +257,22 @@ func TestDoDoesNotDuplicateACreate(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "POST /repos/a/b/issues failed (error); retry 2 of 3") {
 		t.Fatalf("log %q", log.String())
+	}
+}
+
+func TestDoWaitsAsGitHubAsks(t *testing.T) {
+	_, waits := quiet(t)
+	sends := 0
+	limited := &api.HTTPError{StatusCode: 403, Headers: http.Header{"Retry-After": {"9"}}}
+	err := Do(context.Background(), http.MethodPost, "/pulls", func(context.Context) error {
+		sends++
+		if sends == 1 {
+			return limited
+		}
+		return nil
+	}, func(context.Context) (bool, error) { return false, nil })
+	if err != nil || sends != 2 || len(*waits) != 1 || (*waits)[0] != 9*time.Second {
+		t.Fatalf("err %v, %d sends, waits %v", err, sends, *waits)
 	}
 }
 
