@@ -23,6 +23,7 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/auth"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/image"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/templates"
@@ -42,7 +43,7 @@ type Client interface {
 // Tests replace these.
 var (
 	newClient = func(host string) (Client, error) {
-		return api.NewRESTClient(api.ClientOptions{Host: host})
+		return api.NewRESTClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 	}
 	hostRunners  = op.HostRunners
 	latestImage  = image.Latest

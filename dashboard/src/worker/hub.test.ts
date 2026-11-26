@@ -5,7 +5,7 @@ import { createHub, type Socket, type Store } from './hub'
 import type { LiveEvent } from './messages'
 import { minInterval } from './poller'
 import type { State } from './state'
-import { FakeGitHub, issueJSON, issuesPath, token } from './testing'
+import { FakeGitHub, issueJSON, issuesPath, token, quick } from './testing'
 
 const t0 = Date.parse('2026-11-25T00:00:00Z')
 const cli = 'taco3064/gh-nibfin'
@@ -60,6 +60,7 @@ function setup(opts: { token?: string } = {}) {
     now: () => now,
     github: () =>
       createGitHub({
+        ...quick,
         token: opts.token ?? token,
         fetch: (input, init) => {
           fetches.push(store.alarm ?? -1)

@@ -319,7 +319,7 @@ func TestRenderIssueCaller(t *testing.T) {
 		t.Error("run-name does not title a review run by its head branch")
 	}
 	for _, want := range []string{
-		`gh workflow run nibfin-shared-runner.yml --repo "$EXECUTION_REPO" "${inputs[@]}"`,
+		`gh_retry workflow run nibfin-shared-runner.yml --repo "$EXECUTION_REPO" "${inputs[@]}"`,
 		`if ! jq -e 'index("scope") != null or index("request") != null' <<<"$ISSUE_LABELS" >/dev/null; then`,
 		`if [ "$PUSH_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then`,
 	} {

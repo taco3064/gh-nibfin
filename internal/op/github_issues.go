@@ -10,6 +10,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
+
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 )
 
 // ghUser is the authenticated user.
@@ -90,13 +93,38 @@ func (g restGitHub) UserKeys(ctx context.Context, login string) ([]ghKey, error)
 	}
 }
 
+// CreateIssue opens an Issue once: after a failed send it re-reads the
+// Issues updated since just before the first send and sends again only when
+// none has this title and body (R4.38).
 func (g restGitHub) CreateIssue(ctx context.Context, repo, title, body string) (ghIssue, error) {
 	var is ghIssue
-	in, err := jsonBody(map[string]string{"title": title, "body": body})
+	in, err := json.Marshal(map[string]string{"title": title, "body": body})
 	if err != nil {
-		return is, err
+		return is, Errorf(CodeGitHubAPIFailed, "encode the request: %v", err)
 	}
-	err = g.c.DoWithContext(ctx, http.MethodPost, repoPath(repo)+"/issues", in, &is)
+	path := repoPath(repo) + "/issues"
+	since := sinceParam(now())
+	err = ghretry.Do(ctx, http.MethodPost, path, func(ctx context.Context) error {
+		is = ghIssue{}
+		return g.c.DoWithContext(ctx, http.MethodPost, path, bytes.NewReader(in), &is)
+	}, func(ctx context.Context) (bool, error) {
+		var found []struct {
+			ghIssue
+			Title string `json:"title"`
+			Body  string `json:"body"`
+		}
+		q := path + "?state=all&sort=created&direction=desc&per_page=100&since=" + since
+		if err := g.c.DoWithContext(ctx, http.MethodGet, q, nil, &found); err != nil {
+			return false, err
+		}
+		for _, f := range found {
+			if f.Title == title && f.Body == body {
+				is = f.ghIssue
+				return true, nil
+			}
+		}
+		return false, nil
+	})
 	if err == nil && is.Number == 0 {
 		return is, Errorf(CodeGitHubAPIFailed, "open an Issue in %s: no Issue number returned", repo)
 	}
@@ -124,14 +152,41 @@ func (g restGitHub) IssueComments(ctx context.Context, repo string, number int) 
 	}
 }
 
+// CreateComment comments once: after a failed send it re-reads the comments
+// updated since just before the first send and sends again only when none
+// has this body (R4.38).
 func (g restGitHub) CreateComment(ctx context.Context, repo string, number int, body string) error {
-	in, err := jsonBody(map[string]string{"body": body})
+	in, err := json.Marshal(map[string]string{"body": body})
 	if err != nil {
-		return err
+		return Errorf(CodeGitHubAPIFailed, "encode the request: %v", err)
 	}
-	var out json.RawMessage
-	err = g.c.DoWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/issues/%d/comments", repoPath(repo), number), in, &out)
+	path := fmt.Sprintf("%s/issues/%d/comments", repoPath(repo), number)
+	since := sinceParam(now())
+	err = ghretry.Do(ctx, http.MethodPost, path, func(ctx context.Context) error {
+		var out json.RawMessage
+		return g.c.DoWithContext(ctx, http.MethodPost, path, bytes.NewReader(in), &out)
+	}, func(ctx context.Context) (bool, error) {
+		var found []ghComment
+		if err := g.c.DoWithContext(ctx, http.MethodGet, path+"?per_page=100&since="+since, nil, &found); err != nil {
+			return false, err
+		}
+		for _, f := range found {
+			if f.Body == body {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
 	return apiError(fmt.Sprintf("comment on %s#%d", repo, number), err)
+}
+
+// now is the clock of the re-read window; tests replace it.
+var now = time.Now
+
+// sinceParam is a since query value a minute before t, which allows for
+// clock skew between this host and GitHub.
+func sinceParam(t time.Time) string {
+	return url.QueryEscape(t.Add(-time.Minute).UTC().Format(time.RFC3339))
 }
 
 // CloseIssue closes the Issue with reason, completed or not_planned.

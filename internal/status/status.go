@@ -21,6 +21,7 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/auth"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/image"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/templates"
@@ -33,7 +34,7 @@ var (
 	// newREST returns a client for host that carries the current gh login;
 	// only go-gh handles its token.
 	newREST = func(host string) (templates.RESTClient, error) {
-		return api.NewRESTClient(api.ClientOptions{Host: host})
+		return api.NewRESTClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 	}
 	defaultHost = auth.DefaultHost
 )

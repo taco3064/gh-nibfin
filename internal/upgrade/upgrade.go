@@ -16,6 +16,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/api"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/image"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/templates"
@@ -30,7 +31,7 @@ const Branch = "nibfin/upgrade"
 var (
 	// newClient returns a client for host that carries the current gh login.
 	newClient = func(host string) (templates.RESTClient, error) {
-		return api.NewRESTClient(api.ClientOptions{Host: host})
+		return api.NewRESTClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 	}
 	latestImage = image.Latest
 	ciWorkflows = templates.CIWorkflows

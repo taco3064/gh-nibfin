@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/api"
+
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 )
 
 // github is the part of the GitHub REST API the runner commands use. Repositories
@@ -92,7 +94,7 @@ func (g ghRunner) customLabels() bool {
 
 // newGitHub returns the client for a host; tests replace it.
 var newGitHub = func(host string) (github, error) {
-	c, err := api.NewRESTClient(api.ClientOptions{Host: host})
+	c, err := api.NewRESTClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 	if err != nil {
 		return nil, Errorf(CodeGitHubAPIFailed, "cannot use the gh login for %s: %v", host, err)
 	}
@@ -213,9 +215,11 @@ func notFound(err error) bool {
 	return errors.As(err, &h) && h.StatusCode == http.StatusNotFound
 }
 
-// httpClient downloads the runner archive. It sends no credentials and
-// follows only https redirects; tests replace it.
+// httpClient reads the runner release and downloads its archive. It sends no
+// credentials, follows only https redirects and retries as every GitHub API
+// call does; tests replace it.
 var httpClient = &http.Client{
+	Transport: ghretry.Transport(nil),
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if req.URL.Scheme != "https" {
 			return fmt.Errorf("redirect to %s is not https", req.URL.Redacted())
