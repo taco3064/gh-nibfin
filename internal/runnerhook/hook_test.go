@@ -1,0 +1,661 @@
+package runnerhook_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/taco3064/gh-nibfin/internal/runnerhook"
+	"github.com/taco3064/gh-nibfin/internal/templates"
+)
+
+func urlOf(s string) ([]*url.URL, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return nil, err
+	}
+	return []*url.URL{u}, nil
+}
+
+const (
+	owner  = "Cur"
+	name   = "repo"
+	userID = "4242"
+	sha    = "0123456789abcdef0123456789abcdef01234567"
+	digest = "d8327ac3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacb22"
+)
+
+var image = runnerhook.ImageRepository + "@sha256:" + digest
+
+// needTools skips a test that runs the hook where bash, node or git is
+// missing; the hook runs on Linux runner hosts only.
+func needTools(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the hook runs on Linux runner hosts")
+	}
+	for _, tool := range []string{"bash", "git"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip(tool + " is not installed")
+		}
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	return node
+}
+
+// official renders the execution repository's two files with img, as init
+// and upgrade write them.
+func official(t *testing.T, img string) map[string][]byte {
+	t.Helper()
+	files, err := templates.Render(templates.Execution, templates.Params{Image: img, DefaultBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]byte{}
+	for _, f := range runnerhook.Workflows {
+		out[f] = files[templates.Dir+"/"+f]
+	}
+	return out
+}
+
+// fixture is one hook installation on a fake runner host.
+type fixture struct {
+	t                       *testing.T
+	ca                      *ca
+	hook, runner, tmp, home string
+	event                   string
+	srv                     *httptest.Server
+	mu                      sync.Mutex
+	files                   map[string][]byte
+	attest                  []byte
+	attestStatus            int
+	attestDelay             time.Duration
+	hits                    []string
+	private                 bool
+	key                     string
+	env                     map[string]string
+	path                    string
+	// digest is the image the server has attestations of; root replaces
+	// the test CA's trusted root.
+	digest string
+	root   []byte
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	node := needTools(t)
+	dir := t.TempDir()
+	f := &fixture{t: t, ca: newCA(t), hook: filepath.Join(dir, "nibfin", "hook"), runner: filepath.Join(dir, "nibfin", "runners", "claude-1"),
+		tmp: filepath.Join(dir, "tmp"), home: filepath.Join(dir, "home"), event: filepath.Join(dir, "event.json"), attestStatus: 200, digest: digest}
+	for _, d := range []string{f.tmp, f.home, filepath.Join(f.runner, "externals", "node24", "bin"), filepath.Join(f.runner, "externals", "node16", "bin")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(node, filepath.Join(f.runner, "externals", "node24", "bin", "node")); err != nil {
+		t.Fatal(err)
+	}
+	// An older node that must not be picked: it fails when run.
+	if err := os.WriteFile(filepath.Join(f.runner, "externals", "node16", "bin", "node"), []byte("#!/bin/sh\nexit 9\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.files = official(t, image)
+	f.attest = attestations(f.ca.bundle(t, digest, bundleOpts{}))
+	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
+	t.Cleanup(f.srv.Close)
+	f.setEvent(map[string]any{"inputs": map[string]any{"assignee": userID, "stage": "deliver"}})
+	f.env = map[string]string{
+		"GITHUB_WORKFLOW_REF": owner + "/" + name + "/.github/workflows/nibfin-shared-runner.yml@refs/heads/main",
+		"GITHUB_WORKFLOW_SHA": sha,
+		"GITHUB_EVENT_NAME":   "workflow_dispatch",
+		"GITHUB_EVENT_PATH":   f.event,
+		"NIBFIN_RUNNER_DIR":   f.runner,
+	}
+	f.path = os.Getenv("PATH")
+	return f
+}
+
+func (f *fixture) setEvent(ev map[string]any) {
+	b, _ := json.Marshal(ev)
+	if err := os.WriteFile(f.event, b, 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.hits = append(f.hits, r.URL.Path)
+	files, attest, status, delay, served := f.files, f.attest, f.attestStatus, f.attestDelay, f.digest
+	f.mu.Unlock()
+	if r.Header.Get("Authorization") != "" {
+		http.Error(w, "credentials sent", http.StatusBadRequest)
+		return
+	}
+	rawPrefix := "/raw/" + owner + "/" + name + "/" + sha + "/.github/workflows/"
+	switch {
+	case strings.HasPrefix(r.URL.Path, rawPrefix):
+		b, ok := files[strings.TrimPrefix(r.URL.Path, rawPrefix)]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(b)
+	case strings.HasPrefix(r.URL.Path, "/api/repos/"+runnerhook.SourceRepo+"/attestations/"):
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if r.URL.Path != "/api/repos/"+runnerhook.SourceRepo+"/attestations/sha256:"+served {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(status)
+		w.Write(attest)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// install writes the hook files as runner add does.
+func (f *fixture) install() {
+	f.t.Helper()
+	files, err := runnerhook.Static()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	files[runnerhook.TrustedRoot] = f.ca.trustedRoot()
+	if f.root != nil {
+		files[runnerhook.TrustedRoot] = f.root
+	}
+	priv := "0"
+	if f.private {
+		priv = "1"
+	}
+	cfg := "host=github.com\nowner=" + owner + "\nname=" + name + "\nuser-id=" + userID + "\nprivate=" + priv + "\n"
+	if f.private {
+		cfg += "deploy-key=" + f.key + "\n"
+		files[runnerhook.KnownHosts] = []byte("github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n")
+	}
+	cfg += "test-base-url=" + f.srv.URL + "\n"
+	files[runnerhook.Config] = []byte(cfg)
+	for p, b := range files {
+		full := filepath.Join(f.hook, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+			f.t.Fatal(err)
+		}
+		if err := os.WriteFile(full, b, 0o600); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+}
+
+// run runs the hook as the runner does, bash -e <path>, and returns its
+// output and exit status.
+func (f *fixture) run() (string, int) {
+	f.t.Helper()
+	f.install()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	c := exec.CommandContext(ctx, "bash", "-e", filepath.Join(f.hook, runnerhook.Script))
+	c.Dir = f.home
+	c.Env = []string{"PATH=" + f.path, "TMPDIR=" + f.tmp, "HOME=" + f.home}
+	for k, v := range f.env {
+		c.Env = append(c.Env, k+"="+v)
+	}
+	var out bytes.Buffer
+	c.Stdout, c.Stderr = &out, &out
+	err := c.Run()
+	code := 0
+	var x *exec.ExitError
+	if errors.As(err, &x) {
+		code = x.ExitCode()
+	} else if err != nil {
+		f.t.Fatal(err)
+	}
+	return out.String(), code
+}
+
+func (f *fixture) accepts() {
+	f.t.Helper()
+	out, code := f.run()
+	want := "Nibfin hook: accepted " + owner + "/" + name + "@" + sha + ", image sha256:" + digest
+	if code != 0 || !strings.Contains(out, want) {
+		f.t.Fatalf("hook exit %d, output:\n%s\nwant %q", code, out, want)
+	}
+}
+
+func (f *fixture) refuses(reason string) string {
+	f.t.Helper()
+	out, code := f.run()
+	if code == 0 || !strings.Contains(out, "Nibfin hook: refused: ") || !strings.Contains(out, reason) {
+		f.t.Fatalf("hook exit %d, output:\n%s\nwant a refusal with %q", code, out, reason)
+	}
+	return out
+}
+
+func TestOfficialFilesMatchTemplates(t *testing.T) {
+	files, err := runnerhook.Static()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := official(t, runnerhook.PlaceholderImage)
+	for _, f := range runnerhook.Workflows {
+		if !bytes.Equal(files[runnerhook.OfficialDir+"/"+f], want[f]) {
+			t.Errorf("official/%s differs from templates.Render with the placeholder image", f)
+		}
+	}
+	for _, f := range []string{runnerhook.Script, runnerhook.Check} {
+		if len(files[f]) == 0 {
+			t.Errorf("%s is empty", f)
+		}
+	}
+}
+
+// TestCheckPolicy keeps check.mjs's policy equal to the package's constants.
+func TestCheckPolicy(t *testing.T) {
+	files, err := runnerhook.Static()
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(files[runnerhook.Check])
+	for _, want := range []string{
+		`const IMAGE_REPOSITORY = "` + runnerhook.ImageRepository + `";`,
+		`const SOURCE_REPO = "` + runnerhook.SourceRepo + `";`,
+		"const SIGNER_URI = `https://github.com/${SOURCE_REPO}/.github/workflows/image.yml@refs/heads/main`;",
+		`const SOURCE_REF = "` + runnerhook.SourceRef + `";`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("check.mjs lacks %s", want)
+		}
+	}
+	if runnerhook.SignerWorkflow != runnerhook.SourceRepo+"/.github/workflows/image.yml" {
+		t.Errorf("SignerWorkflow = %s", runnerhook.SignerWorkflow)
+	}
+}
+
+func TestHookAccepts(t *testing.T) {
+	f := newFixture(t)
+	f.accepts()
+	// The hook cleaned up after itself and wrote nowhere else.
+	if left, _ := os.ReadDir(f.tmp); len(left) != 0 {
+		t.Errorf("TMPDIR keeps %v", left)
+	}
+	if left, _ := os.ReadDir(f.home); len(left) != 0 {
+		t.Errorf("HOME has %v", left)
+	}
+}
+
+func TestHookAcceptsAnyOfSeveralAttestations(t *testing.T) {
+	f := newFixture(t)
+	f.attest = attestations(f.ca.bundle(t, digest, bundleOpts{badSig: true}), f.ca.bundle(t, digest, bundleOpts{}))
+	f.accepts()
+}
+
+func TestHookRefusesTheWorkflowAndEvent(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, value, reason string
+	}{
+		{"another workflow", "GITHUB_WORKFLOW_REF", owner + "/" + name + "/.github/workflows/evil.yml@refs/heads/main", "not Cur/repo/.github/workflows/nibfin-shared-runner.yml"},
+		{"another repository", "GITHUB_WORKFLOW_REF", "other/" + name + "/.github/workflows/nibfin-shared-runner.yml@refs/heads/main", "not Cur/repo"},
+		{"no workflow ref", "GITHUB_WORKFLOW_REF", "", "not Cur/repo"},
+		{"not a dispatch", "GITHUB_EVENT_NAME", "push", `"push" event, not workflow_dispatch`},
+		{"a short sha", "GITHUB_WORKFLOW_SHA", "0123456", "not a full commit SHA"},
+		{"an option as sha", "GITHUB_WORKFLOW_SHA", "--upload-pack=x", "not a commit SHA"},
+		{"no runner dir", "NIBFIN_RUNNER_DIR", "", "NIBFIN_RUNNER_DIR is not set"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.env[tc.key] = tc.value
+			f.refuses(tc.reason)
+			if len(f.hits) != 0 {
+				t.Errorf("the hook read %v before refusing", f.hits)
+			}
+		})
+	}
+	t.Run("another assignee", func(t *testing.T) {
+		f := newFixture(t)
+		f.setEvent(map[string]any{"inputs": map[string]any{"assignee": "999"}})
+		f.refuses(`dispatched for assignee "999", not 4242. Only official Nibfin Jobs for 4242 run on this Runner.`)
+	})
+	t.Run("an assignee as a number", func(t *testing.T) {
+		f := newFixture(t)
+		f.setEvent(map[string]any{"inputs": map[string]any{"assignee": 4242}})
+		f.refuses("dispatched for assignee")
+	})
+	t.Run("the case of the repository", func(t *testing.T) {
+		f := newFixture(t)
+		f.env["GITHUB_WORKFLOW_REF"] = "cur/REPO/.github/workflows/nibfin-shared-runner.yml@refs/pull/1/merge"
+		f.accepts()
+	})
+}
+
+func TestHookRefusesChangedFiles(t *testing.T) {
+	change := func(f *fixture, file string, fn func([]byte) []byte) {
+		f.files = map[string][]byte{}
+		for k, v := range official(f.t, image) {
+			f.files[k] = v
+		}
+		f.files[file] = fn(bytes.Clone(f.files[file]))
+	}
+	t.Run("one byte in the shared runner", func(t *testing.T) {
+		f := newFixture(t)
+		change(f, "nibfin-shared-runner.yml", func(b []byte) []byte { b[len(b)/2] ^= 1; return b })
+		out := f.refuses("nibfin-shared-runner.yml differs from the official template")
+		if !strings.Contains(out, "gh nibfin upgrade") {
+			t.Errorf("no next step: %s", out)
+		}
+	})
+	t.Run("one byte in the job", func(t *testing.T) {
+		f := newFixture(t)
+		change(f, "nibfin-job.yml", func(b []byte) []byte { return bytes.Replace(b, []byte("podman pull"), []byte("podman pulL"), 1) })
+		f.refuses("nibfin-job.yml differs from the official template")
+	})
+	t.Run("two image lines", func(t *testing.T) {
+		f := newFixture(t)
+		line := []byte("  IMAGE_REF: " + image + "\n")
+		change(f, "nibfin-job.yml", func(b []byte) []byte { return bytes.Replace(b, line, append(bytes.Clone(line), line...), 1) })
+		f.refuses("has 2 IMAGE_REF lines")
+	})
+	t.Run("another image", func(t *testing.T) {
+		f := newFixture(t)
+		change(f, "nibfin-job.yml", func(b []byte) []byte {
+			return bytes.Replace(b, []byte(image), []byte("ghcr.io/evil/nibfin@sha256:"+digest), 1)
+		})
+		f.refuses("has 0 IMAGE_REF lines")
+	})
+	t.Run("a missing file", func(t *testing.T) {
+		f := newFixture(t)
+		delete(f.files, "nibfin-job.yml")
+		f.refuses("is not readable without a credential (HTTP 404)")
+	})
+	t.Run("no file content is printed", func(t *testing.T) {
+		f := newFixture(t)
+		change(f, "nibfin-job.yml", func(b []byte) []byte { return append(b, []byte("SECRET-LOOKING-LINE\n")...) })
+		out := f.refuses("differs")
+		if strings.Contains(out, "SECRET-LOOKING-LINE") {
+			t.Errorf("the refusal prints the file: %s", out)
+		}
+	})
+}
+
+func TestHookRefusesTheImage(t *testing.T) {
+	other := mustKey(t)
+	for _, tc := range []struct {
+		name   string
+		opts   func(f *fixture) bundleOpts
+		reason string
+	}{
+		{"a bad envelope signature", func(*fixture) bundleOpts { return bundleOpts{badSig: true} }, "the signature does not verify"},
+		{"an untrusted CA", func(f *fixture) bundleOpts { return bundleOpts{issuerCA: newCA(f.t)} }, "not issued by a known Sigstore CA"},
+		{"another log key", func(*fixture) bundleOpts { return bundleOpts{rekor: other} }, "the log entry timestamp does not verify"},
+		{"a broken entry timestamp", func(*fixture) bundleOpts { return bundleOpts{badSET: true} }, "the log entry timestamp does not verify"},
+		{"a time outside the leaf", func(*fixture) bundleOpts { return bundleOpts{at: signedAt.Add(time.Hour)} }, "outside the signing certificate's validity"},
+		{"no log entry", func(*fixture) bundleOpts { return bundleOpts{noTlog: true} }, "uses a log or CA this hook does not know"},
+		{"a log naming another payload", func(*fixture) bundleOpts { return bundleOpts{bodyPayload: []byte("{}")} }, "the log entry names another payload"},
+		{"a log naming another signature", func(*fixture) bundleOpts { return bundleOpts{bodySig: []byte("other")} }, "the log entry names another signature"},
+		{"a non-main ref", func(*fixture) bundleOpts {
+			u := "https://github.com/" + runnerhook.SignerWorkflow + "@refs/heads/dev"
+			return bundleOpts{signer: u, san: u}
+		}, "signer is \"https://github.com/taco3064/nibfin-core/.github/workflows/image.yml@refs/heads/dev\""},
+		{"another workflow", func(*fixture) bundleOpts {
+			u := "https://github.com/" + runnerhook.SourceRepo + "/.github/workflows/other.yml@refs/heads/main"
+			return bundleOpts{signer: u, san: u}
+		}, "signer is"},
+		{"a SAN of another workflow", func(*fixture) bundleOpts {
+			return bundleOpts{san: "https://github.com/" + runnerhook.SourceRepo + "/.github/workflows/other.yml@refs/heads/main"}
+		}, "the certificate names"},
+		{"a source ref extension of a branch", func(*fixture) bundleOpts { return bundleOpts{ref: "refs/heads/dev"} }, "the signer's ref is"},
+		{"another source repository", func(*fixture) bundleOpts { return bundleOpts{sourceRepo: "https://github.com/evil/nibfin-core"} }, "the signer's repository is"},
+		{"a self-hosted runner", func(*fixture) bundleOpts { return bundleOpts{runner: "self-hosted"} }, `built on a "self-hosted" runner`},
+		{"another issuer", func(*fixture) bundleOpts { return bundleOpts{issuer: "https://evil.example"} }, "the signer's issuer is"},
+		{"another subject", func(*fixture) bundleOpts { return bundleOpts{subjectName: "ghcr.io/evil/nibfin"} }, "the statement does not name"},
+		{"another digest", func(*fixture) bundleOpts { return bundleOpts{digest: strings.Repeat("e", 64)} }, "the statement does not name"},
+		{"another predicate", func(*fixture) bundleOpts { return bundleOpts{predicateType: "https://example.com/x"} }, "is not SLSA provenance v1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.attest = attestations(f.ca.bundle(t, digest, tc.opts(f)))
+			f.refuses(tc.reason)
+		})
+	}
+	t.Run("a well-formed statement without a valid signature", func(t *testing.T) {
+		// What the attestation store alone would accept: the right fields,
+		// stored by anyone with write access, but not signed by Sigstore.
+		f := newFixture(t)
+		b := f.ca.bundle(t, digest, bundleOpts{issuerCA: newCA(t), rekor: mustKey(t)})
+		f.attest = attestations(b)
+		f.refuses("the image attestation is not a valid official signature")
+	})
+	t.Run("no attestation", func(t *testing.T) {
+		f := newFixture(t)
+		f.attestStatus, f.attest = 404, []byte(`{"message":"Not Found"}`)
+		f.refuses("has no attestation in taco3064/nibfin-core (HTTP 404)")
+	})
+	t.Run("an empty list", func(t *testing.T) {
+		f := newFixture(t)
+		f.attest = attestations()
+		f.refuses("has no attestation")
+	})
+	t.Run("the rate limit", func(t *testing.T) {
+		f := newFixture(t)
+		f.attestStatus, f.attest = 403, []byte(`{"message":"API rate limit exceeded"}`)
+		f.refuses("HTTP 403; GitHub allows 60 unauthenticated API requests per hour")
+	})
+	t.Run("a timeout", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("waits 30 s")
+		}
+		f := newFixture(t)
+		f.attestDelay = 40 * time.Second
+		f.refuses("no answer within 30 s")
+	})
+}
+
+func TestHookNodeAndConfig(t *testing.T) {
+	t.Run("no node", func(t *testing.T) {
+		f := newFixture(t)
+		os.Remove(filepath.Join(f.runner, "externals", "node24", "bin", "node"))
+		f.refuses("no Node.js 20 or later")
+	})
+	t.Run("no config", func(t *testing.T) {
+		f := newFixture(t)
+		f.install()
+		os.Remove(filepath.Join(f.hook, runnerhook.Config))
+		c := exec.Command("bash", "-e", filepath.Join(f.hook, runnerhook.Script))
+		c.Env = []string{"PATH=" + f.path, "TMPDIR=" + f.tmp, "GITHUB_WORKFLOW_SHA=" + sha, "NIBFIN_RUNNER_DIR=" + f.runner}
+		out, err := c.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "cannot read") {
+			t.Fatalf("err %v, output %s", err, out)
+		}
+	})
+	t.Run("run by sh", func(t *testing.T) {
+		f := newFixture(t)
+		f.install()
+		c := exec.Command("sh", "-e", filepath.Join(f.hook, runnerhook.Script))
+		c.Env = []string{"PATH=" + f.path, "TMPDIR=" + f.tmp, "HOME=" + f.home}
+		for k, v := range f.env {
+			c.Env = append(c.Env, k+"="+v)
+		}
+		out, err := c.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), "Nibfin hook: accepted") {
+			t.Fatalf("err %v, output %s", err, out)
+		}
+	})
+}
+
+// privateRepo makes a local repository holding files at its head and a fake
+// ssh that serves it, and returns the head SHA.
+func (f *fixture) privateRepo(files map[string][]byte) string {
+	f.t.Helper()
+	dir := filepath.Dir(f.tmp)
+	work := filepath.Join(dir, "remote")
+	git := func(args ...string) string {
+		c := exec.Command("git", append([]string{"-C", work}, args...)...)
+		c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "HOME="+dir)
+		out, err := c.CombinedOutput()
+		if err != nil {
+			f.t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if err := os.MkdirAll(filepath.Join(work, ".github", "workflows"), 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	git("init", "-q")
+	for n, b := range files {
+		if err := os.WriteFile(filepath.Join(work, ".github", "workflows", n), b, 0o600); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	git("add", "-A")
+	git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "workflows")
+	head := git("rev-parse", "HEAD")
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	log := filepath.Join(dir, "ssh.log")
+	ssh := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + log + "'\nfor a; do last=$a; done\ncase $last in git-upload-pack*) exec git-upload-pack '" + work + "' ;; esac\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(ssh), 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	f.path = bin + ":" + f.path
+	f.key = filepath.Join(dir, "nibfin", "deploy-keys", "github.com", "cur", "repo", "id_ed25519")
+	if err := os.MkdirAll(filepath.Dir(f.key), 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(f.key, []byte("not a real key\n"), 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+	f.private = true
+	f.env["GITHUB_WORKFLOW_SHA"] = head
+	return head
+}
+
+func TestHookPrivateRepository(t *testing.T) {
+	t.Run("reads the files at the SHA with the deploy key", func(t *testing.T) {
+		f := newFixture(t)
+		head := f.privateRepo(official(t, image))
+		out, code := f.run()
+		if code != 0 || !strings.Contains(out, "Nibfin hook: accepted "+owner+"/"+name+"@"+head) {
+			t.Fatalf("exit %d:\n%s", code, out)
+		}
+		for _, h := range f.hits {
+			if strings.HasPrefix(h, "/raw/") {
+				t.Errorf("a private repository was read over HTTPS: %s", h)
+			}
+		}
+		log, _ := os.ReadFile(filepath.Join(filepath.Dir(f.tmp), "ssh.log"))
+		for _, want := range []string{"-F /dev/null", "-i " + f.key, "IdentitiesOnly=yes", "IdentityAgent=none", "BatchMode=yes",
+			"UserKnownHostsFile=" + filepath.Join(f.hook, runnerhook.KnownHosts), "StrictHostKeyChecking=yes", "git@github.com", "git-upload-pack '" + owner + "/" + name + ".git'"} {
+			if !strings.Contains(string(log), want) {
+				t.Errorf("ssh ran without %q: %s", want, log)
+			}
+		}
+		if left, _ := os.ReadDir(f.tmp); len(left) != 0 {
+			t.Errorf("TMPDIR keeps %v", left)
+		}
+	})
+	t.Run("a changed file at the SHA", func(t *testing.T) {
+		f := newFixture(t)
+		files := official(t, image)
+		files["nibfin-shared-runner.yml"] = append(files["nibfin-shared-runner.yml"], '\n')
+		f.privateRepo(files)
+		f.refuses("nibfin-shared-runner.yml differs")
+	})
+	t.Run("a missing deploy key", func(t *testing.T) {
+		f := newFixture(t)
+		f.privateRepo(official(t, image))
+		os.Remove(f.key)
+		f.refuses("the deploy key " + f.key + " is missing. Run gh nibfin runner remove, then gh nibfin runner add.")
+	})
+	t.Run("an unknown SHA", func(t *testing.T) {
+		f := newFixture(t)
+		f.privateRepo(official(t, image))
+		f.env["GITHUB_WORKFLOW_SHA"] = strings.Repeat("ab", 20)
+		f.refuses("cannot read Cur/repo at abab")
+	})
+}
+
+// TestHookAcceptsTheLiveAttestation checks the hook against a real
+// attestation of nibfin-core's main image and the Sigstore Public Good root
+// as gh attestation trusted-root printed them (read on 2026-11-26 without
+// credentials). T comes from the log entry, so the check does not age.
+func TestHookAcceptsTheLiveAttestation(t *testing.T) {
+	const live = "4dc7b7197033acd1bed7c37156a20da980ffb0a322f7ae5bbb62acdeb922dd91"
+	att, err := os.ReadFile(filepath.Join("testdata", "attestations-"+live+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonl, err := os.ReadFile(filepath.Join("testdata", "trusted-root.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := runnerhook.PublicGood(jsonl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t)
+	f.digest, f.attest, f.root = live, att, root
+	f.files = official(t, runnerhook.ImageRepository+"@sha256:"+live)
+	out, code := f.run()
+	if want := "Nibfin hook: accepted " + owner + "/" + name + "@" + sha + ", image sha256:" + live; code != 0 || !strings.Contains(out, want) {
+		t.Fatalf("exit %d:\n%s\nwant %q", code, out, want)
+	}
+
+	// The same bundle for another digest is refused: it names its own.
+	other := newFixture(t)
+	other.root = root
+	other.attest = att
+	other.refuses("the statement does not name")
+
+	// A root without its log refuses as unknown.
+	var r map[string]any
+	if err := json.Unmarshal(root, &r); err != nil {
+		t.Fatal(err)
+	}
+	r["tlogs"] = []any{}
+	f2 := newFixture(t)
+	f2.root, _ = json.Marshal(r)
+	f2.digest, f2.attest = live, att
+	f2.files = f.files
+	f2.refuses("uses a log or CA this hook does not know. Update gh-nibfin and run gh nibfin runner add again.")
+}
+
+func TestPublicGood(t *testing.T) {
+	jsonl, err := os.ReadFile(filepath.Join("testdata", "trusted-root.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := runnerhook.PublicGood(jsonl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(root, []byte(`"https://fulcio.sigstore.dev"`)) || bytes.Contains(root, []byte("fulcio.githubapp.com")) || bytes.Count(root, []byte("\n")) != 1 {
+		t.Errorf("picked the wrong root: %.200s", root)
+	}
+	if _, err := runnerhook.PublicGood([]byte(`{"certificateAuthorities":[{"uri":"https://fulcio.githubapp.com"}],"tlogs":[]}` + "\n")); err == nil {
+		t.Error("a root without Public Good was accepted")
+	}
+	if _, err := runnerhook.PublicGood([]byte("not json\n")); err == nil {
+		t.Error("a line that is not JSON was accepted")
+	}
+}
