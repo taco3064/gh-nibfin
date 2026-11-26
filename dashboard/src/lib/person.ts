@@ -1,8 +1,8 @@
 // Pure logic of the person view: the image state of a repository and the
-// updates of its Issues.
+// updates of its Issues, and the counts of its summary tiles.
 
-import { applyChanges, type Change } from '@/lib/issue'
-import type { ApiError, LatestImage, PersonView, RepoImage, StatusIssue } from '@/lib/status'
+import { applyChanges, runOutcome, stageOf, type Change, type RunOutcome } from '@/lib/issue'
+import type { ApiError, HostReport, LatestImage, PersonView, RepoImage, StatusIssue } from '@/lib/status'
 
 export type ImageTone = 'neutral' | 'success' | 'warning' | 'danger'
 
@@ -64,4 +64,94 @@ export function replaceIssue(view: PersonView, repo: string, issue: StatusIssue)
     return { ...r, issues: r.issues.map((i) => (i.url === issue.url ? issue : i)) }
   })
   return found ? { ...view, repos } : view
+}
+
+// needsYou reports whether an Issue waits on a person: it has pending or
+// pause.
+export function needsYou(issue: StatusIssue): boolean {
+  return issue.pending || issue.pause
+}
+
+function listed(view: PersonView): StatusIssue[] {
+  return (view.repos ?? []).flatMap((r) => r.issues ?? [])
+}
+
+export interface StageCounts {
+  total: number
+  shape: number
+  deliver: number
+  // other is every listed Issue in neither stage, such as one already
+  // labelled delivered, so the parts always add up to total.
+  other: number
+}
+
+// stageCounts counts the listed Issues by their stage, from labels only.
+export function stageCounts(view: PersonView): StageCounts {
+  const out: StageCounts = { total: 0, shape: 0, deliver: 0, other: 0 }
+  for (const i of listed(view)) {
+    out.total++
+    const s = stageOf(i.labels)
+    if (s === 'shape') out.shape++
+    else if (s === 'deliver') out.deliver++
+    else out.other++
+  }
+  return out
+}
+
+// needsYouCount is the number of listed Issues with pending or pause.
+export function needsYouCount(view: PersonView): number {
+  return listed(view).filter(needsYou).length
+}
+
+export interface RunCounts extends Record<RunOutcome, number> {
+  total: number
+  // incomplete is true when the runs of some Issue failed to read, were
+  // truncated or were not read: the counts are then a lower bound.
+  incomplete: boolean
+}
+
+// runCounts counts the conclusions of the listed Issues' runs in the data.
+export function runCounts(view: PersonView): RunCounts {
+  const out: RunCounts = { total: 0, running: 0, succeeded: 0, failed: 0, other: 0, incomplete: false }
+  for (const i of listed(view)) {
+    if (i.runsError || i.runsTruncated || i.runs === undefined || i.runs === null) out.incomplete = true
+    for (const r of i.runs ?? []) {
+      out.total++
+      out[runOutcome(r.conclusion)]++
+    }
+  }
+  return out
+}
+
+export interface RunnerCounts {
+  online: number
+  busy: number
+  // usedKB and totalKB are the host's memory in use and in total; null when
+  // the memory was not read.
+  usedKB: number | null
+  totalKB: number | null
+}
+
+// runnerCounts counts this host's Runner slots the way the runner view
+// labels them: online when GitHub says online, busy when also busy.
+export function runnerCounts(host: HostReport): RunnerCounts {
+  const slots = host.runners.runners ?? []
+  const online = slots.filter((s) => s.status === 'online')
+  const m = host.memory
+  const read = !m.error && m.totalKB > 0
+  return {
+    online: online.length,
+    busy: online.filter((s) => s.busy).length,
+    usedKB: read ? Math.max(0, m.totalKB - m.availableKB) : null,
+    totalKB: read ? m.totalKB : null,
+  }
+}
+
+// filterNeedsYou keeps only the Issues with pending or pause, and drops the
+// repositories left without one.
+export function filterNeedsYou(view: PersonView): PersonView {
+  const repos = (view.repos ?? [])
+    .map((r) => ({ ...r, issues: (r.issues ?? []).filter(needsYou) }))
+    .filter((r) => r.issues.length > 0)
+  return { ...view, repos }
 }

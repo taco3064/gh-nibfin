@@ -79,6 +79,20 @@ export function bulkAccess(selected: readonly { repo: string; access: RepoPermis
   return { enabled: false, reason: [...reasons.values()].join(' ') }
 }
 
+// RunOutcome groups a run's conclusion: running while it has not finished
+// (null), succeeded, failed (failure, timed_out, startup_failure) or other.
+// The runs dialog and the person view's summary share it.
+export type RunOutcome = 'running' | 'succeeded' | 'failed' | 'other'
+
+const failedConclusions = new Set(['failure', 'timed_out', 'startup_failure'])
+
+export function runOutcome(conclusion: string | null): RunOutcome {
+  if (conclusion === null) return 'running'
+  if (conclusion === 'success') return 'succeeded'
+  if (failedConclusions.has(conclusion)) return 'failed'
+  return 'other'
+}
+
 export type RunsNote = { kind: 'failed'; error: ApiError } | { kind: 'truncated' } | { kind: 'notRead' }
 
 export interface RunsView {

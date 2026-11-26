@@ -9,6 +9,7 @@ import {
   pendingView,
   recentRuns,
   runBucket,
+  runOutcome,
   runsView,
   stageOf,
   stageSteps,
@@ -328,5 +329,14 @@ describe('recentRuns', () => {
   })
   it('is empty without runs', () => {
     expect(recentRuns(issue({ runs: null }))).toEqual([])
+  })
+})
+
+describe('runOutcome', () => {
+  it('groups conclusions like the runs dialog', () => {
+    expect(runOutcome(null)).toBe('running')
+    expect(runOutcome('success')).toBe('succeeded')
+    expect(['failure', 'timed_out', 'startup_failure'].map(runOutcome)).toEqual(['failed', 'failed', 'failed'])
+    expect(['cancelled', 'skipped', 'action_required'].map(runOutcome)).toEqual(['other', 'other', 'other'])
   })
 })
