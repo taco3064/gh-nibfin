@@ -20,6 +20,7 @@ import { SectionLoading } from '@/components/shell/section-loading'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Toggle } from '@/components/ui/toggle'
+import { runBucketLabels } from '@/lib/issue'
 import { useLoading } from '@/lib/loading-context'
 import { needsYouCount, runCounts, runnerCounts, stageCounts } from '@/lib/person'
 import { gib } from '@/lib/runner'
@@ -179,7 +180,7 @@ function RunsTile({ data }: { data: PersonView }) {
                 { key: 'succeeded', label: 'Succeeded', count: c.succeeded, className: 'bg-success', icon: CircleCheck },
                 { key: 'failed', label: 'Failed', count: c.failed, className: 'bg-danger', icon: CircleX },
                 { key: 'running', label: 'Running', count: c.running, className: 'bg-info', icon: LoaderCircle },
-                ...(c.other > 0 ? [{ key: 'other', label: 'Other', count: c.other, className: 'bg-muted-foreground', icon: CircleHelp }] : []),
+                ...(c.skipped > 0 ? [{ key: 'skipped', label: runBucketLabels.skipped, count: c.skipped, className: 'bg-muted-foreground', icon: CircleHelp }] : []),
               ]}
             />
           )}

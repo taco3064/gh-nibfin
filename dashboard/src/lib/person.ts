@@ -1,7 +1,7 @@
 // Pure logic of the person view: the image state of a repository and the
 // updates of its Issues, and the counts of its summary tiles.
 
-import { applyChanges, runOutcome, stageOf, type Change, type RunOutcome } from '@/lib/issue'
+import { applyChanges, runBucket, stageOf, type Change, type RunBucket } from '@/lib/issue'
 import type { ApiError, HostReport, LatestImage, PersonView, RepoImage, StatusIssue } from '@/lib/status'
 
 export type ImageTone = 'neutral' | 'success' | 'warning' | 'danger'
@@ -103,7 +103,7 @@ export function needsYouCount(view: PersonView): number {
   return listed(view).filter(needsYou).length
 }
 
-export interface RunCounts extends Record<RunOutcome, number> {
+export interface RunCounts extends Record<RunBucket, number> {
   total: number
   // incomplete is true when the runs of some Issue failed to read, were
   // truncated or were not read: the counts are then a lower bound.
@@ -112,12 +112,12 @@ export interface RunCounts extends Record<RunOutcome, number> {
 
 // runCounts counts the conclusions of the listed Issues' runs in the data.
 export function runCounts(view: PersonView): RunCounts {
-  const out: RunCounts = { total: 0, running: 0, succeeded: 0, failed: 0, other: 0, incomplete: false }
+  const out: RunCounts = { total: 0, running: 0, succeeded: 0, failed: 0, skipped: 0, incomplete: false }
   for (const i of listed(view)) {
     if (i.runsError || i.runsTruncated || i.runs === undefined || i.runs === null) out.incomplete = true
     for (const r of i.runs ?? []) {
       out.total++
-      out[runOutcome(r.conclusion)]++
+      out[runBucket(r)]++
     }
   }
   return out
