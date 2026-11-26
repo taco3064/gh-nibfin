@@ -1,6 +1,7 @@
 {
   "tools": { "go": "1.27.1" },
   "skills": {
+    "shape": { "mode": "extend", "path": ".nibfin/proposal-rules-shape.md" },
     "deliver": { "mode": "extend", "path": ".nibfin/dashboard-ui-delivery.md" },
     "accept": { "mode": "extend", "path": ".nibfin/dashboard-ui-accept.md" }
   }
