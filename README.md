@@ -173,6 +173,13 @@ It then sets, only where they differ:
   manages this policy and GitHub refuses the change, init stops before the
   variables, the Secret and the PR; require approval there and run init again;
 - "Automatically delete head branches" off;
+- only rebase merge allowed (squash merge and merge commits off);
+- "Require branches to be up to date before merging" off in every repository
+  ruleset and in the branch protection that apply to the default branch, with
+  every other rule, required check, condition and bypass actor kept as it is.
+  Init creates no ruleset or branch protection; when none applies, nothing is
+  written. A ruleset inherited from the organization or enterprise that
+  requires it is not changed: init lists it as a note with its settings link;
 - the variable `NIBFIN_EXECUTION_REPO` (the Runners' repository). Init
   neither writes nor reads `NIBFIN_PROVIDER`; each Runner names its provider
   (see [Workflow templates](#workflow-templates)), and an existing variable is
