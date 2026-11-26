@@ -682,6 +682,19 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   read-back fails, the response is the error body with `plan` and, when the
   read-back returned one, `result`, status `422`. Any other plan returns
   `{"id", "plan"}`.
+- `POST /api/commands/<command>/plan/stream` plans as the plan route does
+  and answers NDJSON while it plans: `{"event":"checking","check":"..."}`
+  when the plan starts a check (such as `latest image`, `pull request` or
+  `read back` before a read-only plan is read back) and
+  `{"event":"checked","steps":[...]}` for items whose values are final, each
+  item once and with the same values as in the final plan. Then one final
+  line with the plan route's body: `{"event":"planned","id","plan"}`,
+  `{"event":"result","plan","result"}` for a read-only plan, or
+  `{"event":"error","error":{"code","message"},"plan","result"}` (`plan` and
+  `result` as in the plan route's error). An unknown command, a bad body or
+  a bad repository fails before the stream with the plan route's status and
+  error. Closing the request cancels the plan, and then no plan is stored.
+  The CLI and `--json` do not report planning progress.
 - `POST /api/commands/status/read` with `{"repo"}` (empty: the person view)
   reads `status` as the plan route does and answers NDJSON while it reads:
   `{"event":"partial","result":{...},"loading":[...]}` each time a section is

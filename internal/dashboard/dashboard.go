@@ -126,6 +126,7 @@ func newServer(o Options, port int) *server {
 	s.mux.HandleFunc("GET /api/commands", s.commands)
 	s.mux.HandleFunc("POST /api/commands/status/read", s.statusRead)
 	s.mux.HandleFunc("POST /api/commands/{command}/plan", s.plan)
+	s.mux.HandleFunc("POST /api/commands/{command}/plan/stream", s.planStream)
 	s.mux.HandleFunc("POST /api/plans/{id}/apply", s.apply)
 	s.mux.HandleFunc("POST /api/plans/{id}/code", s.code)
 	s.mux.HandleFunc("DELETE /api/plans/{id}", s.drop)
