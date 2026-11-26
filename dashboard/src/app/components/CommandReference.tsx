@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import type { Command } from '@/lib/operation'
@@ -12,7 +12,7 @@ const head = `${cell} font-heading text-xs font-semibold uppercase tracking-wide
 function Table({ label, columns, children }: { label: string; columns: string[]; children: ReactNode }) {
   return (
     <div className="not-content my-3 overflow-x-auto rounded-lg border border-border-subtle" role="region" aria-label={label} tabIndex={0}>
-      <table className="m-0 w-full min-w-[32rem] border-collapse text-sm">
+      <table className="m-0 w-full border-collapse text-sm">
         <thead>
           <tr>
             {columns.map((c) => (
@@ -41,24 +41,23 @@ function Allowed({ values }: { values: string[] }) {
   )
 }
 
+// Facts are a name's type, default and whether it is required, in text.
+function Facts({ items }: { items: string[] }) {
+  return <span className="mt-1 block text-xs text-muted-foreground">{items.join(' · ')}</span>
+}
+
 function FlagTable({ path, flags }: { path: string; flags: FlagRow[] }) {
   return (
-    <Table label={`Flags of ${rootCommand} ${path}`} columns={['Flag', 'Type', 'Default', 'Description']}>
+    <Table label={`Flags of ${rootCommand} ${path}`} columns={['Flag', 'Description']}>
       {flags.map((f) => (
         <tr key={f.name}>
-          <td className={cell}>
+          <td className={`${cell} w-2/5`}>
             <code className="whitespace-nowrap">
               {f.name}
               {f.value ? ` ${f.value}` : ''}
             </code>
-            {f.required ? (
-              <Badge variant="outline" className="ml-2">
-                required
-              </Badge>
-            ) : null}
+            <Facts items={[f.type, ...(f.defaultValue ? [`default ${f.defaultValue}`] : []), ...(f.required ? ['required'] : [])]} />
           </td>
-          <td className={cell}>{f.type}</td>
-          <td className={cell}>{f.defaultValue ? <code>{f.defaultValue}</code> : <span className="text-muted-foreground">none</span>}</td>
           <td className={cell}>
             {f.usage}
             <Allowed values={f.allowed} />
@@ -71,15 +70,14 @@ function FlagTable({ path, flags }: { path: string; flags: FlagRow[] }) {
 
 function ArgTable({ path, args }: { path: string; args: ArgRow[] }) {
   return (
-    <Table label={`Arguments of ${rootCommand} ${path}`} columns={['Argument', 'Required', 'Repeatable', 'Allowed values']}>
+    <Table label={`Arguments of ${rootCommand} ${path}`} columns={['Argument', 'Values']}>
       {args.map((a) => (
         <tr key={a.name}>
-          <td className={cell}>
+          <td className={`${cell} w-2/5`}>
             <code>{a.name}</code>
+            <Facts items={[a.required ? 'required' : 'optional', ...(a.repeatable ? ['one or more'] : [])]} />
           </td>
-          <td className={cell}>{a.required ? 'Yes' : 'No'}</td>
-          <td className={cell}>{a.repeatable ? 'Yes, one or more' : 'No'}</td>
-          <td className={cell}>{a.allowed.length ? <Allowed values={a.allowed} /> : <span className="text-muted-foreground">any</span>}</td>
+          <td className={cell}>{a.allowed.length ? <Allowed values={a.allowed} /> : 'Any value'}</td>
         </tr>
       ))}
     </Table>
@@ -88,11 +86,11 @@ function ArgTable({ path, args }: { path: string; args: ArgRow[] }) {
 
 function Entry({ entry }: { entry: CommandEntry }) {
   return (
-    <section aria-labelledby={entry.slug} data-command={entry.path}>
+    <section aria-labelledby={entry.slug} data-command={entry.path} className="pt-6">
       <h2 id={entry.slug}>
         {rootCommand} {entry.path}
       </h2>
-      <p>{entry.short}.</p>
+      {entry.lead ? <p>{entry.lead}</p> : null}
       {entry.subcommands.length > 0 ? (
         <ul>
           {entry.subcommands.map((s) => (
@@ -108,12 +106,26 @@ function Entry({ entry }: { entry: CommandEntry }) {
         </ul>
       ) : (
         <>
-          <pre className="overflow-x-auto" data-slot="usage">
-            <code>{entry.usage}</code>
+          <pre className="whitespace-normal" data-slot="usage">
+            <code>
+              {entry.usage.map((part, i) => (
+                <Fragment key={i}>
+                  {i > 0 ? ' ' : null}
+                  <span className="whitespace-pre">{part}</span>
+                </Fragment>
+              ))}
+            </code>
           </pre>
-          {entry.paragraphs.map((p, i) => (
-            <p key={i}>{p}</p>
-          ))}
+          {entry.more.length > 0 ? (
+            <details data-slot="details">
+              <summary>
+                More about <code>{rootCommand} {entry.path}</code>
+              </summary>
+              {entry.more.map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
+            </details>
+          ) : null}
           <h3 id={`${entry.slug}-arguments`}>Arguments</h3>
           {entry.args.length ? <ArgTable path={entry.path} args={entry.args} /> : <p>No arguments.</p>}
           <h3 id={`${entry.slug}-flags`}>Flags</h3>

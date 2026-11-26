@@ -891,6 +891,19 @@ Dashboard's repository view with its operations removed. `npm run build` and
 `tsc` checks the site with. `.github/workflows/website.yml` builds and deploys
 it to GitHub Pages.
 
+The site's CLI commands page renders `dashboard/src/app/data/commands.json`,
+the command schema of the cobra tree that `/api/commands` also serves. After
+changing a command, its flags or its arguments, regenerate it with
+`go test ./internal/cmd -run TestCommandReferenceFile -update`; the Go tests
+fail while it is stale.
+
+The Setup and management page shows images of the Dashboard's person, repo
+and Runner views from `dashboard/src/app/assets/dashboard/`. They are captured
+with fictional fixture data, at 1280 × 800 px in the dark theme, by
+`npm run docs-screenshots`, which builds like `npm run screenshots` and runs
+only the Playwright project `docs`. Rerun it and commit the images when those
+views change.
+
 `npm run screenshots` builds the page and a separate harness of the shared
 Issue element (`screenshots.html`) into the ignored `dashboard/.screenshots-dist/`,
 starts `go run -tags dashboardscreenshots . dashboard` on port 4790, which serves

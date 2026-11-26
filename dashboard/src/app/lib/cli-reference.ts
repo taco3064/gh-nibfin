@@ -7,9 +7,9 @@
 import type { Arg, Command, Flag } from '@/lib/operation'
 
 export interface FlagRow {
-  /** The flag as typed, such as "-R, --repo". */
+  /** The flag as typed, such as '-R, --repo'. */
   name: string
-  /** The value placeholder, such as "N" or "OWNER/REPO"; empty for a bool. */
+  /** The value placeholder, such as 'N' or 'OWNER/REPO'; empty for a bool. */
   value: string
   type: string
   /** The default, or empty when it is the type's zero value. */
@@ -30,9 +30,11 @@ export interface CommandEntry {
   path: string
   slug: string
   short: string
-  /** The long description split into paragraphs on blank lines. */
-  paragraphs: string[]
-  usage: string
+  /** The opening text: the long description's first paragraph when it starts with short, else short. */
+  lead: string
+  /** The rest of the long description, split into paragraphs on blank lines. */
+  more: string[]
+  usage: string[]
   flags: FlagRow[]
   args: ArgRow[]
   /** The commands below this one, for a command that groups others. */
@@ -50,7 +52,7 @@ export function slugOf(path: string): string {
 
 // placeholder is the value a flag takes in a usage line: its allowed values,
 // N for a number, or the upper-case word its usage names, such as
-// "[HOST/]OWNER/REPO".
+// '[HOST/]OWNER/REPO'.
 function placeholder(f: Flag): string {
   if (f.type === 'bool') return ''
   if (f.allowed?.length) return f.allowed.join('|')
@@ -71,12 +73,14 @@ function flagText(f: Flag): string {
   return f.required ? text : `[${text}]`
 }
 
-/** usageOf is a command's usage line: positionals first, then its flags. */
+/** usagePartsOf is a command's usage line in parts that never wrap inside: the command, its positionals, then its flags. */
+export function usagePartsOf(c: Command): string[] {
+  return [`${rootCommand} ${c.path}`, ...(c.args ?? []).map(argText), ...(c.flags ?? []).map(flagText)]
+}
+
+/** usageOf is a command's usage line. */
 export function usageOf(c: Command): string {
-  const parts = [rootCommand, c.path]
-  for (const a of c.args ?? []) parts.push(argText(a))
-  for (const f of c.flags ?? []) parts.push(flagText(f))
-  return parts.join(' ')
+  return usagePartsOf(c).join(' ')
 }
 
 export function flagRow(f: Flag): FlagRow {
@@ -99,14 +103,23 @@ function paragraphsOf(text: string): string[] {
     .filter((p) => p !== '')
 }
 
+// describe splits the long description into the lead and the rest; a first
+// paragraph that starts with the short text replaces it.
+function describe(short: string, long: string): { lead: string; more: string[] } {
+  const paragraphs = paragraphsOf(long)
+  const stem = short.replace(/\.$/, '')
+  if (paragraphs.length > 0 && paragraphs[0].startsWith(stem)) return { lead: paragraphs[0], more: paragraphs.slice(1) }
+  return { lead: stem === '' ? '' : `${stem}.`, more: paragraphs }
+}
+
 /** referenceOf turns the committed reference into the page's entries, in the CLI's order. */
 export function referenceOf(commands: readonly Command[]): CommandEntry[] {
   return commands.map((c) => ({
     path: c.path,
     slug: slugOf(c.path),
     short: c.short,
-    paragraphs: paragraphsOf(c.long),
-    usage: usageOf(c),
+    ...describe(c.short, c.long),
+    usage: usagePartsOf(c),
     flags: (c.flags ?? []).map(flagRow),
     args: (c.args ?? []).map((a) => ({ name: a.name, required: a.required, repeatable: a.repeatable, allowed: a.allowed ?? [] })),
     subcommands: commands
