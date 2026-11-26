@@ -236,7 +236,9 @@ Windows and macOS.
   (the user id of the current gh login), which the stage Job of an Issue
   assigned to that user runs on, besides GitHub's default labels
   (`self-hosted` among them). Only an admin's Runners also get `nibfin`, which
-  routing runs on, so routing never runs on a collaborator's host.
+  routing runs on while the execution repository is private, so routing never
+  runs on a collaborator's host. When the execution repository is public,
+  routing runs on a GitHub-hosted runner instead.
 - Each Runner's `.env` holds `NIBFIN_PROVIDER=<provider>` before its service
   first starts; the stage Job reads the provider from it. The `.env` may also
   set `NIBFIN_MODEL=<model>` for that Runner only (see
