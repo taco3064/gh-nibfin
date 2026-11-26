@@ -353,6 +353,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 				SessionOpened: func() { fmt.Fprintln(out, "session opened") },
 				Commands:      commandSchema(c.Root()),
 				Watch:         watchPerson,
+				Activity:      readActivity(),
 			})
 		},
 	}
@@ -451,4 +452,11 @@ func (s syncWriter) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.w.Write(p)
+}
+
+// readActivity returns the Runner activity read of one dashboard command:
+// one reader, whose in-memory cache lives as long as the server.
+func readActivity() func(context.Context) (any, error) {
+	a := status.NewActivityReader()
+	return func(ctx context.Context) (any, error) { return a.Read(ctx) }
 }

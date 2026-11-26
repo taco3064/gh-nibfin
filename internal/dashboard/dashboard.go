@@ -48,6 +48,9 @@ type Options struct {
 	// Watch sends the person view and its changes until ctx ends; GET
 	// /api/live streams what it sends. Nil leaves the route unavailable.
 	Watch func(ctx context.Context, send func(any)) error
+	// Activity reads the Runner view's activity; GET /api/runner-activity
+	// serves it. Nil leaves the route unavailable.
+	Activity func(ctx context.Context) (any, error)
 }
 
 // Header names of the session proof and the session.
@@ -127,6 +130,7 @@ func newServer(o Options, port int) *server {
 	s.mux.HandleFunc("POST /api/plans/{id}/code", s.code)
 	s.mux.HandleFunc("DELETE /api/plans/{id}", s.drop)
 	s.mux.HandleFunc("GET /api/live", s.live)
+	s.mux.HandleFunc("GET /api/runner-activity", s.activity)
 	s.mux.HandleFunc("GET /", s.asset)
 	s.mux.HandleFunc("/", notFound)
 	return s

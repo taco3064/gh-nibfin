@@ -191,3 +191,48 @@ func TestLiveWithoutWatch(t *testing.T) {
 		t.Errorf("live: %d %s", status, body)
 	}
 }
+
+func TestRunnerActivity(t *testing.T) {
+	calls := 0
+	var fail error
+	h := startFull(t, nil, nil, func(o *Options) {
+		o.Activity = func(context.Context) (any, error) {
+			calls++
+			if fail != nil {
+				return nil, fail
+			}
+			return map[string]any{"from": "a", "to": "b", "runners": []any{}}, nil
+		}
+	})
+	if status, body, _ := h.do("GET", "/api/runner-activity", "", nil); status != http.StatusUnauthorized || errCode(t, body) != op.CodeSessionRequired {
+		t.Errorf("no session: %d %s", status, body)
+	}
+	h.open()
+	if status, body, _ := h.do("GET", "/api/runner-activity", "", map[string]string{"Origin": "http://evil.example"}); status != http.StatusForbidden {
+		t.Errorf("foreign origin: %d %s", status, body)
+	}
+	if calls != 0 {
+		t.Errorf("read for a refused request")
+	}
+	status, body, hdr := h.do("GET", "/api/runner-activity", "", nil)
+	var got map[string]any
+	if status != http.StatusOK || json.Unmarshal([]byte(body), &got) != nil || got["from"] != "a" {
+		t.Errorf("activity: %d %s", status, body)
+	}
+	checkCommonHeaders(t, "activity", hdr)
+	if status, _, _ := h.do("POST", "/api/runner-activity", "", nil); status == http.StatusOK {
+		t.Errorf("POST answered 200")
+	}
+	fail = op.Errorf(op.CodePodmanFailed, "boom")
+	if status, body, _ := h.do("GET", "/api/runner-activity", "", nil); status != http.StatusBadGateway || errCode(t, body) != op.CodePodmanFailed {
+		t.Errorf("failed read: %d %s", status, body)
+	}
+}
+
+func TestRunnerActivityUnavailable(t *testing.T) {
+	h := start(t)
+	h.open()
+	if status, body, _ := h.do("GET", "/api/runner-activity", "", nil); status != http.StatusNotFound || errCode(t, body) != op.CodeNotFound {
+		t.Errorf("nil Activity: %d %s", status, body)
+	}
+}

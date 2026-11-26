@@ -91,7 +91,7 @@ func startWith(t *testing.T, commands []Command) *harness {
 }
 
 // startFull starts the server with commands and watch.
-func startFull(t *testing.T, commands []Command, watch func(context.Context, func(any)) error) *harness {
+func startFull(t *testing.T, commands []Command, watch func(context.Context, func(any)) error, more ...func(*Options)) *harness {
 	t.Helper()
 	h := &harness{t: t, done: make(chan error, 1)}
 	h.next = func() *fakeOp { return &fakeOp{plan: op.Plan{Operation: "x"}} }
@@ -128,28 +128,30 @@ func startFull(t *testing.T, commands []Command, watch func(context.Context, fun
 	ready := make(chan string, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
-	go func() {
-		h.done <- Serve(ctx, Options{
-			Ops:      ops,
-			Commands: commands,
-			Watch:    watch,
-			ResolveRepo: func(v string) (string, error) {
-				if v == "bad" {
-					return "", op.Errorf(op.CodeInvalidRepo, "invalid repository %q", v)
-				}
-				if v == "" {
-					v = "cur/repo"
-				}
-				return "github.com/" + v, nil
-			},
-			Ready: func(u string) { ready <- u },
-			SessionOpened: func() {
-				h.mu.Lock()
-				h.opened++
-				h.mu.Unlock()
-			},
-		})
-	}()
+	o := Options{
+		Ops:      ops,
+		Commands: commands,
+		Watch:    watch,
+		ResolveRepo: func(v string) (string, error) {
+			if v == "bad" {
+				return "", op.Errorf(op.CodeInvalidRepo, "invalid repository %q", v)
+			}
+			if v == "" {
+				v = "cur/repo"
+			}
+			return "github.com/" + v, nil
+		},
+		Ready: func(u string) { ready <- u },
+		SessionOpened: func() {
+			h.mu.Lock()
+			h.opened++
+			h.mu.Unlock()
+		},
+	}
+	for _, m := range more {
+		m(&o)
+	}
+	go func() { h.done <- Serve(ctx, o) }()
 	u := <-ready
 	t.Cleanup(func() {
 		cancel()

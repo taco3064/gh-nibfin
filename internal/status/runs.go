@@ -156,27 +156,54 @@ func (r *reader) issueRuns(ctx context.Context, groups []*repoGroup) {
 // "Nibfin · OWNER/REPO#N · …", or "" for any other title (the @ref route and
 // wake runs among them).
 func IssueOfTitle(title string) string {
-	t := strings.ToLower(title)
-	rest, ok := strings.CutPrefix(t, strings.ToLower(runPrefix))
+	repo, n, _, ok := parseTitle(title)
 	if !ok {
 		return ""
 	}
-	head, _, ok := strings.Cut(rest, " · ")
+	return strings.ToLower(repo + "#" + strconv.Itoa(n))
+}
+
+// stages are the stage values of the shared-runner template's run titles.
+var stages = map[string]bool{"route": true, "shape": true, "deliver": true, "review": true}
+
+// TitleJob returns the Issue's OWNER/REPO and number, as the title writes
+// them, and the stage of a run title "Nibfin · OWNER/REPO#N · <stage>".
+// stage is empty when the last segment is not one of the template's stages;
+// ok is false for every title IssueOfTitle rejects.
+func TitleJob(title string) (repo string, number int, stage string, ok bool) {
+	repo, number, rest, ok := parseTitle(title)
 	if !ok {
-		return ""
+		return "", 0, "", false
+	}
+	if s := strings.ToLower(rest); stages[s] {
+		stage = s
+	}
+	return repo, number, stage, true
+}
+
+// parseTitle splits "Nibfin · OWNER/REPO#N · rest". The prefix is compared
+// without case; repo and rest keep the title's case.
+func parseTitle(title string) (repo string, number int, rest string, ok bool) {
+	if len(title) < len(runPrefix) || !strings.EqualFold(title[:len(runPrefix)], runPrefix) {
+		return "", 0, "", false
+	}
+	head, rest, ok := strings.Cut(title[len(runPrefix):], " · ")
+	if !ok {
+		return "", 0, "", false
 	}
 	repo, num, ok := strings.Cut(head, "#")
 	if !ok || num == "" || strings.ContainsAny(repo, "@# ") {
-		return ""
+		return "", 0, "", false
 	}
-	if n, err := strconv.Atoi(num); err != nil || n <= 0 || strconv.Itoa(n) != num {
-		return ""
+	n, err := strconv.Atoi(num)
+	if err != nil || n <= 0 || strconv.Itoa(n) != num {
+		return "", 0, "", false
 	}
 	owner, name, ok := strings.Cut(repo, "/")
 	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
-		return ""
+		return "", 0, "", false
 	}
-	return repo + "#" + num
+	return repo, n, rest, true
 }
 
 type runJSON struct {
