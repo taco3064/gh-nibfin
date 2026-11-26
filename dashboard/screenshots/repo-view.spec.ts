@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { edgeCount, outsideCount, platform, repoStatus } from './repo-fixtures'
-import { expectClean, expectNonce, prepare, shot, storageKey, widths, type Watch } from './support'
+import { expectClean, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type Watch } from './support'
 
 // Screenshots and checks of the repository view (#353): the picker, the
 // summary, the dependency graph with its search and filters, and init and
@@ -39,21 +39,18 @@ async function mockOps(page: Page): Promise<Ops> {
     ops.commandLoads++
     return route.fulfill({ json: { commands } })
   })
-  await page.route('**/api/commands/*/plan', async (route) => {
+  await page.route('**/api/commands/*/plan/stream', async (route) => {
     const api = new URL(route.request().url()).pathname.split('/')[3]
-    if (api === 'status') return route.fallback()
     const body = route.request().postDataJSON() as Record<string, unknown>
     ops.plans.push({ api, body })
-    await route.fulfill({
-      json: {
-        id: `PLAN${ops.plans.length}`,
-        plan: {
-          operation: api,
-          repo: body.repo,
-          steps: [{ id: 'workflows', action: 'write workflows', target: `${String(body.repo)} .github/workflows`, current: 'absent', next: 'present', noChange: false, afterStart: false }],
-          confirm: false,
-          readOnly: false,
-        },
+    await fulfillPlanStream(route, {
+      id: `PLAN${ops.plans.length}`,
+      plan: {
+        operation: api,
+        repo: body.repo,
+        steps: [{ id: 'workflows', action: 'write workflows', target: `${String(body.repo)} .github/workflows`, current: 'absent', next: 'present', noChange: false, afterStart: false }],
+        confirm: false,
+        readOnly: false,
       },
     })
   })

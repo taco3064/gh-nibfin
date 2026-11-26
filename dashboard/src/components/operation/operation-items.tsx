@@ -124,15 +124,46 @@ function ItemRow({ row, phase }: { row: Row; phase: Phase }) {
   )
 }
 
-// OperationItems lists the dialog's items with what the phase knows of them.
-export function OperationItems({ rows, phase, label }: { rows: readonly Row[]; phase: Phase; label: string }) {
-  if (rows.length === 0) return <p className="text-sm text-muted-foreground">The plan lists no items.</p>
+// CheckingRow is the check a plan runs now, after the items it checked.
+function CheckingRow({ check }: { check: string }) {
   return (
-    <ul aria-label={label} className="divide-y divide-border-subtle">
-      {rows.map((r) => (
-        <ItemRow key={r.id} row={r} phase={phase} />
-      ))}
-    </ul>
+    <li data-slot="checking" className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0">
+      <div className="flex flex-col gap-x-3 gap-y-1.5 sm:flex-row sm:items-start sm:justify-between">
+        <p className="min-w-0 flex-1 break-words">
+          <span className="font-medium">{check}</span>
+        </p>
+        <div className="flex flex-wrap gap-1.5 sm:justify-end">
+          <Tag tone="info" icon={LoaderCircle} slot="checking" spin>
+            Checking
+          </Tag>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+// OperationItems lists the dialog's items with what the phase knows of them.
+// While planning, checking names the check running now; it ends the list.
+export function OperationItems({ rows, phase, label, checking }: { rows: readonly Row[]; phase: Phase; label: string; checking?: string }) {
+  if (phase === 'planning') {
+    if (rows.length === 0 && !checking) return null
+  } else if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground">The plan lists no items.</p>
+  }
+  return (
+    <>
+      <ul aria-label={label} className="divide-y divide-border-subtle">
+        {rows.map((r) => (
+          <ItemRow key={r.id} row={r} phase={phase} />
+        ))}
+        {phase === 'planning' && checking && <CheckingRow check={checking} />}
+      </ul>
+      {phase === 'planning' && (
+        <p aria-live="polite" className="sr-only">
+          {checking ? `Checking ${checking}` : ''}
+        </p>
+      )}
+    </>
   )
 }
 

@@ -12,7 +12,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  afterPlan,
   changingCount,
+  elapsedSeconds,
   fieldsOf,
   initialRun,
   initialValues,
@@ -24,13 +26,14 @@ import {
   type FieldValue,
   type OpResult,
   type Phase,
-  type Plan,
+  type PlanBody,
   type ProgressEvent,
+  type Step,
   type Summary,
   type Values,
 } from '@/lib/operation'
 import { endsAt, loginReducer, running, timeoutReason, waiting, type LoginStep } from '@/lib/login'
-import { applyStream, deletePlan, planRequest, type ApiError } from '@/lib/session'
+import { applyStream, deletePlan, planStream, type ApiError } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 import { LoginPanel } from './login-panel'
@@ -149,8 +152,8 @@ function OperationContent({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [state, dispatch] = useReducer(runReducer, initialRun)
   const [logins, loginDispatch] = useReducer(loginReducer, [])
-  // controller aborts the running apply's request, which cancels the apply
-  // on the server; it is set only while an apply streams.
+  // controller aborts the running plan's or apply's request, which cancels
+  // it on the server; it is set only while a plan or an apply streams.
   const controller = useRef<AbortController | null>(null)
   // stored is the id of a plan the server holds that was not applied;
   // closing the dialog drops it.
@@ -167,8 +170,8 @@ function OperationContent({
 
   useEffect(() => {
     return () => {
-      // Closing while an apply streams can only happen during a login
-      // wait: it ends the request.
+      // Closing while a plan streams, or while an apply streams during a
+      // login wait, ends the request.
       controller.current?.abort()
       controller.current = null
       if (stored.current) void deletePlan(stored.current, fetchRef.current)
@@ -186,6 +189,15 @@ function OperationContent({
   const phase = state.phase
   const busy = phase === 'planning' || phase === 'applying'
 
+  // now ticks once a second while planning, for the time so far; it is
+  // only on screen.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (phase !== 'planning') return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [phase])
+
   const preview = async () => {
     const r = requestBody(fields, values)
     if (!r.ok) {
@@ -193,26 +205,28 @@ function OperationContent({
       return
     }
     setErrors({})
-    dispatch({ type: 'plan' })
-    const p = await planRequest<{ id?: string; plan: Plan; result?: OpResult }>(
-      `/api/commands/${encodeURIComponent(command.api ?? '')}/plan`,
+    const at = Date.now()
+    setNow(at)
+    dispatch({ type: 'plan', at })
+    const ac = new AbortController()
+    controller.current = ac
+    const p = await planStream<PlanBody>(
+      command.api ?? '',
       r.body,
+      (line) => {
+        if (ac.signal.aborted) return
+        if (line.event === 'checking' && typeof line.check === 'string') dispatch({ type: 'checking', check: line.check })
+        else if (line.event === 'checked' && Array.isArray(line.steps)) dispatch({ type: 'checked', steps: line.steps as Step[] })
+      },
       fetcher,
+      ac.signal,
     )
-    if (p.ok) {
-      if (p.value.id) {
-        stored.current = p.value.id
-        dispatch({ type: 'planned', id: p.value.id, plan: p.value.plan })
-      } else {
-        dispatch({ type: 'readBack', plan: p.value.plan, result: p.value.result ?? {} })
-      }
-      return
-    }
-    if (p.plan && p.result) {
-      dispatch({ type: 'readBack', plan: p.plan as Plan, result: p.result as OpResult, error: p.error })
-      return
-    }
-    dispatch({ type: 'planFailed', error: p.error })
+    if (controller.current === ac) controller.current = null
+    // Cancel, Escape, close and unmount abort the plan: nothing is stored.
+    const next = afterPlan(p, ac.signal.aborted)
+    if (next.drop) void deletePlan(next.drop, fetchRef.current)
+    if (next.store) stored.current = next.store
+    if (next.action) dispatch(next.action)
   }
 
   const apply = async () => {
@@ -271,6 +285,9 @@ function OperationContent({
   }, [logins, phaseNow])
 
   const cancel = () => {
+    // Cancel while planning stops the planning on the server.
+    controller.current?.abort()
+    controller.current = null
     if (stored.current) void deletePlan(stored.current, fetcher)
     stored.current = null
     onClose()
@@ -355,6 +372,19 @@ function OperationContent({
             )}
             <OperationFields fields={fields} values={values} errors={errors} disabled={phase === 'planning'} onChange={onChange} />
           </form>
+        )}
+
+        {phase === 'planning' && (
+          <section aria-label="Planning" data-slot="planning" className="flex flex-col gap-3">
+            <Message tone="info" icon={LoaderCircle} slot="planning-status">
+              <span className="font-medium">Planning the preview:</span>{' '}
+              <span data-slot="elapsed" className="tabular-nums">
+                {elapsedSeconds(state.planStarted, now)} s
+              </span>{' '}
+              so far. Nothing is applied while it is planned.
+            </Message>
+            <OperationItems rows={state.rows} phase={phase} label="Items checked so far" checking={state.checking} />
+          </section>
         )}
 
         {phase === 'preview' && plan && (

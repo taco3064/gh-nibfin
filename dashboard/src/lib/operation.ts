@@ -3,7 +3,7 @@
 // make, and the dialog state from plan through progress to read-back. It
 // names no command and no argument: the CLI definition is their only source.
 
-import type { ApiError, StreamOutcome } from '@/lib/session'
+import type { ApiError, PlanOutcome, StreamOutcome } from '@/lib/session'
 
 // Command, Flag and Arg mirror one entry of GET /api/commands.
 export interface Flag {
@@ -248,6 +248,10 @@ export type Ending = 'readOnly' | 'result' | 'error' | 'unknown' | 'ended'
 
 export interface RunState {
   phase: Phase
+  // checking is the check the plan runs now and planStarted when planning
+  // began (ms); both are set only while planning.
+  checking?: string
+  planStarted?: number
   planId?: string
   plan?: Plan
   rows: Row[]
@@ -262,7 +266,9 @@ export interface RunState {
 }
 
 export type RunAction =
-  | { type: 'plan' }
+  | { type: 'plan'; at: number }
+  | { type: 'checking'; check: string }
+  | { type: 'checked'; steps: Step[] }
   | { type: 'planFailed'; error: ApiError }
   | { type: 'planned'; id: string; plan: Plan }
   | { type: 'readBack'; plan: Plan; result: OpResult; error?: ApiError }
@@ -273,8 +279,25 @@ export type RunAction =
 
 export const initialRun: RunState = { phase: 'inputs', rows: [] }
 
+function rowOf(s: Step): Row {
+  return { id: s.id, action: s.action, target: s.target, step: s, progress: 'waiting' }
+}
+
 function rowsOf(plan: Plan): Row[] {
-  return (plan.steps ?? []).map((s) => ({ id: s.id, action: s.action, target: s.target, step: s, progress: 'waiting' }))
+  return (plan.steps ?? []).map(rowOf)
+}
+
+// withChecked adds the items a plan reported as checked, replacing a row
+// with the same id in place.
+function withChecked(rows: Row[], steps: readonly Step[]): Row[] {
+  const out = rows.slice()
+  for (const s of steps) {
+    if (!s || typeof s.id !== 'string') continue
+    const i = out.findIndex((r) => r.id === s.id)
+    if (i < 0) out.push(rowOf(s))
+    else out[i] = rowOf(s)
+  }
+  return out
 }
 
 function withChecks(rows: Row[], result: OpResult | undefined): Row[] {
@@ -303,7 +326,13 @@ function withProgress(rows: Row[], e: ProgressEvent): Row[] {
 export function runReducer(state: RunState, a: RunAction): RunState {
   switch (a.type) {
     case 'plan':
-      return { ...initialRun, phase: 'planning' }
+      return { ...initialRun, phase: 'planning', planStarted: a.at }
+    case 'checking':
+      if (state.phase !== 'planning') return state
+      return { ...state, checking: a.check }
+    case 'checked':
+      if (state.phase !== 'planning') return state
+      return { ...state, rows: withChecked(state.rows, a.steps) }
     case 'planFailed':
       return { ...initialRun, phase: 'planFailed', error: a.error }
     case 'planned':
@@ -349,6 +378,41 @@ export function runReducer(state: RunState, a: RunAction): RunState {
       }
     }
   }
+}
+
+// PlanBody is the plan route's body: a stored plan's id, or a read-only
+// plan's read-back result.
+export interface PlanBody {
+  id?: string
+  plan: Plan
+  result?: OpResult
+}
+
+// AfterPlan is what the dialog does with a plan's outcome: the action to
+// dispatch, the stored plan to keep for Apply or Cancel, or the stored plan
+// to drop because the dialog stopped the planning.
+export interface AfterPlan {
+  action?: RunAction
+  store?: string
+  drop?: string
+}
+
+// afterPlan maps a plan's outcome to the dialog's next step. An aborted plan
+// (Cancel, Escape, close or unmount) changes nothing and stores nothing; a
+// plan stored before the abort arrived is dropped.
+export function afterPlan(p: PlanOutcome<PlanBody>, aborted: boolean): AfterPlan {
+  if (aborted) return p.ok && p.value.id ? { drop: p.value.id } : {}
+  if (p.ok) {
+    if (p.value.id) return { store: p.value.id, action: { type: 'planned', id: p.value.id, plan: p.value.plan } }
+    return { action: { type: 'readBack', plan: p.value.plan, result: p.value.result ?? {} } }
+  }
+  if (p.plan && p.result) return { action: { type: 'readBack', plan: p.plan as Plan, result: p.result as OpResult, error: p.error } }
+  return { action: { type: 'planFailed', error: p.error } }
+}
+
+// elapsedSeconds is the whole seconds from start to now, never negative.
+export function elapsedSeconds(start: number | undefined, now: number): number {
+  return start === undefined ? 0 : Math.max(0, Math.floor((now - start) / 1000))
 }
 
 // changingCount is the number of plan items that change something.
