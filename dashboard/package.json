@@ -8,7 +8,8 @@
     "typecheck": "astro sync && tsc -b",
     "lint": "oxlint",
     "test": "vitest run",
-    "screenshots": "astro sync && tsc -b && vite build --mode screenshots && astro build && playwright test"
+    "screenshots": "astro sync && tsc -b && vite build --mode screenshots && astro build && playwright test --project chromium --project site",
+    "docs-screenshots": "astro sync && tsc -b && vite build --mode screenshots && astro build && playwright test --project docs"
   },
   "dependencies": {
     "@astrojs/react": "^7.1.9",

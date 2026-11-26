@@ -9,6 +9,9 @@ const port = 4790
 const sitePort = 4791
 const siteBase = '/gh-nibfin/'
 const siteSpec = /site\.spec\.ts$/
+// docs.spec.ts writes the website's tracked Dashboard images; only npm run
+// docs-screenshots runs it.
+const docsSpec = /docs\.spec\.ts$/
 
 export default defineConfig({
   testDir: './screenshots',
@@ -23,7 +26,8 @@ export default defineConfig({
     colorScheme: 'light',
   },
   projects: [
-    { name: 'chromium', testIgnore: siteSpec },
+    { name: 'chromium', testIgnore: [siteSpec, docsSpec] },
+    { name: 'docs', testMatch: docsSpec },
     { name: 'site', testMatch: siteSpec, use: { baseURL: `http://127.0.0.1:${sitePort}${siteBase}` } },
   ],
   webServer: [
