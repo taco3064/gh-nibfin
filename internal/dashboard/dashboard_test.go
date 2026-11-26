@@ -32,6 +32,8 @@ type fakeOp struct {
 	readBack func() (op.Result, error)
 	// readCtx, when set, runs as its ReadBack with the context.
 	readCtx func(context.Context) (op.Result, error)
+	// planCtx, when set, runs as its Plan with the context.
+	planCtx func(context.Context) (op.Plan, error)
 	calls   []string
 }
 
@@ -47,7 +49,13 @@ func (f *fakeOp) Calls() []string {
 	return append([]string(nil), f.calls...)
 }
 
-func (f *fakeOp) Plan(context.Context) (op.Plan, error) { f.record("plan"); return f.plan, f.err }
+func (f *fakeOp) Plan(ctx context.Context) (op.Plan, error) {
+	f.record("plan")
+	if f.planCtx != nil {
+		return f.planCtx(ctx)
+	}
+	return f.plan, f.err
+}
 func (f *fakeOp) Apply(ctx context.Context, _ op.Plan) error {
 	f.record("apply")
 	if f.apply != nil {

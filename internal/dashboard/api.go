@@ -107,30 +107,90 @@ func (s *server) plan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err)
 		return
 	}
-	p, err := o.Plan(r.Context())
-	if err != nil {
+	body, err := s.planned(r.Context(), command, o, ia)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, body)
+	case body != nil:
+		writeErrorWith(w, http.StatusUnprocessableEntity, err, body)
+	default:
 		writeError(w, http.StatusUnprocessableEntity, err)
+	}
+}
+
+// planStream plans a command as the plan route does and streams it as
+// NDJSON: a checking line for each check the plan starts and a checked line
+// for the items whose values are final, then one final line with the plan
+// route's body: planned (id and plan), result (a read-only plan read back)
+// or error. The request ending cancels the plan; then nothing is stored and
+// nothing more is written.
+func (s *server) planStream(w http.ResponseWriter, r *http.Request) {
+	command := r.PathValue("command")
+	ia := newInteractor()
+	o, status, err := s.build(command, r, ia)
+	if err != nil {
+		writeError(w, status, err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.WriteHeader(http.StatusOK)
+	st := &stream{w: w, rc: http.NewResponseController(w)}
+	ctx := op.WithPlanProgress(r.Context(), func(e op.PlanEvent) {
+		if e.Kind == op.PlanChecking {
+			st.line(map[string]any{"event": "checking", "check": e.Check})
+		} else {
+			st.line(map[string]any{"event": "checked", "steps": e.Steps})
+		}
+	})
+	body, err := s.planned(ctx, command, o, ia)
+	if r.Context().Err() != nil {
+		return
+	}
+	line := map[string]any{}
+	for k, v := range body {
+		line[k] = v
+	}
+	switch {
+	case err != nil:
+		line["event"], line["error"] = "error", op.AsError(err)
+	case line["id"] != nil:
+		line["event"] = "planned"
+	default:
+		line["event"] = "result"
+	}
+	st.line(line)
+}
+
+// planned plans o and returns the plan route's body: a read-only plan with
+// its read-back result, or a stored plan with its id. On an error the body
+// is nil, or holds the plan and the items read so far. A plan whose
+// request ended is not stored.
+func (s *server) planned(ctx context.Context, command string, o op.Operation, ia *interactor) (map[string]any, error) {
+	p, err := o.Plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if p.ReadOnly {
-		res, err := op.Finish(r.Context(), o, p, false)
+		op.Checking(ctx, "read back")
+		res, err := op.Finish(ctx, o, p, false)
 		if err != nil {
 			// The plan and the items read so far come with the error.
 			extra := map[string]any{"plan": p}
 			if res != nil {
 				extra["result"] = res
 			}
-			writeErrorWith(w, http.StatusUnprocessableEntity, err, extra)
-			return
+			return extra, err
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"plan": p, "result": resultOrEmpty(res)})
-		return
+		return map[string]any{"plan": p, "result": resultOrEmpty(res)}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, op.Errorf(op.CodeCancelled, "%s cancelled: %v", p.Operation, err)
 	}
 	id := rand.Text()
 	s.mu.Lock()
 	s.plans[id] = &storedPlan{command: command, o: o, p: p, interact: ia}
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "plan": p})
+	return map[string]any{"id": id, "plan": p}, nil
 }
 
 // apply applies a stored plan once and streams its progress events, its
