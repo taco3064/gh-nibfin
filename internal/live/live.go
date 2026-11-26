@@ -206,8 +206,8 @@ func Watch(ctx context.Context, d Deps, send func(Event)) error {
 	}
 }
 
-// setHost makes the client and the assigned probe for host, and takes the
-// probe's baseline.
+// setHost makes the client and the assigned probes for host, and takes the
+// probes' baselines.
 func (w *watcher) setHost(ctx context.Context, host string) {
 	w.gHost, w.g = host, nil
 	w.probes = map[string]*probe{}
@@ -217,7 +217,9 @@ func (w *watcher) setHost(ctx context.Context, host string) {
 		return
 	}
 	w.g = g
-	w.add(ctx, &probe{kind: assigned}, time.Time{})
+	for _, p := range assignedProbes() {
+		w.add(ctx, p, time.Time{})
+	}
 }
 
 // add takes a new probe's first answer; since is the runs probes' start.
@@ -242,7 +244,7 @@ func (w *watcher) rebuild(ctx context.Context) {
 	if w.g == nil {
 		return
 	}
-	want := []*probe{{kind: assigned}}
+	want := assignedProbes()
 	for _, r := range v.repos {
 		want = append(want, &probe{kind: runs, repo: r, workflow: issueWorkflow}, &probe{kind: folder, repo: r})
 	}
@@ -474,4 +476,17 @@ func (w *watcher) fullRead(ctx context.Context, first bool) error {
 	w.mu.Unlock()
 	w.send(Event{Event: "snapshot", At: stamp(t), Result: res})
 	return nil
+}
+
+// assignedLabels are the labels of the person view's Issues: an open Issue
+// assigned to the gh user with either label (status's label:scope,request).
+var assignedLabels = []string{"scope", "request"}
+
+// assignedProbes are one assigned probe per label of the person view.
+func assignedProbes() []*probe {
+	var ps []*probe
+	for _, l := range assignedLabels {
+		ps = append(ps, &probe{kind: assigned, label: l})
+	}
+	return ps
 }
