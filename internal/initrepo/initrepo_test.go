@@ -45,6 +45,13 @@ type fakeGitHub struct {
 	admin         bool
 	prPolicy      *string
 	deleteOnMerge bool
+	merges        map[string]bool // allow_merge_commit, allow_squash_merge, allow_rebase_merge
+	dropMerges    bool            // GitHub does not report them
+	// rulesets by id, each with its source_type; protection is the
+	// required status checks of the default branch, nil when unprotected.
+	rulesets      map[int64]map[string]any
+	protection    *fakeChecks
+	rulesetPUTs   int
 	labels        []string // names as GitHub has them
 	approval      string
 	forks         privateForks
@@ -71,6 +78,8 @@ func newFake(name string) *fakeGitHub {
 		admin:         true,
 		prPolicy:      strp("all"),
 		deleteOnMerge: true,
+		merges:        map[string]bool{"allow_merge_commit": true, "allow_squash_merge": true, "allow_rebase_merge": true},
+		rulesets:      map[int64]map[string]any{},
 		approval:      "first_time_contributors",
 		vars:          map[string]string{},
 		scopes:        strp("repo, workflow, read:org"),
@@ -156,6 +165,11 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 		if f.prPolicy != nil {
 			r["pull_request_creation_policy"] = *f.prPolicy
 		}
+		if !f.dropMerges {
+			for k, v := range f.merges {
+				r[k] = v
+			}
+		}
 		return r, nil
 	case method == http.MethodGet && f.repos[strings.ToLower(p)] != "":
 		return map[string]any{"full_name": f.repos[strings.ToLower(p)], "default_branch": "main",
@@ -167,11 +181,15 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 				f.prPolicy = strp(v.(string))
 			case "delete_branch_on_merge":
 				f.deleteOnMerge = v.(bool)
+			case "allow_merge_commit", "allow_squash_merge", "allow_rebase_merge":
+				f.merges[k] = v.(bool)
 			default:
 				return nil, fmt.Errorf("patch field %s", k)
 			}
 		}
 		return map[string]any{}, nil
+	case strings.HasPrefix(p, base+"/rules/branches/") || strings.HasPrefix(p, base+"/rulesets/") || strings.HasPrefix(p, base+"/branches/"):
+		return f.serveRules(method, u, in)
 	case method == http.MethodGet && strings.HasPrefix(p, base+"/labels/"):
 		if i := f.label(strings.TrimPrefix(p, base+"/labels/")); i >= 0 {
 			return map[string]string{"name": f.labels[i]}, nil
@@ -446,7 +464,7 @@ func TestInitExecutionSet(t *testing.T) {
 	}
 	want := []string{
 		"create label scope", "create label shaped", "create label delivered", "create label pause", "create label pending",
-		"set pull requests collaborators_only", "set delete head branches false",
+		"set pull requests collaborators_only", "set delete head branches false", "allow merge methods rebase only",
 		"set fork PR approval all external contributors",
 		"create variable NIBFIN_EXECUTION_REPO",
 		"set secret NIBFIN_GITHUB_TOKEN",
@@ -686,7 +704,9 @@ func TestInitSettings(t *testing.T) {
 		slices.Contains(actions(p), "set fork PR approval all external contributors") {
 		t.Errorf("plan = %q", actions(p))
 	}
-	if len(patch) != 1 || patch["pull_request_creation_policy"] != policyCollab {
+	// The merge methods differ too and go in the same PATCH.
+	if len(patch) != 4 || patch["pull_request_creation_policy"] != policyCollab ||
+		patch["allow_rebase_merge"] != true || patch["allow_squash_merge"] != false || patch["allow_merge_commit"] != false {
 		t.Errorf("patch = %v", patch)
 	}
 	if slices.Contains(f.calls, "PUT repos/o/app/actions/permissions/fork-pr-contributor-approval") {
