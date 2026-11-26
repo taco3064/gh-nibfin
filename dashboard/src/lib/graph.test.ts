@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildGraph, compareKeys, emptyFilter, filterGraph, layoutGraph, nodeKey, type GraphEdge } from './graph'
+import {
+  buildGraph,
+  closedGroups,
+  compareKeys,
+  edgePath,
+  emptyFilter,
+  filterGraph,
+  graphSpacing,
+  groupLabel,
+  layoutGraph,
+  nodeKey,
+  portPoint,
+  positionGraph,
+  type GraphEdge,
+  type Size,
+} from './graph'
 import type { Blocker, StatusIssue } from './status'
 
 // Fictional repository data.
@@ -180,5 +195,129 @@ describe('layoutGraph', () => {
     expect(performance.now() - start).toBeLessThan(1000)
     expect(l.columns.flat()).toHaveLength(n)
     expect(l.cycles.length).toBeGreaterThan(0)
+  })
+})
+
+describe('closedGroups', () => {
+  const g = buildGraph({
+    repo,
+    issues: [
+      issue(1, [blocker(9, { state: 'CLOSED' }), blocker(2), blocker(8, { state: 'CLOSED' })]),
+      issue(2, [blocker(9, { state: 'CLOSED' })]),
+      issue(3, [blocker(2)]),
+    ],
+  })
+
+  it('groups the closed blockers per dependent in key order and shares a common one', () => {
+    const groups = closedGroups(g, g.edges)
+    expect([...groups.keys()]).toEqual([k(1), k(2)])
+    expect(groups.get(k(1))!.map((n) => n.key)).toEqual([k(8), k(9)])
+    expect(groups.get(k(2))!.map((n) => n.key)).toEqual([k(9)])
+  })
+
+  it('makes no group without closed edges', () => {
+    expect(closedGroups(g, g.edges.filter((e) => !e.closed)).size).toBe(0)
+    expect(closedGroups(g, []).size).toBe(0)
+  })
+})
+
+describe('groupLabel', () => {
+  const g = { repo: 'acme/app' }
+  const n = (number: number, r = 'acme/app') => ({ repo: r, number })
+
+  it('names up to max blockers and marks the rest', () => {
+    expect(groupLabel(g, [n(353)])).toBe('1 closed · #353')
+    expect(groupLabel(g, [n(353), n(354), n(355)])).toBe('3 closed · #353 #354 #355')
+    expect(groupLabel(g, [n(353), n(354), n(355), n(356), n(357)])).toBe('5 closed · #353 #354 #355 …')
+    expect(groupLabel(g, [n(1), n(2)], 1)).toBe('2 closed · #1 …')
+  })
+
+  it('names blockers of another repository in full', () => {
+    expect(groupLabel(g, [n(7, 'acme/infra'), n(8)])).toBe('2 closed · acme/infra#7 #8')
+  })
+})
+
+describe('positionGraph', () => {
+  const e = (from: number, to: number): GraphEdge => ({ from: k(from), to: k(to), closed: false })
+  const sizes = (keys: string[], s: Size = { width: 200, height: 100 }) => new Map(keys.map((key) => [key, s]))
+  // 3 and 4 are blocked by 1 and 2; 5 by 3 and 4.
+  const keys = [k(1), k(2), k(3), k(4), k(5)]
+  const edges = [e(3, 1), e(3, 2), e(4, 1), e(4, 2), e(5, 3), e(5, 4)]
+
+  it('puts every blocker left of its dependents in LR', () => {
+    const p = positionGraph(keys, edges, sizes(keys), 'LR')
+    expect(p.order).toEqual([k(1), k(2), k(3), k(4), k(5)])
+    for (const ed of edges) {
+      const dep = p.boxes.get(ed.from)!
+      const blk = p.boxes.get(ed.to)!
+      expect(blk.x + blk.width).toBeLessThanOrEqual(dep.x - graphSpacing.rank + 1)
+    }
+    const xs = [...p.boxes.values()].map((b) => b.x)
+    const ys = [...p.boxes.values()].map((b) => b.y)
+    expect(Math.min(...xs)).toBe(0)
+    expect(Math.min(...ys)).toBe(0)
+    expect(p.width).toBe(Math.max(...[...p.boxes.values()].map((b) => b.x + b.width)))
+    // Two nodes of one rank never overlap.
+    const one = p.boxes.get(k(1))!
+    const two = p.boxes.get(k(2))!
+    expect(one.x).toBe(two.x)
+    expect(Math.abs(one.y - two.y)).toBeGreaterThanOrEqual(100 + graphSpacing.node)
+  })
+
+  it('stacks one node per row in TB, blockers above, right of the gutter', () => {
+    const p = positionGraph(keys, edges, sizes(keys), 'TB')
+    let y = 0
+    for (const key of p.order) {
+      const b = p.boxes.get(key)!
+      expect(b.x).toBe(graphSpacing.gutter)
+      expect(b.y).toBe(y)
+      y += 100 + graphSpacing.row
+    }
+    for (const ed of edges) expect(p.boxes.get(ed.to)!.y).toBeLessThan(p.boxes.get(ed.from)!.y)
+    expect(p.width).toBe(graphSpacing.gutter + 200)
+    expect(p.height).toBe(5 * 100 + 4 * graphSpacing.row)
+  })
+
+  it('gives each edge its own port on a node with several edges', () => {
+    for (const dir of ['LR', 'TB'] as const) {
+      const p = positionGraph(keys, edges, sizes(keys), dir)
+      const points = new Map<string, string[]>()
+      for (const ed of p.edges) {
+        const lr = dir === 'LR'
+        const a = portPoint(p.boxes.get(ed.from)!, ed.fromPort, false)
+        const b = portPoint(p.boxes.get(ed.to)!, ed.toPort, lr)
+        for (const [key, pt] of [
+          [ed.from, a],
+          [ed.to, b],
+        ] as const)
+          points.set(key, [...(points.get(key) ?? []), `${pt.x},${pt.y}`])
+        const r = (n: number) => Math.round(n * 10) / 10
+        expect(edgePath(p, ed)).toMatch(new RegExp(`^M ${r(a.x)} ${r(a.y)} C .* ${r(b.x)} ${r(b.y)}$`))
+      }
+      for (const [key, list] of points) {
+        // In LR a node's in- and out-ports sit on opposite sides.
+        expect(new Set(list).size, `${dir} ${key}`).toBe(list.length)
+      }
+      // 3 meets 1 and 2 on its left side at different points.
+      const three = p.edges.filter((ed) => ed.from === k(3)).map((ed) => ed.fromPort)
+      expect(three.map((pt) => pt.index).sort()).toEqual([0, 1])
+    }
+  })
+
+  it('ends on cycles and places every node', () => {
+    const ks = [k(1), k(2), k(3), k(4)]
+    for (const dir of ['LR', 'TB'] as const) {
+      const p = positionGraph(ks, [e(1, 2), e(2, 3), e(3, 1), e(4, 1)], sizes(ks), dir)
+      expect(p.boxes.size).toBe(4)
+      expect(p.edges.filter((ed) => ed.cycle)).toHaveLength(1)
+      for (const ed of p.edges) expect(edgePath(p, ed)).not.toBe('')
+    }
+  })
+
+  it('places nodes without a shown edge and an empty graph', () => {
+    const p = positionGraph([k(1), k(2)], [], sizes([k(1), k(2)]), 'LR')
+    expect(p.order).toEqual([k(1), k(2)])
+    expect(p.boxes.size).toBe(2)
+    expect(positionGraph([], [], new Map(), 'TB')).toMatchObject({ width: 0, height: 0, order: [], edges: [] })
   })
 })
