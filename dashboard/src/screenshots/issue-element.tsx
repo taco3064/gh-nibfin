@@ -6,7 +6,7 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { ThemeControl } from '@/components/theme-control'
-import { IssueBulkActions, IssueItem } from '@/components/issue'
+import { IssueBulkActions, IssueItem, RunLegend } from '@/components/issue'
 import { applyChanges, type Change } from '@/lib/issue'
 import { applyCspNonce } from '@/lib/nonce'
 import { openSession, readProof } from '@/lib/session'
@@ -55,6 +55,7 @@ function Harness() {
         <p className="text-sm text-muted-foreground" data-rereads={rereads}>
           Fictional data for the screenshot review.
         </p>
+        <RunLegend />
         <IssueBulkActions selected={chosen} onChanged={onChanged} />
         <ul className="flex flex-col gap-3">
           {items.map((f) => (

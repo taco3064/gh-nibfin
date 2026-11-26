@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { CircleAlert, CircleHelp, ExternalLink, History, TriangleAlert } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -91,23 +92,28 @@ function RunRow({ run }: { run: Run }) {
 }
 
 // IssueRunsDialog lists the Nibfin runs of one Issue from the status data.
-export function IssueRunsDialog({ issue }: { issue: StatusIssue }) {
+// trigger, when given, is the element that opens it (it must take a ref and
+// its props, as DialogTrigger asChild passes them); by default a "Runs"
+// button with the count.
+export function IssueRunsDialog({ issue, trigger }: { issue: StatusIssue; trigger?: ReactNode }) {
   const v = runsView(issue)
   const count = v.runs.length
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <History aria-hidden="true" />
-          Runs
-          {count > 0 && <span className="tabular-nums text-muted-foreground">{count}</span>}
-          {v.notes.some((n) => n.kind !== 'truncated') && (
-            <>
-              <CircleAlert aria-hidden="true" className="text-warning" />
-              <span className="sr-only">(incomplete)</span>
-            </>
-          )}
-        </Button>
+        {trigger ?? (
+          <Button variant="outline" size="sm">
+            <History aria-hidden="true" />
+            Runs
+            {count > 0 && <span className="tabular-nums text-muted-foreground">{count}</span>}
+            {v.notes.some((n) => n.kind !== 'truncated') && (
+              <>
+                <CircleAlert aria-hidden="true" className="text-warning" />
+                <span className="sr-only">(incomplete)</span>
+              </>
+            )}
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="flex max-h-[calc(100svh-2rem)] flex-col bg-card sm:max-w-xl">
         <DialogHeader className="pr-8 text-left">
