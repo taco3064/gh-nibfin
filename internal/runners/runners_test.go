@@ -209,3 +209,13 @@ func TestDeployKeyPath(t *testing.T) {
 		t.Errorf("path = %q", p)
 	}
 }
+
+func TestHookDir(t *testing.T) {
+	inv := &Inventory{Dir: "/home/u/.local/share/nibfin/runners"}
+	if d := HookDir(inv); d != "/home/u/.local/share/nibfin/hook" {
+		t.Errorf("HookDir = %s", d)
+	}
+	if s := HookScript(inv); s != "/home/u/.local/share/nibfin/hook/job-started.sh" {
+		t.Errorf("HookScript = %s", s)
+	}
+}

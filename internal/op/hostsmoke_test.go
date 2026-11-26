@@ -506,3 +506,9 @@ func TestHostSmoke(t *testing.T) {
 		}
 	})
 }
+
+// SSHHostKeys is part of the github interface; the smoke test runs the admin
+// route, which installs no hook, so a call is a test failure.
+func (g *smokeGitHub) SSHHostKeys(context.Context) ([]string, error) {
+	return nil, fmt.Errorf("smoke: unexpected SSHHostKeys")
+}

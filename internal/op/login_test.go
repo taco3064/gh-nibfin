@@ -93,6 +93,14 @@ type fakeHost struct {
 	// saved to.
 	deployPub, deployMode, deployPriv string
 
+	// The job-started hook (see runner_hook_test.go): hook is its files,
+	// nil when the directory is absent; hookMode the directory's mode;
+	// hookTar the file a write's stdin is saved to until the next read;
+	// hookTmp holds those files.
+	hook             map[string][]byte
+	hookMode         string
+	hookTar, hookTmp string
+
 	// The autostart entry (see autostart_test.go): entry is its state;
 	// autoStarts counts starts through it.
 	entry       host.Autostart

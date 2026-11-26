@@ -24,6 +24,8 @@ c="/sys/fs/cgroup/user.slice/user-$u.slice/user@$u.service/cgroup.controllers"
 if [ -r "$c" ]; then printf 'cgroup %s\n' "$(tr -cd 'a-z_ ' < "$c")"; else echo 'cgroup ?'; fi
 printf 'memkb %s\n' "$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null | tr -cd '0-9')"
 printf 'memavailkb %s\n' "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null | tr -cd '0-9')"
+t() { if command -v "$1" >/dev/null 2>&1; then echo 1; else echo 0; fi; }
+printf 'tools %s %s\n' "$(t git)" "$(t ssh)"
 `
 
 type hostProbe struct {
@@ -33,6 +35,9 @@ type hostProbe struct {
 	controllers         map[string]bool
 	memKB               int64
 	memAvailKB          int64
+	// git and ssh are installed: the hook reads a private repository with
+	// them.
+	git, ssh bool
 }
 
 // hostScript runs a fixed runner-host script. Its stdout and exit status are
@@ -92,6 +97,11 @@ func probeHost(ctx context.Context, h runnerHost, code string) (hostProbe, error
 			pr.memKB, _ = strconv.ParseInt(val, 10, 64)
 		case "memavailkb":
 			pr.memAvailKB, _ = strconv.ParseInt(val, 10, 64)
+		case "tools":
+			f := strings.Fields(val)
+			if len(f) == 2 {
+				pr.git, pr.ssh = toolFlag(f[0]), toolFlag(f[1])
+			}
 		default:
 			return pr, Errorf(code, "probe the runner host: unexpected line %q", sc.Text())
 		}

@@ -22,6 +22,7 @@ import (
 	"github.com/taco3064/gh-nibfin/internal/initrepo"
 	"github.com/taco3064/gh-nibfin/internal/live"
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/runnerhook"
 	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
@@ -38,6 +39,10 @@ var ops = dashboard.Ops{
 	Pause:        op.Pause,
 	Resume:       op.Resume,
 }
+
+// runner add installs the job-started hook of a collaborator's Runner from
+// runnerhook's files, in the CLI and the Dashboard alike.
+func init() { op.SetRunnerHookFiles(runnerhook.Files) }
 
 var providers = []string{"claude", "codex"}
 

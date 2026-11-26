@@ -201,6 +201,7 @@ func useRequest(t *testing.T, f *fakeHost) requestFixture {
 	}
 	fx := useRunnerHost(t, f)
 	home := t.TempDir()
+	useHookFiles(t, f, nil)
 	k := writeKey(t, filepath.Join(home, ".ssh"), "id_ed25519", "ed25519", "")
 	req := &fakeRequest{keys: []ghKey{{ID: 10, Key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtherKeyOtherKeyOtherKeyOtherKeyOtherKe"}, {ID: 11, Key: k.authorized}}}
 	armored := encryptTo(t, k.authorized, f.token)
@@ -256,7 +257,7 @@ func TestRunnerAddRequestRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v (events %v)", err, f.events)
 	}
-	want := []string{"enable linger fake", "request registration github.com/cur/repo",
+	want := []string{"enable linger fake", "request registration github.com/cur/repo", "install job-started hook " + hookScriptAt,
 		"add runner claude-1", "add runner claude-2", "close request github.com/cur/repo"}
 	if !reflect.DeepEqual(steps(p), want) {
 		t.Fatalf("plan = %v", steps(p))
@@ -273,12 +274,12 @@ func TestRunnerAddRequestRoute(t *testing.T) {
 	if d := p.Changes()[1].Detail; !strings.Contains(d, `"Nibfin runner request" for SSH key 11; waits up to`) {
 		t.Errorf("request detail = %q", d)
 	}
-	if d := p.Changes()[2].Detail; d != "github.com/cur/repo, labels nibfin-42, .env NIBFIN_PROVIDER=claude" {
+	if d := p.Changes()[3].Detail; d != "github.com/cur/repo, labels nibfin-42, .env NIBFIN_PROVIDER=claude, job-started hook" {
 		t.Errorf("slot detail = %q", d)
 	}
-	wantEvents := []string{"linger", "request",
-		"extract claude-1", "configure claude-1", "env claude-1 claude", "unit nibfin-runner-claude-1.service",
-		"extract claude-2", "configure claude-2", "env claude-2 claude", "unit nibfin-runner-claude-2.service",
+	wantEvents := []string{"linger", "hook " + hookAt, "request",
+		"extract claude-1", "configure claude-1", "env claude-1 claude", "hookenv claude-1 " + hookScriptAt, "unit nibfin-runner-claude-1.service",
+		"extract claude-2", "configure claude-2", "env claude-2 claude", "hookenv claude-2 " + hookScriptAt, "unit nibfin-runner-claude-2.service",
 		"comment", "close completed"}
 	if !reflect.DeepEqual(f.events, wantEvents) {
 		t.Errorf("events = %v", f.events)
@@ -308,7 +309,7 @@ func TestRunnerAddRequestRoute(t *testing.T) {
 			}
 		}
 	}
-	for _, id := range []string{"request", "runner:claude-1", "request-close"} {
+	for _, id := range []string{"request", "hook", "runner:claude-1", "request-close"} {
 		if !contains(events, "started "+id) || !contains(events, "done "+id) {
 			t.Errorf("progress of %s: %v", id, events)
 		}
@@ -590,10 +591,10 @@ func TestRunnerAddRequestRerunUnitsOnly(t *testing.T) {
 	fx := useRequest(t, f)
 	os.RemoveAll(filepath.Join(fx.home, ".ssh"))
 	p, r, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
-	if err != nil || !reflect.DeepEqual(steps(p), []string{"enable linger fake", "add runner claude-1"}) {
+	if err != nil || !reflect.DeepEqual(steps(p), []string{"enable linger fake", "install job-started hook " + hookScriptAt, "add runner claude-1"}) {
 		t.Fatalf("plan = %v, %v", steps(p), err)
 	}
-	if !reflect.DeepEqual(f.events, []string{"linger", "env claude-1 claude", "unit nibfin-runner-claude-1.service"}) || len(fx.req.bodies) != 0 {
+	if !reflect.DeepEqual(f.events, []string{"linger", "hook " + hookAt, "env claude-1 claude", "hookenv claude-1 " + hookScriptAt, "unit nibfin-runner-claude-1.service"}) || len(fx.req.bodies) != 0 {
 		t.Errorf("events = %v", f.events)
 	}
 	if r["route"] != "request" || r["requestIssue"] != nil {
@@ -610,7 +611,7 @@ func TestRunnerAddRequestReadBackEnv(t *testing.T) {
 	if Code(err) != CodeRunnerMissing {
 		t.Errorf("err = %v", err)
 	}
-	f.slots["claude-1"].env = "claude"
+	f.slots["claude-1"].env, f.slots["claude-1"].hook, f.hook = "claude", true, wantHook(false)
 	if _, err := o.ReadBack(context.Background(), Plan{Steps: []Step{slotStep("claude-1")}}); err != nil {
 		t.Errorf("with .env: %v", err)
 	}
@@ -717,7 +718,7 @@ func TestRunnerAddRequestDeployKey(t *testing.T) {
 		t.Fatalf("Run: %v (events %v)", err, f.events)
 	}
 	want := []string{"enable linger fake", "create deploy key " + deployKeyAt, "request registration github.com/cur/repo",
-		"add runner claude-1", "close request github.com/cur/repo"}
+		"install job-started hook " + hookScriptAt, "add runner claude-1", "close request github.com/cur/repo"}
 	if !reflect.DeepEqual(steps(p), want) {
 		t.Fatalf("plan = %v", steps(p))
 	}
@@ -725,7 +726,7 @@ func TestRunnerAddRequestDeployKey(t *testing.T) {
 		t.Errorf("request detail = %q", d)
 	}
 	// The key is written before the request is opened.
-	if len(f.events) < 3 || !reflect.DeepEqual(f.events[:3], []string{"linger", "deploy-key " + deployKeyAt, "request"}) {
+	if len(f.events) < 4 || !reflect.DeepEqual(f.events[:4], []string{"linger", "hook " + hookAt, "deploy-key " + deployKeyAt, "request"}) {
 		t.Errorf("events = %v", f.events)
 	}
 	// The private key reached the host only on stdin, and the public key

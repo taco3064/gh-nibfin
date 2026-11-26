@@ -315,3 +315,116 @@ func TestDeployKeyScriptsUnderSh(t *testing.T) {
 		t.Errorf("check lone: %q, %v", out, err)
 	}
 }
+
+// TestHookScriptsUnderSh runs the hook's host scripts: the write replaces
+// the directory with 0700/0600 modes, the read returns the files, the .env
+// lines are set and checked, and the removal refuses other paths.
+func TestHookScriptsUnderSh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the scripts run on the Linux runner host")
+	}
+	for _, tool := range []string{"sh", "tar", "base64", "find", "stat"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip("no " + tool)
+		}
+	}
+	root := t.TempDir()
+	h := &localHost{}
+	a := &runnerAdd{host: h}
+	ctx := context.Background()
+	dir := filepath.Join(root, "data", "nibfin", "hook")
+
+	write := func(files map[string][]byte) {
+		t.Helper()
+		b, err := hookTar(files)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.script(ctx, "write", hookWriteScript, bytes.NewReader(b), "", dir); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	files := wantHook(true)
+	write(files)
+	st, err := readHook(ctx, h, CodeRunnerInstallFailed, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if why := st.diff(files); why != "" {
+		t.Errorf("read back: %s", why)
+	}
+	for _, p := range []string{"config", "official/nibfin-job.yml"} {
+		if fi, _ := os.Stat(filepath.Join(dir, p)); fi == nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode = %v", p, fi)
+		}
+	}
+	// A second write replaces the directory whole: a stray file goes, and
+	// nothing is left beside it.
+	os.WriteFile(filepath.Join(dir, "stray"), []byte("x"), 0o600)
+	os.MkdirAll(dir+".new", 0o700)
+	files["check.mjs"] = []byte("new\n")
+	write(files)
+	if st, _ = readHook(ctx, h, CodeRunnerInstallFailed, dir); st.diff(files) != "" {
+		t.Errorf("rewrite: %s", st.diff(files))
+	}
+	if left, _ := filepath.Glob(dir + ".*"); len(left) != 0 {
+		t.Errorf("left beside the hook: %v", left)
+	}
+	if st, _ := readHook(ctx, h, CodeRunnerInstallFailed, filepath.Join(root, "none")); st.present {
+		t.Error("an absent directory reads as present")
+	}
+
+	// The .env lines.
+	slot := filepath.Join(root, "data", "nibfin", "runners", "claude-1")
+	os.MkdirAll(slot, 0o700)
+	os.WriteFile(filepath.Join(slot, ".env"), []byte("LANG=C\nNIBFIN_PROVIDER=claude\nNIBFIN_RUNNER_DIR=/old\n"), 0o600)
+	script := filepath.Join(dir, "job-started.sh")
+	check := func() string {
+		out, err := a.script(ctx, "check", hookEnvCheckScript, nil, "", slot, script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(out)
+	}
+	if got := check(); got != "no" {
+		t.Errorf("check before = %s", got)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := a.script(ctx, "env", hookEnvScript, nil, "", slot, script); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env, _ := os.ReadFile(filepath.Join(slot, ".env"))
+	if want := "LANG=C\nNIBFIN_PROVIDER=claude\nACTIONS_RUNNER_HOOK_JOB_STARTED=" + script + "\nNIBFIN_RUNNER_DIR=" + slot + "\n"; string(env) != want {
+		t.Errorf(".env = %q, want %q", env, want)
+	}
+	if got := check(); got != "yes" {
+		t.Errorf("check after = %s", got)
+	}
+
+	// Presence and removal; other paths are refused.
+	present := func() bool {
+		ok, err := hookPresent(ctx, h, CodeRunnerRemoveFailed, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if !present() {
+		t.Error("the hook reads as absent")
+	}
+	for _, bad := range []string{filepath.Join(root, "data"), root + "/data/nibfin/../nibfin/hook", "relative/nibfin/hook"} {
+		if _, err := a.script(ctx, "remove", hookRemoveScript, nil, "", bad); err == nil {
+			t.Errorf("removed %s", bad)
+		}
+		if _, err := a.script(ctx, "write", hookWriteScript, strings.NewReader(""), "", bad); err == nil {
+			t.Errorf("wrote %s", bad)
+		}
+	}
+	if _, err := a.script(ctx, "remove", hookRemoveScript, nil, "", dir); err != nil {
+		t.Fatal(err)
+	}
+	if present() {
+		t.Error("the hook is still present")
+	}
+}
