@@ -52,6 +52,10 @@ const hostOK = { describe: 'local podman', running: true }
 const stoppedErr = error('machine_stopped', 'podman machine nibfin-dev is stopped; status does not start it')
 const podmanErr = error('podman_missing', 'podman is not installed; install it from https://podman.io')
 
+// longMachine and longHost are names without a break opportunity on a phone.
+export const longMachine = 'nibfin_machine_for_the_platform_infrastructure_team'
+export const longHost = 'github.platforminfrastructureengineering.example.test'
+
 export const hosts = {
   complete: {
     host: hostOK,
@@ -74,6 +78,13 @@ export const hosts = {
         codexSlot(2, { configured: false, unit: false, enabled: false, active: false, listed: false, status: undefined }),
       ],
     },
+    providers: loggedIn,
+  },
+  // longNames is a complete host whose machine name is long.
+  longNames: {
+    host: { describe: `podman machine ${longMachine}`, machine: longMachine, vmType: 'wsl', running: true },
+    memory,
+    runners: { repo: 'acme/app', runners: [slot(1)] },
     providers: loggedIn,
   },
   githubError: {
@@ -125,6 +136,8 @@ const image = {
   error: { ref: null, latest: null, error: error('github_error', 'reading .github/workflows of acme/legacy: HTTP 502') },
 }
 
+export const longRepo = 'acme-developer-tooling/repository-maintenance-scripts'
+
 export const repos = [
   {
     repo: 'acme/app',
@@ -168,9 +181,21 @@ export const repos = [
     permissionError: error('github_error', 'repository acme/legacy: timeout after 10s'),
     issues: [issue('acme/legacy', 3, 'Archive the old billing service', ['scope'])],
   },
-  { repo: 'acme/mobile', image: image.noPin, permission: 'MAINTAIN', issues: [issue('acme/mobile', 41, 'Offline mode for the field app', ['scope'])] },
+  {
+    repo: 'acme/mobile',
+    image: image.noPin,
+    permission: 'MAINTAIN',
+    issues: [issue('acme/mobile', 41, 'Offline mode: cache in mobile/src/storage/offline-cache-repository.ts', ['scope'])],
+  },
   { repo: 'acme/site', image: image.peer, permission: 'WRITE', issues: [issue('acme/site', 5, 'New pricing page', ['scope', 'shaped'])] },
-  { repo: 'acme/tools', image: image.none, permission: 'ADMIN', issues: [issue('acme/tools', 9, 'Lint rule for imports', [])] },
+  // A long OWNER/REPO and a title with a path: unbroken tokens that wrap
+  // inside their card on a phone.
+  {
+    repo: longRepo,
+    image: image.none,
+    permission: 'ADMIN',
+    issues: [issue(longRepo, 9, 'Lint rule in tools/lint/rules/no-restricted-relative-imports.ts', [])],
+  },
 ]
 
 // nibfinRepos are the account's repositories on github.com that use Nibfin.

@@ -1,8 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { commands } from './command-fixtures'
-import { hosts, issueURL, personView, runnerActivity } from './person-fixtures'
-import { expectClean, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
+import { hosts, issueURL, longHost, longMachine, longRepo, personView, runnerActivity } from './person-fixtures'
+import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
 
 // Screenshots and checks of the Dashboard shell (#352): the three views, the
 // landing rule, the freshness indicator, Refresh and the person view. The
@@ -68,8 +68,10 @@ async function open(page: Page, width: number, theme: Theme, status?: StatusAnsw
   return { w, ops }
 }
 
+// expectNoPageScroll checks that the page does not scroll sideways and that
+// its controls and cards keep the side gutter.
 async function expectNoPageScroll(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expectGutter(page)
 }
 
 const tab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Views' }).getByRole('tab', { name })
@@ -77,7 +79,7 @@ const item = (page: Page, repo: string, n: number): Locator => page.locator(`art
 const freshness = (page: Page) => page.locator('[data-slot=freshness]')
 
 for (const theme of themes) {
-  for (const width of widths) {
+  for (const width of [...widths, 390]) {
     test(`person landing and the three views at ${width}px, ${theme}`, async ({ page }) => {
       const { w } = await open(page, width, theme)
       await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
@@ -134,6 +136,25 @@ for (const width of widths) {
   })
 }
 
+// Long host and machine names wrap inside their card on a phone instead of
+// widening the page (#412).
+for (const width of [375, 390]) {
+  test(`long host and machine names keep the gutter at ${width}px`, async ({ page }) => {
+    const { w } = await open(page, width, 'dark', { result: personView({ host: hosts.longNames, githubHost: longHost }) })
+    await tab(page, 'Repositories').click()
+    await expect(page.locator('[data-view=repo] [data-slot=picker-host]')).toHaveText(longHost)
+    await expectNoPageScroll(page)
+    await shot(page, `shell-long-names-repo-dark-${width}`, false)
+    await tab(page, 'Runners').click()
+    const host = page.locator('[data-card=host]')
+    await expect(host.getByRole('heading', { level: 2 })).toHaveText(`podman machine ${longMachine}`)
+    await expect(host).toContainText(`Machine ${longMachine} · VM type wsl`)
+    await expectNoPageScroll(page)
+    await shot(page, `shell-long-names-runner-dark-${width}`)
+    await expectClean(w)
+  })
+}
+
 test('a stopped machine lands on the person view', async ({ page }) => {
   const { w } = await open(page, 1280, 'dark', { result: personView({ host: hosts.machineStopped }) })
   await expect(tab(page, 'Person')).toHaveAttribute('aria-selected', 'true')
@@ -171,7 +192,7 @@ test('every image state is a labelled badge', async ({ page }) => {
   await expect(image('acme/legacy')).toHaveText('Image could not be readgithub_error: reading .github/workflows of acme/legacy: HTTP 502')
   await expect(image('acme/mobile')).toHaveText('No valid image pin')
   await expect(image('acme/site')).toHaveText('Peer set: no image pin')
-  await expect(image('acme/tools')).toHaveText('No Nibfin workflows')
+  await expect(image(longRepo)).toHaveText('No Nibfin workflows')
   await expect(page.locator('[data-repo="acme/app"] [data-slot=count]')).toHaveText('3 Issues')
   await expect(page.locator('[data-repo="acme/docs"] [data-slot=count]')).toHaveText('1 Issue')
   const link = page.getByRole('link', { name: 'acme/app (opens GitHub)', exact: true })
@@ -348,7 +369,7 @@ const provider = (page: Page, p: string) => page.locator(`[data-provider="${p}"]
 const slotRow = (page: Page, slot: string) => page.locator(`li[data-slot-id="${slot}"]`)
 
 for (const theme of themes) {
-  for (const width of widths) {
+  for (const width of [...widths, 390]) {
     test(`runner view at ${width}px, ${theme}`, async ({ page }) => {
       const { w, ops } = await open(page, width, theme, { result: personView({ host: hosts.mixed }) })
       await tab(page, 'Runners').click()

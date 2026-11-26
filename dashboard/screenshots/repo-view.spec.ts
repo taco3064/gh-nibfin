@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { edgeCount, outsideCount, platform, repoStatus } from './repo-fixtures'
-import { expectClean, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type Watch } from './support'
+import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type Watch } from './support'
 
 // Screenshots and checks of the repository view (#353): the picker, the
 // summary, the dependency graph with its search and filters, and init and
@@ -87,8 +87,10 @@ async function open(page: Page, width: number, theme: Theme, height = 900): Prom
   return { w, ops }
 }
 
+// expectNoPageScroll checks that the page does not scroll sideways and that
+// its controls and cards keep the side gutter.
 async function expectNoPageScroll(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expectGutter(page)
 }
 
 const tab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Views' }).getByRole('tab', { name })
@@ -117,7 +119,7 @@ async function edgesDrawn(page: Page, n: number) {
 }
 
 for (const theme of themes) {
-  for (const width of widths) {
+  for (const width of [...widths, 390]) {
     test(`picker and the large graph at ${width}px, ${theme}`, async ({ page }) => {
       const { w } = await open(page, width, theme)
       await expect(picker(page).locator('[data-slot=picker-host]')).toHaveText('github.com')
@@ -165,7 +167,7 @@ for (const theme of themes) {
 }
 
 for (const theme of themes) {
-  for (const width of [375, 1280]) {
+  for (const width of [375, 390, 1280]) {
     test(`search and filters keep blockers as context at ${width}px, ${theme}`, async ({ page }) => {
       const { w } = await open(page, width, theme)
       await pick(page, 'acme/platform')

@@ -228,3 +228,65 @@ export function planStreamLines(answer: PlanAnswer): string[] {
 export function fulfillPlanStream(route: Route, answer: PlanAnswer): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: planStreamLines(answer).join('\n') + '\n' })
 }
+
+// gutterSelector lists the content and controls that keep the page's side
+// gutter: inputs, buttons, tabs, links, cards, the dependency graph's border
+// box and an open dialog panel. Full-bleed containers (html, body, header,
+// main, tab panels) and the dialog overlay are not in it.
+const gutterSelector = [
+  'input',
+  'textarea',
+  'select',
+  'button',
+  '[role=tab]',
+  'a',
+  'article',
+  '[data-slot=card]',
+  '[data-slot=graph-region]',
+  '[role=dialog]',
+].join(',')
+
+// gutterOffenders lists the visible elements of gutterSelector that come
+// closer than gutter px to either side of the viewport. Elements inside a
+// horizontally scrolling ancestor (the graph's content) and sr-only elements
+// are skipped. Each entry names the element and its left and right edges.
+export async function gutterOffenders(page: Page, gutter = 16): Promise<string[]> {
+  return page.evaluate(
+    ([sel, g]) => {
+      const tolerance = 0.5
+      const width = document.documentElement.clientWidth
+      const scrollsX = (el: Element) => {
+        const s = getComputedStyle(el)
+        return (s.overflowX === 'auto' || s.overflowX === 'scroll') && el.scrollWidth > el.clientWidth
+      }
+      const insideScroller = (el: Element) => {
+        for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) if (scrollsX(p)) return true
+        return false
+      }
+      const name = (el: Element) => {
+        const slot = el.getAttribute('data-slot')
+        const text = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)
+        return `${el.tagName.toLowerCase()}${slot ? `[data-slot=${slot}]` : ''} "${text}"`
+      }
+      const out: string[] = []
+      for (const el of document.querySelectorAll(sel as string)) {
+        if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: false })) continue
+        const r = el.getBoundingClientRect()
+        if (r.width <= 1 || r.height <= 1) continue
+        if (insideScroller(el)) continue
+        if (r.left < (g as number) - tolerance || r.right > width - (g as number) + tolerance) {
+          out.push(`${name(el)} left=${r.left.toFixed(1)} right=${(width - r.right).toFixed(1)}`)
+        }
+      }
+      return out
+    },
+    [gutterSelector, gutter] as const,
+  )
+}
+
+// expectGutter checks that the page has no horizontal scroll and that every
+// element of gutterSelector keeps the side gutter.
+export async function expectGutter(page: Page, gutter = 16) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(await gutterOffenders(page, gutter)).toEqual([])
+}
