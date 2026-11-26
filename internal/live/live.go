@@ -165,7 +165,7 @@ func Watch(ctx context.Context, d Deps, send func(Event)) error {
 	if host, _ := defaultHost(); host != "" {
 		w.setHost(ctx, host)
 	}
-	if err := w.fullRead(ctx, true); err != nil {
+	if err := w.fullRead(ctx, true, w.send); err != nil {
 		return err
 	}
 	select {
@@ -299,6 +299,13 @@ func (w *watcher) tick(ctx context.Context, wg *sync.WaitGroup) {
 	if !w.podOn {
 		w.startPodman(ctx, wg)
 	}
+	// A snapshot sent before this tick changed the watch set: probe the
+	// new set, whichever of the two the loop's select took first.
+	select {
+	case <-w.rebuilt:
+		w.rebuild(ctx)
+	default:
+	}
 	if w.g == nil {
 		w.rebuild(ctx)
 		if w.g == nil {
@@ -365,7 +372,9 @@ func (w *watcher) mark(full bool, keys ...string) {
 }
 
 // work runs the pending reads, the whole pending set at a time, until ctx
-// ends. What arrives during a batch runs in the next one.
+// ends. What arrives during a batch runs in the next one. A batch's last
+// event is sent only after the worker is idle again, so a tick handled
+// after a client saw it never finds the worker still busy with that batch.
 func (w *watcher) work(ctx context.Context) {
 	for {
 		select {
@@ -379,6 +388,13 @@ func (w *watcher) work(ctx context.Context) {
 		v := w.v
 		w.mu.Unlock()
 
+		var held *Event
+		emit := func(e Event) {
+			if held != nil {
+				w.send(*held)
+			}
+			held = &e
+		}
 		if !full {
 			keys := make([]string, 0, len(dirty))
 			for k := range dirty {
@@ -396,31 +412,36 @@ func (w *watcher) work(ctx context.Context) {
 					break
 				}
 				if err != nil {
-					w.sendError("status", err)
+					emit(Event{Event: "error", Source: "status", Error: err})
 					continue
 				}
 				if !listed {
 					full = true
 					break
 				}
-				w.send(Event{Event: "issue", At: stamp(t), Repo: r.repo, Issue: &is})
+				emit(Event{Event: "issue", At: stamp(t), Repo: r.repo, Issue: &is})
 			}
 		}
 		if full && ctx.Err() == nil {
-			if err := w.fullRead(ctx, false); err != nil && ctx.Err() == nil {
-				w.sendError("status", op.AsError(err))
+			if err := w.fullRead(ctx, false, emit); err != nil && ctx.Err() == nil {
+				emit(Event{Event: "error", Source: "status", Error: op.AsError(err)})
 			}
 		}
 		w.mu.Lock()
 		w.busy = false
 		w.mu.Unlock()
+		if held != nil {
+			w.send(*held)
+		}
 	}
 }
 
 // fullRead reads the person view as the status plan route does, sends it
-// as a snapshot and updates the watch set. The stream's first read also
-// sends each section as it is read, as partial events before the snapshot.
-func (w *watcher) fullRead(ctx context.Context, first bool) error {
+// as a snapshot with send and updates the watch set. The stream's first
+// read also sends each section as it is read, as partial events before the
+// snapshot. The poll loop is told to rebuild its probes before the snapshot
+// is sent, so a tick handled after a client saw it probes the new set.
+func (w *watcher) fullRead(ctx context.Context, first bool, send func(Event)) error {
 	t := now()
 	if first {
 		ctx = status.WithPartial(ctx, func(res op.Result, loading []string) {
@@ -442,10 +463,10 @@ func (w *watcher) fullRead(ctx context.Context, first bool) error {
 	w.mu.Lock()
 	w.v = viewOf(res)
 	w.mu.Unlock()
-	w.send(Event{Event: "snapshot", At: stamp(t), Result: res})
 	select {
 	case w.rebuilt <- struct{}{}:
 	default:
 	}
+	send(Event{Event: "snapshot", At: stamp(t), Result: res})
 	return nil
 }
