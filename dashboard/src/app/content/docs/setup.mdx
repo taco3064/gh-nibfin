@@ -1,10 +1,11 @@
 ---
 title: Setup and management
-description: Runners, collaborators' Runners, working with several people, required reviews, the Dashboard and .nibfin.json.
+description: Runners, the Claude login and its connectors, collaborators' Runners, working with several people, required reviews, the Dashboard and .nibfin.json.
 ---
 
-This page covers running Nibfin day to day: the Runners that do the work, adding
-your team, how reviews fit in, the local Dashboard, and the per-repository
+This page covers running Nibfin day to day: the Runners that do the work, what a
+Job can reach through the Claude login and how to limit it, adding your team,
+how reviews fit in, the local Dashboard, and the per-repository
 `.nibfin.json`. The [CLI commands](../cli/) page lists every command's flags and
 arguments.
 
@@ -85,6 +86,116 @@ provider:
   change.
 - No repository variable chooses the model. An old `NIBFIN_MODEL` repository
   variable is unused and can be deleted.
+
+## The Claude login and connectors
+
+A Claude Runner's Jobs use the login stored in the `nibfin-home-claude` volume.
+What that login can reach, a Job can reach too.
+
+### What a Job loads
+
+- With a claude.ai subscription login (`claude auth login`, what
+  [`gh nibfin login`](../cli/#login) runs), every Job loads all the connectors
+  you have connected on claude.ai.
+- Jobs run Claude in `bypassPermissions` mode, so a Job can call any connector
+  tool without a prompt.
+- A setup token or an API key login loads no claude.ai connectors (see
+  [Use MCP servers from claude.ai](https://code.claude.com/docs/en/mcp)).
+- Codex logins do not load claude.ai connectors.
+
+The Job log shows the agent's output unchanged. Its first `system` / `init`
+event lists the MCP servers the Job loaded, with their exact names.
+
+### Pointing the agent at your specification
+
+A rule under `.rulesync/rules/` can tell the agent where your repository's
+specification lives and which tool reads it. Connector tools load on demand, so
+the rule names the tool to look for:
+
+```md
+---
+root: true
+targets: ["*"]
+description: "Where this repository's specification is and how to read it"
+globs: ["**/*"]
+---
+
+# Specification
+
+The specification for this repository is <where it lives>.
+Read it with the <tool name> tool before you rely on a requirement.
+If the tool is not loaded yet, search for it by name first.
+```
+
+`.rulesync/` is a [protected path](#protected-paths): Nibfin's agents never
+change it, so commit the rule yourself.
+
+### Limiting connectors
+
+Limit connectors in Claude's user settings: the `settings.json` at the root of
+the `nibfin-home-claude` volume. On Windows and macOS, run `podman machine ssh`
+first; on Linux, run this on the host:
+
+```sh
+cd "$(podman volume inspect nibfin-home-claude --format '{{.Mountpoint}}')"
+vi settings.json
+```
+
+If access is denied, run `podman unshare vi settings.json` instead. Keep the file a JSON
+object and keep the `enableAllProjectMcpServers` line Nibfin added. A file that
+is not a JSON object stops Jobs with `AGENT_CONFIG_INVALID`.
+
+```json
+{
+  "enableAllProjectMcpServers": true,
+  "deniedMcpServers": [
+    { "serverName": "claude.ai Example" },
+    { "serverUrl": "https://mcp.example.com/*" }
+  ],
+  "permissions": {
+    "deny": [
+      "mcp__claude_ai_Other__create_item",
+      "mcp__claude_ai_Other__delete_item"
+    ]
+  }
+}
+```
+
+- **`deniedMcpServers`** keeps whole connectors out of Jobs. A `serverName`
+  entry matches the connector's claude.ai display name exactly, and that name
+  can change, so also add a `serverUrl` entry (`*` wildcards allowed) for the
+  connector's server address.
+- **`permissions.deny`** blocks single tools of a connector the Jobs still
+  load, for example its write tools. `mcp__<server>__<tool>` names one tool and
+  `mcp__<server>__*` names all of a server's tools. In `<server>`, spaces and
+  dots become `_`, so `claude.ai Other` is written `claude_ai_Other`.
+- **Use a deny list.** In `allowedMcpServers`, a `serverName` may only contain
+  letters, numbers, hyphens and underscores, so connector names with spaces
+  cannot be listed there.
+- Both settings apply under `bypassPermissions`: deny rules block in every
+  mode.
+- After you connect a new connector on claude.ai, or one gains new write tools,
+  add it to the deny list.
+
+See Claude Code's [settings](https://code.claude.com/docs/en/settings),
+[permissions](https://code.claude.com/docs/en/permissions) and
+[MCP server limits](https://code.claude.com/docs/en/managed-mcp)
+documentation.
+
+### What keeps or removes these settings
+
+- They live in the login volume, not in the image. Image updates and
+  [`gh nibfin upgrade`](../cli/#upgrade) leave them as they are; Nibfin only
+  merges `enableAllProjectMcpServers` into the file.
+- [`gh nibfin runner remove claude --delete-login`](../cli/#runner-remove)
+  deletes the whole volume, these settings included.
+
+:::note[A harmless warning]
+With `deniedMcpServers` in your user settings, Claude prints a line saying a
+server is "blocked by enterprise policy" on stderr when it starts, so it shows
+in the Job log. It comes from your own settings, not from an organization
+policy, and does not affect the Job.
+:::
 
 ## Collaborators' Runners
 
