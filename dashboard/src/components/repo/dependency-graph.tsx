@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { Check, CircleCheck, Search, X } from 'lucide-react'
 import {
   Controls,
@@ -35,6 +35,7 @@ import {
   layoutGraph,
   nodeKey,
   nodeLabel,
+  nodeName,
   positionGraph,
   type Direction,
   type Graph,
@@ -346,7 +347,7 @@ function ClosedMarker({ graph, owner, group }: { graph: Graph; owner: GraphNode;
           <span className="sr-only">(closed blockers of {name})</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)]" data-slot="closed-list">
+      <PopoverContent align="start" collisionPadding={16} className="w-80 max-w-[calc(100vw-2rem)]" data-slot="closed-list">
         <h4 className="text-sm font-semibold">Closed blockers of {name}</h4>
         <ul className="mt-2 flex flex-col gap-2 text-sm">
           {group.map(
@@ -421,6 +422,7 @@ function GraphRegion({
   groups: Map<string, GraphNode[]>
 }) {
   const rf = useReactFlow<FlowNode>()
+  const { graph } = useContext(SharedContext)!
   const marker = `${useId().replace(/[^a-zA-Z0-9_-]/g, '')}-arrow`
   // The region is state, not a ref: its width is observed in a layout
   // effect, which runs before a parent's ref is attached.
@@ -466,13 +468,14 @@ function GraphRegion({
           position: box ? { x: box.x, y: box.y } : { x: 0, y: 0 },
           data: { context: context.has(k), blocks: blocks.get(k) ?? [], closed: groups.get(k) ?? [], width },
           ...(size ? { measured: size } : {}),
+          ariaLabel: nodeName(graph, graph.nodes.get(k)!, context.has(k), groups.get(k)?.length ?? 0),
           draggable: false,
           selectable: false,
           deletable: false,
           connectable: false,
         }
       }),
-    [placement, keys, sizes, context, blocks, groups, width],
+    [placement, keys, sizes, context, blocks, groups, width, graph],
   )
 
   // Fit once per shown set and direction: later size changes, such as runs
@@ -497,6 +500,28 @@ function GraphRegion({
   }, [placement, direction, keys, rf, region])
 
   const lr = direction === 'LR'
+  // Keyboard focus on a node, or on a link or button inside one, pans the
+  // view so the focused element is in sight. React Flow's own pan on node
+  // focus covers only the node itself, and only with its keyboard handling,
+  // which would also take Enter and Space from the controls inside.
+  const onFocus = useCallback(
+    (e: FocusEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement
+      if (!lr || !region || !target.closest('.react-flow__node')) return
+      requestAnimationFrame(() => {
+        const r = region.getBoundingClientRect()
+        const t = target.getBoundingClientRect()
+        const view = { left: r.left + pad, top: r.top + pad, right: r.right - pad, bottom: r.bottom - band }
+        if (t.left >= view.left && t.top >= view.top && t.right <= view.right && t.bottom <= view.bottom) return
+        // Bring the element's top left into view, centred when it fits.
+        const dx = t.width < view.right - view.left ? (view.left + view.right) / 2 - (t.left + t.right) / 2 : view.left - t.left
+        const dy = t.height < view.bottom - view.top ? (view.top + view.bottom) / 2 - (t.top + t.bottom) / 2 : view.top - t.top
+        const { x, y, zoom } = rf.getViewport()
+        void rf.setViewport({ x: x + dx, y: y + dy, zoom }).then(() => target.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
+      })
+    },
+    [lr, region, rf],
+  )
   const content = placement ? placement.height + (lr ? pad + band : 2 * pad) : 320
   // The minimap helps only when the whole graph does not fit at a readable
   // zoom, so the view opens on part of it.
@@ -513,6 +538,7 @@ function GraphRegion({
       </p>
       <div
         ref={setRegion}
+        onFocus={onFocus}
         role="region"
         aria-label="Dependency graph"
         tabIndex={0}
@@ -534,7 +560,7 @@ function GraphRegion({
           nodesFocusable
           edgesFocusable={false}
           disableKeyboardA11y
-          autoPanOnNodeFocus={lr}
+          autoPanOnNodeFocus={false}
           panOnDrag={lr}
           zoomOnScroll={false}
           panOnScroll={false}
