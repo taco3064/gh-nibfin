@@ -273,7 +273,11 @@ for (const [width, theme] of [
     expect(ends.length).toBeGreaterThan(20)
     expect(new Set(ends).size).toBe(ends.length)
 
-    await marker.scrollIntoViewIfNeeded()
+    // Searching for #2 fits it in the view; its closed blocker stays a marker.
+    await page.getByRole('searchbox', { name: 'Search Issues' }).fill('#2')
+    await expect(page.locator('[data-slot=graph-count]')).toHaveText(`Showing 1 of ${platform.length} open Issues · 0 shown as context · 1 closed blocker collapsed`)
+    await expect(region.locator('[data-node]')).toHaveCount(1)
+    await edgesDrawn(page, 0)
     await marker.click()
     const list = page.locator('[data-slot=closed-list]')
     await expect(list).toBeVisible()

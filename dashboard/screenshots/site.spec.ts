@@ -149,6 +149,12 @@ for (const theme of themes) {
       await expect(page.getByText('Busy; its job could not be matched.')).toBeVisible()
       await expect(repoView(page).locator('[data-slot=repo-link]')).toHaveAttribute('href', 'https://github.com/taco3064/nibfin-core')
       await expect(repoView(page).locator('[data-slot=dependency-graph]')).toContainText('Showing 54 of 54 open Issues')
+      // The same node graph, read-only: closed blockers are markers and the
+      // layout follows the width.
+      const graph = repoView(page).getByRole('region', { name: 'Dependency graph', exact: true })
+      await expect(graph).toHaveAttribute('data-direction', width < 700 ? 'TB' : 'LR')
+      await expect(graph.locator('[data-slot=closed-blockers]').first()).toBeVisible()
+      expect(await graph.locator('[data-slot=edges] path[data-edge]').count()).toBeGreaterThan(0)
       await expectNoOperation(page)
       await expectNoRunnerName(page)
       await expectNoPageScroll(page)
