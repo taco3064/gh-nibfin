@@ -669,6 +669,16 @@ for (const theme of themes) {
         'Online and busy not read: github_error: listing the runners of acme/app: HTTP 502',
       )
 
+      // Without admin GitHub's Runner list is not read: no measured zero.
+      w.status = { result: personView({ host: noAdmin }) }
+      await page.getByRole('button', { name: 'Refresh' }).click()
+      await expect(runners.locator('[data-state=github-needs-admin]')).toHaveText(
+        "Online and busy not read: GitHub's Runner list needs admin of acme/app.",
+      )
+      await expect(runners.locator('[data-slot=runner-counts]')).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await shot(page, `summary-runner-no-admin-${theme}-${width}`, false)
+
       w.status = { result: personView({ host: hosts.machineStopped }) }
       await page.getByRole('button', { name: 'Refresh' }).click()
       await expect(runners.locator('[data-note=tile-error]')).toHaveText([

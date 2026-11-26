@@ -197,10 +197,16 @@ describe('runnerCounts', () => {
   })
   it('counts online and busy slots like the runner view', () => {
     const h = host([slot({}), slot({ busy: true }), slot({ status: 'offline', busy: true }), slot({ status: undefined, listed: false })])
-    expect(runnerCounts(h)).toEqual({ online: 2, busy: 1, usedKB: 6 * 1024 * 1024, totalKB: 8 * 1024 * 1024 })
+    expect(runnerCounts(h)).toEqual({ github: 'read', online: 2, busy: 1, usedKB: 6 * 1024 * 1024, totalKB: 8 * 1024 * 1024 })
+  })
+  it('says when GitHub was not read or needs admin', () => {
+    const h = host([slot({ status: undefined, listed: false })])
+    expect(runnerCounts({ ...h, runners: { ...h.runners, githubNeedsAdmin: true } }).github).toBe('needs-admin')
+    expect(runnerCounts({ ...h, runners: { ...h.runners, githubError: err } }).github).toBe('error')
+    expect(runnerCounts({ ...h, runners: { ...h.runners, githubError: err, githubNeedsAdmin: true } }).github).toBe('error')
   })
   it('gives no memory when it was not read', () => {
-    expect(runnerCounts(host(null, { totalKB: 0, availableKB: 0 }))).toEqual({ online: 0, busy: 0, usedKB: null, totalKB: null })
+    expect(runnerCounts(host(null, { totalKB: 0, availableKB: 0 }))).toEqual({ github: 'read', online: 0, busy: 0, usedKB: null, totalKB: null })
     expect(runnerCounts(host([], { totalKB: 100, availableKB: 50, error: err } as HostReport['memory']))).toMatchObject({ usedKB: null, totalKB: null })
   })
 })
