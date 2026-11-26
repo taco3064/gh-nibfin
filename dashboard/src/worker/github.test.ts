@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createGitHub, GitHubError, requestBudget, searchPath } from './github'
 import { FakeGitHub, token, quick } from './testing'
-import { waitSeconds } from './github'
+import { askedWait, waitSeconds } from './github'
 
 const path = 'repos/taco3064/gh-nibfin/issues?state=open&per_page=100&page=1'
 
@@ -156,7 +156,17 @@ describe('createGitHub', () => {
 
   it('waits 1, 2 and 4 seconds, or Retry-After up to a minute', () => {
     expect([1, 2, 3].map((a) => waitSeconds(a, null))).toEqual([1, 2, 4])
-    expect(waitSeconds(1, 3600)).toBe(60)
+    expect(waitSeconds(1, 3600)).toBe(10)
+  })
+
+  it('reads the wait from Retry-After or the rate limit reset', () => {
+    const now = 1_000_000
+    expect(askedWait(new Headers({ 'retry-after': '7' }), now)).toBe(7)
+    expect(askedWait(new Headers({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1005' }), now)).toBe(5)
+    expect(askedWait(new Headers({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '990' }), now)).toBe(0)
+    expect(askedWait(new Headers({ 'x-ratelimit-remaining': '3', 'x-ratelimit-reset': '1005' }), now)).toBe(null)
+    expect(askedWait(new Headers({ 'x-ratelimit-remaining': '0' }), now)).toBe(null)
+    expect(askedWait(new Headers(), now)).toBe(null)
   })
 
   it('encodes a search query', () => {

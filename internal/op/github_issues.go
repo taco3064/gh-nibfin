@@ -118,7 +118,7 @@ func (g restGitHub) CreateIssue(ctx context.Context, repo, title, body string) (
 			return false, err
 		}
 		for _, f := range found {
-			if f.Title == title && f.Body == body {
+			if f.Title == title && sameText(f.Body, body) {
 				is = f.ghIssue
 				return true, nil
 			}
@@ -171,13 +171,18 @@ func (g restGitHub) CreateComment(ctx context.Context, repo string, number int, 
 			return false, err
 		}
 		for _, f := range found {
-			if f.Body == body {
+			if sameText(f.Body, body) {
 				return true, nil
 			}
 		}
 		return false, nil
 	})
 	return apiError(fmt.Sprintf("comment on %s#%d", repo, number), err)
+}
+
+// sameText compares two bodies as GitHub stores them, with CRLF as LF.
+func sameText(a, b string) bool {
+	return strings.ReplaceAll(a, "\r\n", "\n") == strings.ReplaceAll(b, "\r\n", "\n")
 }
 
 // now is the clock of the re-read window; tests replace it.

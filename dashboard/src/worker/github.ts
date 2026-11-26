@@ -17,8 +17,10 @@ export const requestBudget = 45
 // retries is the number of retries after the first attempt.
 export const retries = 3
 
-// maxWait bounds one wait taken from Retry-After, in seconds.
-const maxWait = 60
+// maxWait bounds one wait taken from Retry-After or x-ratelimit-reset, in
+// seconds. It is short because a check runs in one alarm, and each retry
+// counts against the request budget like any request.
+const maxWait = 10
 
 // GitHubError is a failed read: a non-2xx, non-304 answer, a network
 // failure, the spent request budget or a missing token.
@@ -92,6 +94,16 @@ function seconds(v: string | null): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
+// askedWait is the wait GitHub asks for, in seconds: Retry-After, or the
+// time to x-ratelimit-reset when x-ratelimit-remaining is 0; null when none.
+export function askedWait(h: Headers, now = Date.now()): number | null {
+  const after = seconds(h.get('retry-after'))
+  if (after !== null) return after
+  if (h.get('x-ratelimit-remaining') !== '0') return null
+  const reset = seconds(h.get('x-ratelimit-reset'))
+  return reset === null ? null : Math.max(0, reset - Math.floor(now / 1000))
+}
+
 function failed(what: string, status: number, retryAfter: number | null, detail: string): GitHubError {
   const message = status > 0 ? `${what}: HTTP ${status}${detail ? `: ${detail}` : ''}` : `${what}: ${detail}`
   return new GitHubError(status, retryAfter, { code: 'github_api_failed', message })
@@ -114,7 +126,7 @@ export function searchPath(q: string): string {
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-// waitSeconds is GitHub's Retry-After (at most maxWait), otherwise 1, 2, 4.
+// waitSeconds is the wait GitHub asked for (at most maxWait), otherwise 1, 2, 4.
 export function waitSeconds(attempt: number, retryAfter: number | null): number {
   return retryAfter === null ? 2 ** (attempt - 1) : Math.min(retryAfter, maxWait)
 }
@@ -199,7 +211,7 @@ export function createGitHub({
     const pollInterval = seconds(res.headers.get('x-poll-interval'))
     if (res.status === 304) return { status: 304, pollInterval }
     if (res.status < 200 || res.status > 299) {
-      throw failed(what, res.status, seconds(res.headers.get('retry-after')), await githubMessage(res))
+      throw failed(what, res.status, askedWait(res.headers), await githubMessage(res))
     }
     let body: unknown
     try {
@@ -214,7 +226,7 @@ export function createGitHub({
     const what = 'POST graphql'
     const res = await send(what, `${api}/graphql`, { method: 'POST', body: JSON.stringify({ query, variables }) })
     if (res.status < 200 || res.status > 299) {
-      throw failed(what, res.status, seconds(res.headers.get('retry-after')), await githubMessage(res))
+      throw failed(what, res.status, askedWait(res.headers), await githubMessage(res))
     }
     let body: { data?: unknown; errors?: unknown }
     try {
