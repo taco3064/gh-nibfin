@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { commands } from './command-fixtures'
-import { expectClean, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths } from './support'
+import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths } from './support'
 
 // Screenshots and checks of the operation dialog (#351) in its harness
 // (operation.html), served by the real Go server with its CSP. The schema,
@@ -18,12 +18,15 @@ const step = (id: string, action: string, target: string, extra: Record<string, 
   ...extra,
 })
 
+// imageRef is a long unbroken target that wraps inside its row on a phone.
+const imageRef = 'ghcr.io/acme-platform-infrastructure/nibfin-runner@sha256:4f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a39'
+
 const plans: Record<string, unknown> = {
   'runner-add': {
     operation: 'runner add',
     steps: [
       step('machine', 'start machine', 'nibfin-machine', { current: 'stopped', next: 'running' }),
-      step('image', 'pull image', 'ghcr.io/acme/nibfin-runner:1.4.0', { current: '1.4.0', next: '1.4.0', noChange: true }),
+      step('image', 'pull image', imageRef, { current: '1.4.0', next: '1.4.0', noChange: true }),
       step('login', 'log in', 'claude', { detail: 'You may be asked to open a URL and paste a code.', next: 'logged in' }),
       step('slots', 'start Runners', '2 new slots', { next: 'running', afterStart: true }),
     ],
@@ -87,7 +90,7 @@ const applyLines: Record<string, string[]> = {
       result: {
         items: [
           check('machine', 'start machine', 'nibfin-machine', true, 'running'),
-          check('image', 'pull image', 'ghcr.io/acme/nibfin-runner:1.4.0', true, '1.4.0'),
+          check('image', 'pull image', imageRef, true, '1.4.0'),
           check('login', 'log in', 'claude', true, 'logged in'),
           check('slot:claude-3', 'start Runner', 'claude-3', false, 'registering', 'the Runner is not online on GitHub yet'),
           check('slot:claude-4', 'start Runner', 'claude-4', true, 'running'),
@@ -309,8 +312,10 @@ async function open(page: Page, width: number, theme: (typeof themes)[number] = 
   return { w, api }
 }
 
+// expectNoPageScroll checks that the page does not scroll sideways and that
+// its controls and cards keep the side gutter.
 async function expectNoPageScroll(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expectGutter(page)
 }
 
 async function openDialog(page: Page, path: string): Promise<Locator> {
@@ -341,7 +346,7 @@ test('the harness lists only commands with an API name', async ({ page }) => {
   await expectClean(w)
 })
 
-for (const width of widths) {
+for (const width of [...widths, 390]) {
   for (const theme of themes) {
     test(`operation dialog phases at ${width}px, ${theme}`, async ({ page }) => {
       const { w, api } = await open(page, width, theme)
@@ -374,6 +379,11 @@ for (const width of widths) {
       await expect(dialog.getByRole('list', { name: 'Planned items' }).getByRole('listitem')).toHaveCount(4)
       expect(api.plans).toEqual([{ api: 'runner-add', body: { provider: 'claude', count: 2 } }])
       await expect(item(dialog, 'image').locator('[data-badge=no-change]')).toHaveText('No change needed')
+      // No change needed reads as done: a static circle check, not the
+      // dashed circle that looked like loading (#412).
+      const noChangeIcon = item(dialog, 'image').locator('[data-badge=no-change] svg')
+      await expect(noChangeIcon).toHaveClass(/lucide-circle-check/)
+      await expect(noChangeIcon).not.toHaveClass(/animate-spin/)
       await expect(item(dialog, 'slots').locator('[data-badge=after-start]')).toHaveText('Known after the machine starts')
       await expect(item(dialog, 'machine').locator('[data-slot=transition]')).toContainText('stopped')
       await expect(item(dialog, 'login').locator('[data-slot=transition]')).toContainText('unknown')

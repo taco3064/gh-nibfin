@@ -89,10 +89,14 @@ function repoView(repo: string, over: Record<string, unknown>) {
   }
 }
 
+// longRepo is an OWNER/REPO without a break opportunity on a phone.
+const longRepo = 'acme-platform-infrastructure/shared-terraform-modules-and-runbooks'
+
 // platformIssues is a large generated graph: eight chains six deep, a wide
 // layer on one foundation Issue, cross-repository and closed blockers, Issues
 // blocked by several chain ends, two cycles, an unread blocker list and
-// Issues without dependencies.
+// Issues without dependencies. A few titles and one blocker's OWNER/REPO are
+// long unbroken tokens, such as file paths.
 function platformIssues() {
   const r = 'acme/platform'
   const own = (n: number, state: 'OPEN' | 'CLOSED' = 'OPEN') => blocker(r, n, `Platform task ${n}`, state)
@@ -106,6 +110,7 @@ function platformIssues() {
       const blockers: Blocker[] = []
       if (i > 0) blockers.push(own(n - 1))
       else if (c % 2 === 0) blockers.push(own(1))
+      else if (c === 3) blockers.push(blocker(longRepo, 203, 'Provision infrastructure/terraform/modules/object-storage-bucket/main.tf'))
       else blockers.push(blocker('acme/infra', 200 + c, `Infra prerequisite ${200 + c}`))
       if (i === 2 && c % 3 === 0) blockers.push(own(500 + c, 'CLOSED'))
       out.push(issue(r, n, `Chain ${c + 1} step ${i + 1}: ${['design', 'schema', 'service', 'API', 'client', 'rollout'][i]}`, blockers))
@@ -114,7 +119,7 @@ function platformIssues() {
   for (let n = 60; n < 100; n++) {
     const blockers = [own(1)]
     if (n % 5 === 0) blockers.push(own(2))
-    out.push(issue(r, n, `Wide layer task ${n}`, blockers))
+    out.push(issue(r, n, n === 60 ? 'Wide layer task 60: templates/workflows/nibfin-shared-runner.yml.tmpl' : `Wide layer task ${n}`, blockers))
   }
   for (let n = 100; n < 120; n++) {
     const a = 15 + ((n - 100) % 8) * 6
@@ -127,7 +132,8 @@ function platformIssues() {
   out.push(issue(r, 123, 'Cycle B: second', [own(124)]))
   out.push(issue(r, 124, 'Cycle B: third', [own(122)]))
   out.push(issue(r, 125, 'Blockers of this Issue could not be read', undefined, { blockedByError: error('github_error', 'blocked-by of #125: HTTP 502') }))
-  for (let n = 126; n <= 150; n++) out.push(issue(r, n, `Standalone improvement ${n}`, []))
+  out.push(issue(r, 126, 'Standalone: split dashboard/src/components/operation/operation-items.tsx', []))
+  for (let n = 127; n <= 150; n++) out.push(issue(r, n, `Standalone improvement ${n}`, []))
   return out
 }
 
