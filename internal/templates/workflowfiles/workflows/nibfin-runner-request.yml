@@ -158,41 +158,30 @@ jobs:
           NIBFIN_TOKEN: ${{ secrets.NIBFIN_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Every GitHub API call is retried up to 3 times on any error (R4.37).
-          # The retry line names the call and its path, never a body.
-          gh_retry() {
-            local attempt arg out what=
-            for arg in "$@"; do
-              case "$arg" in */*) what=$arg && break ;; esac
-            done
-            for attempt in 1 2 3 4; do
-              if out=$(gh "$@"); then
-                [ -z "$out" ] || printf '%s\n' "$out"
-                return 0
-              fi
-              [ "$attempt" != 4 ] || return 1
-              echo "nibfin: GitHub API $1 $what failed; retry $attempt of 3" >&2
-              sleep $((1 << (attempt - 1)))
-            done
-          }
           key=$(cat "$RUNNER_TEMP/nibfin-deploy-key.pub")
           blob=${key#ssh-ed25519 }
           title="nibfin-runner-$LOGIN"
           err="$RUNNER_TEMP/nibfin-deploy-key.err"
-          # A failed add is retried; a key it already added is found below.
-          if id=$(GH_TOKEN="$NIBFIN_TOKEN" gh_retry api -X POST "repos/$REPO/keys" \
-            -f title="$title" -f key="$key" -F read_only=true --jq .id 2>"$err"); then
-            echo "Added the read-only deploy key $title to $REPO (id $id)"
-            exit 0
-          fi
-          # A key that is already a deploy key of this repository is accepted.
-          if found=$(GH_TOKEN="$NIBFIN_TOKEN" gh_retry api --paginate "repos/$REPO/keys" |
-            jq -r --arg blob "$blob" \
-              '.[] | select(((.key // "") | split(" ") | .[1]) == $blob) | "id \(.id), read_only \(.read_only)"' |
-            sed -n 1p) && [ -n "$found" ]; then
-            echo "The key is already a deploy key of $REPO ($found)"
-            exit 0
-          fi
+          # A failed add is retried up to 3 times, but only after the keys are
+          # read again: a key that is already a deploy key of this repository,
+          # also one an earlier attempt added, is accepted.
+          for attempt in 1 2 3 4; do
+            if id=$(GH_TOKEN="$NIBFIN_TOKEN" gh api -X POST "repos/$REPO/keys" \
+              -f title="$title" -f key="$key" -F read_only=true --jq .id 2>"$err"); then
+              echo "Added the read-only deploy key $title to $REPO (id $id)"
+              exit 0
+            fi
+            if found=$(GH_TOKEN="$NIBFIN_TOKEN" gh api --paginate "repos/$REPO/keys" |
+              jq -r --arg blob "$blob" \
+                '.[] | select(((.key // "") | split(" ") | .[1]) == $blob) | "id \(.id), read_only \(.read_only)"' |
+              sed -n 1p) && [ -n "$found" ]; then
+              echo "The key is already a deploy key of $REPO ($found)"
+              exit 0
+            fi
+            [ "$attempt" != 4 ] || break
+            echo "nibfin: GitHub API add deploy key to repos/$REPO failed; retry $attempt of 3" >&2
+            sleep $((1 << (attempt - 1)))
+          done
           cat "$err" >&2
           echo "Cannot add the deploy key $title to $REPO" >&2
           exit 1

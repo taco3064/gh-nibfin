@@ -3,9 +3,9 @@
 // response, 5xx, 4xx, rate limit or a GraphQL error), before the caller sees
 // the last answer unchanged.
 //
-// Answers that are not errors are not retried: a GET or HEAD 404 or 410 and
-// a GraphQL answer whose only errors are NOT_FOUND, which callers read as
-// "absent", and a 304. A request marked with Once is
+// Answers that are not errors are not retried: a GET, HEAD or DELETE 404 or
+// 410, the 403 of a plan without the feature and a GraphQL answer whose only
+// errors are NOT_FOUND, which callers read as "absent", and a 304. A request marked with Once is
 // sent one time only; its caller re-reads before sending it again, so a
 // create is never duplicated.
 package ghretry
@@ -121,7 +121,9 @@ func failure(req *http.Request, resp *http.Response, err error) (string, bool) {
 	case code == http.StatusNotModified:
 		return "", false
 	case (code == http.StatusNotFound || code == http.StatusGone) &&
-		(req.Method == http.MethodGet || req.Method == http.MethodHead):
+		(req.Method == http.MethodGet || req.Method == http.MethodHead || req.Method == http.MethodDelete):
+		return "", false
+	case code == http.StatusForbidden && planGated(resp):
 		return "", false
 	case code >= 400:
 		return "HTTP " + strconv.Itoa(code), true
@@ -133,16 +135,35 @@ func failure(req *http.Request, resp *http.Response, err error) (string, bool) {
 	return "", false
 }
 
+// planGated reads a 403 and puts it back; it reports whether it is the
+// answer GitHub gives on a plan without the feature ("Upgrade to GitHub Pro
+// or make this repository public to enable this feature."), which callers
+// read as "absent".
+func planGated(resp *http.Response) bool {
+	body := keep(resp)
+	var answer struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &answer) != nil {
+		return false
+	}
+	msg := strings.ToLower(answer.Message)
+	return strings.Contains(msg, "upgrade to github pro") || strings.Contains(msg, "make this repository public")
+}
+
+// keep reads resp's body and puts a copy back for the caller.
+func keep(resp *http.Response) []byte {
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return body
+}
+
 // graphQLErrors reads a GraphQL answer and puts it back; it reports whether
 // the answer carries a top-level error other than NOT_FOUND, which callers
 // read as "absent" like a REST 404.
 func graphQLErrors(resp *http.Response) bool {
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	if err != nil {
-		return false
-	}
+	body := keep(resp)
 	var answer struct {
 		Errors []struct {
 			Type string `json:"type"`

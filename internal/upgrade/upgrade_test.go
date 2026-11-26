@@ -53,8 +53,10 @@ type fakeGitHub struct {
 	// write took effect when failAfter is set (a crash after the write).
 	fail      map[string]error
 	failAfter bool
-	calls     []string
-	n         int
+	// persist keeps each fail failing, past the retries of a create.
+	persist bool
+	calls   []string
+	n       int
 }
 
 func newFake(files map[string]string) *fakeGitHub {
@@ -86,7 +88,9 @@ func (f *fakeGitHub) DoWithContext(_ context.Context, method, p string, body io.
 	f.calls = append(f.calls, key)
 	failure := f.fail[key]
 	if failure != nil {
-		delete(f.fail, key)
+		if !f.persist {
+			delete(f.fail, key)
+		}
 		if !f.failAfter {
 			return failure
 		}
@@ -486,7 +490,16 @@ func TestRerunAfterACrash(t *testing.T) {
 		f.fail = map[string]error{key: errors.New("connection reset")}
 		f.failAfter = true
 		stub(t, f)
-		if _, _, _, err := run(t); op.Code(err) != op.CodeRepoWriteFailed || strings.Contains(err.Error(), "workflow scope") {
+		_, _, _, err := run(t)
+		// A branch or PR create whose answer was lost is found by its
+		// re-read in the same run (ghretry.Do).
+		if key == "POST repos/o/r/git/refs" || key == "POST repos/o/r/pulls" {
+			if err != nil || len(f.prs) != 1 {
+				t.Fatalf("%s: first run %v, PRs %+v", key, err, f.prs)
+			}
+			continue
+		}
+		if op.Code(err) != op.CodeRepoWriteFailed || strings.Contains(err.Error(), "workflow scope") {
 			t.Fatalf("%s: first run %v", key, err)
 		}
 		before := len(f.calls)
@@ -569,6 +582,7 @@ func TestWriteFailureNamesTheScope(t *testing.T) {
 	for _, status := range []int{403, 404, 422} {
 		f := newFake(stale(t, templates.Peer))
 		f.fail = map[string]error{"POST repos/o/r/git/refs": &api.HTTPError{StatusCode: status, Message: "refused"}}
+		f.persist = true
 		stub(t, f)
 		_, _, _, err := run(t)
 		if op.Code(err) != op.CodeRepoWriteFailed || !strings.Contains(err.Error(), "refused") || !strings.Contains(err.Error(), "gh auth refresh -s workflow") {
