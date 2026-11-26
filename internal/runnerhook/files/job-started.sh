@@ -10,10 +10,16 @@ refuse() {
   exit 1
 }
 
+# The hook's directory: from the script's own path, else from the variable
+# the runner found it by (the slot's .env).
 self=${BASH_SOURCE:-$0}
 case $self in
 /*/job-started.sh) ;;
-*) refuse "the hook does not know its own location ($self). Run gh nibfin runner add again." ;;
+*) self=${ACTIONS_RUNNER_HOOK_JOB_STARTED:-} ;;
+esac
+case $self in
+/*/job-started.sh) ;;
+*) refuse "the hook does not know its own location. Run gh nibfin runner add again." ;;
 esac
 hook=${self%/*}
 
