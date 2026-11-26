@@ -139,18 +139,20 @@ function platformIssues() {
 
 export const platform = platformIssues()
 
-// edgeCount is the number of distinct dependent → blocker pairs.
+// edgeCount is the number of distinct dependent → blocker pairs with an
+// open blocker: the drawn edges. Closed blockers collapse into markers.
 export function edgeCount(issues: { number: number; blockedBy?: Blocker[] }[], repo: string): number {
   const pairs = new Set<string>()
-  for (const i of issues) for (const b of i.blockedBy ?? []) pairs.add(`${repo}#${i.number}>${b.repo}#${b.number}`.toLowerCase())
+  for (const i of issues) for (const b of i.blockedBy ?? []) if (b.state === 'OPEN') pairs.add(`${repo}#${i.number}>${b.repo}#${b.number}`.toLowerCase())
   return pairs.size
 }
 
-// outsideCount is the number of distinct blockers that are not listed.
-export function outsideCount(issues: { number: number; blockedBy?: Blocker[] }[], repo: string): number {
+// outsideCount is the number of distinct blockers in the given state that
+// are not listed: open ones are drawn as context, closed ones collapsed.
+export function outsideCount(issues: { number: number; blockedBy?: Blocker[] }[], repo: string, state: Blocker['state'] = 'OPEN'): number {
   const listed = new Set(issues.map((i) => `${repo}#${i.number}`.toLowerCase()))
   const out = new Set<string>()
-  for (const i of issues) for (const b of i.blockedBy ?? []) out.add(`${b.repo}#${b.number}`.toLowerCase())
+  for (const i of issues) for (const b of i.blockedBy ?? []) if (b.state === state) out.add(`${b.repo}#${b.number}`.toLowerCase())
   return [...out].filter((k) => !listed.has(k)).length
 }
 

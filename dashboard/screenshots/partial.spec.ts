@@ -106,7 +106,8 @@ for (const theme of themes) {
       await expect(loadingOf(page, 'workflows')).toHaveCount(0)
       await expect(page.locator('[data-slot=workflows]')).toHaveAttribute('data-workflows', 'execution')
       await expect(loadingOf(page, 'blockedBy')).toHaveCount(0)
-      await expect(page.locator('[data-slot=edges] path[data-edge]')).toHaveCount(3)
+      // #101 → #99 and #99 → acme/infra#12; the closed #98 is a marker.
+      await expect(page.locator('[data-slot=edges] path[data-edge]')).toHaveCount(2)
       await expect(loadingOf(page, 'runs').first()).toHaveText('Reading runs…')
       await expect(page.locator('[data-view=repo] article[data-issue] :is([data-action=pause], [data-action=resume])').first()).toBeEnabled()
       await expectNoPageScroll(page)
