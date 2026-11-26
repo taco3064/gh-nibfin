@@ -52,7 +52,7 @@ export function RepoPicker({ source, listReading, current, onOpen }: RepoPickerP
   return (
     <Card className="gap-4 border-border-subtle py-4" data-slot="picker" data-state="open">
       <CardHeader className="flex flex-wrap items-start justify-between gap-2 px-4 sm:px-5">
-        <h2 className="text-base font-semibold break-words">
+        <h2 className="text-base font-semibold">
           {source ? (
             <>
               Repositories using Nibfin on <span data-slot="picker-host">{source.host}</span>
