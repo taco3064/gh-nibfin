@@ -659,3 +659,32 @@ func TestPublicGood(t *testing.T) {
 		t.Error("a line that is not JSON was accepted")
 	}
 }
+
+// TestHookFindsItselfByTheVariable runs the hook from stdin, as if the
+// runner ran a copy: it finds its directory through
+// ACTIONS_RUNNER_HOOK_JOB_STARTED, and refuses without it.
+func TestHookFindsItselfByTheVariable(t *testing.T) {
+	f := newFixture(t)
+	f.install()
+	run := func(extra ...string) (string, error) {
+		script, err := os.Open(filepath.Join(f.hook, runnerhook.Script))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer script.Close()
+		c := exec.Command("bash", "-e", "-s")
+		c.Stdin = script
+		c.Env = append([]string{"PATH=" + f.path, "TMPDIR=" + f.tmp, "HOME=" + f.home}, extra...)
+		for k, v := range f.env {
+			c.Env = append(c.Env, k+"="+v)
+		}
+		out, err := c.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run("ACTIONS_RUNNER_HOOK_JOB_STARTED=" + filepath.Join(f.hook, runnerhook.Script)); err != nil || !strings.Contains(out, "Nibfin hook: accepted") {
+		t.Errorf("with the variable: %v\n%s", err, out)
+	}
+	if out, err := run(); err == nil || !strings.Contains(out, "does not know its own location") {
+		t.Errorf("without it: %v\n%s", err, out)
+	}
+}
