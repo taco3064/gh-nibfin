@@ -142,6 +142,7 @@ func TestInitReadBackPartlyFails(t *testing.T) {
 func TestInitFailedItem(t *testing.T) {
 	f := newFake("app")
 	f.fail = map[string]error{"POST repos/o/app/pulls": httpErr(502, "boom")}
+	f.persist = true
 	stub(t, f, execRunners())
 	var failed, done []string
 	ctx := op.WithProgress(context.Background(), func(e op.Event) {

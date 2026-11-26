@@ -66,6 +66,7 @@ type fakeGitHub struct {
 	refs          map[string]string
 	prs           []*fakePR
 	fail          map[string]error
+	persist       bool // keeps each fail failing, past the retries of a create
 	calls         []string
 	n             int
 }
@@ -124,7 +125,9 @@ func (f *fakeGitHub) DoWithContext(_ context.Context, method, p string, body io.
 	key := method + " " + u.Path
 	f.calls = append(f.calls, key)
 	if e := f.fail[key]; e != nil {
-		delete(f.fail, key)
+		if !f.persist {
+			delete(f.fail, key)
+		}
 		return e
 	}
 	var in map[string]any
@@ -928,10 +931,12 @@ func TestInitBranchWithoutPR(t *testing.T) {
 	// A crash after the branch write: the rerun only opens the PR.
 	f := newFake("app")
 	f.fail = map[string]error{"POST repos/o/app/pulls": httpErr(502, "boom")}
+	f.persist = true
 	stub(t, f, execRunners())
 	if _, _, err := run(t); op.Code(err) != op.CodeRepoWriteFailed {
 		t.Fatalf("first: %v", err)
 	}
+	f.fail, f.persist = map[string]error{}, false
 	head := f.refs[Branch]
 	p, r, err := run(t)
 	if err != nil {

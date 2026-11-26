@@ -101,7 +101,7 @@ func TestAnswersThatAreNotErrors(t *testing.T) {
 	for _, c := range []struct {
 		method string
 		code   int
-	}{{http.MethodGet, 404}, {http.MethodHead, 410}, {http.MethodGet, 304}, {http.MethodGet, 200}} {
+	}{{http.MethodGet, 404}, {http.MethodHead, 410}, {http.MethodDelete, 404}, {http.MethodGet, 304}, {http.MethodGet, 200}} {
 		s, n, _ := server(t, c.code)
 		resp := do(t, context.Background(), c.method, s.URL+"/x", "")
 		if resp.StatusCode != c.code || n.Load() != 1 {
@@ -112,6 +112,30 @@ func TestAnswersThatAreNotErrors(t *testing.T) {
 	s, n, _ := server(t, 404, 204)
 	if resp := do(t, context.Background(), http.MethodPut, s.URL+"/x", "{}"); resp.StatusCode != 204 || n.Load() != 2 {
 		t.Fatalf("PUT 404: status %d after %d attempts", resp.StatusCode, n.Load())
+	}
+}
+
+func TestPlanGatedForbiddenIsAnAnswer(t *testing.T) {
+	quiet(t)
+	for _, c := range []struct {
+		msg   string
+		tries int32
+	}{
+		{"Upgrade to GitHub Pro or make this repository public to enable this feature.", 1},
+		{"API rate limit exceeded", 4},
+	} {
+		var n atomic.Int32
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n.Add(1)
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"message":"`+c.msg+`"}`)
+		}))
+		resp := do(t, context.Background(), http.MethodGet, s.URL+"/repos/o/r/rules/branches/main", "")
+		b, _ := io.ReadAll(resp.Body)
+		s.Close()
+		if n.Load() != c.tries || !strings.Contains(string(b), c.msg) {
+			t.Errorf("%q: %d attempts, body %s", c.msg, n.Load(), b)
+		}
 	}
 }
 

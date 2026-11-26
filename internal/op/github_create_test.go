@@ -40,7 +40,8 @@ func (s *createServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
 	var one string
 	if strings.HasSuffix(r.URL.Path, "/comments") {
-		one = string(b)
+		// GitHub stores a comment's CRLF as LF.
+		one = strings.ReplaceAll(string(b), `\r\n`, `\n`)
 	} else {
 		one = strings.TrimSuffix(string(b), "}") + `,"number":7,"html_url":"https://x/7"}`
 	}
@@ -107,6 +108,11 @@ func TestCreateCommentRetriesWithoutDuplicates(t *testing.T) {
 	s = &createServer{fails: 1, landed: true}
 	if err := createClient(t, s).CreateComment(ctx, "ghe.example/o/r", 7, "hi"); err != nil || s.sends != 1 || len(s.created) != 1 {
 		t.Fatalf("lost answer: %v, %d sends, %d created", err, s.sends, len(s.created))
+	}
+	// GitHub may store CRLF as LF: still the same comment.
+	s = &createServer{fails: 1, landed: true}
+	if err := createClient(t, s).CreateComment(ctx, "ghe.example/o/r", 7, "a\r\nb"); err != nil || s.sends != 1 {
+		t.Fatalf("CRLF: %v, %d sends", err, s.sends)
 	}
 	s = &createServer{fails: 9}
 	if err := createClient(t, s).CreateComment(ctx, "ghe.example/o/r", 7, "hi"); Code(err) != CodeGitHubAPIFailed || s.sends != 4 {

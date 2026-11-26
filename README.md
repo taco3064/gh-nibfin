@@ -43,14 +43,17 @@ and the exit code is 1. These lines come from the same items the
 Every GitHub API call (the CLI, the Dashboard, the Live Worker and the `gh
 api` steps of the workflow templates) is retried up to 3 times on any error,
 whatever it is: no response, 5xx, 4xx, rate limit or a GraphQL error. It waits
-as GitHub's `Retry-After` or `x-ratelimit-reset` asks (at most a minute),
-otherwise 1, 2 and 4 seconds, and writes one `nibfin: GitHub API <method>
+as GitHub's `Retry-After` or `x-ratelimit-reset` asks (at most a minute, or
+10 seconds in the Live Worker, whose retries count toward a check's request
+budget), otherwise 1, 2 and 4 seconds, and writes one `nibfin: GitHub API <method>
 <path> failed (<reason>); retry <n> of 3` line on stderr per retry, never a
 query string, body or header. Only after the third retry fails is the error
-reported as before. A GET 404 or 410, or a GraphQL answer whose only errors are
-`NOT_FOUND`, means "absent" and is not retried. A create (an Issue, a comment)
-re-reads before it is sent again, so a create whose answer was lost is not
-duplicated.
+reported as before. A GET or DELETE 404 or 410, the 403 of a plan without the feature
+("Upgrade to GitHub Pro…"), and a GraphQL answer whose only errors are
+`NOT_FOUND` mean "absent" and are not retried. A create (an Issue, a comment,
+a pull request, a branch, a deploy key) re-reads before it is sent again, so a
+create whose answer was lost is not duplicated; a label or variable create
+that landed is found by its "already exists" answer.
 
 ## Workflow templates
 

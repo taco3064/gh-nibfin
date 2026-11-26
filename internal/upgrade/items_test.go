@@ -85,6 +85,7 @@ func TestUpgradeItemsAndProgress(t *testing.T) {
 func TestUpgradeFailedItem(t *testing.T) {
 	f := newFake(stale(t, templates.Peer))
 	f.fail = map[string]error{"POST repos/o/r/pulls": notFound()}
+	f.persist = true
 	stub(t, f)
 	var failed []string
 	ctx := op.WithProgress(context.Background(), func(e op.Event) {

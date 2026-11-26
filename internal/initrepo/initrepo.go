@@ -18,6 +18,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	gh "github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -875,9 +876,22 @@ func (i *initRepo) setSecret(ctx context.Context) error {
 	if token == "" {
 		return op.Errorf(op.CodeAuthUnavailable, "no gh login for %s; run gh auth login -h %s", i.host, i.host)
 	}
-	stderr, err := runGH(ctx, i.secretArgs(), strings.NewReader(token))
-	if err == nil {
-		return nil
+	// gh secret set is a GitHub API call too: it is retried up to 3 times
+	// like every other (setting the same Secret again is harmless).
+	var stderr string
+	var err error
+	for attempt := 1; ; attempt++ {
+		stderr, err = runGH(ctx, i.secretArgs(), strings.NewReader(token))
+		if err == nil {
+			return nil
+		}
+		if attempt > ghretry.Retries || ctx.Err() != nil {
+			break
+		}
+		ghretry.Note("PUT", i.repo.Base+"/actions/secrets/"+secretName, "gh secret set", attempt)
+		if ghretry.Sleep(ctx, time.Duration(1<<(attempt-1))*time.Second) != nil {
+			break
+		}
 	}
 	if ctx.Err() != nil {
 		return op.Errorf(op.CodeCancelled, "cancelled")

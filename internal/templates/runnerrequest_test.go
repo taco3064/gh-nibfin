@@ -702,7 +702,7 @@ func TestRunnerRequestDeployKeyOrder(t *testing.T) {
 		t.Errorf("deploy key step if %q", add.If)
 	}
 	for _, want := range []string{
-		`GH_TOKEN="$NIBFIN_TOKEN" gh_retry api -X POST "repos/$REPO/keys"`,
+		`GH_TOKEN="$NIBFIN_TOKEN" gh api -X POST "repos/$REPO/keys"`,
 		`title="` + RunnerDeployKeyTitlePrefix + `$LOGIN"`,
 		`-F read_only=true`,
 	} {
@@ -827,14 +827,14 @@ func TestRunnerRequestAddDeployKey(t *testing.T) {
 				t.Errorf("%s: gh call without the Nibfin token: %q", c.name, l)
 			}
 		}
-		// A refused add is sent 4 times (3 retries), then the list is read,
-		// itself up to 4 times.
+		// A refused add is read back, then sent again: up to 4 times each.
 		wantCalls := 1
-		if c.post != "ok" {
-			wantCalls = 5
-			if c.listFail {
-				wantCalls = 8
-			}
+		switch {
+		case c.post == "ok":
+		case strings.Contains(c.list, blob):
+			wantCalls = 2
+		default:
+			wantCalls = 8
 		}
 		if len(lines) != wantCalls {
 			t.Errorf("%s: gh calls %q", c.name, lines)

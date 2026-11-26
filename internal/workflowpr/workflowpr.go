@@ -16,6 +16,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/api"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/op"
 	"github.com/taco3064/gh-nibfin/internal/templates"
 )
@@ -102,11 +103,24 @@ func (r Repo) RefSHA(ctx context.Context, branch string) (string, error) {
 // repo_write_failed with go-gh's message; a 403, 404 or 422 also names the
 // workflow scope.
 func (r Repo) Write(ctx context.Context, method, p string, body, response any, what string) error {
+	return r.WriteOnce(ctx, method, p, body, response, what, nil)
+}
+
+// WriteOnce is Write for a create: with done set, a failed send is not
+// repeated blindly; done re-reads whether it took effect first (ghretry.Do).
+func (r Repo) WriteOnce(ctx context.Context, method, p string, body, response any, what string, done func(context.Context) (bool, error)) error {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return op.Wrap(op.CodeRepoWriteFailed, err)
 	}
-	err = r.Client.DoWithContext(ctx, method, r.Base+p, bytes.NewReader(b), response)
+	send := func(ctx context.Context) error {
+		return r.Client.DoWithContext(ctx, method, r.Base+p, bytes.NewReader(b), response)
+	}
+	if done == nil {
+		err = send(ctx)
+	} else {
+		err = ghretry.Do(ctx, method, r.Base+p, send, done)
+	}
 	if err == nil {
 		return nil
 	}
@@ -329,7 +343,17 @@ func (w *PR) Apply(ctx context.Context) error {
 		return op.Track(ctx, steps[len(steps)-1], func() error {
 			var pr PullRequest
 			body := map[string]any{"title": w.Title, "head": w.Branch, "base": w.DefaultBranch, "body": w.Body}
-			if err := w.Repo.Write(ctx, http.MethodPost, "/pulls", body, &pr, "open the PR from "+w.Branch); err != nil {
+			// A PR whose answer was lost is found by its head before sending again.
+			found := func(ctx context.Context) (bool, error) {
+				var open []PullRequest
+				q := w.Repo.Base + "/pulls?state=open&head=" + url.QueryEscape(w.Repo.Owner+":"+w.Branch)
+				if err := w.Repo.Client.DoWithContext(ctx, http.MethodGet, q, nil, &open); err != nil || len(open) == 0 {
+					return false, err
+				}
+				pr = open[0]
+				return true, nil
+			}
+			if err := w.Repo.WriteOnce(ctx, http.MethodPost, "/pulls", body, &pr, "open the PR from "+w.Branch, found); err != nil {
 				return err
 			}
 			w.Open = &pr
@@ -387,7 +411,12 @@ func (w *PR) writeBranch(ctx context.Context) error {
 	if w.BranchSHA != "" {
 		err = r.Write(ctx, http.MethodPatch, "/git/refs/heads/"+EscapeRef(w.Branch), map[string]any{"sha": created.SHA, "force": true}, nil, "update the branch "+w.Branch)
 	} else {
-		err = r.Write(ctx, http.MethodPost, "/git/refs", map[string]any{"ref": "refs/heads/" + w.Branch, "sha": created.SHA}, nil, "create the branch "+w.Branch)
+		// A branch whose answer was lost is found at the commit before sending again.
+		found := func(ctx context.Context) (bool, error) {
+			sha, err := r.RefSHA(ctx, w.Branch)
+			return err == nil && sha == created.SHA, err
+		}
+		err = r.WriteOnce(ctx, http.MethodPost, "/git/refs", map[string]any{"ref": "refs/heads/" + w.Branch, "sha": created.SHA}, nil, "create the branch "+w.Branch, found)
 	}
 	if err != nil {
 		return err
