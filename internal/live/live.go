@@ -194,6 +194,13 @@ func Watch(ctx context.Context, d Deps, send func(Event)) error {
 			w.podOn = false
 			w.podman(false, err)
 		case <-tick:
+			// A snapshot signals rebuilt before it is sent, so a tick that
+			// follows it always sees the rebuilt watch set (#433).
+			select {
+			case <-w.rebuilt:
+				w.rebuild(ctx)
+			default:
+			}
 			w.tick(ctx, &wg)
 		}
 	}
@@ -326,9 +333,24 @@ func (w *watcher) tick(ctx context.Context, wg *sync.WaitGroup) {
 	if !ok || ctx.Err() != nil {
 		return
 	}
+	// A full read that ended during this tick leaves the rebuild signal
+	// under the same lock as the end of the read: rebuild then, and check
+	// the new watch set on the next tick, not now (#433).
 	w.mu.Lock()
 	idle := !w.busy && !w.full && len(w.dirty) == 0
+	pending := false
+	if idle {
+		select {
+		case <-w.rebuilt:
+			pending = true
+		default:
+		}
+	}
 	w.mu.Unlock()
+	if pending {
+		w.rebuild(ctx)
+		return
+	}
 	if !idle {
 		return
 	}
@@ -439,13 +461,17 @@ func (w *watcher) fullRead(ctx context.Context, first bool) error {
 	if res == nil {
 		res = op.Result{}
 	}
+	// The view, the end of the read and the rebuild signal change together
+	// under w.mu and before the snapshot, so whatever follows the snapshot
+	// sees them (#433).
 	w.mu.Lock()
 	w.v = viewOf(res)
-	w.mu.Unlock()
-	w.send(Event{Event: "snapshot", At: stamp(t), Result: res})
+	w.busy = false
 	select {
 	case w.rebuilt <- struct{}{}:
 	default:
 	}
+	w.mu.Unlock()
+	w.send(Event{Event: "snapshot", At: stamp(t), Result: res})
 	return nil
 }
