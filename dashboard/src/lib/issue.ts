@@ -97,6 +97,63 @@ export function runsView(issue: StatusIssue): RunsView {
   return { runs, notes, empty: runs.length === 0 && notes.length === 0 }
 }
 
+export type StepState = 'complete' | 'current' | 'upcoming'
+
+export interface StageStep {
+  stage: Exclude<Stage, 'none'>
+  label: string
+  state: StepState
+}
+
+const trackStages = ['shape', 'deliver', 'done'] as const
+
+// stageSteps is the Shape → Deliver → Done track of a stage. Steps before
+// the stage are complete and the stage is current; Done is current once
+// delivered. Without scope every step is upcoming.
+export function stageSteps(stage: Stage): StageStep[] {
+  const at = stage === 'none' ? -1 : trackStages.indexOf(stage)
+  return trackStages.map((s, i) => ({
+    stage: s,
+    label: stageLabels[s],
+    state: at < 0 || i > at ? 'upcoming' : i === at ? 'current' : 'complete',
+  }))
+}
+
+export type RunBucket = 'succeeded' | 'failed' | 'skipped' | 'running'
+
+export const runBuckets: readonly RunBucket[] = ['succeeded', 'failed', 'skipped', 'running']
+
+export const runBucketLabels: Record<RunBucket, string> = {
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  skipped: 'Skipped or cancelled',
+  running: 'Running',
+}
+
+// runBucket groups a run by its conclusion for the run strip: not finished
+// (queued and waiting included) is running; success succeeded; failure,
+// timed_out and startup_failure failed; everything else skipped or
+// cancelled. The exact conclusion stays in each bar's name.
+export function runBucket(run: Pick<Run, 'conclusion'>): RunBucket {
+  switch (run.conclusion) {
+    case null:
+      return 'running'
+    case 'success':
+      return 'succeeded'
+    case 'failure':
+    case 'timed_out':
+    case 'startup_failure':
+      return 'failed'
+    default:
+      return 'skipped'
+  }
+}
+
+// recentRuns is the newest max runs of the Issue, oldest first.
+export function recentRuns(issue: StatusIssue, max = 20): Run[] {
+  return runsView(issue).runs.slice(0, max).reverse()
+}
+
 export interface BlockersView {
   open: Blocker[]
   failed?: ApiError
