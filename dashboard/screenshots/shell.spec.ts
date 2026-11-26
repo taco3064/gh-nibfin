@@ -656,7 +656,9 @@ for (const theme of themes) {
       const runners = tile(page, 'runners')
       await expect(runners.locator('[data-state=no-runner]')).toHaveText('No Runner on this host')
       await shot(page, `summary-no-runner-${theme}-${width}`, false)
-      await runners.getByRole('button', { name: 'Set up in Runners' }).click()
+      // Enter: a mouse click right after the screenshot can stall in headless
+      // Chromium while the Runner view mounts its animated tiles.
+      await runners.getByRole('button', { name: 'Set up in Runners' }).press('Enter')
       await expect(tab(page, 'Runners')).toHaveAttribute('aria-selected', 'true')
       await expect(page.locator('[data-guide=no-runner]')).toBeVisible()
 
