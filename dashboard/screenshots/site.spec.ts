@@ -19,6 +19,8 @@ const pages = [
   { name: 'home', path: './' },
   { name: 'quick-start', path: 'quick-start/' },
   { name: 'how-it-works', path: 'how-it-works/' },
+  { name: 'setup', path: 'setup/' },
+  { name: 'cli', path: 'cli/' },
   { name: 'live', path: 'live/' },
 ]
 
@@ -283,4 +285,29 @@ test('home live summary links the Live page', async ({ page }) => {
     await expect(page).toHaveURL(/\/gh-nibfin\/live\/$/)
     expect(errors).toEqual([])
   }
+})
+
+test('search finds a flag on the CLI commands page', async ({ page }) => {
+  const errors = await open(page, './', 'dark', 1280)
+  await page.getByRole('button', { name: 'Search' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Search' }).fill('delete-login')
+  await expect(dialog.getByRole('link', { name: 'CLI commands' }).first()).toBeVisible()
+  await page.screenshot({ path: `${outDir}site-search-cli-dark-1280.png` })
+  expect(errors).toEqual([])
+})
+
+test('the Setup and CLI pages link to anchors that exist', async ({ page }) => {
+  const errors = await open(page, 'cli/', 'dark', 1280)
+  const cliIds = await page.locator('[id]').evaluateAll((els) => els.map((e) => e.id))
+  await expect(page.locator('[data-command="runner add"] [data-slot=usage]')).toContainText('gh nibfin runner add <claude|codex>')
+  const cliLocal = await page.locator('.sl-markdown-content a[href^="#"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!.slice(1)))
+  expect(cliLocal.length).toBeGreaterThan(0)
+  for (const id of cliLocal) expect(cliIds).toContain(id)
+  await open(page, 'setup/', 'dark', 1280)
+  await expect(page.locator('.sl-markdown-content img')).toHaveCount(3)
+  const toCli = await page.locator('.sl-markdown-content a[href*="cli/#"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!.split('#')[1]))
+  expect(toCli.length).toBeGreaterThan(0)
+  for (const id of toCli) expect(cliIds).toContain(id)
+  expect(errors).toEqual([])
 })

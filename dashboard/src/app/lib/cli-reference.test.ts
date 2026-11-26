@@ -57,17 +57,20 @@ describe('referenceOf', () => {
     expect(slugOf(' Runner  Add ')).toBe('runner-add')
   })
 
-  it('joins wrapped lines into paragraphs split on blank lines', () => {
-    expect(referenceOf([command({ long: 'One\nline.\n\nTwo.\n' })])[0].paragraphs).toEqual(['One line.', 'Two.'])
+  it('joins wrapped lines into paragraphs and leads with the short text once', () => {
+    expect(referenceOf([command({ short: 'Do it', long: 'One\nline.\n\nTwo.\n' })])[0]).toMatchObject({ lead: 'Do it.', more: ['One line.', 'Two.'] })
+    expect(referenceOf([command({ short: 'Do it', long: 'Do it here\nand now.\n\nTwo.' })])[0]).toMatchObject({ lead: 'Do it here and now.', more: ['Two.'] })
+    expect(referenceOf([command({ short: 'Do it' })])[0]).toMatchObject({ lead: 'Do it.', more: [] })
   })
 
   it('covers every command of the committed reference', () => {
     const entries = referenceOf(commands)
     expect(entries.length).toBeGreaterThan(0)
     expect(new Set(entries.map((e) => e.slug)).size).toBe(entries.length)
-    for (const e of entries) expect(e.usage).toMatch(new RegExp(`^gh nibfin ${e.path}\\b`))
+    for (const e of entries) expect(e.usage.join(' ')).toMatch(new RegExp(`^gh nibfin ${e.path}\\b`))
     const add = entries.find((e) => e.path === 'runner add')
     expect(add?.usage).toContain('<claude|codex>')
+    expect(add?.usage).toContain('[--count N]')
     expect(add?.flags.map((f) => f.name)).toContain('--count')
   })
 })

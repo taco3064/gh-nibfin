@@ -50,40 +50,36 @@ There is no retry limit, and an Issue never stops silently: every stop leaves
 
 Codes from `gh nibfin` on your host:
 
-| Code | Meaning | Next step |
-| --- | --- | --- |
-| `podman_missing` | Podman is not installed. | [Install Podman](https://podman.io/docs/installation); gh nibfin never installs system software. |
-| `machine_missing` | Windows or macOS has no `podman machine`. | Run `podman machine init`. |
-| `machine_start_failed` | The `podman machine` did not start. | Start it with `podman machine start` and read its error. |
-| `machine_stopped` | `status` could not read a part because the machine is stopped. | `status` never starts it; see [An offline Runner](#an-offline-runner). |
-| `no_runners` | The host has no Runner of that provider. | Run `gh nibfin runner add <provider>` first. |
-| `not_logged_in` | The provider CLI is not logged in after `login` or `runner add`. | Run `gh nibfin login <provider>` again. |
-| `scope_missing` | Your `gh` login lacks a scope the command needs. | Run `gh auth refresh -s workflow`. |
-| `not_initialized` | `upgrade` found no Nibfin workflows. | Run `gh nibfin init` first. |
-| `runner_repo_conflict` | The host's Runners serve another repository than the plan expects. | All Runners on a host serve one execution repository; plan again from it. |
-| `runner_install_failed` | A Runner could not be installed, for example a refused `sudo` in the VM. | Run the command the message names inside the VM, then `runner add` again. |
-| `autostart_failed` | The task or LaunchAgent that keeps the machine up could not be set. | Read the message; nothing after it was changed. |
-| `unsupported_host` | The host lacks something a Runner needs, such as WSL 2 or `git` and `ssh` for a private repository. | Install what the message names, for example `wsl --update`. |
-| `ssh_key_missing` | A collaborator has no SSH key on their GitHub account. | `ssh-keygen -t ed25519`, `gh ssh-key add ~/.ssh/id_ed25519.pub`, then `runner add` again. |
-| `ssh_key_locked` | The SSH key's passphrase could not be asked or was wrong three times. | Run `runner add` in a terminal. |
-| `runner_request_refused` | The runner request was refused, for example without write access. | Ask the repository's Owner to add you as a collaborator with write access. |
-| `runner_request_timeout` | The runner request got no answer within 10 minutes. | Run `runner add` again. |
-| `runner_request_failed` | The request Issue was closed, or its answer could not be read. | Run `runner add` again. |
-| `runner_busy` | GitHub reports a Runner busy but no Job of it runs on this host. | Run `runner remove` again later to finish it. |
-| `listen_failed` | The Dashboard's port is taken. | Use another `--port`, or leave it out for any free port. |
-| `proof_invalid` | The Dashboard's session URL was already used. | Restart `gh nibfin dashboard` for a new URL. |
+- `podman_missing`: Podman is not installed. [Install Podman](https://podman.io/docs/installation); gh nibfin never installs system software.
+- `machine_missing`: Windows or macOS has no `podman machine`. Run `podman machine init`.
+- `machine_start_failed`: The `podman machine` did not start. Start it with `podman machine start` and read its error.
+- `machine_stopped`: `status` could not read a part because the machine is stopped. `status` never starts it; see [An offline Runner](#an-offline-runner).
+- `no_runners`: The host has no Runner of that provider. Run `gh nibfin runner add <provider>` first.
+- `not_logged_in`: The provider CLI is not logged in after `login` or `runner add`. Run `gh nibfin login <provider>` again.
+- `scope_missing`: Your `gh` login lacks a scope the command needs. Run `gh auth refresh -s workflow`.
+- `not_initialized`: `upgrade` found no Nibfin workflows. Run `gh nibfin init` first.
+- `runner_repo_conflict`: The host's Runners serve another repository than the plan expects. All Runners on a host serve one execution repository; plan again from it.
+- `runner_install_failed`: A Runner could not be installed, for example a refused `sudo` in the VM. Run the command the message names inside the VM, then `runner add` again.
+- `autostart_failed`: The task or LaunchAgent that keeps the machine up could not be set. Read the message; nothing after it was changed.
+- `unsupported_host`: The host lacks something a Runner needs, such as WSL 2 or `git` and `ssh` for a private repository. Install what the message names, for example `wsl --update`.
+- `ssh_key_missing`: A collaborator has no SSH key on their GitHub account. Run `ssh-keygen -t ed25519` and `gh ssh-key add ~/.ssh/id_ed25519.pub`, then `runner add` again.
+- `ssh_key_locked`: The SSH key's passphrase could not be asked or was wrong three times. Run `runner add` in a terminal.
+- `runner_request_refused`: The runner request was refused, for example without write access. Ask the repository's Owner to add you as a collaborator with write access.
+- `runner_request_timeout`: The runner request got no answer within 10 minutes. Run `runner add` again.
+- `runner_request_failed`: The request Issue was closed, or its answer could not be read. Run `runner add` again.
+- `runner_busy`: GitHub reports a Runner busy but no Job of it runs on this host. Run `runner remove` again later to finish it.
+- `listen_failed`: The Dashboard's port is taken. Use another `--port`, or leave it out for any free port.
+- `proof_invalid`: The Dashboard's session URL was already used. Restart `gh nibfin dashboard` for a new URL.
 
 Codes in a `pending` comment from a Job:
 
-| Code | Meaning | Next step |
-| --- | --- | --- |
-| `STAGE_BLOCKED` | The stage stopped and named something only a person can decide or supply. | Read the comment, answer or fix it on the Issue, then remove `pending`. |
-| `STAGE_PROTECTED_PATH` | The branch changed a [protected path](../setup/#protected-paths). | Change that path through your own maintenance route, then remove `pending`. |
-| `STAGE_PUSH_REJECTED` | GitHub rejected the push of the branch. | Check the branch's rules and its remote head, then remove `pending`. |
-| `STAGE_HOST_MEMORY_LOW` | The Runner host had too little free memory to start an agent. | Free memory or lower the number of Runners, then remove `pending`. |
-| `STAGE_NO_PROGRESS` | The stage ended without progress, and the same stage would run again. | Read the run log; the comment says when waiting is likely to fix it. |
-| `AGENT_USAGE_LIMIT` | The provider's usage limit was reached. | Remove `pending` after the reset time the comment gives. |
-| `GITHUB_READ_FAILED` | A read from GitHub failed. | Usually temporary: remove `pending` to retry. |
+- `STAGE_BLOCKED`: The stage stopped and named something only a person can decide or supply. Read the comment, answer or fix it on the Issue, then remove `pending`.
+- `STAGE_PROTECTED_PATH`: The branch changed a [protected path](../setup/#protected-paths). Change that path through your own maintenance route, then remove `pending`.
+- `STAGE_PUSH_REJECTED`: GitHub rejected the push of the branch. Check the branch's rules and its remote head, then remove `pending`.
+- `STAGE_HOST_MEMORY_LOW`: The Runner host had too little free memory to start an agent. Free memory or lower the number of Runners, then remove `pending`.
+- `STAGE_NO_PROGRESS`: The stage ended without progress, and the same stage would run again. Read the run log; the comment says when waiting is likely to fix it.
+- `AGENT_USAGE_LIMIT`: The provider's usage limit was reached. Remove `pending` after the reset time the comment gives.
+- `GITHUB_READ_FAILED`: A read from GitHub failed. Usually temporary: remove `pending` to retry.
 
 ### An offline Runner
 
