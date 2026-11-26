@@ -153,7 +153,7 @@ var coreLines = []string{
 	`--env NIBFIN_NEXT_FILE --env NIBFIN_MEMORY_REQUIRED \`,
 	`"$IMAGE_REF" nibfin run "${options[@]}"`,
 	`run: rm -rf "$GITHUB_WORKSPACE/nibfin-workspace" "$RUNNER_TEMP/nibfin-out"`,
-	`runs-on: [self-hosted, nibfin]`,
+	`runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","nibfin"]') || 'ubuntu-24.04' }}`,
 	`runs-on: [self-hosted, "nibfin-${{ inputs.assignee }}"]`,
 	`PROVIDER="${NIBFIN_PROVIDER:-}"`,
 	`MODEL="${NIBFIN_MODEL:-}"`,

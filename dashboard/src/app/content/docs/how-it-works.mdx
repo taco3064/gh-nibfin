@@ -60,6 +60,10 @@ first seven states run nothing; the rest are the stages above.
   attested build.
 - **Events only wake.** Issue, review, check and push events wake the Issue they
   belong to. A route run derives what runs next from GitHub state and dispatches it.
+- **Route runs need no Runner of yours.** A route run starts no agent. When the
+  execution repository is public it runs on a GitHub-hosted runner, which costs
+  nothing there, so it never waits behind a stage Job. When it is private it runs on
+  the Owner's Runners and uses no Actions minutes.
 - **The Assignee's Runner.** Each stage Job runs on a self-hosted Runner labelled
   `nibfin-<user id>` of the Issue's only Assignee, in a Podman container. The
   provider, Claude or Codex, comes from that Runner's own configuration, never from a
