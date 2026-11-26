@@ -512,10 +512,16 @@ function GraphRegion({
   // view so the focused element is in sight. React Flow's own pan on node
   // focus covers only the node itself, and only with its keyboard handling,
   // which would also take Enter and Space from the controls inside.
+  // active is the node whose edges stand out: the one hovered or holding
+  // keyboard focus. The others' edges fade, so one edge can be followed
+  // even where many share the gutter.
+  const [active, setActive] = useState<string | null>(null)
   const onFocus = useCallback(
     (e: FocusEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement
-      if (!lr || !region || !target.closest('.react-flow__node')) return
+      const node = target.closest<HTMLElement>('.react-flow__node')
+      setActive(node?.dataset.id ?? null)
+      if (!lr || !region || !node) return
       requestAnimationFrame(() => {
         const r = region.getBoundingClientRect()
         const t = target.getBoundingClientRect()
@@ -530,6 +536,10 @@ function GraphRegion({
     },
     [lr, region, rf],
   )
+  const onBlur = useCallback((e: FocusEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setActive(null)
+  }, [])
+  const touches = (e: { from: string; to: string }) => active !== null && (e.from === active || e.to === active)
   const content = placement ? placement.height + (lr ? pad + band : 2 * pad) : 320
   // The minimap helps only when the whole graph does not fit at a readable
   // zoom, so the view opens on part of it.
@@ -541,12 +551,13 @@ function GraphRegion({
     <div className="flex flex-col gap-2">
       <p className="text-sm text-muted-foreground" data-slot="legend" data-direction={direction}>
         {lr ? 'Blockers stand left of the Issues they block' : 'Blockers stand above the Issues they block'}; arrows point from an Issue to what blocks it
-        {cycle && '; dashed arrows close a cycle'}. A grey “closed” marker on an Issue lists its closed blockers.
+        {cycle && '; dashed arrows close a cycle'}. Point at or focus an Issue to bring out its arrows. A grey “closed” marker on an Issue lists its closed blockers.
         {lr && ' Drag to pan; zoom with the buttons or Ctrl or ⌘ and the scroll wheel.'}
       </p>
       <div
         ref={setRegion}
         onFocus={onFocus}
+        onBlur={onBlur}
         role="region"
         aria-label="Dependency graph"
         tabIndex={0}
@@ -580,6 +591,8 @@ function GraphRegion({
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
           ariaLabelConfig={ariaLabelConfig}
+          onNodeMouseEnter={(_, n) => setActive(n.id)}
+          onNodeMouseLeave={() => setActive(null)}
         >
           <ViewportPortal>
             {placement && (
@@ -594,20 +607,30 @@ function GraphRegion({
                   <marker id={marker} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                     <path d="M 0 0 L 10 5 L 0 10 z" className="fill-muted-foreground" />
                   </marker>
+                  <marker id={`${marker}-active`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" className="fill-foreground" />
+                  </marker>
                   <marker id={`${marker}-cycle`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                     <path d="M 0 0 L 10 5 L 0 10 z" className="fill-warning" />
                   </marker>
                 </defs>
-                {placement.edges.map((e) => (
+                {/* The active node's edges come last, so they are drawn on top. */}
+                {[...placement.edges.filter((e) => !touches(e)), ...placement.edges.filter(touches)].map((e) => (
                   <path
                     key={e.id}
                     d={edgePath(placement, e)}
                     data-edge={e.id}
                     data-cycle={e.cycle ? 'true' : undefined}
-                    className={cn('fill-none', e.cycle ? 'stroke-warning' : 'stroke-muted-foreground')}
-                    strokeWidth={1.5}
+                    data-active={touches(e) ? 'true' : undefined}
+                    data-lane={placement.direction === 'TB' ? e.lane : undefined}
+                    className={cn(
+                      'fill-none',
+                      touches(e) ? 'stroke-foreground' : e.cycle ? 'stroke-warning' : 'stroke-muted-foreground',
+                      active !== null && !touches(e) && 'opacity-25',
+                    )}
+                    strokeWidth={touches(e) ? 2.5 : 1.5}
                     strokeDasharray={e.cycle ? '6 4' : undefined}
-                    markerEnd={`url(#${marker}${e.cycle ? '-cycle' : ''})`}
+                    markerEnd={`url(#${marker}${touches(e) ? '-active' : e.cycle ? '-cycle' : ''})`}
                   />
                 ))}
               </svg>

@@ -306,6 +306,11 @@ export interface PlacedEdge extends LayoutEdge {
   // right side in LR and its left side in TB.
   fromPort: Port
   toPort: Port
+  // lane is the edge's own vertical lane in the TB gutter, 0 nearest the
+  // nodes, of lanes in all; edges whose spans overlap never share one. LR
+  // edges have lane 0 of 1.
+  lane: number
+  lanes: number
 }
 
 export interface Placement {
@@ -320,7 +325,7 @@ export interface Placement {
 
 // graphSpacing is the gap between ranks and between nodes of one rank, and
 // in TB the gutter left of the nodes that the edges bow into.
-export const graphSpacing = { rank: 96, node: 24, row: 20, gutter: 44 } as const
+export const graphSpacing = { rank: 96, node: 24, row: 20, gutter: 56 } as const
 
 // positionGraph places the full nodes of the graph. keys are the nodes to
 // place, edges the edges among them (open edges: closed blockers are drawn
@@ -388,11 +393,31 @@ export function positionGraph(keys: readonly string[], edges: readonly GraphEdge
     list.sort((a, b) => centre(a.other).y - centre(b.other).y || centre(a.other).x - centre(b.other).x || a.edge - b.edge)
     list.forEach((end, index) => (ports[end.edge][end.at] = { index, count: list.length }))
   }
+  // TB lanes: by span, shortest first, each edge takes the lowest lane no
+  // overlapping edge holds, so shorter edges nest inside longer ones.
+  const lane = layout.edges.map(() => 0)
+  let lanes = 1
+  if (direction === 'TB') {
+    const span = layout.edges.map((e, i) => {
+      const a = portPoint(boxes.get(e.from)!, ports[i].from, false).y
+      const b = portPoint(boxes.get(e.to)!, ports[i].to, false).y
+      return { i, top: Math.min(a, b), bottom: Math.max(a, b) }
+    })
+    span.sort((x, y) => x.bottom - x.top - (y.bottom - y.top) || x.top - y.top || x.i - y.i)
+    const taken: { top: number; bottom: number }[][] = []
+    for (const sp of span) {
+      let l = 0
+      while (taken[l]?.some((t) => t.top <= sp.bottom + 2 && sp.top <= t.bottom + 2)) l++
+      ;(taken[l] ??= []).push(sp)
+      lane[sp.i] = l
+    }
+    lanes = Math.max(1, taken.length)
+  }
   return {
     direction,
     boxes,
     order,
-    edges: layout.edges.map((e, i) => ({ ...e, id: `${e.from}>${e.to}`, fromPort: ports[i].from, toPort: ports[i].to })),
+    edges: layout.edges.map((e, i) => ({ ...e, id: `${e.from}>${e.to}`, fromPort: ports[i].from, toPort: ports[i].to, lane: lane[i], lanes })),
     width: order.length > 0 ? width : 0,
     height: order.length > 0 ? height : 0,
   }
@@ -404,10 +429,18 @@ export function portPoint(box: Box, port: Port, onRight: boolean): { x: number; 
   return { x: onRight ? box.x + box.width : box.x, y: box.y + (box.height * (port.index + 1)) / (port.count + 1) }
 }
 
+// laneX is the x of a TB lane: lanes spread across the gutter, lane 0
+// nearest the nodes.
+export function laneX(lane: number, lanes: number): number {
+  const width = graphSpacing.gutter - 10
+  return graphSpacing.gutter - 6 - (width * (lane + 0.5)) / lanes
+}
+
 // edgePath is the SVG path of one placed edge, from the dependent to the
 // blocker, where the arrow head goes. In LR it leaves the dependent's left
 // side and reaches the blocker's right side; in TB both ends are on the
-// left side and the curve bows into the gutter, past the nodes between.
+// left side and the edge runs along its own lane in the gutter, past the
+// nodes between.
 export function edgePath(placement: Pick<Placement, 'direction' | 'boxes'>, edge: PlacedEdge): string {
   const a = placement.boxes.get(edge.from)
   const b = placement.boxes.get(edge.to)
@@ -420,9 +453,13 @@ export function edgePath(placement: Pick<Placement, 'direction' | 'boxes'>, edge
     const dx = Math.max(24, Math.abs(p.x - q.x) / 2)
     return `M ${r(p.x)} ${r(p.y)} C ${r(p.x - dx)} ${r(p.y)}, ${r(q.x + dx)} ${r(q.y)}, ${r(q.x)} ${r(q.y)}`
   }
-  // A cubic with both controls at x - bow reaches about 0.75 bow left.
-  const bow = Math.min((graphSpacing.gutter - 6) / 0.75, Math.max(16, Math.abs(p.y - q.y) / 6))
-  return `M ${r(p.x)} ${r(p.y)} C ${r(p.x - bow)} ${r(p.y)}, ${r(q.x - bow)} ${r(q.y)}, ${r(q.x)} ${r(q.y)}`
+  const x = laneX(edge.lane, edge.lanes)
+  const s = q.y < p.y ? -1 : 1
+  const c = Math.min(6, Math.abs(q.y - p.y) / 2, p.x - x)
+  return [
+    `M ${r(p.x)} ${r(p.y)} H ${r(x + c)} Q ${r(x)} ${r(p.y)} ${r(x)} ${r(p.y + s * c)}`,
+    `V ${r(q.y - s * c)} Q ${r(x)} ${r(q.y)} ${r(x + c)} ${r(q.y)} H ${r(q.x)}`,
+  ].join(' ')
 }
 
 // nodeName is the accessible name of a node on the canvas: its label and
