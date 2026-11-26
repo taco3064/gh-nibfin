@@ -4,6 +4,8 @@
 // dependent Issue to its blocker. Stages come from labels only (stageOf);
 // nothing here derives a stage from the graph.
 
+import dagre from '@dagrejs/dagre'
+
 import { blockersView, stageOf, type Stage } from '@/lib/issue'
 import { ownerRepo, type Blocker, type RepoView, type StatusIssue } from '@/lib/status'
 
@@ -248,4 +250,177 @@ export function layoutGraph(nodes: readonly string[], edges: readonly GraphEdge[
     edges: edges.map((e, i) => ({ ...e, cycle: cycleEdge.has(i) })),
     cycles,
   }
+}
+
+// closedGroups lists, per dependent key, its closed blockers among the given
+// edges, in key order (#409). A closed blocker shared by several dependents
+// is in each of their groups. The graph draws each group as one marker on
+// its dependent instead of a node per blocker.
+export function closedGroups(graph: Pick<Graph, 'nodes'>, edges: readonly GraphEdge[]): Map<string, GraphNode[]> {
+  const keys = new Map<string, string[]>()
+  for (const e of edges) {
+    if (!e.closed || !graph.nodes.has(e.to)) continue
+    const list = keys.get(e.from) ?? []
+    if (!list.includes(e.to)) list.push(e.to)
+    keys.set(e.from, list)
+  }
+  const out = new Map<string, GraphNode[]>()
+  for (const [from, list] of keys) out.set(from, list.sort(compareKeys).map((k) => graph.nodes.get(k)!))
+  return out
+}
+
+// groupLabel is the short label of a closed group, such as
+// "5 closed · #353 #354 #355 …": the count, then the first max labels.
+export function groupLabel(graph: Pick<Graph, 'repo'>, group: readonly Pick<GraphNode, 'repo' | 'number'>[], max = 3): string {
+  const names = group.slice(0, max).map((n) => nodeLabel(graph, n))
+  if (group.length > max) names.push('…')
+  return `${group.length} closed · ${names.join(' ')}`
+}
+
+// Direction is the flow of the drawn graph: LR puts blockers left of their
+// dependents, TB puts them above, one node per row, for narrow regions.
+export type Direction = 'LR' | 'TB'
+
+export interface Size {
+  width: number
+  height: number
+}
+
+export interface Box extends Size {
+  // x and y are the top left corner.
+  x: number
+  y: number
+}
+
+// Port is where one edge meets a node's side: the index-th of count points
+// spread evenly along that side.
+export interface Port {
+  index: number
+  count: number
+}
+
+export interface PlacedEdge extends LayoutEdge {
+  // id is "from>to".
+  id: string
+  // fromPort sits on the dependent's left side, toPort on the blocker's
+  // right side in LR and its left side in TB.
+  fromPort: Port
+  toPort: Port
+}
+
+export interface Placement {
+  direction: Direction
+  boxes: Map<string, Box>
+  // order lists the keys in reading order: by rank, then by row.
+  order: string[]
+  edges: PlacedEdge[]
+  width: number
+  height: number
+}
+
+// graphSpacing is the gap between ranks and between nodes of one rank, and
+// in TB the gutter left of the nodes that the edges bow into.
+export const graphSpacing = { rank: 96, node: 24, row: 20, gutter: 44 } as const
+
+// positionGraph places the full nodes of the graph. keys are the nodes to
+// place, edges the edges among them (open edges: closed blockers are drawn
+// as markers instead). LR runs dagre on blocker → dependent so blockers
+// stand left; TB stacks one node per row in layoutGraph's rank and row
+// order, blockers above. Each edge gets its own port on both nodes, ordered
+// by the position of its other end, so edges into one node stay apart.
+export function positionGraph(keys: readonly string[], edges: readonly GraphEdge[], sizes: ReadonlyMap<string, Size>, direction: Direction): Placement {
+  const layout = layoutGraph(keys, edges)
+  const order = [...layout.columns.flat(), ...layout.unlinked]
+  const size = (k: string): Size => sizes.get(k) ?? { width: 0, height: 0 }
+  const boxes = new Map<string, Box>()
+  if (direction === 'TB') {
+    let y = 0
+    for (const k of order) {
+      boxes.set(k, { x: graphSpacing.gutter, y, ...size(k) })
+      y += size(k).height + graphSpacing.row
+    }
+  } else {
+    const g = new dagre.graphlib.Graph()
+    g.setGraph({ rankdir: 'LR', ranksep: graphSpacing.rank, nodesep: graphSpacing.node, marginx: 0, marginy: 0 })
+    g.setDefaultEdgeLabel(() => ({}))
+    for (const k of order) g.setNode(k, { ...size(k) })
+    for (const e of layout.edges) if (!e.cycle) g.setEdge(e.to, e.from)
+    dagre.layout(g)
+    for (const k of order) {
+      const n = g.node(k)
+      boxes.set(k, { x: n.x - n.width / 2, y: n.y - n.height / 2, ...size(k) })
+    }
+  }
+  let minX = Infinity
+  let minY = Infinity
+  for (const b of boxes.values()) {
+    minX = Math.min(minX, b.x)
+    minY = Math.min(minY, b.y)
+  }
+  if (direction === 'TB') minX = 0
+  let width = 0
+  let height = 0
+  for (const b of boxes.values()) {
+    b.x -= minX
+    b.y -= minY
+    width = Math.max(width, b.x + b.width)
+    height = Math.max(height, b.y + b.height)
+  }
+
+  // Ends on each side of each node, sorted by the other end's centre.
+  const ends = new Map<string, { edge: number; other: string; at: 'from' | 'to' }[]>()
+  const side = (k: string, at: 'from' | 'to') => (direction === 'TB' || at === 'from' ? `${k}|left` : `${k}|right`)
+  layout.edges.forEach((e, i) => {
+    for (const [k, other, at] of [
+      [e.from, e.to, 'from'],
+      [e.to, e.from, 'to'],
+    ] as const) {
+      const s = side(k, at)
+      ends.set(s, [...(ends.get(s) ?? []), { edge: i, other, at }])
+    }
+  })
+  const centre = (k: string) => {
+    const b = boxes.get(k)!
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  }
+  const ports = layout.edges.map(() => ({ from: { index: 0, count: 1 }, to: { index: 0, count: 1 } }))
+  for (const list of ends.values()) {
+    list.sort((a, b) => centre(a.other).y - centre(b.other).y || centre(a.other).x - centre(b.other).x || a.edge - b.edge)
+    list.forEach((end, index) => (ports[end.edge][end.at] = { index, count: list.length }))
+  }
+  return {
+    direction,
+    boxes,
+    order,
+    edges: layout.edges.map((e, i) => ({ ...e, id: `${e.from}>${e.to}`, fromPort: ports[i].from, toPort: ports[i].to })),
+    width: order.length > 0 ? width : 0,
+    height: order.length > 0 ? height : 0,
+  }
+}
+
+// portPoint is where a port meets its node: on the left or right side,
+// spread evenly from top to bottom.
+export function portPoint(box: Box, port: Port, onRight: boolean): { x: number; y: number } {
+  return { x: onRight ? box.x + box.width : box.x, y: box.y + (box.height * (port.index + 1)) / (port.count + 1) }
+}
+
+// edgePath is the SVG path of one placed edge, from the dependent to the
+// blocker, where the arrow head goes. In LR it leaves the dependent's left
+// side and reaches the blocker's right side; in TB both ends are on the
+// left side and the curve bows into the gutter, past the nodes between.
+export function edgePath(placement: Pick<Placement, 'direction' | 'boxes'>, edge: PlacedEdge): string {
+  const a = placement.boxes.get(edge.from)
+  const b = placement.boxes.get(edge.to)
+  if (!a || !b) return ''
+  const lr = placement.direction === 'LR'
+  const p = portPoint(a, edge.fromPort, false)
+  const q = portPoint(b, edge.toPort, lr)
+  const r = (n: number) => Math.round(n * 10) / 10
+  if (lr) {
+    const dx = Math.max(24, Math.abs(p.x - q.x) / 2)
+    return `M ${r(p.x)} ${r(p.y)} C ${r(p.x - dx)} ${r(p.y)}, ${r(q.x + dx)} ${r(q.y)}, ${r(q.x)} ${r(q.y)}`
+  }
+  // A cubic with both controls at x - bow reaches about 0.75 bow left.
+  const bow = Math.min((graphSpacing.gutter - 6) / 0.75, Math.max(16, Math.abs(p.y - q.y) / 6))
+  return `M ${r(p.x)} ${r(p.y)} C ${r(p.x - bow)} ${r(p.y)}, ${r(q.x - bow)} ${r(q.y)}, ${r(q.x)} ${r(q.y)}`
 }
