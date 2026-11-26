@@ -83,7 +83,7 @@ func TestSchemaContract(t *testing.T) {
 	}
 
 	// Person view, every part read.
-	routes := personRoutes(item("a/one", 3, "scope", "pending"), item("b/two", 7, "scope"))
+	routes := personRoutes(item("a/one", 3, "scope", "pending"), item("b/two", 7, "request"))
 	routes["repos/a/one/contents/.github/workflows/nibfin-job.yml"] = file(jobYML(imgA))
 	routes["repos/a/one/issues/3/events?per_page=100&page=1"] = []any{labeled(7, "pending", "2026-11-20T00:00:00Z")}
 	routes["repos/a/one/issues/3/comments?per_page=100&page=1"] = []any{comment(5, 7, marker+"x", "2026-11-20T00:00:01Z")}
