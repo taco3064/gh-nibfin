@@ -9,6 +9,7 @@ import {
   filterGraph,
   graphSpacing,
   groupLabel,
+  laneX,
   layoutGraph,
   nodeKey,
   nodeName,
@@ -293,7 +294,9 @@ describe('positionGraph', () => {
         ] as const)
           points.set(key, [...(points.get(key) ?? []), `${pt.x},${pt.y}`])
         const r = (n: number) => Math.round(n * 10) / 10
-        expect(edgePath(p, ed)).toMatch(new RegExp(`^M ${r(a.x)} ${r(a.y)} C .* ${r(b.x)} ${r(b.y)}$`))
+        const end = dir === 'LR' ? `${r(b.x)} ${r(b.y)}` : `${r(b.y)} H ${r(b.x)}`
+        expect(edgePath(p, ed).startsWith(`M ${r(a.x)} ${r(a.y)} `)).toBe(true)
+        expect(edgePath(p, ed).endsWith(` ${end}`)).toBe(true)
       }
       for (const [key, list] of points) {
         // In LR a node's in- and out-ports sit on opposite sides.
@@ -303,6 +306,33 @@ describe('positionGraph', () => {
       const three = p.edges.filter((ed) => ed.from === k(3)).map((ed) => ed.fromPort)
       expect(three.map((pt) => pt.index).sort()).toEqual([0, 1])
     }
+  })
+
+  it('gives overlapping TB edges their own lanes inside the gutter, shorter ones nearer the nodes', () => {
+    const p = positionGraph(keys, edges, sizes(keys), 'TB')
+    const ys = (id: string) => {
+      const ed = p.edges.find((x) => x.id === id)!
+      const a = portPoint(p.boxes.get(ed.from)!, ed.fromPort, false).y
+      const b = portPoint(p.boxes.get(ed.to)!, ed.toPort, false).y
+      return [Math.min(a, b), Math.max(a, b)]
+    }
+    for (const x of p.edges) {
+      expect(x.lanes).toBe(Math.max(...p.edges.map((y) => y.lane)) + 1)
+      const lx = laneX(x.lane, x.lanes)
+      expect(lx).toBeGreaterThan(0)
+      expect(lx).toBeLessThan(graphSpacing.gutter)
+      // The edge's vertical run is at its lane.
+      expect(edgePath(p, x)).toContain(` ${Math.round(lx * 10) / 10} `)
+      for (const y of p.edges) {
+        if (x === y) continue
+        const [a, b] = ys(x.id)
+        const [c, d] = ys(y.id)
+        if (a <= d && c <= b) expect(x.lane, `${x.id} vs ${y.id}`).not.toBe(y.lane)
+        if (c < a && b < d) expect(x.lane).toBeLessThan(y.lane)
+      }
+    }
+    // LR edges have no lanes.
+    for (const x of positionGraph(keys, edges, sizes(keys), 'LR').edges) expect([x.lane, x.lanes]).toEqual([0, 1])
   })
 
   it('ends on cycles and places every node', () => {

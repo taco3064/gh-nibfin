@@ -280,10 +280,23 @@ for (const [width, theme] of [
     // Edges into one node meet it at separate points.
     await edgesDrawn(page, edgeCount(platform, 'acme/platform'))
     const ends = await page.locator('[data-slot=edges] path[data-edge$=">acme/platform#1"]').evaluateAll((ps) =>
-      ps.map((p) => (p.getAttribute('d') ?? '').split(' ').slice(-2).join(' ')),
+      (ps as SVGPathElement[]).map((p) => {
+        const end = p.getPointAtLength(p.getTotalLength())
+        return `${Math.round(end.x)} ${Math.round(end.y)}`
+      }),
     )
     expect(ends.length).toBeGreaterThan(20)
     expect(new Set(ends).size).toBe(ends.length)
+    const intoOne = page.locator('[data-slot=edges] path[data-edge$=">acme/platform#1"]')
+    if (width < 700) {
+      // Top to bottom, edges into one node overlap, so each runs in its own lane.
+      const lanes = await intoOne.evaluateAll((ps) => ps.map((p) => p.getAttribute('data-lane')))
+      expect(new Set(lanes).size).toBe(lanes.length)
+    }
+    // Focus on a node brings out its edges and fades the rest.
+    await region.locator('.react-flow__node[data-id="acme/platform#1"]').focus()
+    await expect(page.locator('[data-slot=edges] path[data-active]')).toHaveCount(await intoOne.count())
+    await shot(page, `repo-graph-active-${theme}-${width}`, false)
 
     // Each node is named for assistive technology, and keyboard focus on a
     // node or a control inside one is always in sight.
