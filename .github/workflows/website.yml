@@ -20,38 +20,54 @@ concurrency:
   group: website
   cancel-in-progress: false
 jobs:
-  deploy:
+  # Build and deploy are separate jobs, as in GitHub's Pages starter workflow: the
+  # deploy job starts after the artifact upload has finished (#434).
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
+    outputs:
+      site: ${{ steps.site.outputs.exists }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # Every step is skipped until the site exists (#362), so the run stays green.
+      - id: site
+        run: echo "exists=${{ hashFiles('dashboard/astro.config.mjs') != '' }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        if: steps.site.outputs.exists == 'true'
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install
+        if: steps.site.outputs.exists == 'true'
+        working-directory: dashboard
+        run: npm ci
+      - name: Build
+        if: steps.site.outputs.exists == 'true'
+        working-directory: dashboard
+        run: npm run build
+      # One artifact name per attempt, so a re-run never finds an earlier attempt's.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: steps.site.outputs.exists == 'true'
+        with:
+          path: dashboard/dist-site
+          name: github-pages-${{ github.run_attempt }}
+  deploy:
+    needs: build
+    if: needs.build.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    # Every step is skipped until the site exists (#362), so the run stays green.
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        if: hashFiles('dashboard/astro.config.mjs') != ''
-        with:
-          node-version: 24
-          package-manager-cache: false
-      - name: Install
-        if: hashFiles('dashboard/astro.config.mjs') != ''
-        working-directory: dashboard
-        run: npm ci
-      - name: Build
-        if: hashFiles('dashboard/astro.config.mjs') != ''
-        working-directory: dashboard
-        run: npm run build
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        if: hashFiles('dashboard/astro.config.mjs') != ''
-        with:
-          path: dashboard/dist-site
       - id: deployment
-        if: hashFiles('dashboard/astro.config.mjs') != ''
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
