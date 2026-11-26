@@ -77,7 +77,7 @@ Codes in a `pending` comment from a Job:
 - `STAGE_PROTECTED_PATH`: The branch changed a [protected path](../setup/#protected-paths). Change that path through your own maintenance route, then remove `pending`.
 - `STAGE_PUSH_REJECTED`: GitHub rejected the push of the branch. Check the branch's rules and its remote head, then remove `pending`.
 - `STAGE_HOST_MEMORY_LOW`: The Runner host had too little free memory to start an agent. Free memory or lower the number of Runners, then remove `pending`.
-- `STAGE_NO_PROGRESS`: The stage ended without progress, and the same stage would run again. Read the run log; the comment says when waiting is likely to fix it.
+- `STAGE_NO_PROGRESS`: The stage ended without progress, and the same stage would run again. Read the comment and the run log, fix what they name, then remove `pending`.
 - `AGENT_USAGE_LIMIT`: The provider's usage limit was reached. Remove `pending` after the reset time the comment gives.
 - `GITHUB_READ_FAILED`: A read from GitHub failed. Usually temporary: remove `pending` to retry.
 
