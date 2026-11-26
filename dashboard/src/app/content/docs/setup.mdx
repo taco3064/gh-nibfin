@@ -56,7 +56,7 @@ When the host's last Runner goes, the task or LaunchAgent goes with it. The
 [`gh nibfin runner remove <claude|codex> [--count N] [--delete-login]`](../cli/#runner-remove)
 removes N Runners of a provider, all of them without `--count`.
 
-- Idle Runners go first. A busy Runner stops taking new Jobs and is removed
+- Runners left unfinished by an interrupted command go first, then idle ones. A busy Runner stops taking new Jobs and is removed
   after its Job ends; the command waits and never cancels the Job.
 - Each removal deletes the GitHub registration, the service and the Runner's
   directory, then reads back how many remain.
@@ -68,8 +68,7 @@ removes N Runners of a provider, all of them without `--count`.
 [`gh nibfin status`](../cli/#status) shows whether the machine runs and each
 Runner's service against GitHub's online, offline and busy state. A Job for an
 Assignee whose Runners are all offline waits in GitHub's queue until one comes
-online; it is not moved to someone else. If it waits past GitHub's limit for
-self-hosted Runners, the Issue gets `pending`. See
+online; it is not moved to someone else. See
 [An offline Runner](../cli/#an-offline-runner).
 
 ### Choosing a Runner's model
@@ -100,7 +99,8 @@ assigned to them run on their machines.
    pair in `~/.ssh` (`ssh-ed25519` or `ssh-rsa`) whose public key is on their
    account. Without one it stops before any change (`ssh_key_missing`) and
    names the steps: `ssh-keygen -t ed25519`, then
-   `gh ssh-key add ~/.ssh/id_ed25519.pub`.
+   `gh ssh-key add ~/.ssh/id_ed25519.pub` (run
+   `gh auth refresh -s write:public_key` first when `gh` asks for it).
 3. **They run `gh nibfin runner add <claude|codex>` in a clone of the execution
    repository.** Registering a Runner needs admin, so the command opens a
    `Nibfin runner request` Issue. The Owner's `nibfin-runner-request.yml`
@@ -188,8 +188,8 @@ Removing `pause` is the go-ahead: read the Issue, then remove the label, or run
 
 ## Required reviews
 
-Nibfin follows the merge rules your repository actually sets. When a ruleset or
-branch protection requires approving reviews:
+Nibfin follows the merge rules your repository actually sets. When a ruleset on
+the base branch requires approving reviews:
 
 - After its own review passes, Nibfin waits for the approvals instead of
   adding `pending`. It comments on the pull request that it is waiting for
@@ -281,13 +281,12 @@ package manager.
 
 ### `skills`
 
-Adjusts Nibfin's built-in role skills: `scope`, `shape`, `deliver` and
-`accept`, and any added to Core later.
+Adjusts Nibfin's built-in role skills `shape`, `deliver` and `accept`.
 
 - `extend` appends your file to the built-in instructions.
 - `override` replaces them entirely and adds nothing back.
 
-An unknown skill name is refused with the list of valid ones. The `path` must
+Any other skill name is refused. The `path` must
 be a Markdown file inside the repository: unsafe paths, symbolic links that
 leave the workspace and missing files are refused. A skill cannot change the
 permissions or merge rules Core controls.

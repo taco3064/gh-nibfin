@@ -69,7 +69,7 @@ Codes from `gh nibfin` on your host:
 - `runner_request_failed`: The request Issue was closed, or its answer could not be read. Run `runner add` again.
 - `runner_busy`: GitHub reports a Runner busy but no Job of it runs on this host. Run `runner remove` again later to finish it.
 - `listen_failed`: The Dashboard's port is taken. Use another `--port`, or leave it out for any free port.
-- `proof_invalid`: The Dashboard's session URL was already used. Restart `gh nibfin dashboard` for a new URL.
+- `proof_invalid`: The Dashboard's session URL was wrong or already used. Restart `gh nibfin dashboard` for a new URL.
 
 Codes in a `pending` comment from a Job:
 
@@ -99,6 +99,4 @@ Runner's service, and GitHub's online, offline and busy state for it.
   as `needs admin`.
 
 A Job assigned while every Runner of its Assignee is offline waits in GitHub's
-queue until one comes online. It is not moved to someone else. If it waits past
-GitHub's limit for self-hosted Runners, the Job fails and the Issue gets
-`pending`; remove it once a Runner is online.
+queue until one comes online. It is not moved to someone else.
