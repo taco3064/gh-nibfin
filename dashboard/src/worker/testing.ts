@@ -129,3 +129,6 @@ export class FakeGitHub {
     return new Response(JSON.stringify({ data, errors: this.graphqlErrors.length ? this.graphqlErrors : undefined }), { status: 200 })
   }
 }
+
+/** No wait and no log between retries, for createGitHub in tests. */
+export const quick = { sleep: async () => {}, log: () => {} }

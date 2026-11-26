@@ -40,6 +40,18 @@ read-back fails; the error still follows on stderr as `<code>: <message>`
 and the exit code is 1. These lines come from the same items the
 [Dashboard API](#api) returns.
 
+Every GitHub API call (the CLI, the Dashboard, the Live Worker and the `gh
+api` steps of the workflow templates) is retried up to 3 times on any error,
+whatever it is: no response, 5xx, 4xx, rate limit or a GraphQL error. It waits
+as GitHub's `Retry-After` or `x-ratelimit-reset` asks (at most a minute),
+otherwise 1, 2 and 4 seconds, and writes one `nibfin: GitHub API <method>
+<path> failed (<reason>); retry <n> of 3` line on stderr per retry, never a
+query string, body or header. Only after the third retry fails is the error
+reported as before. A GET 404 or 410, or a GraphQL answer whose only errors are
+`NOT_FOUND`, means "absent" and is not retried. A create (an Issue, a comment)
+re-reads before it is sent again, so a create whose answer was lost is not
+duplicated.
+
 ## Workflow templates
 
 `internal/templates/workflowfiles/workflows/` holds the workflows `init` and `upgrade` write

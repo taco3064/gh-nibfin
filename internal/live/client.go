@@ -11,6 +11,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/api"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/op"
 )
 
@@ -34,7 +35,7 @@ type getter interface {
 // newGetter returns a getter for host that carries the current gh login.
 // Tests replace it.
 var newGetter = func(host string) (getter, error) {
-	return restGetterFor(api.ClientOptions{Host: host}, http.DefaultTransport)
+	return restGetterFor(api.ClientOptions{Host: host}, ghretry.Transport(http.DefaultTransport))
 }
 
 // maxBody bounds a probe answer.

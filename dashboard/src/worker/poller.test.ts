@@ -4,7 +4,7 @@ import { issueOfTitle, parseJobTitle } from './build'
 import { createGitHub } from './github'
 import { check, minInterval, missingWorkflowInterval } from './poller'
 import { initialState, repos, type State } from './state'
-import { FakeGitHub, inProgressPath, issueJSON, issuesPath, jobsPath, runJSON, runnersPath, runsPath, searchPathOf, token } from './testing'
+import { FakeGitHub, inProgressPath, issueJSON, issuesPath, jobsPath, runJSON, runnersPath, runsPath, searchPathOf, token, quick } from './testing'
 
 const core = 'taco3064/nibfin-core'
 const cli = 'taco3064/gh-nibfin'
@@ -12,7 +12,7 @@ const t0 = Date.parse('2026-11-25T00:00:00Z')
 
 async function run(fake: FakeGitHub, state: State, now: number, budget?: number) {
   fake.reset()
-  return check(state, createGitHub({ token, fetch: fake.fetch, budget }), now)
+  return check(state, createGitHub({ token, fetch: fake.fetch, budget, ...quick }), now)
 }
 
 async function first(fake: FakeGitHub) {
@@ -328,7 +328,7 @@ describe('check', () => {
 
   it('makes no request and reports auth_unavailable without a token', async () => {
     const fake = new FakeGitHub()
-    const res = await check(initialState(), createGitHub({ token: '', fetch: fake.fetch }), t0)
+    const res = await check(initialState(), createGitHub({ token: '', fetch: fake.fetch, ...quick }), t0)
     expect(fake.requests).toHaveLength(0)
     expect(res.errors).toEqual([{ code: 'auth_unavailable', message: 'the Worker has no GITHUB_TOKEN secret' }])
     expect(res.changed).toBe(false)

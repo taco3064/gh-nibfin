@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/api"
+
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 )
 
 // graphQL is the part of go-gh's GraphQL client the label operations use.
@@ -19,7 +21,7 @@ type graphQL interface {
 // newGraphQL returns a client for host using the current gh login. go-gh
 // resolves the token; this package never sees it. Tests replace it.
 var newGraphQL = func(host string) (graphQL, error) {
-	return api.NewGraphQLClient(api.ClientOptions{Host: host})
+	return api.NewGraphQLClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 }
 
 // labelOp adds or removes labels on Issues: one query to plan, one mutation

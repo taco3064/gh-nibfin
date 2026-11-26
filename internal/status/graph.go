@@ -11,6 +11,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/api"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/op"
 )
 
@@ -22,7 +23,7 @@ type graphQL interface {
 // newGraphQL returns a GraphQL client for host that carries the current gh
 // login; only go-gh handles its token. Tests replace it.
 var newGraphQL = func(host string) (graphQL, error) {
-	return api.NewGraphQLClient(api.ClientOptions{Host: host})
+	return api.NewGraphQLClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 }
 
 const (
