@@ -4,6 +4,7 @@ import { Clock, History } from 'lucide-react'
 import { tones } from '@/components/issue/tones'
 import { Badge } from '@/components/ui/badge'
 import { freshness } from '@/lib/shell'
+import { formatClock } from '@/lib/utils'
 
 // FreshnessIndicator shows the time of the data and whether it is stale.
 // One timer re-renders it when the data turns stale; it never reads.
@@ -29,7 +30,7 @@ export function FreshnessIndicator({ readAt }: { readAt?: number }) {
   return (
     <p data-slot="freshness" data-state={stale ? 'stale' : 'current'} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
       <span className="text-muted-foreground">
-        Data from <time dateTime={at.toISOString()}>{at.toLocaleTimeString()}</time>
+        Data from <time dateTime={at.toISOString()}>{formatClock(at)}</time>
       </span>
       {stale ? (
         <Badge variant="outline" className={tones.warning}>

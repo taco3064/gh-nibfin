@@ -1,4 +1,4 @@
-import { Radio, Unplug } from 'lucide-react'
+import { Radio, RefreshCw, Unplug } from 'lucide-react'
 
 import { tones } from '@/components/issue/tones'
 import { Note } from '@/components/shell/note'
@@ -25,6 +25,17 @@ export function LiveBadge({ live }: { live: Live }) {
     <Badge variant="outline" data-slot="live" data-state="off" className={tones.warning}>
       <Unplug aria-hidden="true" />
       Live updates off
+    </Badge>
+  )
+}
+
+// RefreshOnlyBadge says that the page does not update by itself: it shows
+// new data only when it is refreshed.
+export function RefreshOnlyBadge() {
+  return (
+    <Badge variant="outline" data-slot="live" data-state="manual" className={tones.neutral}>
+      <RefreshCw aria-hidden="true" />
+      Updates on Refresh
     </Badge>
   )
 }
