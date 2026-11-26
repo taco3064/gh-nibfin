@@ -36,14 +36,6 @@ export const labelStates: LabelState[] = [
     meaning: 'A closed Issue never runs.',
   },
   {
-    id: 'scope',
-    when: 'request label, no scope label',
-    labels: ['request'],
-    outcome: 'runs',
-    meaning:
-      'The Scope stage checks whether the request is feasible and, when it is, opens scope Issues for it. pause, pending, the Assignee and Blocked by still apply.',
-  },
-  {
     id: 'no-scope',
     when: 'No scope or request label',
     labels: ['scope', 'request'],
@@ -84,6 +76,13 @@ export const labelStates: LabelState[] = [
     labels: [],
     outcome: 'waits',
     meaning: 'The Assignee’s Runners do the work, so someone must be assigned.',
+  },
+  {
+    id: 'scope',
+    when: 'request label, no scope label',
+    labels: ['request'],
+    outcome: 'runs',
+    meaning: 'The Scope stage checks whether the request is feasible and, when it is, opens scope Issues for it.',
   },
   {
     id: 'shape',
