@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { edgeCount, outsideCount, platform, repoStatus } from './repo-fixtures'
 import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type Watch } from './support'
@@ -171,6 +171,18 @@ for (const theme of themes) {
   }
 }
 
+// expectInside waits until the element lies wholly inside the graph region:
+// fitted after the shown set changed, or panned to on focus.
+async function expectInside(page: Page, el: Locator) {
+  await expect
+    .poll(async () => {
+      const r = await graphRegion(page).boundingBox()
+      const t = await el.boundingBox()
+      return !!r && !!t && t.x >= r.x - 0.5 && t.y >= r.y - 0.5 && t.x + t.width <= r.x + r.width + 0.5 && t.y + t.height <= r.y + r.height + 0.5
+    })
+    .toBe(true)
+}
+
 // expectDirection checks the layout of the graph region at a width: top to
 // bottom on a phone, with every node inside the region and no sideways
 // scroll; left to right from a tablet up, fitted, with zoom controls and a
@@ -299,6 +311,7 @@ for (const [width, theme] of [
     await expect(page.locator('[data-slot=graph-count]')).toHaveText(`Showing 1 of ${platform.length} open Issues · 0 shown as context · 1 closed blocker collapsed`)
     await expect(region.locator('[data-node]')).toHaveCount(1)
     await edgesDrawn(page, 0)
+    await expectInside(page, region.locator('[data-node="acme/platform#2"]'))
     await marker.click()
     const list = page.locator('[data-slot=closed-list]')
     await expect(list).toBeVisible()

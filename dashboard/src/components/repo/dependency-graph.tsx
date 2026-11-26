@@ -388,7 +388,10 @@ const nodeWidth = 288
 const pad = 12
 // band is the strip below the graph that holds the zoom controls in LR.
 const band = 56
-const fitOptions = { padding: { top: pad, left: pad, right: pad, bottom: band }, maxZoom: 1 }
+// minZoom lets Fit show even a graph of a few hundred Issues whole.
+const minZoom = 0.01
+// fitOptions are the Fit control's: the whole graph above the band.
+const fitOptions = { padding: { top: pad, left: pad, right: pad, bottom: band }, maxZoom: 1, minZoom }
 // readableZoom is the smallest zoom a graph opens at.
 const readableZoom = 0.75
 // lrMinWidth is the narrowest region where two levels fit side by side.
@@ -491,11 +494,16 @@ function GraphRegion({
     const key = `${direction}|${keys.join(' ')}`
     if (fitted.current === key || !region) return
     fitted.current = key
+    // The fit reads the region's size from the DOM: its height follows the
+    // content and has already changed, while React Flow reads it later.
     // A graph that fits only below a readable zoom opens at that zoom on
     // its first blocker, top left; Fit and the minimap show all of it.
-    const fit = Math.min(1, (region.clientWidth - 2 * pad) / placement.width, (region.clientHeight - pad - band) / placement.height)
+    const w = region.clientWidth - 2 * pad
+    const h = region.clientHeight - pad - band
+    const fit = Math.min(1, w / placement.width, h / placement.height)
     const first = placement.boxes.get(placement.order[0])
-    if (fit >= readableZoom || !first) void rf.fitView({ ...fitOptions, minZoom: readableZoom })
+    if (fit >= readableZoom || !first)
+      void rf.setViewport({ x: pad + (w - placement.width * fit) / 2, y: pad + (h - placement.height * fit) / 2, zoom: fit })
     else void rf.setViewport({ x: pad - first.x * readableZoom, y: pad - first.y * readableZoom, zoom: readableZoom })
   }, [placement, direction, keys, rf, region])
 
@@ -568,7 +576,7 @@ function GraphRegion({
           zoomOnDoubleClick={false}
           zoomActivationKeyCode={lr ? undefined : null}
           preventScrolling={false}
-          minZoom={0.05}
+          minZoom={minZoom}
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
           ariaLabelConfig={ariaLabelConfig}
@@ -586,6 +594,9 @@ function GraphRegion({
                   <marker id={marker} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                     <path d="M 0 0 L 10 5 L 0 10 z" className="fill-muted-foreground" />
                   </marker>
+                  <marker id={`${marker}-cycle`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" className="fill-warning" />
+                  </marker>
                 </defs>
                 {placement.edges.map((e) => (
                   <path
@@ -596,7 +607,7 @@ function GraphRegion({
                     className={cn('fill-none', e.cycle ? 'stroke-warning' : 'stroke-muted-foreground')}
                     strokeWidth={1.5}
                     strokeDasharray={e.cycle ? '6 4' : undefined}
-                    markerEnd={`url(#${marker})`}
+                    markerEnd={`url(#${marker}${e.cycle ? '-cycle' : ''})`}
                   />
                 ))}
               </svg>
