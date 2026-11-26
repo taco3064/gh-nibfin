@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 // Retries is the number of retries after the first attempt.
@@ -213,6 +216,16 @@ func asked(h http.Header) (time.Duration, bool) {
 	return min(max(d, 0), maxWait), true
 }
 
+// answerOf is the answer go-gh kept in err, for its Retry-After and
+// rate-limit headers; nil when err has none.
+func answerOf(err error) *http.Response {
+	var h *api.HTTPError
+	if errors.As(err, &h) && h.Headers != nil {
+		return &http.Response{StatusCode: h.StatusCode, Header: h.Headers}
+	}
+	return nil
+}
+
 // Note writes the retry line: method, URL path and attempt, never the query
 // string, a body or a header.
 func Note(method, path, reason string, attempt int) {
@@ -231,7 +244,7 @@ func Do(ctx context.Context, method, path string, send func(context.Context) err
 			return err
 		}
 		Note(method, path, "error", attempt)
-		if waitErr := Sleep(ctx, delay(attempt, nil)); waitErr != nil {
+		if waitErr := Sleep(ctx, delay(attempt, answerOf(err))); waitErr != nil {
 			return err
 		}
 		// Without a re-read the first attempt may have taken effect, so it is
