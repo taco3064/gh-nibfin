@@ -129,7 +129,7 @@ func TestRenderPinsImage(t *testing.T) {
 // coreLines are the container lines of the Job, first taken from
 // taco3064/nibfin-core@30e890d .github/workflows/nibfin-job.yml. Core's own Job
 // now follows this template; the stage Job runs on any Runner of the Assignee
-// and takes the provider from the Runner.
+// and takes the provider and the model from the Runner.
 var coreLines = []string{
 	`podman run --rm --userns=keep-id:uid=1000,gid=1000 \`,
 	`--env NIBFIN_GITHUB_TOKEN --env NIBFIN_RUN_REPO --env NIBFIN_RUN_ID \`,
@@ -156,6 +156,7 @@ var coreLines = []string{
 	`runs-on: [self-hosted, nibfin]`,
 	`runs-on: [self-hosted, "nibfin-${{ inputs.assignee }}"]`,
 	`PROVIDER="${NIBFIN_PROVIDER:-}"`,
+	`MODEL="${NIBFIN_MODEL:-}"`,
 	`NIBFIN_GITHUB_TOKEN: ${{ secrets.token }}`,
 	`NIBFIN_RUN_REPO: ${{ github.repository }}`,
 	`NIBFIN_RUN_ID: ${{ github.run_id }}`,
@@ -169,7 +170,6 @@ var coreLines = []string{
 	`PIDS_LIMIT: ${{ vars.NIBFIN_PIDS_LIMIT || '4096' }}`,
 	`CPUS: ${{ vars.NIBFIN_CPUS || '4' }}`,
 	`CONTAINER_LIMITS: ${{ vars.NIBFIN_CONTAINER_LIMITS }}`,
-	`MODEL: ${{ vars.NIBFIN_MODEL }}`,
 	`persist-credentials: false`,
 }
 
