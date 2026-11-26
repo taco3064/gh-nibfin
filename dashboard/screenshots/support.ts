@@ -248,8 +248,13 @@ const gutterSelector = [
 
 // gutterOffenders lists the visible elements of gutterSelector that come
 // closer than gutter px to either side of the viewport. Elements inside a
-// horizontally scrolling ancestor (the graph's content) and sr-only elements
-// are skipped. Each entry names the element and its left and right edges.
+// horizontally scrolling ancestor and sr-only elements are skipped. An
+// element inside an ancestor that clips its overflow (overflow hidden or
+// clip, such as the dependency graph's zoomed and panned canvas) is measured
+// by the part that ancestor leaves visible, and skipped when none of it is
+// visible; a full-width clipping ancestor still leaves the element at the
+// viewport edge, so content cut off at the page side is still reported. Each
+// entry names the element and its left and right edges.
 export async function gutterOffenders(page: Page, gutter = 16): Promise<string[]> {
   return page.evaluate(
     ([sel, g]) => {
@@ -263,6 +268,23 @@ export async function gutterOffenders(page: Page, gutter = 16): Promise<string[]
         for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) if (scrollsX(p)) return true
         return false
       }
+      const clips = (o: string) => o === 'hidden' || o === 'clip'
+      // visibleBox returns the element's box cut to every clipping ancestor,
+      // or null when nothing of it is left.
+      const visibleBox = (el: Element) => {
+        const r = el.getBoundingClientRect()
+        let [left, right, top, bottom] = [r.left, r.right, r.top, r.bottom]
+        for (let p = el.parentElement; p && p !== document.documentElement && p !== document.body; p = p.parentElement) {
+          const s = getComputedStyle(p)
+          const x = clips(s.overflowX)
+          const y = clips(s.overflowY)
+          if (!x && !y) continue
+          const c = p.getBoundingClientRect()
+          if (x) [left, right] = [Math.max(left, c.left), Math.min(right, c.right)]
+          if (y) [top, bottom] = [Math.max(top, c.top), Math.min(bottom, c.bottom)]
+        }
+        return right - left > 1 && bottom - top > 1 ? { left, right } : null
+      }
       const name = (el: Element) => {
         const slot = el.getAttribute('data-slot')
         const text = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)
@@ -271,9 +293,9 @@ export async function gutterOffenders(page: Page, gutter = 16): Promise<string[]
       const out: string[] = []
       for (const el of document.querySelectorAll(sel as string)) {
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: false })) continue
-        const r = el.getBoundingClientRect()
-        if (r.width <= 1 || r.height <= 1) continue
         if (insideScroller(el)) continue
+        const r = visibleBox(el)
+        if (!r) continue
         if (r.left < (g as number) - tolerance || r.right > width - (g as number) + tolerance) {
           out.push(`${name(el)} left=${r.left.toFixed(1)} right=${(width - r.right).toFixed(1)}`)
         }
