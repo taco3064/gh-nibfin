@@ -303,6 +303,15 @@ test('search finds a flag on the CLI commands page', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+test('search finds the connector settings on the Setup page', async ({ page }) => {
+  const errors = await open(page, './', 'dark', 1280)
+  await page.getByRole('button', { name: 'Search' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Search' }).fill('deniedMcpServers')
+  await expect(dialog.getByRole('link', { name: 'Setup and management' }).first()).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('the Setup and CLI pages link to anchors that exist', async ({ page }) => {
   const errors = await open(page, 'cli/', 'dark', 1280)
   const cliIds = await page.locator('[id]').evaluateAll((els) => els.map((e) => e.id))
