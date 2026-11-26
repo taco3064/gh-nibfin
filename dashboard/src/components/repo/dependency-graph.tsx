@@ -392,8 +392,10 @@ const band = 56
 const minZoom = 0.01
 // fitOptions are the Fit control's: the whole graph above the band.
 const fitOptions = { padding: { top: pad, left: pad, right: pad, bottom: band }, maxZoom: 1, minZoom }
-// readableZoom is the smallest zoom a graph opens at.
-const readableZoom = 0.75
+// fitFloor is the smallest zoom a whole graph is fitted at on load; a
+// larger graph opens at openZoom on its matched Issues instead.
+const fitFloor = 0.35
+const openZoom = 0.75
 // lrMinWidth is the narrowest region where two levels fit side by side.
 const lrMinWidth = 2 * nodeWidth + graphSpacing.rank + 2 * pad
 const ariaLabelConfig = {
@@ -496,26 +498,36 @@ function GraphRegion({
     fitted.current = key
     // The fit reads the region's size from the DOM: its height follows the
     // content and has already changed, while React Flow reads it later.
-    // A graph that fits only below a readable zoom opens at that zoom on
-    // its first blocker, top left; Fit and the minimap show all of it.
+    // A graph that fits only below fitFloor opens at openZoom on its
+    // matched Issues, the ones not shown as context: centred when they fit,
+    // else from their top left. Fit and the minimap show all of it.
     const w = region.clientWidth - 2 * pad
     const h = region.clientHeight - pad - band
     const fit = Math.min(1, w / placement.width, h / placement.height)
-    const first = placement.boxes.get(placement.order[0])
-    if (fit >= readableZoom || !first)
+    const matched = keys.filter((k) => !context.has(k)).map((k) => placement.boxes.get(k)!)
+    if (fit >= fitFloor || matched.length === 0) {
       void rf.setViewport({ x: pad + (w - placement.width * fit) / 2, y: pad + (h - placement.height * fit) / 2, zoom: fit })
-    else void rf.setViewport({ x: pad - first.x * readableZoom, y: pad - first.y * readableZoom, zoom: readableZoom })
-  }, [placement, direction, keys, rf, region])
+      return
+    }
+    const left = Math.min(...matched.map((b) => b.x))
+    const top = Math.min(...matched.map((b) => b.y))
+    const right = Math.max(...matched.map((b) => b.x + b.width))
+    const bottom = Math.max(...matched.map((b) => b.y + b.height))
+    const z = openZoom
+    const x = (right - left) * z <= w ? pad + w / 2 - ((left + right) / 2) * z : pad - left * z
+    const y = (bottom - top) * z <= h ? pad + h / 2 - ((top + bottom) / 2) * z : pad - top * z
+    void rf.setViewport({ x, y, zoom: z })
+  }, [placement, direction, keys, context, rf, region])
 
   const lr = direction === 'LR'
-  // Keyboard focus on a node, or on a link or button inside one, pans the
-  // view so the focused element is in sight. React Flow's own pan on node
-  // focus covers only the node itself, and only with its keyboard handling,
-  // which would also take Enter and Space from the controls inside.
   // active is the node whose edges stand out: the one hovered or holding
   // keyboard focus. The others' edges fade, so one edge can be followed
   // even where many share the gutter.
   const [active, setActive] = useState<string | null>(null)
+  // Keyboard focus on a node, or on a link or button inside one, pans the
+  // view so the focused element is in sight. React Flow's own pan on node
+  // focus covers only the node itself, and only with its keyboard handling,
+  // which would also take Enter and Space from the controls inside.
   const onFocus = useCallback(
     (e: FocusEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement
@@ -541,11 +553,11 @@ function GraphRegion({
   }, [])
   const touches = (e: { from: string; to: string }) => active !== null && (e.from === active || e.to === active)
   const content = placement ? placement.height + (lr ? pad + band : 2 * pad) : 320
-  // The minimap helps only when the whole graph does not fit at a readable
-  // zoom, so the view opens on part of it.
+  // The minimap helps only when the whole graph is not fitted on load, so
+  // the view opens on part of it.
   const large =
     placement !== null &&
-    Math.min((regionWidth - 2 * pad) / placement.width, (0.75 * window.innerHeight - pad - band) / placement.height) < readableZoom
+    Math.min((regionWidth - 2 * pad) / placement.width, (0.75 * window.innerHeight - pad - band) / placement.height) < fitFloor
   const cycle = placement?.edges.some((e) => e.cycle) ?? false
   return (
     <div className="flex flex-col gap-2">

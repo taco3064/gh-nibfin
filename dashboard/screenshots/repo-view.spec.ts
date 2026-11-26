@@ -233,6 +233,9 @@ for (const theme of themes) {
       await expect(ctx.first()).toContainText('Context: blocks a shown Issue')
       await expect(page.locator('[data-blocker="https://github.com/acme/infra/issues/201"]')).toContainText('Blocks #16')
       await edgesDrawn(page, 6)
+      // The seven-node chain is fitted on load, the match included.
+      await expectInside(page, page.locator('[data-slot=graph-region] [data-node="acme/platform#21"]'))
+      await expectInside(page, page.locator('[data-slot=graph-region] [data-node="acme/infra#201"]'))
       await expectNoPageScroll(page)
       await shot(page, `repo-graph-search-${theme}-${width}`)
 
