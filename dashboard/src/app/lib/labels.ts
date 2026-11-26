@@ -3,7 +3,7 @@
 // taco3064/nibfin-core src/github/stage.ts); the first match wins.
 
 /** The labels `gh nibfin init` creates. */
-export const initLabels = ['scope', 'shaped', 'delivered', 'pause', 'pending'] as const
+export const initLabels = ['request', 'scope', 'shaped', 'delivered', 'pause', 'pending'] as const
 
 export type InitLabel = (typeof initLabels)[number]
 
@@ -36,11 +36,19 @@ export const labelStates: LabelState[] = [
     meaning: 'A closed Issue never runs.',
   },
   {
+    id: 'scope',
+    when: 'request label, no scope label',
+    labels: ['request'],
+    outcome: 'runs',
+    meaning:
+      'The Scope stage checks whether the request is feasible and, when it is, opens scope Issues for it. pause, pending, the Assignee and Blocked by still apply.',
+  },
+  {
     id: 'no-scope',
-    when: 'No scope label',
-    labels: ['scope'],
+    when: 'No scope or request label',
+    labels: ['scope', 'request'],
     outcome: 'waits',
-    meaning: 'Only Issues with scope belong to Nibfin.',
+    meaning: 'Only Issues with scope or request belong to Nibfin.',
   },
   {
     id: 'paused',

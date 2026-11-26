@@ -17,9 +17,9 @@ const stateWords: Record<StepState, string> = {
   upcoming: '',
 }
 
-// StageTrack shows the Nibfin stage from labels as Shape → Deliver → Done:
+// StageTrack shows the Nibfin stage from labels as Scope → Shape → Deliver → Done:
 // completed steps filled, the current step highlighted. An Issue without
-// scope says it is not in Nibfin instead.
+// scope or request says it is not in Nibfin instead.
 export function StageTrack({ stage }: { stage: Stage }) {
   if (stage === 'none') {
     return (

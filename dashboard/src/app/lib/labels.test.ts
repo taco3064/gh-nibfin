@@ -6,6 +6,7 @@ describe('labelStates', () => {
   it('follows the order Core derives a stage in', () => {
     expect(labelStates.map((state) => state.id)).toEqual([
       'closed',
+      'scope',
       'no-scope',
       'paused',
       'pending',
