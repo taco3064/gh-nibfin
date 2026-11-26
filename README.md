@@ -238,7 +238,9 @@ Windows and macOS.
   (`self-hosted` among them). Only an admin's Runners also get `nibfin`, which
   routing runs on while the execution repository is private, so routing never
   runs on a collaborator's host. When the execution repository is public,
-  routing runs on a GitHub-hosted runner instead.
+  routing runs on a GitHub-hosted runner instead, and so does the finish stage
+  (merging an already reviewed pull request, closing a delivered Issue, waking
+  the Issues it blocked), which otherwise runs on the Assignee's Runners.
 - Each Runner's `.env` holds `NIBFIN_PROVIDER=<provider>` before its service
   first starts; the stage Job reads the provider from it. The `.env` may also
   set `NIBFIN_MODEL=<model>` for that Runner only (see
