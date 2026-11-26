@@ -17,6 +17,17 @@
 // GET /users/{login}/keys (ssh-ed25519 or ssh-rsa). Other body text is
 // ignored. The requester is always the Issue's author, never a body field.
 //
+// On a private execution repository the body also has at most one line
+//
+//	deploy-key: ssh-ed25519 <base64>
+//
+// the public key of the requesting host's dedicated deploy key. Before it
+// answers, the workflow adds that key to the repository as a read-only
+// deploy key titled RunnerDeployKeyTitlePrefix + <author login>; a key that
+// is already a deploy key of the repository is accepted. Several such lines,
+// or a line that is not an ssh-ed25519 public key, is a refusal; a failure to
+// add the key is a failure answer, and the Issue is closed.
+//
 // The answer is one comment by the workflow's GITHUB_TOKEN identity. A
 // registration starts with the line RunnerRegistrationMarker, then the lines
 // "requester: <login>", "ssh-key-id: <id>" and "expires-at: <time>", and holds
@@ -37,6 +48,12 @@ const (
 	// RunnerKeyIDField names the requested SSH key in the request body and
 	// in the registration comment.
 	RunnerKeyIDField = "ssh-key-id"
+	// RunnerDeployKeyField names the optional deploy key in the request
+	// body.
+	RunnerDeployKeyField = "deploy-key"
+	// RunnerDeployKeyTitlePrefix starts the title of the deploy key the
+	// workflow adds; the author's login follows it.
+	RunnerDeployKeyTitlePrefix = "nibfin-runner-"
 	// RunnerRegistrationMarker is the first line of a registration comment.
 	RunnerRegistrationMarker = "<!-- nibfin:runner-registration -->"
 	// RunnerRefusedMarker is the first line of a refusal comment.
