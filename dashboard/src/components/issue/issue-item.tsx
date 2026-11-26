@@ -11,6 +11,7 @@ import {
   MessageSquareWarning,
   PackageCheck,
   PencilRuler,
+  ScanSearch,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -56,6 +57,7 @@ export interface IssueItemProps {
 
 const stageLook: Record<Stage, { tone: Tone; icon: LucideIcon }> = {
   none: { tone: 'neutral', icon: CircleDashed },
+  scope: { tone: 'info', icon: ScanSearch },
   shape: { tone: 'info', icon: PencilRuler },
   deliver: { tone: 'info', icon: PackageCheck },
   done: { tone: 'success', icon: CircleCheck },

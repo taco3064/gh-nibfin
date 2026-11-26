@@ -114,6 +114,19 @@ describe('filterGraph', () => {
     expect(filterGraph(g, { ...emptyFilter, blocked: true }).matched).toEqual([k(1), k(2), k(3), k(4)])
     expect(filterGraph(g, { ...emptyFilter, blocked: true, query: 'reports', stages: ['shape'] }).matched).toEqual([k(1)])
   })
+
+  it('filters on the Scope stage: request without scope', () => {
+    const s = buildGraph({
+      repo,
+      issues: [
+        issue(1, [], { labels: ['request'] }),
+        issue(2, [], { labels: ['request', 'scope'] }),
+        issue(3, [], { labels: ['bug'] }),
+      ],
+    })
+    expect(filterGraph(s, { ...emptyFilter, stages: ['scope'] }).matched).toEqual([k(1)])
+    expect(filterGraph(s, { ...emptyFilter, stages: ['none'] }).matched).toEqual([k(3)])
+  })
 })
 
 describe('layoutGraph', () => {

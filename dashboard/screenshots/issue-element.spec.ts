@@ -92,6 +92,7 @@ for (const width of widths) {
       await expect(item(page, 'acme/app', 101).locator('[data-badge=stage]')).toHaveText('Stage: Deliver')
       await expect(item(page, 'acme/app', 104).locator('[data-badge=stage]')).toHaveText('Stage: Done')
       await expect(item(page, 'acme/app', 105).locator('[data-badge=stage]')).toHaveText('Stage: Not in Nibfin')
+      await expect(item(page, 'acme/app', 106).locator('[data-badge=stage]')).toHaveText('Stage: Scope')
       await expect(item(page, 'acme/legacy', 3).locator('[data-badge=stage]')).toHaveText('Stage: Shape')
       await expect(item(page, 'acme/app', 102).locator('[data-badge=paused]')).toHaveText('Paused')
       await expect(item(page, 'acme/app', 103).locator('[data-badge=pending] a')).toHaveAttribute(

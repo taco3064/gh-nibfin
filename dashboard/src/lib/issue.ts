@@ -8,10 +8,11 @@ import type { Loading } from '@/lib/partial'
 
 type Fetch = typeof fetch
 
-export type Stage = 'none' | 'shape' | 'deliver' | 'done'
+export type Stage = 'none' | 'scope' | 'shape' | 'deliver' | 'done'
 
 export const stageLabels: Record<Stage, string> = {
   none: 'Not in Nibfin',
+  scope: 'Scope',
   shape: 'Shape',
   deliver: 'Deliver',
   done: 'Done',
@@ -21,11 +22,11 @@ function hasLabel(labels: readonly string[] | null | undefined, name: string): b
   return (labels ?? []).some((l) => l.toLowerCase() === name)
 }
 
-// stageOf reads the Nibfin stage from the labels only. Without scope the
-// Issue is not in Nibfin; otherwise delivered wins over shaped, and shaped
-// over scope.
+// stageOf reads the Nibfin stage from the labels only. Without scope an
+// Issue with request is in the Scope stage and any other is not in Nibfin;
+// with scope, delivered wins over shaped, and shaped over scope.
 export function stageOf(labels: readonly string[] | null | undefined): Stage {
-  if (!hasLabel(labels, 'scope')) return 'none'
+  if (!hasLabel(labels, 'scope')) return hasLabel(labels, 'request') ? 'scope' : 'none'
   if (hasLabel(labels, 'delivered')) return 'done'
   if (hasLabel(labels, 'shaped')) return 'deliver'
   return 'shape'

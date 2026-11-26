@@ -15,8 +15,8 @@ export interface PersonViewProps {
   onChanged: (changes: Change[]) => void
 }
 
-// PersonView lists the open Issues with scope assigned to the current gh
-// account, grouped by repository in the order of the data.
+// PersonView lists the open Issues with scope or request assigned to the
+// current gh account, grouped by repository in the order of the data.
 export function PersonView({ data, onChanged }: PersonViewProps) {
   const loading = useLoading()
   const listing = loading.has('repos')
@@ -60,7 +60,7 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
           </Note>
         ) : (
           <p className="text-sm break-words text-muted-foreground">
-            Open Issues with scope assigned to <span className="font-medium text-foreground">{data.user}</span> on{' '}
+            Open Issues with scope or request assigned to <span className="font-medium text-foreground">{data.user}</span> on{' '}
             <span className="font-medium text-foreground">{data.githubHost}</span>
           </p>
         )}
@@ -78,7 +78,7 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
       {listing && <SectionLoading label="Reading your Issues…" data-loading="repos" />}
       {!listing && repos.length === 0 && !data.issuesError && (
         <p className="rounded-md border border-dashed border-border-subtle px-4 py-8 text-center text-sm text-muted-foreground" data-empty="issues">
-          No open Issues with scope are assigned to you.
+          No open Issues with scope or request are assigned to you.
         </p>
       )}
       {chosen.length > 0 && (
