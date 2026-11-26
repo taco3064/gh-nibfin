@@ -125,7 +125,7 @@ func q(path string, kv ...string) string {
 }
 
 func searchPath(page int) string {
-	return q("search/issues", "q", "is:issue is:open label:scope assignee:@me", "per_page", "100", "page", fmt.Sprint(page))
+	return q("search/issues", "q", "is:issue is:open label:scope,request assignee:@me", "per_page", "100", "page", fmt.Sprint(page))
 }
 
 func item(repo string, n int, labels ...string) map[string]any {
@@ -154,7 +154,7 @@ func TestPersonView(t *testing.T) {
 	routes := map[string]any{
 		"user":        map[string]any{"login": "me", "id": 1},
 		searchPath(1): map[string]any{"total_count": 102, "items": page1},
-		searchPath(2): map[string]any{"total_count": 102, "items": []any{item("a/one", 5, "scope", "Pause"), item("a/one", 3, "scope")}},
+		searchPath(2): map[string]any{"total_count": 102, "items": []any{item("a/one", 5, "scope", "Pause"), item("a/one", 3, "request")}},
 		"repos/a/one/contents/.github/workflows/nibfin-job.yml": file(jobYML(imgA)),
 		"repos/b/two/contents/.github/workflows/nibfin-job.yml": file(jobYML(imgB)),
 	}
