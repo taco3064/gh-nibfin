@@ -67,8 +67,9 @@ removes N Runners of a provider, all of them without `--count`.
 
 [`gh nibfin status`](../cli/#status) shows whether the machine runs and each
 Runner's service against GitHub's online, offline and busy state. A Job for an
-Assignee whose Runners are all offline waits in GitHub's queue until one comes
-online; it is not moved to someone else. See
+Assignee whose Runners are all offline waits in GitHub's queue for one of them;
+it is not moved to someone else. A Job that waits past GitHub's queue limit
+never starts, and the Issue waits until you wake it. See
 [An offline Runner](../cli/#an-offline-runner).
 
 ### Choosing a Runner's model
