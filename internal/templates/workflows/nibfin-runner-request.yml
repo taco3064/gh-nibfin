@@ -5,8 +5,10 @@ name: Nibfin · Runner request
 # whose body has the line <!-- nibfin:runner-request --> and one line
 # "ssh-key-id: <id>". When the author has write or admin permission, it comments a
 # runner registration token for this repository, encrypted with age to that SSH key
-# of the author's GitHub account. Otherwise, or when anything fails, it comments
-# the reason and closes the Issue. Event text reaches the scripts only through env.
+# of the author's GitHub account. An optional line "deploy-key: ssh-ed25519 <key>"
+# (sent for a private repository) is first added as a read-only deploy key titled
+# nibfin-runner-<login>. Otherwise, or when anything fails, it comments the reason
+# and closes the Issue. Event text reaches the scripts only through env.
 run-name: Nibfin · ${{ github.repository }}#${{ github.event.issue.number }} · runner request
 
 on:
@@ -27,7 +29,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       # Comments and closing use the job's token; the Nibfin token only reads the
-      # author's permission and creates the registration token.
+      # author's permission, adds the deploy key and creates the registration token.
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       ISSUE: ${{ github.event.issue.number }}
@@ -73,6 +75,25 @@ jobs:
             refuse "the ssh-key-id line is not \"ssh-key-id: <id>\"" \
               "Open the request with gh nibfin runner add."
           fi
+          # The optional deploy key: one ssh-ed25519 public key, checked down to
+          # its wire format (length 11, "ssh-ed25519", length 32, 32 key bytes).
+          deploy_count=$(printf '%s\n' "$body" | grep -c '^deploy-key:' || true)
+          if [ "$deploy_count" -gt 1 ]; then
+            refuse "the body has $deploy_count deploy-key lines, want at most one" \
+              "Open the request with gh nibfin runner add."
+          fi
+          deploy_blob=
+          if [ "$deploy_count" = 1 ]; then
+            deploy_blob=$(printf '%s\n' "$body" | sed -En 's|^deploy-key: ssh-ed25519 ([A-Za-z0-9+/]+={0,2})$|\1|p')
+            deploy_hex=
+            if [ -n "$deploy_blob" ]; then
+              deploy_hex=$(printf '%s' "$deploy_blob" | base64 -d 2>/dev/null | od -An -v -tx1 | tr -d ' \n') || deploy_hex=
+            fi
+            if [ "${#deploy_hex}" != 102 ] || [ "${deploy_hex:0:38}" != 0000000b7373682d6564323535313900000020 ]; then
+              refuse "the deploy-key line is not an ssh-ed25519 public key" \
+                "Open the request with gh nibfin runner add."
+            fi
+          fi
           permission=$(GH_TOKEN="$NIBFIN_TOKEN" gh api "repos/$REPO/collaborators/$LOGIN/permission" --jq .permission)
           case "$permission" in
             admin | write) ;;
@@ -96,9 +117,16 @@ jobs:
           esac
           printf '%s\n' "$key" >"$RUNNER_TEMP/nibfin-request.pub"
           echo "Request of $LOGIN for the SSH key $key_id (${key%% *})"
+          deploy_key=no
+          if [ -n "$deploy_blob" ]; then
+            printf 'ssh-ed25519 %s\n' "$deploy_blob" >"$RUNNER_TEMP/nibfin-deploy-key.pub"
+            deploy_key=yes
+            echo "The request has a deploy key"
+          fi
           {
             echo "state=ok"
             echo "key-id=$key_id"
+            echo "deploy-key=$deploy_key"
           } >>"$GITHUB_OUTPUT"
       - name: Install age
         if: steps.check.outputs.state == 'ok'
@@ -107,6 +135,32 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y age
           age --version
+      - name: Add the deploy key
+        if: steps.check.outputs.state == 'ok' && steps.check.outputs.deploy-key == 'yes'
+        env:
+          NIBFIN_TOKEN: ${{ secrets.NIBFIN_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          key=$(cat "$RUNNER_TEMP/nibfin-deploy-key.pub")
+          blob=${key#ssh-ed25519 }
+          title="nibfin-runner-$LOGIN"
+          err="$RUNNER_TEMP/nibfin-deploy-key.err"
+          if id=$(GH_TOKEN="$NIBFIN_TOKEN" gh api -X POST "repos/$REPO/keys" \
+            -f title="$title" -f key="$key" -F read_only=true --jq .id 2>"$err"); then
+            echo "Added the read-only deploy key $title to $REPO (id $id)"
+            exit 0
+          fi
+          # A key that is already a deploy key of this repository is accepted.
+          if found=$(GH_TOKEN="$NIBFIN_TOKEN" gh api --paginate "repos/$REPO/keys" |
+            jq -r --arg blob "$blob" \
+              '.[] | select(((.key // "") | split(" ") | .[1]) == $blob) | "id \(.id), read_only \(.read_only)"' |
+            sed -n 1p) && [ -n "$found" ]; then
+            echo "The key is already a deploy key of $REPO ($found)"
+            exit 0
+          fi
+          cat "$err" >&2
+          echo "Cannot add the deploy key $title to $REPO" >&2
+          exit 1
       - name: Create and encrypt the registration token
         if: steps.check.outputs.state == 'ok'
         env:

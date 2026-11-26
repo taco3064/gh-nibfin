@@ -83,7 +83,20 @@ The request is an Issue opened by the requester with:
 - a body with the line `<!-- nibfin:runner-request -->` and exactly one line
   `ssh-key-id: <id>`, the id of one of the author's SSH keys in
   `GET /users/{login}/keys` (`ssh-ed25519` or `ssh-rsa`). Other text is
-  ignored. The requester is always the Issue's author.
+  ignored. The requester is always the Issue's author;
+- for a private execution repository, at most one line
+  `deploy-key: ssh-ed25519 <base64>`, the public key of the requesting
+  host's dedicated deploy key.
+
+When the body has a `deploy-key` line and the request is otherwise valid, the
+workflow adds that key, before it creates the registration token, to
+the repository as a read-only deploy key titled `nibfin-runner-<login>` (the
+author's login), with `NIBFIN_GITHUB_TOKEN`. A key that is already a deploy
+key of this repository is accepted. Several `deploy-key` lines, or a line that
+is not an `ssh-ed25519` public key, is a refusal; any other failure to add the
+key is a workflow failure: no token is created, and the Issue gets the failure
+comment and is closed. The Owner removes the deploy key under Settings →
+Deploy keys together with the collaborator's runner registrations.
 
 When the author is a user with write or admin permission, the workflow
 creates a registration token with `NIBFIN_GITHUB_TOKEN`, masks it, encrypts it

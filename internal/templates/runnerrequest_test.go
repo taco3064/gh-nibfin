@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,12 +122,12 @@ func TestRenderRunnerRequest(t *testing.T) {
 		t.Error("the request workflow traces commands")
 	}
 
-	// The Nibfin token reaches only the check and the token steps, as env.
-	if n := strings.Count(text, "secrets."); n != 2 {
-		t.Errorf("secrets appear %d times, want 2", n)
+	// The Nibfin token reaches only the check, deploy key and token steps, as env.
+	if n := strings.Count(text, "secrets."); n != 3 {
+		t.Errorf("secrets appear %d times, want 3", n)
 	}
 	for _, s := range job.Steps {
-		want := s.Name == "Check the request" || s.Name == "Create and encrypt the registration token"
+		want := s.Name == "Check the request" || s.Name == "Add the deploy key" || s.Name == "Create and encrypt the registration token"
 		if got := s.Env["NIBFIN_TOKEN"] == "${{ secrets.NIBFIN_GITHUB_TOKEN }}"; got != want {
 			t.Errorf("step %q has the Nibfin token: %v", s.Name, got)
 		}
@@ -292,6 +293,11 @@ case "$*" in
   "api repos/o/r/issues/7 --jq .state") echo "$FAKE_STATE" ;;
   "api repos/o/r/collaborators/alice/permission --jq .permission") echo "$FAKE_PERMISSION" ;;
   "api --paginate users/alice/keys") printf '%s\n' "$FAKE_KEYS" ;;
+  "api -X POST repos/o/r/keys -f title=nibfin-runner-alice -f key=ssh-ed25519 "*" -F read_only=true --jq .id")
+    if [ "$FAKE_KEY_POST" = ok ]; then echo 99; else echo "gh: Validation Failed (HTTP 422)" >&2; exit 1; fi ;;
+  "api --paginate repos/o/r/keys")
+    if [ -n "$FAKE_KEYS_LIST_FAIL" ]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
+    printf '%s\n' "$FAKE_DEPLOY_KEYS" ;;
   "api -X POST repos/o/r/actions/runners/registration-token")
     printf '{"token":"%s","expires_at":"2026-11-25T13:00:00Z"}\n' "$FAKE_REG_TOKEN" ;;
   "api --paginate repos/o/r/issues/7/comments") printf '%s\n' "$FAKE_COMMENTS" ;;
@@ -537,6 +543,167 @@ func TestRunnerRequestAnswer(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(dir, "closed")); (err == nil) != c.closed {
 			t.Errorf("%s: closed %v, want %v", c.name, err == nil, c.closed)
+		}
+	}
+}
+
+// ed25519Blob is the base64 wire format of an ssh-ed25519 public key with
+// the key bytes key (32 for a real key).
+func ed25519Blob(algo string, key []byte) string {
+	var b []byte
+	put := func(p []byte) {
+		b = append(b, byte(len(p)>>24), byte(len(p)>>16), byte(len(p)>>8), byte(len(p)))
+		b = append(b, p...)
+	}
+	put([]byte(algo))
+	put(key)
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// TestRunnerRequestDeployKeyOrder checks that the deploy key step runs only
+// for a request with a deploy key, before the token is created.
+func TestRunnerRequestDeployKeyOrder(t *testing.T) {
+	d, _ := requestWorkflow(t)
+	var names []string
+	for _, s := range d.Jobs["request"].Steps {
+		names = append(names, s.Name)
+	}
+	want := []string{"Check the request", "Install age", "Add the deploy key", "Create and encrypt the registration token", "Answer the request"}
+	if !slices.Equal(names, want) {
+		t.Errorf("steps %q, want %q", names, want)
+	}
+	add := step(t, d, "Add the deploy key")
+	if add.If != "steps.check.outputs.state == 'ok' && steps.check.outputs.deploy-key == 'yes'" {
+		t.Errorf("deploy key step if %q", add.If)
+	}
+	for _, want := range []string{
+		`GH_TOKEN="$NIBFIN_TOKEN" gh api -X POST "repos/$REPO/keys"`,
+		`title="` + RunnerDeployKeyTitlePrefix + `$LOGIN"`,
+		`-F read_only=true`,
+	} {
+		if !strings.Contains(add.Run, want) {
+			t.Errorf("the deploy key step has no %q", want)
+		}
+	}
+	check := step(t, d, "Check the request")
+	if !strings.Contains(check.Run, `'^`+RunnerDeployKeyField+`:'`) {
+		t.Error("the check step does not count the deploy-key lines")
+	}
+}
+
+// TestRunnerRequestDeployKeyCheck runs the check step with deploy-key lines.
+func TestRunnerRequestDeployKeyCheck(t *testing.T) {
+	needBash(t, "grep", "sed", "jq", "base64", "od", "tr")
+	d, _ := requestWorkflow(t)
+	script := step(t, d, "Check the request").Run
+	good := ed25519Blob("ssh-ed25519", []byte(strings.Repeat("k", 32)))
+	keys := `[{"id":11,"key":"ssh-ed25519 AAAAC3Nza alice@a"}]`
+	cases := []struct {
+		name  string
+		lines []string
+		want  string // "no", "yes" or the refusal reason
+	}{
+		{name: "none", want: "no"},
+		{name: "valid", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 " + good}, want: "yes"},
+		{name: "two", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 " + good, RunnerDeployKeyField + ": ssh-ed25519 " + good},
+			want: "the body has 2 deploy-key lines, want at most one"},
+		{name: "rsa", lines: []string{RunnerDeployKeyField + ": ssh-rsa " + ed25519Blob("ssh-rsa", []byte(strings.Repeat("k", 32)))},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+		{name: "rsa blob", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 " + ed25519Blob("ssh-rsa", []byte(strings.Repeat("k", 36)))},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+		{name: "garbage", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 AAA*;$(id)"},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+		{name: "bad base64", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 A"},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+		{name: "short", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 " + ed25519Blob("ssh-ed25519", []byte(strings.Repeat("k", 31)))},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+		{name: "long", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 " + ed25519Blob("ssh-ed25519", []byte(strings.Repeat("k", 33)))},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+		{name: "comment", lines: []string{RunnerDeployKeyField + ": ssh-ed25519 " + good + " me@host"},
+			want: "the deploy-key line is not an ssh-ed25519 public key"},
+	}
+	for _, c := range cases {
+		dir, env := fakeBin(t)
+		body := strings.Join(append([]string{RunnerRequestMarker, "ssh-key-id: 11"}, c.lines...), "\r\n")
+		env = append(env, "NIBFIN_TOKEN=nibfin-token", "TITLE="+RunnerRequestTitle, "BODY="+body, "USER_TYPE=User",
+			"FAKE_STATE=open", "FAKE_PERMISSION=write", "FAKE_KEYS="+keys)
+		out, err := runScript(t, script, env)
+		if err != nil {
+			t.Errorf("%s: %v\n%s", c.name, err, out)
+			continue
+		}
+		output, _ := os.ReadFile(filepath.Join(dir, "output"))
+		pub, _ := os.ReadFile(filepath.Join(dir, "nibfin-deploy-key.pub"))
+		refusal, _ := os.ReadFile(filepath.Join(dir, "nibfin-refusal.md"))
+		switch c.want {
+		case "no", "yes":
+			if !strings.Contains(string(output), "state=ok\n") || !strings.Contains(string(output), "deploy-key="+c.want+"\n") {
+				t.Errorf("%s: output %q\n%s", c.name, output, out)
+			}
+			if wantPub := map[string]string{"no": "", "yes": "ssh-ed25519 " + good + "\n"}[c.want]; string(pub) != wantPub {
+				t.Errorf("%s: deploy key file %q", c.name, pub)
+			}
+		default:
+			if !strings.Contains(string(output), "state=refused\n") || !strings.Contains(string(refusal), c.want) {
+				t.Errorf("%s: output %q, refusal %q", c.name, output, refusal)
+			}
+			if len(pub) != 0 {
+				t.Errorf("%s: deploy key file written %q", c.name, pub)
+			}
+		}
+		// The body's key never reaches the step outputs.
+		if strings.Contains(string(output), "ssh-ed25519") || strings.Contains(string(output), good) {
+			t.Errorf("%s: output carries the key %q", c.name, output)
+		}
+	}
+}
+
+// TestRunnerRequestAddDeployKey runs the deploy key step: GitHub adds the
+// key read-only, or it is already a deploy key of the repository; any
+// other failure fails the step with GitHub's error.
+func TestRunnerRequestAddDeployKey(t *testing.T) {
+	needBash(t, "jq", "sed")
+	d, _ := requestWorkflow(t)
+	script := step(t, d, "Add the deploy key").Run
+	blob := ed25519Blob("ssh-ed25519", []byte(strings.Repeat("k", 32)))
+	other := ed25519Blob("ssh-ed25519", []byte(strings.Repeat("o", 32)))
+	cases := []struct {
+		name, post, list string
+		listFail         bool
+		ok               bool
+		log              string
+	}{
+		{name: "added", post: "ok", ok: true, log: "Added the read-only deploy key nibfin-runner-alice to o/r (id 99)"},
+		{name: "present", list: `[{"id":5,"key":"ssh-ed25519 ` + other + `","read_only":true}]` + "\n" +
+			`[{"id":6,"key":"ssh-ed25519 ` + blob + `","title":"x","read_only":true}]`, ok: true,
+			log: "already a deploy key of o/r (id 6, read_only true)"},
+		{name: "not present", list: `[{"id":5,"key":"ssh-ed25519 ` + other + `","read_only":true}]`, log: "Validation Failed (HTTP 422)"},
+		{name: "list fails", listFail: true, log: "Validation Failed (HTTP 422)"},
+	}
+	for _, c := range cases {
+		dir, env := fakeBin(t)
+		os.WriteFile(filepath.Join(dir, "nibfin-deploy-key.pub"), []byte("ssh-ed25519 "+blob+"\n"), 0o644)
+		env = append(env, "NIBFIN_TOKEN=nibfin-token", "FAKE_KEY_POST="+c.post, "FAKE_DEPLOY_KEYS="+c.list)
+		if c.listFail {
+			env = append(env, "FAKE_KEYS_LIST_FAIL=1")
+		}
+		out, err := runScript(t, script, env)
+		if (err == nil) != c.ok || !strings.Contains(out, c.log) {
+			t.Errorf("%s: %v, want ok %v, log %q:\n%s", c.name, err, c.ok, c.log, out)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "gh.log"))
+		lines := strings.Split(strings.TrimSpace(string(log)), "\n")
+		wantPost := "nibfin-token|api -X POST repos/o/r/keys -f title=nibfin-runner-alice -f key=ssh-ed25519 " + blob + " -F read_only=true --jq .id"
+		if lines[0] != wantPost {
+			t.Errorf("%s: POST %q, want %q", c.name, lines[0], wantPost)
+		}
+		for _, l := range lines {
+			if !strings.HasPrefix(l, "nibfin-token|") {
+				t.Errorf("%s: gh call without the Nibfin token: %q", c.name, l)
+			}
+		}
+		if wantCalls := map[bool]int{true: 1, false: 2}[c.post == "ok"]; len(lines) != wantCalls {
+			t.Errorf("%s: gh calls %q", c.name, lines)
 		}
 	}
 }
