@@ -43,8 +43,9 @@ While `pending` is present, nothing runs for that Issue.
    removes `pause`. Nibfin reads the Issue's state from GitHub again and
    reruns the unfinished stage.
 
-There is no retry limit, and an Issue never stops silently: every stop leaves
-`pending` with its comment.
+There is no retry limit: every stage that stops leaves `pending` with its
+comment. A Job that never started, such as one that waited too long for an
+offline Runner, leaves none; see [An offline Runner](#an-offline-runner).
 
 ### Common failure codes
 
@@ -99,4 +100,9 @@ Runner's service, and GitHub's online, offline and busy state for it.
   as `needs admin`.
 
 A Job assigned while every Runner of its Assignee is offline waits in GitHub's
-queue until one comes online. It is not moved to someone else.
+queue for one of them to come online. It is not moved to someone else.
+
+GitHub ends a Job that waits longer than its queue limit for self-hosted
+Runners. That Job never started, so Nibfin adds no `pending` and the Issue
+waits. Once a Runner is online, wake the Issue with a label change, for example
+`gh nibfin pause <issue>` and then `gh nibfin resume <issue>`.
