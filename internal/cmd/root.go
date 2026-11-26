@@ -218,10 +218,10 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	}
 	initCmd := repoCmd("init", "Set up Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Init(p) })
 	initCmd.Long = "Set up Nibfin in a repository and open one PR that imports its workflows.\n\n" +
-		"It sets the labels scope, shaped, delivered, pause and pending; pull request creation\n" +
-		"limited to collaborators; approval required for fork PR workflows (all external\n" +
-		"contributors on a public repository, \"Require approval for fork pull request\n" +
-		"workflows\" on a private one); \"Automatically delete head branches\" off; the\n" +
+		"It sets the labels request, scope, shaped, delivered, pause and pending; pull request\n" +
+		"creation limited to collaborators; approval required for fork PR workflows (all\n" +
+		"external contributors on a public repository, \"Require approval for fork pull\n" +
+		"request workflows\" on a private one); \"Automatically delete head branches\" off; the\n" +
 		"variable NIBFIN_EXECUTION_REPO; and the Secret NIBFIN_GITHUB_TOKEN from the current\n" +
 		"gh login, which needs the workflow scope (gh auth refresh -s workflow). It neither\n" +
 		"writes nor reads NIBFIN_PROVIDER: each Runner names its provider in its .env.\n\n" +

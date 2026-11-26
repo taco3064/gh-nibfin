@@ -79,6 +79,7 @@ const (
 // labels are the labels Nibfin uses, with the colour and description a new
 // one gets. An existing label keeps its own.
 var labels = []struct{ name, color, description string }{
+	{"request", "c5def5", "Nibfin: plan Issues from this request"},
 	{"scope", "1d76db", "Nibfin works on this Issue"},
 	{"shaped", "0e8a16", "Nibfin: the Issue has an approved Shape"},
 	{"delivered", "5319e7", "Nibfin: the Issue's work is delivered"},
@@ -268,7 +269,7 @@ func (i *initRepo) manualNote() string {
 	return "set in the web UI " + i.settingsURL() + ": " + issuesManual
 }
 
-// labelSteps are the five label items, each no change when present.
+// labelSteps are the label items, one per label, each no change when present.
 func (i *initRepo) labelSteps() []op.Step {
 	var steps []op.Step
 	for _, l := range i.labels {

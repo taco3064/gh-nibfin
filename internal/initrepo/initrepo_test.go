@@ -445,7 +445,7 @@ func TestInitExecutionSet(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 	want := []string{
-		"create label scope", "create label shaped", "create label delivered", "create label pause", "create label pending",
+		"create label request", "create label scope", "create label shaped", "create label delivered", "create label pause", "create label pending",
 		"set pull requests collaborators_only", "set delete head branches false",
 		"set fork PR approval all external contributors",
 		"create variable NIBFIN_EXECUTION_REPO",
@@ -635,7 +635,7 @@ func TestInitRunnersChangedSincePlan(t *testing.T) {
 
 func TestInitLabels(t *testing.T) {
 	f := newFake("app")
-	f.labels = []string{"Scope", "pause", "shaped"}
+	f.labels = []string{"Scope", "pause", "shaped", "REQUEST"}
 	f.fail = map[string]error{}
 	stub(t, f, execRunners())
 	o := New(op.RepoParams{Repo: "github.com/o/app"})
@@ -649,7 +649,7 @@ func TestInitLabels(t *testing.T) {
 			got = append(got, a)
 		}
 	}
-	if !slices.Equal(got, []string{"rename label Scope", "create label delivered", "create label pending"}) {
+	if !slices.Equal(got, []string{"rename label REQUEST", "rename label Scope", "create label delivered", "create label pending"}) {
 		t.Errorf("label steps = %q", got)
 	}
 	// "pending" is created by someone else between Plan and Apply.
@@ -661,7 +661,7 @@ func TestInitLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(r["labels"].([]string), []string{"scope", "shaped", "delivered", "pause", "pending"}) || slices.Contains(f.labels, "Scope") {
+	if !slices.Equal(r["labels"].([]string), []string{"request", "scope", "shaped", "delivered", "pause", "pending"}) || slices.Contains(f.labels, "Scope") || slices.Contains(f.labels, "REQUEST") {
 		t.Errorf("labels = %v, %v", r["labels"], f.labels)
 	}
 }
@@ -798,7 +798,7 @@ func TestInitForkFailures(t *testing.T) {
 				t.Errorf("PUT %s %d: %v", route, code, err)
 			}
 			// Labels and settings stay; no variable, Secret or branch follows.
-			if len(f.labels) != 5 || f.deleteOnMerge || len(f.vars) != 0 || len(*fx.secrets) != 0 || f.refs[Branch] != "" {
+			if len(f.labels) != 6 || f.deleteOnMerge || len(f.vars) != 0 || len(*fx.secrets) != 0 || f.refs[Branch] != "" {
 				t.Errorf("PUT %s %d: labels %v, vars %v, secrets %d, branch %q", route, code, f.labels, f.vars, len(*fx.secrets), f.refs[Branch])
 			}
 		}
