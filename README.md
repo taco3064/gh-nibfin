@@ -42,7 +42,7 @@ and the exit code is 1. These lines come from the same items the
 
 ## Workflow templates
 
-`internal/templates/workflows/` holds the workflows `init` and `upgrade` write
+`internal/templates/workflowfiles/workflows/` holds the workflows `init` and `upgrade` write
 into a repository: the execution set (`nibfin-issue.yml`,
 `nibfin-shared-runner.yml`, `nibfin-job.yml`, `nibfin-runner-request.yml`)
 and the peer set (`nibfin-issue.yml`). They call nothing in other

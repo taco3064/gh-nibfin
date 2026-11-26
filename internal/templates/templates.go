@@ -1,26 +1,21 @@
-// Package templates holds the workflow templates gh nibfin writes into a user
-// repository and renders them. The templates mirror Core's workflows but call
+// Package templates renders the workflow templates gh nibfin writes into a
+// user repository (internal/templates/workflowfiles embeds them). The templates mirror Core's workflows but call
 // nothing in the Owner's repositories: the Job runs the Nibfin image pinned by
 // digest.
 package templates
 
 import (
 	"bytes"
-	"embed"
 	"encoding/json"
-	"fmt"
 	"path"
 	"regexp"
 	"slices"
 	"strings"
-	"text/template"
 	"unicode"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/templates/workflowfiles"
 )
-
-//go:embed workflows/*.yml
-var files embed.FS
 
 // Set selects which workflow files a repository gets.
 type Set int
@@ -71,10 +66,6 @@ type Params struct {
 
 var imagePattern = regexp.MustCompile(`^ghcr\.io/taco3064/nibfin@sha256:[0-9a-f]{64}$`)
 
-// parsed holds the templates. The delimiters [[ ]] let GitHub's ${{ }} and
-// Podman's {{.ID}} pass through unchanged.
-var parsed = template.Must(template.New("").Delims("[[", "]]").Option("missingkey=error").ParseFS(files, "workflows/*.yml"))
-
 // Render returns the files of set, keyed by their path in the repository.
 // The output is deterministic: the same input gives the same bytes.
 func Render(set Set, p Params) (map[string][]byte, error) {
@@ -88,11 +79,11 @@ func Render(set Set, p Params) (map[string][]byte, error) {
 	}
 	out := make(map[string][]byte, len(names))
 	for _, name := range names {
-		var b bytes.Buffer
-		if err := parsed.ExecuteTemplate(&b, name, data); err != nil {
-			return nil, op.Wrap(op.CodeInvalidTemplateInput, fmt.Errorf("render %s: %w", name, err))
+		b, err := workflowfiles.Render(name, data)
+		if err != nil {
+			return nil, op.Wrap(op.CodeInvalidTemplateInput, err)
 		}
-		out[path.Join(Dir, name)] = b.Bytes()
+		out[path.Join(Dir, name)] = b
 	}
 	return out, nil
 }
