@@ -113,6 +113,10 @@ async function pick(page: Page, repo: string) {
   await picker(page).locator(`[data-repo-entry="${repo}"]`).click()
 }
 
+// fullCount is the graph count line of the whole platform graph: closed
+// blockers collapse into markers and are counted apart from the context.
+const fullCount = `Showing ${platform.length} of ${platform.length} open Issues · ${outsideCount(platform, 'acme/platform')} shown as context · ${outsideCount(platform, 'acme/platform', 'CLOSED')} closed blockers collapsed`
+
 // edgesDrawn waits for the drawn edges to settle at n.
 async function edgesDrawn(page: Page, n: number) {
   await expect(page.locator('[data-slot=edges] path[data-edge]')).toHaveCount(n)
@@ -137,7 +141,7 @@ for (const theme of themes) {
       await expect(picker(page)).toHaveAttribute('data-state', 'collapsed')
       await expect(picker(page)).toContainText('github.com/acme/platform')
       const nodes = page.locator('[data-slot=graph-region] [data-node]')
-      await expect(page.locator('[data-slot=graph-count]')).toHaveText(`Showing ${platform.length} of ${platform.length} open Issues · ${outsideCount(platform, 'acme/platform')} shown as context`)
+      await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
       await edgesDrawn(page, edgeCount(platform, 'acme/platform'))
       // Every listed Issue appears once, in the graph or below it.
       await expect(page.locator('[data-view=repo] article[data-issue]')).toHaveCount(platform.length)
@@ -153,16 +157,52 @@ for (const theme of themes) {
       await expect(page.locator('[data-slot=unread] > h3')).toHaveText('Issues whose blockers could not be read')
       await expect(page.locator('[data-slot=unread] article[data-issue]')).toHaveCount(1)
       await expect(page.locator('[data-slot=unread] article[data-issue$="/issues/125"]')).toHaveCount(1)
-      // The graph region scrolls by itself; the page does not.
+      // Closed blockers are markers, not nodes.
+      await expect(page.locator('[data-slot=graph-region] [data-node="acme/platform#400"]')).toHaveCount(0)
       await expectNoPageScroll(page)
       const region = graphRegion(page)
-      expect(await region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
+      await expectDirection(page, width)
       await region.focus()
       await expect(region).toBeFocused()
       await shot(page, `repo-graph-top-${theme}-${width}`, false)
       await shot(page, `repo-graph-${theme}-${width}`)
       await expectClean(w)
     })
+  }
+}
+
+// expectDirection checks the layout of the graph region at a width: top to
+// bottom on a phone, with every node inside the region and no sideways
+// scroll; left to right from a tablet up, fitted, with zoom controls and a
+// minimap.
+async function expectDirection(page: Page, width: number) {
+  const region = graphRegion(page)
+  const legend = page.locator('[data-slot=legend]')
+  if (width < 700) {
+    await expect(region).toHaveAttribute('data-direction', 'TB')
+    await expect(legend).toContainText('Blockers stand above the Issues they block')
+    await expect(region.locator('.react-flow__controls')).toHaveCount(0)
+    const out = await region.evaluate((el) => {
+      const box = el.getBoundingClientRect()
+      return [...el.querySelectorAll('[data-node]')].filter((n) => {
+        const b = n.getBoundingClientRect()
+        return b.left < box.left || b.right > box.right + 0.5 || b.width === 0
+      }).length
+    })
+    expect(out).toBe(0)
+    expect(await region.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    // Each node stands on its own row.
+    const rows = await region.locator('[data-node]').evaluateAll((ns) => ns.map((n) => Math.round(n.getBoundingClientRect().top)))
+    expect(new Set(rows).size).toBe(rows.length)
+  } else {
+    await expect(region).toHaveAttribute('data-direction', 'LR')
+    await expect(legend).toContainText('Blockers stand left of the Issues they block')
+    await expect(region.getByRole('button', { name: 'Zoom in' })).toBeVisible()
+    await expect(region.getByRole('button', { name: 'Zoom out' })).toBeVisible()
+    await expect(region.getByRole('button', { name: 'Fit the graph' })).toBeVisible()
+    await expect(region.locator('.react-flow__minimap')).toBeVisible()
+    // Fitted on load: the region never scrolls by itself.
+    expect(await region.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
   }
 }
 
@@ -200,10 +240,64 @@ for (const theme of themes) {
       await search.fill('nothing matches this')
       await expect(page.locator('[data-empty=matches]')).toHaveText('No open Issue matches the search and filters.')
       await page.getByRole('button', { name: 'Reset' }).click()
-      await expect(page.locator('[data-slot=graph-count]')).toHaveText(`Showing ${platform.length} of ${platform.length} open Issues · ${outsideCount(platform, 'acme/platform')} shown as context`)
+      await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
       await expectClean(w)
     })
   }
+}
+
+for (const [width, theme] of [
+  [375, 'dark'],
+  [1280, 'light'],
+] as const) {
+  test(`closed blockers collapse into a marker that lists them at ${width}px, ${theme}`, async ({ page }) => {
+    const { w } = await open(page, width, theme)
+    await pick(page, 'acme/platform')
+    const region = graphRegion(page)
+    await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
+    // #2 is blocked only by the closed #400: it stays in the graph with its
+    // marker and is not listed as having no dependencies.
+    const two = region.locator('[data-node="acme/platform#2"]')
+    await expect(two).toBeVisible()
+    await expect(page.locator('[data-slot=unlinked] article[data-issue$="/issues/2"]')).toHaveCount(0)
+    const marker = two.locator('[data-slot=closed-blockers]')
+    await expect(marker).toHaveAccessibleName('1 closed · #400 (closed blockers of #2)')
+    // Chain steps 3 of chains 1, 4 and 7 carry their own closed blocker.
+    await expect(region.locator('[data-slot=closed-blockers]')).toHaveCount(4)
+    await expect(region.locator('[data-node="acme/platform#12"] [data-slot=closed-blockers]')).toHaveAccessibleName('1 closed · #500 (closed blockers of #12)')
+    // Edges into one node meet it at separate points.
+    await edgesDrawn(page, edgeCount(platform, 'acme/platform'))
+    const ends = await page.locator('[data-slot=edges] path[data-edge$=">acme/platform#1"]').evaluateAll((ps) =>
+      ps.map((p) => (p.getAttribute('d') ?? '').split(' ').slice(-2).join(' ')),
+    )
+    expect(ends.length).toBeGreaterThan(20)
+    expect(new Set(ends).size).toBe(ends.length)
+
+    await marker.scrollIntoViewIfNeeded()
+    await marker.click()
+    const list = page.locator('[data-slot=closed-list]')
+    await expect(list).toBeVisible()
+    await expect(list.getByRole('heading')).toHaveText('Closed blockers of #2')
+    const link = list.getByRole('link')
+    await expect(link).toHaveCount(1)
+    await expect(link).toHaveAttribute('href', 'https://github.com/acme/platform/issues/400')
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noreferrer')
+    await expect(link).toContainText('#400 Platform task 400')
+    await expectNoPageScroll(page)
+    await shot(page, `repo-graph-closed-${theme}-${width}`, false)
+    await page.keyboard.press('Escape')
+    await expect(list).toBeHidden()
+    await expect(marker).toBeFocused()
+
+    // Tab moves from the region into the nodes and the controls inside them.
+    await region.focus()
+    await page.keyboard.press('Tab')
+    await expect(page.locator('.react-flow__node:focus')).toHaveCount(1)
+    await page.keyboard.press('Tab')
+    await expect(page.locator('.react-flow__node :focus')).toHaveCount(1)
+    await expectClean(w)
+  })
 }
 
 test('a listed entry opens on the host of the read that listed it', async ({ page }) => {
@@ -280,7 +374,10 @@ for (const theme of themes) {
       await expect(workflows.locator('[data-slot=workflow-files]')).toHaveText('nibfin-job.yml found')
       await expect(summary.locator('[data-action=upgrade]')).toBeEnabled()
       await expect(summary.locator('[data-action=init]')).toHaveCount(0)
-      await edgesDrawn(page, 3)
+      // #101 → #99 and #99 → acme/infra#12; the closed #98 is a marker.
+      await edgesDrawn(page, 2)
+      // A graph that fits at a readable zoom needs no minimap.
+      await expect(graphRegion(page).locator('.react-flow__minimap')).toHaveCount(0)
       await expectNoPageScroll(page)
       await shot(page, `repo-summary-app-${theme}-${width}`)
 

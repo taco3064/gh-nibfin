@@ -1,0 +1,86 @@
+/* The dependency graph's React Flow canvas (#409). React Flow's base.css
+   sits in its own cascade layer; these unlayered rules bind its variables
+   and controls to the Nibfin tokens. No colour value is written here. */
+
+.nf-graph .react-flow {
+  --xy-background-color: var(--nf-background);
+  --xy-minimap-background-color: var(--nf-surface);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--nf-background) 60%, transparent);
+  --xy-minimap-mask-stroke-color: var(--nf-border);
+  --xy-minimap-node-background-color: var(--nf-border);
+  color: var(--nf-text);
+}
+
+/* The edges stand behind the nodes they connect. */
+.nf-graph .react-flow__viewport-portal {
+  z-index: -1;
+}
+
+.nf-graph .react-flow__node {
+  cursor: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  border-radius: 0.875rem;
+}
+
+/* React Flow turns pointer events off on nodes that are neither selectable
+   nor draggable; their links and buttons still take clicks. */
+.nf-graph .react-flow__node > * {
+  pointer-events: auto;
+}
+
+.nf-graph .react-flow__node:focus-visible {
+  outline: 3px solid var(--nf-focus);
+  outline-offset: 3px;
+}
+
+/* Top to bottom the canvas never pans or zooms, so a touch scrolls the page. */
+.nf-graph-static .react-flow__pane {
+  touch-action: auto;
+}
+
+.nf-graph .react-flow__panel {
+  margin: 0.75rem;
+}
+
+.nf-graph .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--nf-border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--nf-surface);
+}
+
+.nf-graph .react-flow__controls-button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0.5rem;
+  border: 0;
+  border-bottom: 1px solid var(--nf-border-subtle);
+  background: var(--nf-surface);
+  color: var(--nf-text);
+  cursor: pointer;
+}
+
+.nf-graph .react-flow__controls-button:last-child {
+  border-bottom: 0;
+}
+
+.nf-graph .react-flow__controls-button:hover {
+  background: var(--nf-raised);
+}
+
+.nf-graph .react-flow__controls-button:focus-visible {
+  outline: 3px solid var(--nf-focus);
+  outline-offset: -3px;
+}
+
+.nf-graph .react-flow__controls-button svg {
+  max-width: 14px;
+  max-height: 14px;
+}
+
+.nf-graph .react-flow__minimap {
+  overflow: hidden;
+  border: 1px solid var(--nf-border);
+  border-radius: calc(var(--radius) - 2px);
+}
