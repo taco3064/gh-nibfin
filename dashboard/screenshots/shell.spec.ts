@@ -605,7 +605,7 @@ for (const theme of themes) {
       const view = page.locator('[data-view=person]')
       await expect(tile(page, 'runs').getByRole('img')).toHaveAttribute(
         'aria-label',
-        'Runs by conclusion: Succeeded 3, Failed 2, Running 2, Other 1',
+        'Runs by conclusion: Succeeded 3, Failed 2, Running 2, Skipped or cancelled 1',
       )
       await expect(tile(page, 'runs').locator('[data-note=runs-incomplete]')).toHaveCount(0)
       await expect(tile(page, 'runners').locator('[data-slot=runner-counts]')).toHaveText('2 online · 1 busy')

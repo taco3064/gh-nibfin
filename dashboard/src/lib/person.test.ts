@@ -160,7 +160,7 @@ describe('runCounts', () => {
         { ...issue('u2', []), runs: [run('timed_out'), run('startup_failure'), run('cancelled'), run('success')] },
       ]),
     ])
-    expect(runCounts(v)).toEqual({ total: 7, succeeded: 2, failed: 3, running: 1, other: 1, incomplete: false })
+    expect(runCounts(v)).toEqual({ total: 7, succeeded: 2, failed: 3, running: 1, skipped: 1, incomplete: false })
   })
   it('marks missing, failed and truncated run reads as incomplete', () => {
     const read = { ...issue('u1', []), runs: [run('success')] }
@@ -172,7 +172,7 @@ describe('runCounts', () => {
     expect(cut).toMatchObject({ total: 1, succeeded: 1, incomplete: true })
   })
   it('counts no runs', () => {
-    expect(runCounts(view(null))).toEqual({ total: 0, succeeded: 0, failed: 0, running: 0, other: 0, incomplete: false })
+    expect(runCounts(view(null))).toEqual({ total: 0, succeeded: 0, failed: 0, running: 0, skipped: 0, incomplete: false })
   })
 })
 
