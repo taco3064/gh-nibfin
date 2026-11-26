@@ -1,0 +1,263 @@
+[
+  {
+    "path": "dashboard",
+    "short": "Start the local Dashboard",
+    "long": "Start the local Dashboard server in the foreground; Ctrl-C stops it.\n\nIt listens on 127.0.0.1 only and opens your browser on a session URL. The proof in\nthat URL works once: the first page or client that opens it gets the run's only\nsession, with the same access as your gh login on this machine, and the terminal\nprints \"session opened\". Keep the URL private until then; restart for a new one.\n--no-browser prints the session URL instead of opening a browser.\n\nThe page is the Dashboard UI built from dashboard/; a binary built without it serves\na placeholder page. The API is under /api/.",
+    "flags": [
+      {
+        "name": "no-browser",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "do not open a browser",
+        "required": false
+      },
+      {
+        "name": "port",
+        "shorthand": "",
+        "type": "int",
+        "default": "0",
+        "usage": "port to listen on (default: any free port)",
+        "required": false
+      }
+    ],
+    "args": []
+  },
+  {
+    "path": "init",
+    "api": "init",
+    "short": "Set up Nibfin in a repository",
+    "long": "Set up Nibfin in a repository and open one PR that imports its workflows.\n\nIt sets the labels scope, shaped, delivered, pause and pending; pull request creation\nlimited to collaborators; approval required for fork PR workflows (all external\ncontributors on a public repository, \"Require approval for fork pull request\nworkflows\" on a private one); \"Automatically delete head branches\" off; the\nvariable NIBFIN_EXECUTION_REPO; and the Secret NIBFIN_GITHUB_TOKEN from the current\ngh login, which needs the workflow scope (gh auth refresh -s workflow). It neither\nwrites nor reads NIBFIN_PROVIDER: each Runner names its provider in its .env.\n\nThe PR on branch nibfin/init holds the execution set when this host's Runners serve\nthe repository, the peer set otherwise. Without Runners it stops and points to\ngh nibfin runner add. For the peer set the gh login must be admin of the Runners'\nrepository too; otherwise init stops before any write. An initialized repository\ngets no PR; use gh nibfin upgrade.\n\nGitHub offers Issues \"Creation allowed by: Collaborators only\" only in the web UI;\ninit prints the Settings link to set it there.",
+    "flags": [
+      {
+        "name": "repo",
+        "shorthand": "R",
+        "type": "string",
+        "default": "",
+        "usage": "target repository as [HOST/]OWNER/REPO (default: the current directory's repository)",
+        "required": false,
+        "param": "repo"
+      },
+      {
+        "name": "yes",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "apply the plan without asking to confirm",
+        "required": false
+      }
+    ],
+    "args": []
+  },
+  {
+    "path": "login",
+    "api": "login",
+    "short": "Log in to a provider for the Runners",
+    "long": "",
+    "flags": [],
+    "args": [
+      {
+        "name": "provider",
+        "required": false,
+        "repeatable": false,
+        "allowed": [
+          "claude",
+          "codex"
+        ],
+        "param": "provider"
+      }
+    ]
+  },
+  {
+    "path": "pause",
+    "api": "pause",
+    "short": "Pause Nibfin work on Issues",
+    "long": "Pause Nibfin work on Issues.\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\nSeveral issues can be given at once; there is no confirmation step.",
+    "flags": [
+      {
+        "name": "repo",
+        "shorthand": "R",
+        "type": "string",
+        "default": "",
+        "usage": "target repository as [HOST/]OWNER/REPO (default: the current directory's repository)",
+        "required": false,
+        "param": "repo"
+      }
+    ],
+    "args": [
+      {
+        "name": "issue",
+        "required": true,
+        "repeatable": true,
+        "param": "issues"
+      }
+    ]
+  },
+  {
+    "path": "resume",
+    "api": "resume",
+    "short": "Resume Nibfin work on Issues",
+    "long": "Resume Nibfin work on Issues.\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\nSeveral issues can be given at once; there is no confirmation step.",
+    "flags": [
+      {
+        "name": "repo",
+        "shorthand": "R",
+        "type": "string",
+        "default": "",
+        "usage": "target repository as [HOST/]OWNER/REPO (default: the current directory's repository)",
+        "required": false,
+        "param": "repo"
+      }
+    ],
+    "args": [
+      {
+        "name": "issue",
+        "required": true,
+        "repeatable": true,
+        "param": "issues"
+      }
+    ]
+  },
+  {
+    "path": "runner",
+    "short": "Add or remove local Runners",
+    "long": "",
+    "flags": [],
+    "args": []
+  },
+  {
+    "path": "runner add",
+    "api": "runner-add",
+    "short": "Add Runners for a provider on this host",
+    "long": "Add Runners for a provider on this host (the Linux host, or the podman machine VM).\n\nThe first Runner on the host registers to the current directory's repository; later\nRunners reuse the repository the existing Runners use. Each Runner carries the label\nnibfin-<user id> (and nibfin when you are admin of the repository), names its provider\nas NIBFIN_PROVIDER in its .env, and runs as a systemd user service.\n\nA Runner's .env may also set NIBFIN_MODEL=<model> for that Runner only; without it,\nCore's default for the provider applies. runner add does not write that line, and\nrunner add and upgrade keep it. Restart the Runner after changing its .env. An old\nNIBFIN_MODEL repository variable is unused and can be deleted.\n\nAn admin registers directly. A collaborator with write access gets the registration\ntoken through a \"Nibfin runner request\" Issue, encrypted to an SSH key of their GitHub\naccount that is in ~/.ssh; the command waits up to 10 minutes for the answer. On a\nprivate repository the request also carries a read-only deploy key, created once per\nrepository at ~/.local/share/nibfin/deploy-keys/<host>/<owner>/<name>/id_ed25519\n(under XDG_DATA_HOME when set); the owner removes the deploy key nibfin-runner-<login>\nunder Settings > Deploy keys together with your Runners.\n\nA collaborator's Runners get a job-started hook in ~/.local/share/nibfin/hook (under\nXDG_DATA_HOME when set), so they run only official Nibfin Jobs for you. The hook checks\nthat nibfin-shared-runner.yml started the Job for your user id, that it and\nnibfin-job.yml at that commit match this gh-nibfin's templates except the image digest,\nand that the image's Sigstore signature and signer (nibfin-core's image.yml on main)\nverify on the host. A refused Job fails before any step, with the reason under \"Set up\nrunner\" in its log. A private repository is read with the deploy key and needs git and\nssh on the runner host. Each Job reads the attestation API without a credential (60\nrequests per hour per IP). After the owner upgrades the repository, or Sigstore's root\nchanges, update gh-nibfin and run runner add again.",
+    "flags": [
+      {
+        "name": "count",
+        "shorthand": "",
+        "type": "int",
+        "default": "2",
+        "usage": "number of Runners",
+        "required": false,
+        "param": "count"
+      },
+      {
+        "name": "yes",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "apply the plan without asking to confirm",
+        "required": false
+      }
+    ],
+    "args": [
+      {
+        "name": "provider",
+        "required": true,
+        "repeatable": false,
+        "allowed": [
+          "claude",
+          "codex"
+        ],
+        "param": "provider"
+      }
+    ]
+  },
+  {
+    "path": "runner remove",
+    "api": "runner-remove",
+    "short": "Remove Runners for a provider on this host",
+    "long": "Remove Runners for a provider on this host (the Linux host, or the podman machine VM).\n\nWithout --count every Runner of the provider is removed. Idle Runners go first. A busy\nRunner loses its nibfin labels, so it takes no new nibfin Job, and is removed after its\nJob ends; the command waits for it. Each removal deletes the GitHub registration, the\nservice and the Runner's directory. A count above the number of Runners is refused.\n\nWhen you are not admin of the Runners' repository (a collaborator's Runners), the removal\nis local: it waits for a running Job, then deletes the service and the directory only.\nThe GitHub registration stays; the repository's owner deletes it under Settings → Actions →\nRunners, and GitHub removes a runner offline for more than 14 days.\n\nWhen the host's last Runner of any provider goes, the job-started hook of a\ncollaborator's Runners goes with it.\n\n--delete-login deletes the provider's login (the nibfin-home-<provider> volume) only\nwhen no Runner of the provider remains on this host.",
+    "flags": [
+      {
+        "name": "count",
+        "shorthand": "",
+        "type": "int",
+        "default": "0",
+        "usage": "number of Runners (default: all)",
+        "required": false,
+        "param": "count"
+      },
+      {
+        "name": "delete-login",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "also delete the provider login when no Runner of it remains",
+        "required": false,
+        "param": "deleteLogin"
+      },
+      {
+        "name": "yes",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "apply the plan without asking to confirm",
+        "required": false
+      }
+    ],
+    "args": [
+      {
+        "name": "provider",
+        "required": true,
+        "repeatable": false,
+        "allowed": [
+          "claude",
+          "codex"
+        ],
+        "param": "provider"
+      }
+    ]
+  },
+  {
+    "path": "status",
+    "api": "status",
+    "short": "Show the runner host, logins and the Issues Nibfin works on",
+    "long": "Show the runner host, logins and the Issues Nibfin works on. It only reads.\n\nAlways: the podman machine and its free memory, each Runner's service against\nGitHub's online/busy, and each provider's login.\n\nWithout -R (the person view): your open scope Issues across repositories, with\npause/pending, the pending comment and whether each repository uses the latest image.\nWith -R (the repository view): all open Issues of that repository, its image and\nwhether a Nibfin run succeeded after the init PR merged.",
+    "flags": [
+      {
+        "name": "json",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "print the result as JSON",
+        "required": false
+      },
+      {
+        "name": "repo",
+        "shorthand": "R",
+        "type": "string",
+        "default": "",
+        "usage": "show the repository view of [HOST/]OWNER/REPO (default: the person view)",
+        "required": false,
+        "param": "repo"
+      }
+    ],
+    "args": []
+  },
+  {
+    "path": "upgrade",
+    "api": "upgrade",
+    "short": "Upgrade Nibfin in a repository",
+    "long": "Upgrade Nibfin in a repository and bring this host's Runners to the current spec.\n\nThe repository part renders the workflows from the current templates, pinned to\nthe latest attested image, and opens one PR on branch nibfin/upgrade when they\ndiffer from the default branch.\n\nThe host part runs whether or not the workflows are current. Each configured\nRunner on this host gets what runner add sets up today: NIBFIN_PROVIDER in its\n.env (other lines, such as NIBFIN_MODEL, are kept), the current systemd user unit, enabled and active, and, when the gh login\nis admin of the Runners' repository, the labels nibfin and nibfin-<user id>.\nWithout admin the labels are left as they are. Runners are changed one at a\ntime; a Runner running a Job is restarted only after the Job ends, so the\nothers keep taking work. A stopped podman machine is not started.",
+    "flags": [
+      {
+        "name": "repo",
+        "shorthand": "R",
+        "type": "string",
+        "default": "",
+        "usage": "target repository as [HOST/]OWNER/REPO (default: the current directory's repository)",
+        "required": false,
+        "param": "repo"
+      },
+      {
+        "name": "yes",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "apply the plan without asking to confirm",
+        "required": false
+      }
+    ],
+    "args": []
+  }
+]
