@@ -135,7 +135,17 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"private repository the request also carries a read-only deploy key, created once per\n" +
 			"repository at ~/.local/share/nibfin/deploy-keys/<host>/<owner>/<name>/id_ed25519\n" +
 			"(under XDG_DATA_HOME when set); the owner removes the deploy key nibfin-runner-<login>\n" +
-			"under Settings > Deploy keys together with your Runners.",
+			"under Settings > Deploy keys together with your Runners.\n\n" +
+			"A collaborator's Runners get a job-started hook in ~/.local/share/nibfin/hook (under\n" +
+			"XDG_DATA_HOME when set), so they run only official Nibfin Jobs for you. The hook checks\n" +
+			"that nibfin-shared-runner.yml started the Job for your user id, that it and\n" +
+			"nibfin-job.yml at that commit match this gh-nibfin's templates except the image digest,\n" +
+			"and that the image's Sigstore signature and signer (nibfin-core's image.yml on main)\n" +
+			"verify on the host. A refused Job fails before any step, with the reason under \"Set up\n" +
+			"runner\" in its log. A private repository is read with the deploy key and needs git and\n" +
+			"ssh on the runner host. Each Job reads the attestation API without a credential (60\n" +
+			"requests per hour per IP). After the owner upgrades the repository, or Sigstore's root\n" +
+			"changes, update gh-nibfin and run runner add again.",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := checkCount(addCount); err != nil {
 				return err
@@ -165,6 +175,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"is local: it waits for a running Job, then deletes the service and the directory only.\n" +
 			"The GitHub registration stays; the repository's owner deletes it under Settings → Actions →\n" +
 			"Runners, and GitHub removes a runner offline for more than 14 days.\n\n" +
+			"When the host's last Runner of any provider goes, the job-started hook of a\n" +
+			"collaborator's Runners goes with it.\n\n" +
 			"--delete-login deletes the provider's login (the nibfin-home-<provider> volume) only\n" +
 			"when no Runner of the provider remains on this host.",
 		RunE: func(c *cobra.Command, args []string) error {

@@ -287,6 +287,10 @@ Windows and macOS.
     repository) the command stops before any change
     (`runner_request_refused`): the repository's owner must add the user as
     a collaborator with write access.
+- A collaborator's Runners (the request route) get a job-started hook, so
+  they run only official Nibfin Jobs for their owner. See
+  [Collaborator job-started hook](#collaborator-job-started-hook). An admin's
+  Runners get none.
 - Each Runner lives in `${XDG_DATA_HOME:-~/.local/share}/nibfin/runners/<provider>-<n>`
   and runs as the systemd user service
   `${XDG_CONFIG_HOME:-~/.config}/systemd/user/nibfin-runner-<provider>-<n>.service`.
@@ -344,6 +348,76 @@ The registration token is fetched for each run and reaches the runner's
 `config.sh` only on its stdin; it is never stored, printed or passed as an
 argument. The SSH private key and its passphrase never leave the gh process.
 
+### Collaborator job-started hook
+
+On the request route `runner add` installs the runner's job-started hook in
+`${XDG_DATA_HOME:-~/.local/share}/nibfin/hook/` (mode 0700, files 0600),
+outside every Runner's directory, one per host. Each Runner it adds or
+finishes gets `ACTIONS_RUNNER_HOOK_JOB_STARTED=<that dir>/job-started.sh` and
+`NIBFIN_RUNNER_DIR=<the Runner's dir>` in its `.env` before its service
+starts. The plan lists it as `install job-started hook` (no change when its
+files are current).
+
+Before any step of a Job, the hook lets the Job run only when all of these
+hold:
+
+- the workflow that started it (`GITHUB_WORKFLOW_REF`) is the execution
+  repository's `nibfin-shared-runner.yml`, by `workflow_dispatch`, and the
+  dispatch input `assignee` is the Runner owner's user id;
+- at `GITHUB_WORKFLOW_SHA`, that file and `nibfin-job.yml` equal the
+  templates of the installed gh-nibfin byte for byte, except the image
+  digest on the one `IMAGE_REF` line;
+- that digest is a signed official image. The hook reads its attestations
+  from `https://api.github.com/repos/taco3064/nibfin-core/attestations/`
+  without a credential and verifies the Sigstore bundle on the host. It
+  checks the Fulcio certificate chain and the Rekor signed entry timestamp
+  against the Sigstore Public Good trusted root, the DSSE signature, and that
+  the log entry names this signature. The signer must be nibfin-core's
+  `image.yml` on `refs/heads/main`, run on a GitHub-hosted runner. The SLSA
+  provenance must name `ghcr.io/taco3064/nibfin` with that digest. This is the
+  same policy `init` and `upgrade` apply with `gh attestation verify`. The
+  attestation store alone is not trusted: anyone with write access to
+  nibfin-core can upload to it.
+
+Otherwise the Job fails before any step, and its **Set up runner** log shows
+`Nibfin hook: refused: <reason>. <next step>`; an accepted Job shows
+`Nibfin hook: accepted <owner>/<repo>@<sha>, image sha256:<digest>`. The hook
+runs with the Node.js the runner ships (`externals/node*`), writes only a
+temporary directory it removes, never reads the Job's workspace and never
+prints a file's content. Each HTTP request is bounded to 30 seconds and a
+git fetch to 120 seconds.
+
+- A public execution repository is read from `raw.githubusercontent.com`
+  without a credential.
+- A private one is read with `git fetch` over SSH using the read-only deploy
+  key described above, with GitHub's SSH host keys (from `GET /meta` at
+  `runner add`) pinned in the hook's `known_hosts`. This needs `git` and the
+  OpenSSH client on the runner host (inside the `podman machine` VM when
+  there is one). Without them `runner add` stops before any change
+  (`unsupported_host`). A missing deploy key, or a repository that became
+  private, is refused with `run gh nibfin runner remove, then gh nibfin
+  runner add`.
+- Only execution repositories on github.com are supported; another host
+  stops `runner add` (`unsupported_host`).
+- The attestation read counts against GitHub's limit of 60 unauthenticated
+  API requests per hour per IP address. A refused read (HTTP 403 or 429)
+  names that limit.
+- The trusted root is the Sigstore Public Good line of
+  `gh attestation trusted-root` (no login needed), taken at `runner add`. A
+  signature from a log or CA the hook does not know is refused with
+  `update gh-nibfin and run gh nibfin runner add again`.
+- After the Owner runs `gh nibfin upgrade` on the execution repository, the
+  templates may differ from the installed gh-nibfin's. Jobs are then refused
+  until the collaborator updates gh-nibfin (`gh extension upgrade nibfin`)
+  and runs `gh nibfin runner add` again. `upgrade` does not refresh the hook.
+- Runners added through the request route before the hook existed keep
+  running without it, and the `runner add` plan names them in a note. To
+  give them the hook, run `gh nibfin runner remove` for their provider, then
+  `gh nibfin runner add`.
+- The hook protects the collaborator's host from other workflows routed to
+  their label. It does not protect against code the official Job runs inside
+  its container, which is the documented trust between team members.
+
 `gh nibfin runner remove <claude|codex> [--count N] [--delete-login]` removes
 N of the provider's Runners on this host, all of them without `--count`.
 
@@ -379,6 +453,12 @@ N of the provider's Runners on this host, all of them without `--count`.
   removes the task or LaunchAgent that starts the machine. It leaves
   `%UserProfile%\.wslconfig` as it is, since other WSL users may rely on
   `vmIdleTimeout`, and says so. A Runner left busy keeps the entry.
+- When no Runner of any provider remains on the host, the command also
+  removes the job-started hook directory (`remove job-started hook`), on
+  every host including Linux, after the Runners. When no Runner remains but
+  the directory does, which happens after an interrupted removal,
+  `runner remove <provider>` plans only that removal instead of
+  `no_runners`. The deploy key stays on the host.
 - An interrupted removal is finished by running `runner remove` again. Do that
   before `runner add`, which would otherwise restart a Runner whose
   registration is already gone.
