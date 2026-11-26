@@ -326,3 +326,17 @@ func Repo(rs []Runner) (string, error) {
 func DeployKeyPath(inv *Inventory, repo string) string {
 	return path.Join(path.Dir(inv.Dir), "deploy-keys", strings.ToLower(repo), "id_ed25519")
 }
+
+// HookDir is the directory of the job-started hook of a collaborator's
+// Runners, ${XDG_DATA_HOME:-$HOME/.local/share}/nibfin/hook: beside the slot
+// root and outside every slot, as the runner asks of hook scripts. There is
+// one per host, since a host's Runners serve one repository (Repo).
+func HookDir(inv *Inventory) string {
+	return path.Join(path.Dir(inv.Dir), "hook")
+}
+
+// HookScript is the hook's script, which a slot's .env names in
+// ACTIONS_RUNNER_HOOK_JOB_STARTED.
+func HookScript(inv *Inventory) string {
+	return path.Join(HookDir(inv), "job-started.sh")
+}

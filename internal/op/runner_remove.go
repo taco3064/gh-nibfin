@@ -112,6 +112,10 @@ type runnerRemove struct {
 	// removeEntry is true when the applied plan removes the autostart
 	// entry once no runner remains on the host.
 	removeEntry bool
+	// removeHook is true when the applied plan removes the job-started hook
+	// once no runner remains on the host; hookDir is its directory.
+	removeHook bool
+	hookDir    string
 }
 
 // remoteRunner is a GitHub runner of a repository.
@@ -166,6 +170,8 @@ type removeEnv struct {
 	local map[string]bool
 	// clients are the GitHub clients by host.
 	clients map[string]github
+	// hook is true when the job-started hook directory exists.
+	hook bool
 }
 
 func (r *runnerRemove) validate() error {
@@ -289,6 +295,9 @@ func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, er
 	}
 	sort.Strings(repos)
 	env := &removeEnv{inv: inv, lists: map[string][]ghRunner{}, local: map[string]bool{}, clients: map[string]github{}}
+	if env.hook, err = hookPresent(ctx, r.host, CodeRunnerRemoveFailed, runners.HookDir(inv)); err != nil {
+		return nil, err
+	}
 	for _, repo := range repos {
 		h := repoHost(repo)
 		gh, ok := env.clients[h]
@@ -395,9 +404,19 @@ func (r *runnerRemove) steps(ctx context.Context, env *removeEnv, as host.Autost
 		n = k
 	}
 	lastGoes := as.Present && len(env.all)-n == 0
+	// The job-started hook goes with the last runner too, on every host:
+	// unlike the autostart entry, it exists on a local Linux host.
+	hookGoes := env.hook && len(env.all)-n == 0
 	if k == 0 && !r.p.DeleteLogin {
-		if lastGoes {
-			return "", r.entrySteps(as, "no runner remains on "+where), nil
+		if lastGoes || hookGoes {
+			steps := []Step{}
+			if lastGoes {
+				steps = append(steps, r.entrySteps(as, "no runner remains on "+where)...)
+			}
+			if hookGoes {
+				steps = append(steps, removeHookStep(runners.HookDir(env.inv), where))
+			}
+			return "", steps, nil
 		}
 		return "", nil, Errorf(CodeNoRunners, "no %s runners on %s", r.prov.name, where)
 	}
@@ -440,6 +459,9 @@ func (r *runnerRemove) steps(ctx context.Context, env *removeEnv, as host.Autost
 	}
 	if lastGoes {
 		steps = append(steps, r.entrySteps(as, "no runner remains on "+where)...)
+	}
+	if hookGoes {
+		steps = append(steps, removeHookStep(runners.HookDir(env.inv), where))
 	}
 	repo := ""
 	if len(repos) == 1 {
@@ -545,7 +567,7 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 	slotRE := regexp.MustCompile(`^` + regexp.QuoteMeta(r.prov.name) + `-[1-9][0-9]{0,5}$`)
 	var chosen []slotState
 	items := map[string]Step{}
-	var volume, entry Step
+	var volume, entry, hook Step
 	for _, s := range steps {
 		switch {
 		case s.Action == actRemoveRunner && slotRE.MatchString(s.Target):
@@ -560,6 +582,8 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 		case s.Action == actKeepVolume && s.Target == r.prov.volume():
 		case s.Action == actRemoveAutostart:
 			r.removeEntry, entry = true, s
+		case s.Action == actRemoveHook && s.Target == runners.HookDir(env.inv):
+			r.removeHook, r.hookDir, hook = true, s.Target, s
 		case s.Action == actKeepWSLConfig && s.Target == host.WSLConfig:
 		default:
 			return Errorf(CodeInvalidArgument, "unknown runner remove step %q %q", s.Action, s.Target)
@@ -621,9 +645,28 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 	if r.removeEntry {
-		return Track(ctx, entry, func() error { return r.removeAutostart(ctx) })
+		if err := Track(ctx, entry, func() error { return r.removeAutostart(ctx) }); err != nil {
+			return err
+		}
+	}
+	if r.removeHook {
+		return Track(ctx, hook, func() error { return r.removeHookDir(ctx) })
 	}
 	return nil
+}
+
+// removeHookDir removes the job-started hook when no runner of any
+// provider remains on the host: the slots are purged, so no .env names it.
+func (r *runnerRemove) removeHookDir(ctx context.Context) error {
+	inv, err := listRunners(ctx, r.host)
+	if err != nil {
+		return err
+	}
+	if len(inv.Runners) > 0 {
+		return nil
+	}
+	_, _, err = hostScript(ctx, r.host, CodeRunnerRemoveFailed, "remove the job-started hook", hookRemoveScript, nil, "", runners.HookDir(inv))
+	return err
 }
 
 // removeAutostart removes the autostart entry when no runner of any
@@ -737,6 +780,11 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 			checks.Expect(keepWSLStep())
 		}
 	}
+	var hs0 Step
+	if r.removeHook {
+		hs0 = Step{ID: "hook", Action: actRemoveHook, Target: r.hookDir}
+		checks.Expect(hs0)
+	}
 	res := Result{"host": where, "provider": r.prov.name}
 	notes := localNotes(r.removed)
 	fail := func(err error) (Result, error) { return checks.Fill(res, notes, err), err }
@@ -849,6 +897,23 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 			checks.Set(keepWSLStep(), true, keepWSLConfig, "")
 		}
 	}
+	hookLeft := false
+	if r.removeHook {
+		present, err := hookPresent(ctx, r.host, CodeRunnerRemoveFailed, runners.HookDir(env.inv))
+		if err != nil {
+			return fail(err)
+		}
+		hookLeft = present && len(env.all) == 0
+		state := "absent"
+		if present {
+			state = "present"
+			if len(env.all) > 0 {
+				state = fmt.Sprintf("present: %d runners remain on the host", len(env.all))
+			}
+		}
+		res["hook"] = state
+		checks.Set(hs0, !hookLeft, state, "still present after runner remove")
+	}
 	checks.Fill(res, notes, nil)
 	if len(left) > 0 {
 		return res, Errorf(CodeNotApplied, "runners not removed: %s", strings.Join(left, ", "))
@@ -858,6 +923,9 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 	}
 	if entryLeft {
 		return res, Errorf(CodeNotApplied, "the autostart %s is still present after runner remove", entryName(as))
+	}
+	if hookLeft {
+		return res, Errorf(CodeNotApplied, "the job-started hook %s is still present after runner remove", r.hookDir)
 	}
 	return res, nil
 }

@@ -120,6 +120,9 @@ type runnerAdd struct {
 	// deployPath and deploySent are the deploy key Apply wrote or reused
 	// and the public key line it sent (private repositories only).
 	deployPath, deploySent string
+	// hookWant are the job-started hook files Plan or Apply expected on
+	// the host (request route).
+	hookWant map[string][]byte
 }
 
 // addEnv is what runner add learns from the host and GitHub.
@@ -361,6 +364,17 @@ func (a *runnerAdd) load(ctx context.Context) (*addEnv, error) {
 	if perms.Admin {
 		a.route = routeAdmin
 	}
+	if !perms.Admin {
+		// The job-started hook reads github.com only, and a private
+		// repository with git over SSH; both stop before any write.
+		if _, _, err := hookRepo(repo); err != nil {
+			return nil, err
+		}
+		if perms.Private && (!pr.git || !pr.ssh) {
+			return nil, Errorf(CodeUnsupportedHost, "%s is private, so the job-started hook reads it with git and ssh, which are not both installed on %s: install git and the OpenSSH client on the runner host (inside the podman machine VM when there is one), then run gh nibfin runner add again",
+				repo, a.host.Describe())
+		}
+	}
 	return &addEnv{inv: inv, probe: pr, repo: repo, gh: gh, user: user, admin: perms.Admin, private: perms.Private}, nil
 }
 
@@ -471,6 +485,22 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 		steps = append(steps, requestStep(env.repo, k.id, env.private))
 	}
 	detail := env.repo + ", labels " + a.labels(env) + ", .env NIBFIN_PROVIDER=" + a.prov.name
+	var notes []string
+	if !env.admin {
+		hook, err := a.planHook(ctx, env)
+		if err != nil {
+			return nil, nil, err
+		}
+		steps = append(steps, hook)
+		detail += ", job-started hook"
+		note, err := a.unhookedNote(ctx, env, slots)
+		if err != nil {
+			return nil, nil, err
+		}
+		if note != "" {
+			notes = append(notes, note)
+		}
+	}
 	for _, s := range slots {
 		st := slotStep(s)
 		st.Detail, st.Current, st.Next = detail, "absent", "configured and registered to "+env.repo
@@ -482,7 +512,7 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 	if request {
 		steps = append(steps, requestCloseStep(env.repo))
 	}
-	return steps, a.advice(env.probe, len(env.inv.Runners)+fresh), nil
+	return steps, append(a.advice(env.probe, len(env.inv.Runners)+fresh), notes...), nil
 }
 
 // slotCondition names an existing slot's local state.
@@ -647,6 +677,16 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 			return err
 		}
 	}
+	// The hook goes before any slot, so no .env names a hook this run has
+	// not written.
+	if w.hook != nil {
+		if env.admin || w.hook.Target != runners.HookScript(env.inv) {
+			return Errorf(CodeInvalidArgument, "unknown runner add step %q %q", w.hook.Action, w.hook.Target)
+		}
+		if err := Track(ctx, *w.hook, func() error { return a.writeHook(ctx, env) }); err != nil {
+			return err
+		}
+	}
 	src := slotSource{
 		download: func(ctx context.Context) (runnerDownload, error) { return a.pickDownload(ctx, env) },
 		// Fetched after the login, so a long login cannot expire it.
@@ -680,6 +720,8 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 // work is the plan's runner items in the order Apply applies them.
 type work struct {
 	pre, logins, slots []Step
+	// hook is the job-started hook item, when it changes.
+	hook *Step
 }
 
 // classify sorts the changing steps into the runner items; the host items
@@ -695,6 +737,9 @@ func (a *runnerAdd) classify(steps []Step) (work, error) {
 			w.logins = append(w.logins, s)
 		case s.Action == actAddRunner && slotRE.MatchString(s.Target):
 			w.slots = append(w.slots, s)
+		case s.Action == actInstallHook:
+			h := s
+			w.hook = &h
 		case s.Action == actSetWSLConfig, s.Action == actRegisterAutostart, s.Action == actStart,
 			s.Action == actRequestRegistration, s.Action == actCloseRequest, s.Action == actCreateDeployKey:
 		default:
@@ -795,6 +840,11 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step, src 
 			if _, err := a.script(ctx, "set the provider in the .env of "+s, envScript, nil, "", dir, a.prov.name); err != nil {
 				return err
 			}
+			if !env.admin {
+				if _, err := a.script(ctx, "set the job-started hook in the .env of "+s, hookEnvScript, nil, "", dir, runners.HookScript(env.inv)); err != nil {
+					return err
+				}
+			}
 			unit, err := unitText(s, dir)
 			if err != nil {
 				return err
@@ -883,7 +933,7 @@ type RunnerState struct {
 // slotReadBack names a slot's state as read back, and what keeps it from
 // being confirmed. On the request route GitHub's runner list needs admin
 // and is not read. env is the .env check, nil when not checked.
-func slotReadBack(st RunnerState, request bool, env *bool, provider string) (state, missing string) {
+func slotReadBack(st RunnerState, request bool, env, hook *bool, provider string) (state, missing string) {
 	r := st.Runner
 	var parts, miss []string
 	if r.Configured {
@@ -901,6 +951,13 @@ func slotReadBack(st RunnerState, request bool, env *bool, provider string) (sta
 			parts = append(parts, ".env NIBFIN_PROVIDER="+provider)
 		} else {
 			miss = append(miss, ".env lacks NIBFIN_PROVIDER="+provider)
+		}
+	}
+	if hook != nil {
+		if *hook {
+			parts = append(parts, ".env names the job-started hook")
+		} else {
+			miss = append(miss, ".env lacks the job-started hook")
 		}
 	}
 	switch {
@@ -1019,6 +1076,11 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		if err := a.readBackRequest(ctx, gh, repo, plan, &checks, r); err != nil {
 			return fail(err)
 		}
+		if request {
+			if err := a.readBackHook(ctx, gh, inv, repo, &checks, r); err != nil {
+				return fail(err)
+			}
+		}
 	}
 
 	states := joinRunners(inv.Runners, list)
@@ -1027,16 +1089,23 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		rn := st.Runner
 		if planned[rn.Slot] {
 			delete(planned, rn.Slot)
-			var env *bool
+			var env, hook *bool
 			if checkEnv && rn.Configured {
 				ok, err := a.envHasProvider(ctx, inv.SlotDir(rn.Slot))
 				if err != nil {
 					return fail(err)
 				}
 				env = &ok
+				if request {
+					hooked, err := hookInEnv(ctx, a.host, CodeRunnerInstallFailed, inv, rn.Slot)
+					if err != nil {
+						return fail(err)
+					}
+					hook = &hooked
+				}
 			}
 			// Offline right after the start is reported, not failed.
-			state, miss := slotReadBack(st, request, env, a.prov.name)
+			state, miss := slotReadBack(st, request, env, hook, a.prov.name)
 			checks.Set(slotStep(rn.Slot), miss == "", state, miss)
 			if miss != "" {
 				missing = append(missing, rn.Slot)

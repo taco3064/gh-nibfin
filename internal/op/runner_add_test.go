@@ -28,6 +28,8 @@ type fakeSlot struct {
 	name, url                         string
 	// env is the NIBFIN_PROVIDER value of its .env.
 	env string
+	// hook is true when its .env names the job-started hook.
+	hook bool
 	// oldUnit marks a unit file that differs from unitText; job a running
 	// Runner.Worker (see runner_upgrade_test.go).
 	oldUnit, job bool
@@ -42,7 +44,7 @@ const (
 	slotDir = "/home/u/.local/share/nibfin/runners"
 	unitDir = "/home/u/.config/systemd/user"
 	// defaultProbe is a Linux host with every controller delegated.
-	defaultProbe = "arch x86_64\nnode my.host_01\nmachine 0123abcd\nlinger 0\ncgroup cpuset cpu io memory pids\nmemkb 16000000\n"
+	defaultProbe = "arch x86_64\nnode my.host_01\nmachine 0123abcd\nlinger 0\ncgroup cpuset cpu io memory pids\nmemkb 16000000\ntools 1 1\n"
 )
 
 var scriptNames = map[string]string{
@@ -62,6 +64,12 @@ var scriptNames = map[string]string{
 	deployKeyReadScript:  "deploy-read",
 	deployKeyWriteScript: "deploy-write",
 	deployKeyCheckScript: "deploy-check",
+	hookReadScript:       "hook-read",
+	hookWriteScript:      "hook-write",
+	hookEnvScript:        "hook-env",
+	hookEnvCheckScript:   "hook-envcheck",
+	hookPresentScript:    "hook-present",
+	hookRemoveScript:     "hook-remove",
 }
 
 // shellHelper is the child of a fake Shell: it saves its stdin to
@@ -208,6 +216,8 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		if f.deployPub != "" {
 			stdout = "mode " + f.deployMode + "\n" + f.deployPub
 		}
+	case "hook-read", "hook-write", "hook-env", "hook-envcheck", "hook-present", "hook-remove":
+		stdout, stdinSave = f.hookShell(name, slot, args, exit)
 	case "purge":
 		f.events = append(f.events, "purge "+args[1])
 		if exit == 0 && !f.purgeNoop {

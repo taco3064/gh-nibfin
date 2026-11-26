@@ -43,6 +43,9 @@ type github interface {
 	// labels; it needs admin of repo.
 	SetCustomLabels(ctx context.Context, repo string, id int64, labels []string) error
 	DeleteRunner(ctx context.Context, repo string, id int64) error
+	// SSHHostKeys returns GitHub's SSH host keys from GET /meta, each an
+	// authorized-key line such as "ssh-ed25519 AAAA...".
+	SSHHostKeys(ctx context.Context) ([]string, error)
 }
 
 type runnerDownload struct {
@@ -274,4 +277,12 @@ func downloadArchive(ctx context.Context, d runnerDownload) (string, func(), err
 		return fail("download %s: %v", d.Filename, err)
 	}
 	return f.Name(), cleanup, nil
+}
+
+func (g restGitHub) SSHHostKeys(ctx context.Context) ([]string, error) {
+	var m struct {
+		SSHKeys []string `json:"ssh_keys"`
+	}
+	err := g.c.DoWithContext(ctx, http.MethodGet, "meta", nil, &m)
+	return m.SSHKeys, apiError("read GitHub's SSH host keys", err)
 }
