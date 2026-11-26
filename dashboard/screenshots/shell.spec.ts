@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { commands } from './command-fixtures'
-import { hosts, issueURL, personView } from './person-fixtures'
+import { hosts, issueURL, personView, runnerActivity } from './person-fixtures'
 import { expectClean, expectNonce, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
 
 // Screenshots and checks of the Dashboard shell (#352): the three views, the
@@ -356,9 +356,40 @@ for (const theme of themes) {
       await expect(host.getByRole('heading', { level: 2 })).toHaveText('podman machine nibfin-dev')
       await expect(host).toContainText('Machine nibfin-dev · VM type applehv')
       await expect(host.locator('[data-badge=machine]')).toHaveText('Running')
-      await expect(host.locator('[data-slot=memory]')).toHaveText('5.2 GiB of 15.5 GiB')
+      await expect(host.locator('[data-slot=memory]')).toHaveText('5.2 GiB free of 15.5 GiB')
       await expect(host.getByRole('meter', { name: 'Free memory' })).toHaveAttribute('aria-valuenow', '33')
+      await expect(host.getByRole('meter', { name: 'Free memory' })).toHaveAttribute('aria-valuetext', '33% free, 5.2 GiB free of 15.5 GiB')
       await expect(host.locator('[data-slot=repo]')).toHaveText('Runners serve acme/app')
+      // The route container no Runner mounts is a host note.
+      await expect(host.locator('[data-slot=host-job]')).toHaveText('Job running on this host: acme/web#44 for 2m')
+
+      // The tiles: state rings with their text, and the busy Jobs.
+      const states: [string, string, string][] = [
+        ['claude-1', 'busy', 'Busy'],
+        ['claude-2', 'idle', 'Idle'],
+        ['claude-3', 'offline', 'Offline'],
+        ['codex-1', 'busy', 'Busy · local state'],
+        ['codex-2', 'offline', 'Offline · local state'],
+      ]
+      for (const [slot, state, text] of states) {
+        await expect(slotRow(page, slot)).toHaveAttribute('data-state', state)
+        await expect(slotRow(page, slot).locator('[data-slot=state]')).toHaveText(text)
+      }
+      const busy = slotRow(page, 'claude-1').locator('[data-slot=job]')
+      await expect(busy.getByRole('link', { name: 'acme/web#42' })).toHaveAttribute('href', issueURL('acme/web', 42))
+      await expect(busy.locator('[data-slot=stage]')).toHaveText('deliver')
+      await expect(busy.locator('[data-slot=elapsed]')).toHaveText('for 1h 05m')
+      await expect(slotRow(page, 'codex-1').locator('[data-slot=stage]')).toHaveText('stage unknown')
+      await expect(slotRow(page, 'codex-1').locator('[data-slot=elapsed]')).toHaveText('for 4m')
+
+      // The last 24 hours: one lane per Runner, failed Jobs marked.
+      const timeline = page.locator('[data-card=timeline]')
+      await expect(timeline.locator('[data-lane]')).toHaveCount(5)
+      await expect(timeline.locator('[data-lane=claude-2] [data-period=failed]')).toHaveCount(2)
+      await expect(timeline.locator('[data-lane=claude-2] [data-period=busy]')).toHaveCount(2)
+      await expect(timeline.locator('[data-lane=claude-1] a[data-period]').last()).toHaveAttribute('aria-label', /^acme\/web#42 · deliver · \d\d:\d\d–now$/)
+      await expect(timeline.locator('[data-slot=axis] span')).toHaveCount(4)
+      expect(w.activityReads).toBe(1)
 
       await expect(provider(page, 'claude').locator('[data-badge=login]')).toHaveText('Logged in')
       await expect(provider(page, 'codex').locator('[data-badge=login]')).toHaveText('Not logged in')
@@ -418,6 +449,57 @@ for (const width of widths) {
     await expectClean(w)
   })
 }
+
+// Without admin, online and offline are the host's. When the jobs cannot be
+// read, the lanes say why and a Job container still marks its Runner busy.
+const noAdmin = {
+  ...hosts.mixed,
+  runners: {
+    repo: 'acme/app',
+    githubNeedsAdmin: true,
+    runners: hosts.mixed.runners.runners.map((s) => ({ ...s, listed: false, status: undefined, busy: false })),
+  },
+}
+
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`runner view without admin, jobs not read at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme, { result: personView({ host: noAdmin }) })
+      const base = runnerActivity()
+      w.activity = {
+        result: {
+          ...base,
+          jobsError: { code: 'github_api_failed', message: 'list the shared-runner runs of acme/app: HTTP 403: Resource not accessible by integration' },
+          runners: base.runners.map((r) => ({ ...r, periods: [], current: r.current?.source === 'container' ? r.current : undefined })),
+        },
+      }
+      await tab(page, 'Runners').click()
+      await expect(page.locator('[data-note=local-state]')).toContainText("GitHub's Runner list needs admin of acme/app")
+      await expect(page.locator('[data-badge=github]').first()).toHaveText('GitHub needs admin')
+      await expect(slotRow(page, 'claude-1')).toHaveAttribute('data-state', 'idle')
+      await expect(slotRow(page, 'claude-1').locator('[data-slot=state]')).toHaveText('Idle · local state')
+      await expect(slotRow(page, 'claude-3')).toHaveAttribute('data-state', 'offline')
+      await expect(slotRow(page, 'codex-1')).toHaveAttribute('data-state', 'busy')
+      const timeline = page.locator('[data-card=timeline]')
+      await expect(timeline.locator('[data-note=jobs-error]')).toContainText('github_api_failed: list the shared-runner runs of acme/app: HTTP 403')
+      await expect(timeline.locator('[data-lane]')).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await shot(page, `shell-runner-no-admin-${theme}-${width}`)
+      await expectClean(w)
+    })
+  }
+}
+
+test('runner view when the activity route fails', async ({ page }) => {
+  const { w } = await open(page, 375, 'dark', { result: personView({ host: hosts.mixed }) })
+  w.activity = { error: { code: 'podman_failed', message: 'podman ps: boom' }, httpStatus: 502 }
+  await tab(page, 'Runners').click()
+  await expect(page.locator('[data-card=timeline] [data-note=jobs-error]')).toContainText('podman_failed: podman ps: boom')
+  await expect(slotRow(page, 'claude-1').locator('[data-slot=job]')).toHaveText('Job details not read.')
+  await expectNoPageScroll(page)
+  await shot(page, 'shell-runner-activity-failed-dark-375')
+  await expectClean(w, ['Failed to load resource: the server responded with a status of 502'])
+})
 
 test('the no-Runner guide opens runner add per provider', async ({ page }) => {
   const { w } = await open(page, 375, 'dark', { result: personView({ host: hosts.incomplete }) })

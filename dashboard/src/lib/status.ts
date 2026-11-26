@@ -111,6 +111,9 @@ export interface RunnersReport {
   runners: RunnerState[] | null
   error?: ApiError
   githubError?: ApiError
+  // githubNeedsAdmin is set when GitHub's Runner list was not read
+  // because the gh login is not admin of repo.
+  githubNeedsAdmin?: boolean
 }
 
 // HostInfo is the runner host (op.HostInfo). machine and vmType are empty
@@ -225,4 +228,62 @@ export interface PersonView {
   // nibfinRepos are on githubHost.
   nibfinRepos: NibfinRepo[] | null
   nibfinReposError?: ApiError
+}
+
+// CurrentJob is the Job a Runner runs now (status.CurrentJob). repo, issue
+// and issueUrl are set only for a valid OWNER/REPO and number; stage only
+// when it came from a run title.
+export interface CurrentJob {
+  repo?: string
+  issue?: number
+  issueUrl?: string
+  stage?: string
+  url?: string
+  startedAt?: string
+  source: 'github' | 'container'
+}
+
+// Period is one job's busy time on a Runner, clipped to the window; end is
+// absent while the job runs (status.Period).
+export interface Period {
+  start: string
+  end?: string
+  failed: boolean
+  repo?: string
+  issue?: number
+  issueUrl?: string
+  stage?: string
+  url?: string
+}
+
+// SlotActivity is one Runner slot's current Job and busy periods
+// (status.SlotActivity).
+export interface SlotActivity {
+  slot: string
+  provider: string
+  name?: string
+  current?: CurrentJob
+  periods: Period[]
+}
+
+// ContainerJob is a running Job container matched to no slot
+// (status.ContainerJob).
+export interface ContainerJob {
+  repo?: string
+  issue?: number
+  issueUrl?: string
+  startedAt?: string
+}
+
+// Activity is the Runner view's activity read, GET /api/runner-activity
+// (status.Activity). It is not part of status --json.
+export interface Activity {
+  from: string
+  to: string
+  repo?: string
+  runners: SlotActivity[]
+  slotsError?: ApiError
+  jobsError?: ApiError
+  containersError?: ApiError
+  unattributed: ContainerJob[]
 }

@@ -10,23 +10,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { commandByApi } from '@/lib/commands'
 import { providerTitle } from '@/lib/login'
 import type { Command, Values } from '@/lib/operation'
-import { gib, githubLabel, providerPreset, serviceLabel, slotsByProvider, type Label } from '@/lib/runner'
+import { elapsed, jobLabel, providerPreset, slotsByProvider, type Label } from '@/lib/runner'
 import { hasNoRunner } from '@/lib/shell'
-import type { ApiError, HostReport, PersonView, ProviderReport, RunnerState } from '@/lib/status'
+import type { Activity, ApiError, HostReport, PersonView, ProviderReport, RunnerState } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
+import { BusyTimeline } from './busy-timeline'
+import { MemoryGauge } from './memory-gauge'
+import { RunnerTile } from './runner-tiles'
+import { useActivity, useNow, type ActivityState } from './use-activity'
 import { useCommands, type CommandsState } from './use-commands'
 
 const code = 'rounded-sm bg-[var(--nf-code-bg)] px-1.5 py-0.5 font-mono text-[0.85em] break-words text-[var(--nf-code)]'
 
 type Opener = (api: string, provider: string) => void
 
-// RunnerView shows this host's runner state: the machine and its memory,
-// each provider's login and Runner slots, and opens runner add, runner
-// remove and login in the operation dialog. onFinished reads the status
-// again after a dialog that applied something.
+// RunnerView shows this host's runner state: the machine and its memory
+// gauge, each provider's login and Runner tiles with what each Runner is
+// doing, and each Runner's busy periods of the last 24 hours. It opens
+// runner add, runner remove and login in the operation dialog. onFinished
+// reads the status again after a dialog that applied something; each newer
+// status read reads the activity again.
 export function RunnerView({ data, onFinished }: { data: PersonView; onFinished?: () => void }) {
   const commands = useCommands()
+  const activity = useActivity(data)
   const [open, setOpen] = useState<{ command: Command; initial: Values } | null>(null)
 
   const opener: Opener | undefined =
@@ -45,7 +52,7 @@ export function RunnerView({ data, onFinished }: { data: PersonView; onFinished?
     <>
       <CommandsNote commands={commands} />
       {none && <NoRunnerGuide host={data.host} open={has('runner-add') ? opener : undefined} />}
-      <RunnerSections host={data.host} open={opener} has={has} runnersError={!none} />
+      <RunnerSections host={data.host} open={opener} has={has} runnersError={!none} activity={activity} />
       {open && (
         <OperationDialog
           key={open.command.path}
@@ -93,26 +100,36 @@ function RunnerSections({
   open,
   has,
   runnersError,
+  activity,
 }: {
   host: HostReport
   open?: Opener
   has: (api: string) => boolean
   runnersError: boolean
+  activity: ActivityState
 }) {
+  const now = useNow()
   const groups = slotsByProvider(host)
   const providers: ProviderReport[] = [...(host.providers ?? [])]
   // A provider that only a slot names still gets its section.
   for (const p of groups.keys()) {
     if (!providers.some((x) => x.provider === p)) providers.push({ provider: p, loggedIn: false })
   }
-  const { error, githubError } = host.runners
+  const { error, githubError, githubNeedsAdmin, repo } = host.runners
+  const act = activity.state === 'failed' ? undefined : activity.activity
+  const slots = host.runners.runners ?? []
   return (
     <>
-      <HostCard host={host} />
+      <HostCard host={host} activity={act} now={now} />
       {runnersError && error && <Note tone="warning">Runners could not be read: {error.code}: {error.message}</Note>}
       {githubError && (
         <Note tone="warning" data-note="github-error">
           GitHub&apos;s Runner list could not be read; the local state is shown. {githubError.code}: {githubError.message}
+        </Note>
+      )}
+      {!githubError && githubNeedsAdmin && (
+        <Note tone="info" data-note="local-state">
+          Online and offline come from this host&apos;s Runner services: GitHub&apos;s Runner list needs admin of {repo ?? 'the repository'}.
         </Note>
       )}
       {providers.map((p) => (
@@ -121,19 +138,54 @@ function RunnerSections({
           provider={p}
           slots={groups.get(p.provider) ?? []}
           githubError={githubError}
+          needsAdmin={!!githubNeedsAdmin}
+          activity={act}
+          now={now}
           open={open}
           has={has}
         />
       ))}
+      {slots.length > 0 && <BusyTimeline slots={slots} activity={activity} />}
     </>
   )
 }
 
-function HostCard({ host }: { host: HostReport }) {
+// HostJobs lists the running Job containers no Runner was matched to, and
+// says when the containers could not be read.
+function HostJobs({ activity, now }: { activity?: Activity; now: number }) {
+  if (!activity) return null
+  const { unattributed, containersError, jobsError } = activity
+  return (
+    <>
+      {unattributed.map((j, i) => {
+        const took = elapsed(j.startedAt, now)
+        return (
+          <p key={i} data-slot="host-job" className="text-sm break-words">
+            <span className="text-muted-foreground">Job running on this host: </span>
+            {j.issueUrl ? (
+              <a href={j.issueUrl} target="_blank" rel="noreferrer" className="font-medium text-link underline-offset-2 hover:underline">
+                {jobLabel(j)}
+              </a>
+            ) : (
+              <span className="font-medium">{jobLabel(j)}</span>
+            )}
+            {took && <span className="text-muted-foreground"> for {took}</span>}
+          </p>
+        )
+      })}
+      {containersError && containersError.message !== jobsError?.message && (
+        <p data-slot="containers-error" className="text-sm break-words text-muted-foreground">
+          Job containers could not be read: {containersError.code}: {containersError.message}
+        </p>
+      )}
+    </>
+  )
+}
+
+function HostCard({ host, activity, now }: { host: HostReport; activity?: Activity; now: number }) {
   const h = host.host
   const m = host.memory
   const repo = host.runners.repo
-  const free = m && !m.error && m.totalKB > 0 ? Math.min(100, Math.round((m.availableKB / m.totalKB) * 100)) : null
   return (
     <Card className="gap-4 border-border-subtle py-4" data-card="host">
       <CardHeader className="px-4 sm:px-6">
@@ -176,25 +228,7 @@ function HostCard({ host }: { host: HostReport }) {
               {m?.error ? (
                 <ErrorText error={m.error} />
               ) : m && m.totalKB > 0 ? (
-                <>
-                  <p data-slot="memory" className="text-sm">
-                    <span className="font-semibold tabular-nums">{gib(m.availableKB)}</span>{' '}
-                    <span className="text-muted-foreground">of {gib(m.totalKB)}</span>
-                  </p>
-                  {free !== null && (
-                    <div
-                      role="meter"
-                      aria-label="Free memory"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={free}
-                      aria-valuetext={`${free}% free`}
-                      className="h-2 w-full max-w-xs overflow-hidden rounded-full border border-border bg-muted"
-                    >
-                      <div className="h-full rounded-full bg-primary" style={{ width: `${free}%` }} />
-                    </div>
-                  )}
-                </>
+                <MemoryGauge memory={m} />
               ) : (
                 <p className="text-sm text-muted-foreground">Not read</p>
               )}
@@ -207,6 +241,7 @@ function HostCard({ host }: { host: HostReport }) {
             <span className="font-medium">{repo}</span>
           </p>
         )}
+        <HostJobs activity={activity} now={now} />
       </CardContent>
     </Card>
   )
@@ -246,12 +281,18 @@ function ProviderSection({
   provider,
   slots,
   githubError,
+  needsAdmin,
+  activity,
+  now,
   open,
   has,
 }: {
   provider: ProviderReport
   slots: RunnerState[]
   githubError?: ApiError
+  needsAdmin: boolean
+  activity?: Activity
+  now: number
   open?: Opener
   has: (api: string) => boolean
 }) {
@@ -294,22 +335,17 @@ function ProviderSection({
         {slots.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Runners of {p} on this host.</p>
         ) : (
-          <ul aria-label={`${providerTitle(p)} Runners`} className="divide-y divide-border-subtle rounded-md border border-border-subtle">
+          <ul aria-label={`${providerTitle(p)} Runners`} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {slots.map((s) => (
-              <li
+              <RunnerTile
                 key={s.slot}
-                data-slot-id={s.slot}
-                className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <p className="min-w-0 break-words">
-                  <span className="font-medium">{s.slot}</span>
-                  {s.name && <span className="text-sm text-muted-foreground"> · {s.name}</span>}
-                </p>
-                <div className="flex flex-wrap gap-1.5 sm:justify-end">
-                  <Tag slot="service" label={serviceLabel(s)} />
-                  <Tag slot="github" label={githubLabel(s, githubError)} />
-                </div>
-              </li>
+                slot={s}
+                current={activity?.runners.find((r) => r.slot === s.slot)?.current}
+                githubError={githubError}
+                needsAdmin={needsAdmin}
+                activityRead={!!activity && !activity.jobsError}
+                now={now}
+              />
             ))}
           </ul>
         )}

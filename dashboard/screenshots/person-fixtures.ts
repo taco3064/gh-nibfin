@@ -194,3 +194,58 @@ export function personView(over: Record<string, unknown> = {}) {
     ...over,
   }
 }
+
+// runnerActivity is a fictional GET /api/runner-activity body for
+// hosts.mixed, relative to now: claude-1 runs a deliver Job, claude-2 had
+// Jobs and one failed, codex-1 runs a Job only its container shows, and a
+// route container matches no Runner. It follows status.Activity.
+export function runnerActivity(now = Date.now(), over: Record<string, unknown> = {}) {
+  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString().replace(/\.\d+Z$/, 'Z')
+  const job = (id: number) => `${gh}/acme/app/actions/runs/${id}/job/${id + 1}`
+  const period = (start: number, end: number | null, failed: boolean, n: number, stage: string, id: number) => ({
+    start: at(start),
+    ...(end === null ? {} : { end: at(end) }),
+    failed,
+    repo: 'acme/web',
+    issue: n,
+    issueUrl: issueURL('acme/web', n),
+    stage,
+    url: job(id),
+  })
+  return {
+    from: at(24 * 60),
+    to: at(0),
+    repo: 'github.com/acme/app',
+    runners: [
+      {
+        slot: 'claude-1',
+        provider: 'claude',
+        name: 'nibfin-claude-1',
+        current: { repo: 'acme/web', issue: 42, issueUrl: issueURL('acme/web', 42), stage: 'deliver', url: job(900), startedAt: at(65), source: 'github' },
+        periods: [period(20 * 60, 19 * 60 + 10, false, 38, 'shape', 100), period(9 * 60, 8 * 60, false, 40, 'deliver', 200), period(65, null, false, 42, 'deliver', 900)],
+      },
+      {
+        slot: 'claude-2',
+        provider: 'claude',
+        name: 'nibfin-claude-2',
+        periods: [
+          period(23 * 60 + 40, 22 * 60 + 30, false, 36, 'deliver', 300),
+          period(14 * 60, 13 * 60 + 20, true, 39, 'deliver', 400),
+          period(6 * 60, 5 * 60 + 45, false, 41, 'review', 500),
+          period(2 * 60, 100, true, 41, 'review', 600),
+        ],
+      },
+      { slot: 'claude-3', provider: 'claude', name: 'nibfin-claude-3', periods: [period(22 * 60, 21 * 60, false, 35, 'route', 700)] },
+      {
+        slot: 'codex-1',
+        provider: 'codex',
+        name: 'nibfin-codex-1',
+        current: { repo: 'acme/web', issue: 43, issueUrl: issueURL('acme/web', 43), startedAt: at(4), source: 'container' },
+        periods: [],
+      },
+      { slot: 'codex-2', provider: 'codex', periods: [] },
+    ],
+    unattributed: [{ repo: 'acme/web', issue: 44, issueUrl: issueURL('acme/web', 44), startedAt: at(2) }],
+    ...over,
+  }
+}
