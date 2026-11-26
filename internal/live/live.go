@@ -333,8 +333,14 @@ func (w *watcher) tick(ctx context.Context, wg *sync.WaitGroup) {
 	if !ok || ctx.Err() != nil {
 		return
 	}
+	// The idle check and checked go out under sendMu, which the worker holds
+	// while it goes idle and sends a batch's last event: checked never comes
+	// before that event, and a snapshot whose rebuild is still pending
+	// leaves this tick's probe set stale, so it sends no checked.
+	w.sendMu.Lock()
+	defer w.sendMu.Unlock()
 	w.mu.Lock()
-	idle := !w.busy && !w.full && len(w.dirty) == 0
+	idle := !w.busy && !w.full && len(w.dirty) == 0 && len(w.rebuilt) == 0
 	w.mu.Unlock()
 	if !idle {
 		return
@@ -353,7 +359,7 @@ func (w *watcher) tick(ctx context.Context, wg *sync.WaitGroup) {
 	}
 	if oldest.After(w.checkedT) {
 		w.checkedT = oldest
-		w.send(Event{Event: "checked", At: stamp(oldest)})
+		w.sendRaw(Event{Event: "checked", At: stamp(oldest)})
 	}
 }
 
@@ -427,12 +433,16 @@ func (w *watcher) work(ctx context.Context) {
 				emit(Event{Event: "error", Source: "status", Error: op.AsError(err)})
 			}
 		}
+		// Going idle and sending the last event is one step for tick (see
+		// there), so its checked never comes before this event.
+		w.sendMu.Lock()
 		w.mu.Lock()
 		w.busy = false
 		w.mu.Unlock()
 		if held != nil {
-			w.send(*held)
+			w.sendRaw(*held)
 		}
+		w.sendMu.Unlock()
 	}
 }
 
