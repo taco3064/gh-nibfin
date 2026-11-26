@@ -1,4 +1,4 @@
-import { ArrowRight, Check, CircleAlert, CircleDashed, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
+import { ArrowRight, Check, CircleAlert, CircleCheck, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
 
 import { tones, type Tone } from '@/components/issue/tones'
 import { Badge } from '@/components/ui/badge'
@@ -88,7 +88,7 @@ function ItemRow({ row, phase }: { row: Row; phase: Phase }) {
         </p>
         <div className="flex flex-wrap gap-1.5 sm:justify-end">
           {s?.noChange && (
-            <Tag tone="neutral" icon={CircleDashed} slot="no-change">
+            <Tag tone="neutral" icon={CircleCheck} slot="no-change">
               No change needed
             </Tag>
           )}
