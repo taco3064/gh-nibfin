@@ -655,6 +655,8 @@ func TestRepoPermissionsREST(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v3/repos/o/r":
 			io.WriteString(w, `{"permissions":{"admin":false,"push":true}}`)
+		case "/api/v3/repos/o/secret":
+			io.WriteString(w, `{"private":true,"permissions":{"admin":false,"push":true}}`)
 		case "/api/v3/repos/o/hidden":
 			w.WriteHeader(http.StatusNotFound)
 			io.WriteString(w, `{"message":"Not Found"}`)
@@ -674,10 +676,236 @@ func TestRepoPermissionsREST(t *testing.T) {
 	if p, err := g.RepoPermissions(ctx, "ghe.example/o/r"); err != nil || p != (repoPerms{Push: true}) {
 		t.Errorf("write: %+v, %v", p, err)
 	}
+	if p, err := g.RepoPermissions(ctx, "ghe.example/o/secret"); err != nil || p != (repoPerms{Push: true, Private: true}) {
+		t.Errorf("private: %+v, %v", p, err)
+	}
 	if p, err := g.RepoPermissions(ctx, "ghe.example/o/hidden"); err != nil || p != (repoPerms{}) {
 		t.Errorf("hidden: %+v, %v", p, err)
 	}
 	if _, err := g.RepoPermissions(ctx, "ghe.example/o/down"); Code(err) != CodeGitHubAPIFailed || !strings.Contains(err.Error(), "502") {
 		t.Errorf("502: %v", err)
+	}
+}
+
+// deployKeyAt is the fake host's deploy key path for github.com/cur/repo.
+const deployKeyAt = "/home/u/.local/share/nibfin/deploy-keys/github.com/cur/repo/id_ed25519"
+
+// usePrivateRequest is useRequest on a private repository; the write
+// script's stdin (the private key) is saved to the returned file.
+func usePrivateRequest(t *testing.T, f *fakeHost) (requestFixture, string) {
+	t.Helper()
+	fx := useRequest(t, f)
+	fx.gh.perms = &repoPerms{Push: true, Private: true}
+	f.deployPriv = filepath.Join(t.TempDir(), "deploy-priv")
+	return fx, f.deployPriv
+}
+
+func shellNames(f *fakeHost) []string {
+	var out []string
+	for _, s := range f.shells {
+		out = append(out, s.script)
+	}
+	return out
+}
+
+func TestRunnerAddRequestDeployKey(t *testing.T) {
+	archiveURL(t)
+	f := &fakeHost{}
+	fx, privFile := usePrivateRequest(t, f)
+	p, r, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if err != nil {
+		t.Fatalf("Run: %v (events %v)", err, f.events)
+	}
+	want := []string{"enable linger fake", "create deploy key " + deployKeyAt, "request registration github.com/cur/repo",
+		"add runner claude-1", "close request github.com/cur/repo"}
+	if !reflect.DeepEqual(steps(p), want) {
+		t.Fatalf("plan = %v", steps(p))
+	}
+	if d := p.Changes()[2].Detail; !strings.Contains(d, "for SSH key 11 with read-only deploy key;") {
+		t.Errorf("request detail = %q", d)
+	}
+	// The key is written before the request is opened.
+	if len(f.events) < 3 || !reflect.DeepEqual(f.events[:3], []string{"linger", "deploy-key " + deployKeyAt, "request"}) {
+		t.Errorf("events = %v", f.events)
+	}
+	// The private key reached the host only on stdin, and the public key
+	// in the request is its own.
+	pemBytes := mustRead(t, privFile)
+	priv, err := ssh.ParseRawPrivateKey(pemBytes)
+	if err != nil {
+		t.Fatalf("private key on stdin: %v", err)
+	}
+	signer, _ := ssh.NewSignerFromKey(priv)
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+	if signer.PublicKey().Type() != ssh.KeyAlgoED25519 {
+		t.Errorf("key type %s", signer.PublicKey().Type())
+	}
+	for _, s := range f.shells {
+		for _, a := range s.args {
+			if strings.Contains(a, "PRIVATE KEY") {
+				t.Errorf("%s has the private key in its arguments", s.script)
+			}
+		}
+		if s.script == "deploy-write" && !reflect.DeepEqual(s.args, []string{deployKeyAt, line + " nibfin-deploy-key"}) {
+			t.Errorf("write args = %q", s.args)
+		}
+	}
+	wantBody := runnerreq.RunnerRequestMarker + "\nssh-key-id: 11\ndeploy-key: " + line + "\n\n"
+	if len(fx.req.bodies) != 1 || !strings.HasPrefix(fx.req.bodies[0], wantBody) {
+		t.Errorf("body = %q, want prefix %q", fx.req.bodies, wantBody)
+	}
+	b, _ := json.Marshal(r)
+	if strings.Contains(string(b), "PRIVATE") {
+		t.Error("the result has the private key")
+	}
+	var got struct {
+		DeployKey string
+		Items     []Check
+	}
+	json.Unmarshal(b, &got)
+	if got.DeployKey != deployKeyAt {
+		t.Errorf("result deployKey = %q", got.DeployKey)
+	}
+	found := false
+	for _, c := range got.Items {
+		if c.ID == "deploy-key" {
+			found = true
+			if !c.Confirmed || !strings.Contains(c.State, "mode 0600") || !strings.Contains(c.State, ssh.FingerprintSHA256(signer.PublicKey())) {
+				t.Errorf("deploy key item = %+v", c)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no deploy key item: %+v", got.Items)
+	}
+
+	// A later request from the same host reuses the key.
+	f.slots = map[string]*fakeSlot{}
+	f.shells, f.events = nil, nil
+	os.Remove(privFile)
+	p, _, err = Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if !contains(allSteps(p), "use deploy key "+deployKeyAt) || contains(steps(p), "create deploy key "+deployKeyAt) {
+		t.Errorf("rerun plan = %v", allSteps(p))
+	}
+	if contains(shellNames(f), "deploy-write") {
+		t.Errorf("rerun rewrote the key: %v", shellNames(f))
+	}
+	if len(fx.req.bodies) != 2 || !strings.HasPrefix(fx.req.bodies[1], wantBody) {
+		t.Errorf("rerun body = %q", fx.req.bodies[1:])
+	}
+}
+
+func TestRunnerAddDeployKeyOnlyPrivateRequest(t *testing.T) {
+	archiveURL(t)
+	// A public repository: no deploy key read, written or sent.
+	f := &fakeHost{}
+	fx := useRequest(t, f)
+	if _, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range shellNames(f) {
+		if strings.HasPrefix(n, "deploy-") {
+			t.Errorf("public repository ran %s", n)
+		}
+	}
+	if strings.Contains(fx.req.bodies[0], "deploy-key") {
+		t.Errorf("public body = %q", fx.req.bodies[0])
+	}
+
+	// The admin route of a private repository: no deploy key either.
+	f = &fakeHost{}
+	fx = useRequest(t, f)
+	fx.gh.perms, fx.gh.listErr = &repoPerms{Admin: true, Push: true, Private: true}, nil
+	p, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background())
+	if err != nil || !reflect.DeepEqual(steps(p), []string{"enable linger fake", "add runner claude-1"}) {
+		t.Errorf("admin: %v, %v", allSteps(p), err)
+	}
+	for _, n := range shellNames(f) {
+		if strings.HasPrefix(n, "deploy-") {
+			t.Errorf("admin route ran %s", n)
+		}
+	}
+
+	// A rerun that only finishes units opens no request and makes no key.
+	f = &fakeHost{slots: map[string]*fakeSlot{"claude-1": {configured: true, name: "n1", url: "https://github.com/cur/repo"}}}
+	usePrivateRequest(t, f)
+	if _, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range shellNames(f) {
+		if strings.HasPrefix(n, "deploy-") {
+			t.Errorf("units-only rerun ran %s", n)
+		}
+	}
+}
+
+func TestRunnerAddDeployKeyWriteFails(t *testing.T) {
+	archiveURL(t)
+	f := &fakeHost{shellExit: map[string]int{"deploy-write": 1}, shellErr: map[string]string{"deploy-write": "mkdir: Permission denied"}}
+	fx, _ := usePrivateRequest(t, f)
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "Permission denied") {
+		t.Errorf("err = %v", err)
+	}
+	if len(fx.req.bodies) != 0 || contains(f.events, "request") {
+		t.Errorf("a request was opened: %v", f.events)
+	}
+}
+
+func TestRunnerAddDeployKeyReadBack(t *testing.T) {
+	good := writeKey(t, t.TempDir(), "k", "ed25519", "")
+	other := writeKey(t, t.TempDir(), "o", "ed25519", "")
+	rsaKey := writeKey(t, t.TempDir(), "r", "rsa", "")
+	cases := []struct {
+		name, pub, mode, sent string
+		ok                    bool
+		state                 string
+	}{
+		{name: "good", pub: good.authorized + " nibfin-deploy-key\n", mode: "600", ok: true, state: "mode 0600"},
+		{name: "sent", pub: good.authorized + " nibfin-deploy-key\n", mode: "600", sent: good.authorized, ok: true, state: "mode 0600"},
+		{name: "absent", state: "absent"},
+		{name: "mode", pub: good.authorized + "\n", mode: "644", state: "mode 0644"},
+		{name: "mismatch", pub: good.authorized + "\n", mode: "600", sent: other.authorized, state: "differs"},
+		{name: "rsa", pub: rsaKey.authorized + "\n", mode: "600", state: "not ed25519"},
+	}
+	for _, c := range cases {
+		f := &fakeHost{slots: map[string]*fakeSlot{"claude-1": {configured: true, unit: true, enabled: true, active: true, name: "n1", url: "https://github.com/cur/repo", env: "claude"}}}
+		fx, _ := usePrivateRequest(t, f)
+		fx.gh.listErr = errors.New("ListRunners must not be called")
+		f.deployPub, f.deployMode = c.pub, c.mode
+		o := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).(*runnerAdd)
+		o.deploySent = c.sent
+		if c.sent != "" {
+			o.deployPath = deployKeyAt
+		}
+		plan := Plan{Steps: []Step{deployKeyStep(deployKeyAt, nil), requestStep("github.com/cur/repo", 11, true), slotStep("claude-1")}}
+		r, _ := o.ReadBack(context.Background(), plan)
+		var item *Check
+		for _, x := range r[ResultItems].([]Check) {
+			if x.ID == "deploy-key" {
+				item = &x
+			}
+		}
+		if item == nil || item.Confirmed != c.ok || !strings.Contains(item.State, c.state) {
+			t.Errorf("%s: item %+v", c.name, item)
+		}
+		if r["deployKey"] != deployKeyAt {
+			t.Errorf("%s: deployKey = %v", c.name, r["deployKey"])
+		}
+		if !contains(shellNames(f), "deploy-check") {
+			t.Errorf("%s: not read from the host", c.name)
+		}
+	}
+}
+
+func TestRequestBodyDeployKey(t *testing.T) {
+	if b := requestBody(11, ""); strings.Contains(b, "deploy-key") {
+		t.Errorf("no key: %q", b)
+	}
+	if b := requestBody(11, "ssh-ed25519 AAAA"); !strings.HasPrefix(b, runnerreq.RunnerRequestMarker+"\nssh-key-id: 11\ndeploy-key: ssh-ed25519 AAAA\n\n") {
+		t.Errorf("key: %q", b)
 	}
 }

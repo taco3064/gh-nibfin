@@ -317,3 +317,12 @@ func Repo(rs []Runner) (string, error) {
 	}
 	return repo, nil
 }
+
+// DeployKeyPath is the private key file of the read-only deploy key that a
+// collaborator's host uses for the private execution repository repo
+// (<host>/<owner>/<name>); its public key is the same path with ".pub". It
+// lies beside the slot root, outside every slot, one per repository since a
+// deploy key serves one repository only.
+func DeployKeyPath(inv *Inventory, repo string) string {
+	return path.Join(path.Dir(inv.Dir), "deploy-keys", strings.ToLower(repo), "id_ed25519")
+}

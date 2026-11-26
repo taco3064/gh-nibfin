@@ -117,6 +117,9 @@ type runnerAdd struct {
 	key        *localKey
 	req        *runnerRequest
 	registered []string
+	// deployPath and deploySent are the deploy key Apply wrote or reused
+	// and the public key line it sent (private repositories only).
+	deployPath, deploySent string
 }
 
 // addEnv is what runner add learns from the host and GitHub.
@@ -129,6 +132,9 @@ type addEnv struct {
 	// admin is true when the gh login is admin of repo (the admin route);
 	// otherwise it has write access (the request route).
 	admin bool
+	// private is true when repo is private: the request route then also
+	// sends a read-only deploy key.
+	private bool
 	// key is the matched SSH key, once the request route needs it.
 	key *localKey
 }
@@ -355,7 +361,7 @@ func (a *runnerAdd) load(ctx context.Context) (*addEnv, error) {
 	if perms.Admin {
 		a.route = routeAdmin
 	}
-	return &addEnv{inv: inv, probe: pr, repo: repo, gh: gh, user: user, admin: perms.Admin}, nil
+	return &addEnv{inv: inv, probe: pr, repo: repo, gh: gh, user: user, admin: perms.Admin, private: perms.Private}, nil
 }
 
 // runnerLabels are the custom labels of a runner: nibfin-<user id>, which
@@ -453,7 +459,16 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 		if err != nil {
 			return nil, nil, err
 		}
-		steps = append(steps, sshKeyStep(k), requestStep(env.repo, k.id))
+		steps = append(steps, sshKeyStep(k))
+		if env.private {
+			path := runners.DeployKeyPath(env.inv, env.repo)
+			pub, err := a.readDeployKey(ctx, path)
+			if err != nil {
+				return nil, nil, err
+			}
+			steps = append(steps, deployKeyStep(path, pub))
+		}
+		steps = append(steps, requestStep(env.repo, k.id, env.private))
 	}
 	detail := env.repo + ", labels " + a.labels(env) + ", .env NIBFIN_PROVIDER=" + a.prov.name
 	for _, s := range slots {
@@ -645,7 +660,18 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 			}
 			return releaseDownload(ctx, arch)
 		}
-		src.token = func(ctx context.Context) (string, error) { return a.requestToken(ctx, env, id) }
+		src.token = func(ctx context.Context) (string, error) {
+			// A private repository is read with a deploy key, created
+			// (or reused) on the host before the request carries it.
+			deployKey := ""
+			if env.private {
+				var err error
+				if deployKey, err = a.deployKey(ctx, env); err != nil {
+					return "", err
+				}
+			}
+			return a.requestToken(ctx, env, id, deployKey)
+		}
 	}
 	err := a.install(ctx, env, w.slots, src)
 	return a.finishRequest(ctx, env, err)
@@ -670,7 +696,7 @@ func (a *runnerAdd) classify(steps []Step) (work, error) {
 		case s.Action == actAddRunner && slotRE.MatchString(s.Target):
 			w.slots = append(w.slots, s)
 		case s.Action == actSetWSLConfig, s.Action == actRegisterAutostart, s.Action == actStart,
-			s.Action == actRequestRegistration, s.Action == actCloseRequest:
+			s.Action == actRequestRegistration, s.Action == actCloseRequest, s.Action == actCreateDeployKey:
 		default:
 			return w, Errorf(CodeInvalidArgument, "unknown runner add step %q %q", s.Action, s.Target)
 		}

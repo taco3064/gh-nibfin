@@ -82,6 +82,11 @@ type fakeHost struct {
 	rmExit    int
 	// events records the order of the changing steps.
 	events []string
+	// The deploy key (see runner_request_test.go): deployPub is the
+	// content of its .pub, "" when the pair is absent; deployMode the
+	// private key's mode; deployPriv the file the write script's stdin is
+	// saved to.
+	deployPub, deployMode, deployPriv string
 
 	// The autostart entry (see autostart_test.go): entry is its state;
 	// autoStarts counts starts through it.

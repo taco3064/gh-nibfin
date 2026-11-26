@@ -258,7 +258,17 @@ Windows and macOS.
     planned (`runner_request_timeout`, run `runner add` again); an Issue
     closed by someone, a malformed answer or one that does not decrypt is
     `runner_request_failed`. Every other failure or a cancel also closes the
-    Issue as not planned. A rerun that only finishes configured Runners opens
+    Issue as not planned. On a private execution repository the request also
+    carries a read-only deploy key, which the collaborator's runner hook uses
+    to read the repository: before the Issue is opened, the command reuses or
+    creates a dedicated ed25519 key without a passphrase at
+    `${XDG_DATA_HOME:-~/.local/share}/nibfin/deploy-keys/<host>/<owner>/<name>/id_ed25519`
+    (mode 0600 in a 0700 directory, with `id_ed25519.pub` beside it) and
+    sends its public key in the `deploy-key` line; the private key never
+    leaves the host. The workflow adds it as the read-only deploy key
+    `nibfin-runner-<login>`. A public repository gets no key. The Owner
+    removes that deploy key under Settings → Deploy keys together with the
+    collaborator's Runners. A rerun that only finishes configured Runners opens
     no request. GitHub's runner list needs admin, so the read-back confirms a
     collaborator's Runners from the host only.
   - Without write access (also when the gh login cannot see the
