@@ -2,33 +2,43 @@ import { useState } from 'react'
 
 import { IssueBulkActions, RunLegend, type SelectedIssue } from '@/components/issue'
 import { Note } from '@/components/shell/note'
+import { Button } from '@/components/ui/button'
 import { SectionLoading } from '@/components/shell/section-loading'
 import { accessOf, type Change } from '@/lib/issue'
 import { useLoading } from '@/lib/loading-context'
-import { keepSelection } from '@/lib/person'
+import { filterNeedsYou, keepSelection } from '@/lib/person'
 import type { PersonView as PersonData } from '@/lib/status'
 
 import { RepoGroup } from './repo-group'
+import { SummaryTiles } from './summary-tiles'
 
 export interface PersonViewProps {
   data: PersonData
   onChanged: (changes: Change[]) => void
+  // onShowRunners opens the Runner view from the Runners tile.
+  onShowRunners?: () => void
 }
 
 // PersonView lists the open Issues with scope or request assigned to the
-// current gh account, grouped by repository in the order of the data.
-export function PersonView({ data, onChanged }: PersonViewProps) {
+// current gh account, grouped by repository in the order of the data, under
+// summary tiles. The Needs you tile limits the list to the Issues with pending
+// or pause; the tiles always count the whole read.
+export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) {
   const loading = useLoading()
   const listing = loading.has('repos')
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
-  // A new read drops the selected Issues it no longer lists.
-  const [seen, setSeen] = useState(data)
-  if (seen !== data) {
-    setSeen(data)
-    setSelected((prev) => keepSelection(prev, data))
+  const [needsYouOnly, setNeedsYouOnly] = useState(false)
+  const shown = needsYouOnly ? filterNeedsYou(data) : data
+  // A new read, or turning the filter on, drops the selected Issues the
+  // list no longer shows, so bulk actions never act on hidden Issues.
+  const [seen, setSeen] = useState({ data, needsYouOnly })
+  if (seen.data !== data || seen.needsYouOnly !== needsYouOnly) {
+    setSeen({ data, needsYouOnly })
+    setSelected((prev) => keepSelection(prev, shown))
   }
 
-  const repos = data.repos ?? []
+  const repos = shown.repos ?? []
+  const shownCount = repos.reduce((n, r) => n + (r.issues?.length ?? 0), 0)
   const chosen: SelectedIssue[] = repos.flatMap((r) =>
     (r.issues ?? [])
       .filter((i) => selected.has(i.url))
@@ -65,6 +75,7 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
           </p>
         )}
       </div>
+      <SummaryTiles data={data} needsYouOnly={needsYouOnly} onNeedsYouOnly={setNeedsYouOnly} onShowRunners={onShowRunners} />
       {repos.length > 0 && <RunLegend />}
       {data.issuesError && (
         <Note tone="danger" data-note="issues-error">
@@ -77,7 +88,22 @@ export function PersonView({ data, onChanged }: PersonViewProps) {
         </Note>
       )}
       {listing && <SectionLoading label="Reading your Issues…" data-loading="repos" />}
-      {!listing && repos.length === 0 && !data.issuesError && (
+      {needsYouOnly && !listing && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border-subtle bg-muted px-3 py-2 text-sm" data-slot="filter">
+          <p role="status" className="min-w-0 break-words">
+            Showing {shownCount} {shownCount === 1 ? 'Issue that needs' : 'Issues that need'} you
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setNeedsYouOnly(false)} data-action="clear-filter">
+            Clear
+          </Button>
+        </div>
+      )}
+      {needsYouOnly && !listing && repos.length === 0 && !data.issuesError && (
+        <p className="rounded-md border border-dashed border-border-subtle px-4 py-8 text-center text-sm text-muted-foreground" data-empty="needs-you">
+          No listed Issue is pending or paused.
+        </p>
+      )}
+      {!needsYouOnly && !listing && repos.length === 0 && !data.issuesError && (
         <p className="rounded-md border border-dashed border-border-subtle px-4 py-8 text-center text-sm text-muted-foreground" data-empty="issues">
           No open Issues with scope or request are assigned to you.
         </p>

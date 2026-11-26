@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { commands } from './command-fixtures'
-import { hosts, issueURL, longHost, longMachine, longRepo, personView, runnerActivity } from './person-fixtures'
+import { hosts, issueURL, longHost, longMachine, longRepo, personView, runnerActivity, runRepos } from './person-fixtures'
 import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
 
 // Screenshots and checks of the Dashboard shell (#352): the three views, the
@@ -77,6 +77,7 @@ async function expectNoPageScroll(page: Page) {
 const tab = (page: Page, name: string) => page.getByRole('tablist', { name: 'Views' }).getByRole('tab', { name })
 const item = (page: Page, repo: string, n: number): Locator => page.locator(`article[data-issue="${issueURL(repo, n)}"]`)
 const freshness = (page: Page) => page.locator('[data-slot=freshness]')
+const tile = (page: Page, name: string) => page.locator(`[data-view=person] [data-tile=${name}]`)
 
 for (const theme of themes) {
   for (const width of [...widths, 390]) {
@@ -86,6 +87,15 @@ for (const theme of themes) {
       await expect(page.locator('[data-view=person]')).toContainText('Open Issues with scope or request assigned to octo-dev on github.com')
       await expect(freshness(page)).toHaveAttribute('data-state', 'current')
       await expect(freshness(page)).toContainText('Current')
+      // The summary tiles come before the Issue list.
+      await expect(tile(page, 'issues').locator('[data-slot=tile-count]')).toHaveText('9Issues')
+      await expect(tile(page, 'issues').getByRole('img')).toHaveAttribute('aria-label', 'Open Issues by stage: Shape 4, Deliver 3, Other 2')
+      await expect(tile(page, 'needs-you').locator('[data-slot=tile-count]')).toHaveText('3pending or paused')
+      await expect(tile(page, 'runs').getByRole('img')).toHaveAttribute('aria-label', 'Runs by conclusion: Succeeded 0, Failed 0, Running 1')
+      await expect(tile(page, 'runners').locator('[data-slot=runner-counts]')).toHaveText('2 online · 0 busy')
+      await expect(tile(page, 'runners').locator('[data-slot=memory-used]')).toContainText('Memory 10.3 GiB of 15.5 GiB in use')
+      const top = async (l: Locator) => (await l.boundingBox())!.y
+      expect(await top(page.locator('[data-slot=summary]'))).toBeLessThan(await top(page.locator('[data-repo]').first()))
       await shot(page, `shell-person-${theme}-${width}`)
 
       await tab(page, 'Repositories').click()
@@ -222,6 +232,10 @@ for (const theme of themes) {
       await expect(view.locator('[data-note=truncated]')).toContainText('at most 1,000 Issues')
       await expect(view.locator('[data-repo]')).toHaveCount(2)
       await expect(view.locator('[data-empty]')).toHaveCount(0)
+      await expect(tile(page, 'issues').locator('[data-note=tile-error]')).toHaveText(
+        'Issues could not be read: github_error: search of Issues: secondary rate limit',
+      )
+      await expect(tile(page, 'needs-you').locator('[data-note=tile-error]')).toBeVisible()
       await shot(page, `shell-person-errors-${theme}-${width}`)
 
       // A failed search with nothing read is not an empty search.
@@ -233,6 +247,10 @@ for (const theme of themes) {
       w.status = { result: personView({ repos: [] }) }
       await page.getByRole('button', { name: 'Refresh' }).click()
       await expect(view.locator('[data-empty]')).toHaveText('No open Issues with scope or request are assigned to you.')
+      await expect(tile(page, 'issues').locator('[data-slot=tile-count]')).toHaveText('0Issues')
+      await expect(tile(page, 'needs-you').getByRole('button', { name: 'Show only these' })).toBeDisabled()
+      await expect(tile(page, 'needs-you').locator('[data-slot=disabled-reason]')).toHaveText('No Issue is pending or paused.')
+      await expect(tile(page, 'runs').locator('[data-state=no-runs]')).toHaveText('No runs')
       await expectNoPageScroll(page)
       await shot(page, `shell-person-empty-${theme}-${width}`)
       await expectClean(w)
@@ -579,3 +597,85 @@ test('closing a dialog after an apply reads the status again', async ({ page }) 
   await expect.poll(() => w.statusReads).toBe(2)
   await expectClean(w)
 })
+
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`summary tiles and the Needs you filter at ${width}px, ${theme}`, async ({ page }) => {
+      const { w, ops } = await open(page, width, theme, { result: personView({ repos: runRepos, host: hosts.mixed }) })
+      const view = page.locator('[data-view=person]')
+      await expect(tile(page, 'runs').getByRole('img')).toHaveAttribute(
+        'aria-label',
+        'Runs by conclusion: Succeeded 3, Failed 2, Running 2, Other 1',
+      )
+      await expect(tile(page, 'runs').locator('[data-note=runs-incomplete]')).toHaveCount(0)
+      await expect(tile(page, 'runners').locator('[data-slot=runner-counts]')).toHaveText('2 online · 1 busy')
+      await expect(tile(page, 'runners').getByRole('meter', { name: 'Memory in use' })).toHaveAttribute('aria-valuenow', '67')
+      await shot(page, `summary-tiles-${theme}-${width}`, false)
+
+      // A selection of an Issue that does not need you goes when the
+      // filter hides it.
+      await page.getByRole('checkbox', { name: 'Select #101' }).check()
+      await page.getByRole('checkbox', { name: 'Select #102' }).check()
+      const toggle = tile(page, 'needs-you').getByRole('button', { name: 'Show only these' })
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await toggle.click()
+      await expect(tile(page, 'needs-you').getByRole('button', { name: 'Showing only these' })).toHaveAttribute('aria-pressed', 'true')
+      await expect(view.locator('[data-slot=filter]')).toContainText('Showing 3 Issues that need you')
+      await expect(view.locator('article[data-issue]')).toHaveCount(3)
+      await expect(view.locator('[data-repo]')).toHaveCount(2)
+      await expect(item(page, 'acme/app', 101)).toHaveCount(0)
+      await expect(page.getByRole('checkbox', { name: 'Select #102' })).toBeChecked()
+      // The tiles still count the whole read.
+      await expect(tile(page, 'issues').locator('[data-slot=tile-count]')).toHaveText('9Issues')
+      await expectNoPageScroll(page)
+      await shot(page, `summary-needs-you-${theme}-${width}`)
+
+      // A resume follows the new labels: #102 leaves the filtered list.
+      await page.getByRole('region', { name: 'Selected Issues' }).getByRole('button', { name: 'Resume selected' }).click()
+      await expect.poll(() => ops.plans.length).toBe(1)
+      expect(ops.plans[0].issues).toEqual([issueURL('acme/app', 102)])
+      await expect(item(page, 'acme/app', 102)).toHaveCount(0)
+      await expect(view.locator('[data-slot=filter]')).toContainText('Showing 2 Issues that need you')
+      await expect(tile(page, 'needs-you').locator('[data-slot=tile-count]')).toHaveText('2pending or paused')
+
+      await view.locator('[data-slot=filter]').getByRole('button', { name: 'Clear' }).click()
+      await expect(view.locator('[data-slot=filter]')).toHaveCount(0)
+      await expect(view.locator('article[data-issue]')).toHaveCount(9)
+      expect(w.statusReads).toBe(1)
+      await expectClean(w)
+    })
+  }
+}
+
+for (const theme of themes) {
+  for (const width of [375, 1280]) {
+    test(`the Runners tile without a Runner and with read errors at ${width}px, ${theme}`, async ({ page }) => {
+      // Without a complete Runner the page lands on the Runner view.
+      const { w } = await open(page, width, theme, { result: personView({ host: hosts.incomplete }) })
+      await tab(page, 'Person').click()
+      const runners = tile(page, 'runners')
+      await expect(runners.locator('[data-state=no-runner]')).toHaveText('No Runner on this host')
+      await shot(page, `summary-no-runner-${theme}-${width}`, false)
+      await runners.getByRole('button', { name: 'Set up in Runners' }).click()
+      await expect(tab(page, 'Runners')).toHaveAttribute('aria-selected', 'true')
+      await expect(page.locator('[data-guide=no-runner]')).toBeVisible()
+
+      w.status = { result: personView({ host: hosts.githubError }) }
+      await page.getByRole('button', { name: 'Refresh' }).click()
+      await tab(page, 'Person').click()
+      await expect(runners.locator('[data-state=github-not-read]')).toHaveText(
+        'Online and busy not read: github_error: listing the runners of acme/app: HTTP 502',
+      )
+
+      w.status = { result: personView({ host: hosts.machineStopped }) }
+      await page.getByRole('button', { name: 'Refresh' }).click()
+      await expect(runners.locator('[data-note=tile-error]')).toHaveText([
+        'Runners could not be read: machine_stopped: the podman machine nibfin-dev is stopped',
+        'Memory could not be read: machine_stopped: podman machine nibfin-dev is stopped; status does not start it',
+      ])
+      await expectNoPageScroll(page)
+      await shot(page, `summary-runner-errors-${theme}-${width}`, false)
+      await expectClean(w)
+    })
+  }
+}

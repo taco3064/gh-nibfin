@@ -274,3 +274,30 @@ export function runnerActivity(now = Date.now(), over: Record<string, unknown> =
     ...over,
   }
 }
+
+function run(repo: string, n: number, id: number, conclusion: string | null) {
+  return {
+    repo,
+    name: `Deliver #${n}`,
+    workflow: 'nibfin-issue',
+    status: conclusion === null ? 'in_progress' : 'completed',
+    conclusion,
+    createdAt: '2026-11-24T10:00:00Z',
+    url: `${gh}/${repo}/actions/runs/${id}`,
+  }
+}
+
+// runRepos are repos with mixed runs for the summary tiles: succeeded,
+// failed, running and one cancelled, all read in full.
+export const runRepos = repos.map((r) => ({
+  ...r,
+  issues: r.issues.map((i) => {
+    const extra: Record<string, ReturnType<typeof run>[]> = {
+      'acme/app#102': [run('acme/app', 102, 9101, 'failure'), run('acme/app', 102, 9102, 'success')],
+      'acme/docs#7': [run('acme/docs', 7, 9201, 'success'), run('acme/docs', 7, 9202, 'success'), run('acme/docs', 7, 9203, 'timed_out')],
+      'acme/infra#12': [run('acme/infra', 12, 9301, 'cancelled'), run('acme/infra', 12, 9302, null)],
+    }
+    const more = extra[`${r.repo}#${i.number}`]
+    return more ? { ...i, runs: [...i.runs, ...more] } : i
+  }),
+}))
