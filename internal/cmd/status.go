@@ -39,9 +39,9 @@ func writeStatus(w io.Writer, r op.Result) {
 	who, _ := r["user"].(string)
 	host, _ := r["githubHost"].(string)
 	if who != "" {
-		fmt.Fprintf(w, "\nscope Issues assigned to %s on %s:\n", clean(who), clean(host))
+		fmt.Fprintf(w, "\nscope or request Issues assigned to %s on %s:\n", clean(who), clean(host))
 	} else {
-		fmt.Fprintf(w, "\nscope Issues assigned to you on %s:\n", clean(host))
+		fmt.Fprintf(w, "\nscope or request Issues assigned to you on %s:\n", clean(host))
 	}
 	writeErr(w, "user", errOf(r["userError"]))
 	writeErr(w, "issues", errOf(r["issuesError"]))
