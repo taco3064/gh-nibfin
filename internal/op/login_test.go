@@ -46,6 +46,11 @@ func TestLoginHelper(t *testing.T) {
 		shellHelper()
 	case "terminal":
 		fmt.Print("tty-ok")
+	case "out":
+		fmt.Print(os.Getenv("HELPER_OUT"))
+		if exit != 0 {
+			fmt.Fprint(os.Stderr, "ps failed")
+		}
 	}
 	os.Exit(exit)
 }
@@ -98,6 +103,11 @@ type fakeHost struct {
 	idleErr     error
 	wslErr      error
 	autoStarts  int
+
+	// psOut and inspectOut are what podman ps and podman container inspect
+	// print (see host_slots_test.go); psExit is podman ps's exit status.
+	psOut, inspectOut string
+	psExit            int
 }
 
 func (f *fakeHost) NeedsStart() bool { return f.stopped }
@@ -125,6 +135,15 @@ func (f *fakeHost) Podman(ctx context.Context, args ...string) *exec.Cmd {
 	case args[0] == "volume" && args[1] == "create":
 		f.volumes[strings.TrimPrefix(args[3], "nibfin-home-")] = true
 		f.events = append(f.events, "create volume "+args[3])
+	case args[0] == "ps":
+		mode, exit = "out", f.psExit
+		c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
+		c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE="+mode, "HELPER_EXIT="+strconv.Itoa(exit), "HELPER_OUT="+f.psOut)
+		return c
+	case args[0] == "container" && args[1] == "inspect":
+		c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
+		c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=out", "HELPER_EXIT=0", "HELPER_OUT="+f.inspectOut)
+		return c
 	case args[0] == "run":
 		p := args[len(args)-3]
 		if args[len(args)-1] == "status" {
