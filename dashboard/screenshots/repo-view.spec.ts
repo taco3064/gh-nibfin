@@ -273,6 +273,27 @@ for (const [width, theme] of [
     expect(ends.length).toBeGreaterThan(20)
     expect(new Set(ends).size).toBe(ends.length)
 
+    // Each node is named for assistive technology, and keyboard focus on a
+    // node or a control inside one is always in sight.
+    await expect(region.locator('.react-flow__node[data-id="acme/platform#2"]')).toHaveAttribute(
+      'aria-label',
+      '#2 Second foundation: configuration loader, stage Done, 1 closed blocker',
+    )
+    await region.focus()
+    for (let i = 0; i < 14; i++) {
+      await page.keyboard.press('Tab')
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const el = document.activeElement!
+            const r = el.closest('[data-slot=graph-region]')!.getBoundingClientRect()
+            const t = el.getBoundingClientRect()
+            return t.left >= r.left - 0.5 && t.right <= r.right + 0.5 && t.top >= r.top - 0.5 && t.bottom <= r.bottom + 0.5
+          }),
+        )
+        .toBe(true)
+    }
+
     // Searching for #2 fits it in the view; its closed blocker stays a marker.
     await page.getByRole('searchbox', { name: 'Search Issues' }).fill('#2')
     await expect(page.locator('[data-slot=graph-count]')).toHaveText(`Showing 1 of ${platform.length} open Issues · 0 shown as context · 1 closed blocker collapsed`)

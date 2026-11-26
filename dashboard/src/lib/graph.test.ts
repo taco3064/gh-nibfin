@@ -11,6 +11,7 @@ import {
   groupLabel,
   layoutGraph,
   nodeKey,
+  nodeName,
   portPoint,
   positionGraph,
   type GraphEdge,
@@ -319,5 +320,22 @@ describe('positionGraph', () => {
     expect(p.order).toEqual([k(1), k(2)])
     expect(p.boxes.size).toBe(2)
     expect(positionGraph([], [], new Map(), 'TB')).toMatchObject({ width: 0, height: 0, order: [], edges: [] })
+  })
+})
+
+describe('nodeName', () => {
+  const g = buildGraph({
+    repo,
+    issues: [issue(1, [blocker(7, { repo: 'acme/infra', title: 'Infra prerequisite' }), blocker(9, { state: 'CLOSED' })], { title: 'Add export', labels: ['scope', 'shaped'] })],
+  })
+
+  it('names an Issue by label, title and stage, then context and closed blockers', () => {
+    expect(nodeName(g, g.nodes.get(k(1))!, false, 0)).toBe('#1 Add export, stage Deliver')
+    expect(nodeName(g, g.nodes.get(k(1))!, true, 1)).toBe('#1 Add export, stage Deliver, context: blocks a shown Issue, 1 closed blocker')
+    expect(nodeName(g, g.nodes.get(k(1))!, false, 3)).toBe('#1 Add export, stage Deliver, 3 closed blockers')
+  })
+
+  it('names a blocker outside the list by its state', () => {
+    expect(nodeName(g, g.nodes.get(k(7, 'acme/infra'))!, true, 0)).toBe('acme/infra#7 Infra prerequisite, open blocker not listed here, context: blocks a shown Issue')
   })
 })

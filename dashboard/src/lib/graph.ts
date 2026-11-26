@@ -6,7 +6,7 @@
 
 import dagre from '@dagrejs/dagre'
 
-import { blockersView, stageOf, type Stage } from '@/lib/issue'
+import { blockersView, stageLabels, stageOf, type Stage } from '@/lib/issue'
 import { ownerRepo, type Blocker, type RepoView, type StatusIssue } from '@/lib/status'
 
 export type GraphNode =
@@ -423,4 +423,18 @@ export function edgePath(placement: Pick<Placement, 'direction' | 'boxes'>, edge
   // A cubic with both controls at x - bow reaches about 0.75 bow left.
   const bow = Math.min((graphSpacing.gutter - 6) / 0.75, Math.max(16, Math.abs(p.y - q.y) / 6))
   return `M ${r(p.x)} ${r(p.y)} C ${r(p.x - bow)} ${r(p.y)}, ${r(q.x - bow)} ${r(q.y)}, ${r(q.x)} ${r(q.y)}`
+}
+
+// nodeName is the accessible name of a node on the canvas: its label and
+// title, then its stage (from labels) or blocker state, whether it stands
+// as context and how many closed blockers its marker holds.
+export function nodeName(graph: Pick<Graph, 'repo'>, node: GraphNode, context: boolean, closed: number): string {
+  const parts = [
+    node.kind === 'issue'
+      ? `${nodeLabel(graph, node)} ${node.issue.title}, stage ${stageLabels[stageOf(node.issue.labels)]}`
+      : `${nodeLabel(graph, node)} ${node.blocker.title}, ${node.blocker.state.toUpperCase() === 'CLOSED' ? 'closed' : 'open'} blocker not listed here`,
+  ]
+  if (context) parts.push('context: blocks a shown Issue')
+  if (closed > 0) parts.push(`${closed} closed ${closed === 1 ? 'blocker' : 'blockers'}`)
+  return parts.join(', ')
 }
