@@ -179,6 +179,7 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 	if err := a.validate(); err != nil {
 		return plan, err
 	}
+	Checking(ctx, "host")
 	if err := a.detect(ctx); err != nil {
 		return plan, err
 	}
@@ -188,6 +189,7 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 		return plan, err
 	}
 	plan.Steps = append(plan.Steps, hostSteps...)
+	Checked(ctx, hostSteps...)
 	if a.host.NeedsStart() {
 		// Nothing can be asked of a stopped machine; Apply derives the
 		// rest after the start.
@@ -198,20 +200,20 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 		linger, tools := lingerStep(where), volumeStep(toolsVolume)
 		linger.AfterStart, tools.AfterStart, tools.Detail = true, true, where
 		plan.Steps = append(plan.Steps, start, linger, tools)
-		lp, err := a.login().Plan(ctx)
+		Checked(ctx, start, linger, tools)
+		logins, err := a.loginSteps(ctx)
 		if err != nil {
 			return plan, err
 		}
-		for _, s := range lp.Steps {
-			if s.Action != actStart {
-				plan.Steps = append(plan.Steps, s)
-			}
-		}
-		plan.Steps = append(plan.Steps, Step{ID: "runners", Action: actAddRunners, Target: fmt.Sprintf("%s ×%d", a.prov.name, a.p.Count),
-			Detail: "repository and slots chosen after start", Next: "configured and registered", AfterStart: true})
+		plan.Steps = append(plan.Steps, logins...)
+		later := Step{ID: "runners", Action: actAddRunners, Target: fmt.Sprintf("%s ×%d", a.prov.name, a.p.Count),
+			Detail: "repository and slots chosen after start", Next: "configured and registered", AfterStart: true}
+		plan.Steps = append(plan.Steps, later)
+		Checked(ctx, later)
 		return plan, nil
 	}
 	plan.Steps = append(plan.Steps, hostStep(where, false))
+	Checked(ctx, hostStep(where, false))
 	env, err := a.load(ctx)
 	if err != nil {
 		return plan, err
@@ -221,6 +223,24 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 	plan.Steps = append(plan.Steps, steps...)
 	plan.Notes = notes
 	return plan, err
+}
+
+// loginSteps are the login plan's items runner add keeps: all but the
+// machine start, which runner add plans itself. The nested plan reports its
+// checks only; the kept items are reported here.
+func (a *runnerAdd) loginSteps(ctx context.Context) ([]Step, error) {
+	lp, err := a.login().Plan(withoutChecked(ctx))
+	if err != nil {
+		return nil, err
+	}
+	steps := []Step{}
+	for _, s := range lp.Steps {
+		if s.Action != actStart {
+			steps = append(steps, s)
+		}
+	}
+	Checked(ctx, steps...)
+	return steps, nil
 }
 
 // The item steps of runner add that runner remove and the read-back share.
@@ -257,6 +277,7 @@ func entryState(as host.Autostart) string {
 func (a *runnerAdd) hostSteps(ctx context.Context) ([]Step, error) {
 	steps := []Step{}
 	if a.host.WSL() {
+		Checking(ctx, host.WSLConfig)
 		if err := a.host.CheckWSL(ctx); err != nil {
 			return nil, autostartError(ctx, err)
 		}
@@ -273,6 +294,7 @@ func (a *runnerAdd) hostSteps(ctx context.Context) ([]Step, error) {
 		}
 		steps = append(steps, s)
 	}
+	Checking(ctx, "autostart entry")
 	as, err := a.host.Autostart(ctx)
 	if err != nil {
 		return nil, autostartError(ctx, err)
@@ -348,10 +370,12 @@ func (a *runnerAdd) load(ctx context.Context) (*addEnv, error) {
 	if err != nil {
 		return nil, err
 	}
+	Checking(ctx, "GitHub login")
 	user, err := gh.User(ctx)
 	if err != nil {
 		return nil, err
 	}
+	Checking(ctx, "permissions on "+repo)
 	perms, err := gh.RepoPermissions(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -450,6 +474,7 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 		linger.Current = "enabled"
 	}
 	steps = append(steps, linger)
+	Checked(ctx, linger)
 	has, err := volumeExists(ctx, a.host, toolsVolume)
 	if err != nil {
 		return nil, nil, err
@@ -457,18 +482,17 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 	tools := volumeStep(toolsVolume)
 	tools.Detail, tools.Current, tools.NoChange = where, presence(has), has
 	steps = append(steps, tools)
-	lp, err := a.login().Plan(ctx)
+	Checked(ctx, tools)
+	logins, err := a.loginSteps(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, s := range lp.Steps {
-		if s.Action != actStart {
-			steps = append(steps, s)
-		}
-	}
+	steps = append(steps, logins...)
+	reported := len(steps)
 	slots, fresh := a.slots(env.inv)
 	request := !env.admin && needFiles(env.inv, slots)
 	if request {
+		Checking(ctx, "SSH key")
 		k, err := a.sshKey(ctx, env)
 		if err != nil {
 			return nil, nil, err
@@ -487,6 +511,7 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 	detail := env.repo + ", labels " + a.labels(env) + ", .env NIBFIN_PROVIDER=" + a.prov.name
 	var notes []string
 	if !env.admin {
+		Checking(ctx, "job-started hook")
 		hook, err := a.planHook(ctx, env)
 		if err != nil {
 			return nil, nil, err
@@ -512,6 +537,7 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 	if request {
 		steps = append(steps, requestCloseStep(env.repo))
 	}
+	Checked(ctx, steps[reported:]...)
 	return steps, append(a.advice(env.probe, len(env.inv.Runners)+fresh), notes...), nil
 }
 

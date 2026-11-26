@@ -120,6 +120,7 @@ type runnerHost interface {
 
 // listRunners discovers the runners on the host.
 func listRunners(ctx context.Context, h runnerHost) (*runners.Inventory, error) {
+	Checking(ctx, "Runners on "+h.Describe())
 	inv, err := runners.List(ctx, h, providerNames())
 	if err != nil {
 		if ctx.Err() != nil {
@@ -257,6 +258,7 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 	if err != nil {
 		return plan, err
 	}
+	Checking(ctx, "host")
 	if err := l.detect(ctx); err != nil {
 		return plan, err
 	}
@@ -265,6 +267,7 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 	// Apply checks again after the start.
 	stopped := l.host.NeedsStart()
 	plan.Steps = append(plan.Steps, hostStep(where, stopped))
+	Checked(ctx, plan.Steps...)
 	if !stopped {
 		have, err := l.allowed(ctx)
 		if err != nil {
@@ -307,6 +310,7 @@ func (l *login) Plan(ctx context.Context) (Plan, error) {
 		}
 		ls.NoChange = !need
 		plan.Steps = append(plan.Steps, ls)
+		Checked(ctx, vs, ls)
 	}
 	plan.ReadOnly = len(plan.Changes()) == 0
 	return plan, nil
@@ -575,6 +579,7 @@ func quiet(ctx context.Context, h runnerHost, args ...string) (int, *bytes.Buffe
 }
 
 func volumeExists(ctx context.Context, h runnerHost, volume string) (bool, error) {
+	Checking(ctx, volume+" volume")
 	code, stderr, err := quiet(ctx, h, "volume", "exists", volume)
 	switch {
 	case err != nil:
@@ -606,6 +611,7 @@ func (l *login) check(ctx context.Context, p provider) (bool, error) {
 
 // runCheck runs the login check argv on h; only its exit status is used.
 func runCheck(ctx context.Context, h runnerHost, p provider, argv []string) (bool, error) {
+	Checking(ctx, p.name+" login")
 	code, stderr, err := quiet(ctx, h, argv...)
 	switch {
 	case err != nil:
