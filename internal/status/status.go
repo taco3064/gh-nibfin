@@ -57,7 +57,7 @@ var (
 )
 
 // New is the entry point of status. An empty Repo is the person view: the
-// current gh user's open scope Issues across repositories. A Repo,
+// current gh user's open scope or request Issues across repositories. A Repo,
 // HOST/OWNER/REPO, is the repository view.
 func New(p op.RepoParams) op.Operation { return &status{p: p} }
 
@@ -373,8 +373,9 @@ func toIssue(j issueJSON) Issue {
 	return is
 }
 
-// person reads the person view into d: the open scope Issues assigned to
-// the current gh user, found by GitHub's search and grouped by repository.
+// person reads the person view into d: the open scope or request Issues
+// assigned to the current gh user, found by GitHub's search (label:scope,request
+// matches either label) and grouped by repository.
 // The Issues come first; their other sections follow.
 func (r *reader) person(ctx context.Context, d *personRead, pr *progress, wait func() op.RunnersReport) {
 	var user struct {
@@ -449,7 +450,7 @@ func (r *reader) search(ctx context.Context) ([]issueJSON, bool, *op.Error) {
 	total := 0
 	for page := 1; len(all) < maxResults; page++ {
 		q := url.Values{
-			"q":        {"is:issue is:open label:scope assignee:@me"},
+			"q":        {"is:issue is:open label:scope,request assignee:@me"},
 			"per_page": {fmt.Sprint(perPage)},
 			"page":     {fmt.Sprint(page)},
 		}
@@ -458,7 +459,7 @@ func (r *reader) search(ctx context.Context) ([]issueJSON, bool, *op.Error) {
 			Items      []issueJSON `json:"items"`
 		}
 		if err := r.get(ctx, "search/issues?"+q.Encode(), &body); err != nil {
-			return all, total > len(all), apiErr(op.CodeGitHubAPIFailed, "search the open scope Issues assigned to you", err)
+			return all, total > len(all), apiErr(op.CodeGitHubAPIFailed, "search the open scope or request Issues assigned to you", err)
 		}
 		total = body.TotalCount
 		all = append(all, body.Items...)

@@ -96,6 +96,27 @@ func TestIssueWakeScript(t *testing.T) {
 			message: "alice has read permission; not routed",
 		},
 		{
+			name:  "request issue event by a writer",
+			env:   []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=request", "ISSUE=7", `ISSUE_LABELS=["request"]`},
+			calls: []string{permission, dispatch + " -f issue=7"},
+		},
+		{
+			name:  "request and scope issue event by a writer",
+			env:   []string{"EVENT_NAME=issues", "ACTION=edited", "LABEL=", "ISSUE=7", `ISSUE_LABELS=["request","scope"]`},
+			calls: []string{permission, dispatch + " -f issue=7"},
+		},
+		{
+			name:    "request issue event by a reader",
+			env:     []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=request", "ISSUE=7", `ISSUE_LABELS=["request"]`, "FAKE_PERMISSION=read"},
+			calls:   []string{permission},
+			message: "alice has read permission; not routed",
+		},
+		{
+			name:    "issue event without scope or request",
+			env:     []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=bug", "ISSUE=7", `ISSUE_LABELS=["bug"]`},
+			message: "#7 has no scope or request label; not routed",
+		},
+		{
 			name:  "issue event with a failed permission read",
 			env:   []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=bug", "ISSUE=7", `ISSUE_LABELS=["scope"]`, "FAKE_PERMISSION=fail"},
 			fail:  true,

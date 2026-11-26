@@ -240,10 +240,10 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	}
 	initCmd := repoCmd("init", "Set up Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Init(p) })
 	initCmd.Long = "Set up Nibfin in a repository and open one PR that imports its workflows.\n\n" +
-		"It sets the labels scope, shaped, delivered, pause and pending; pull request creation\n" +
-		"limited to collaborators; approval required for fork PR workflows (all external\n" +
-		"contributors on a public repository, \"Require approval for fork pull request\n" +
-		"workflows\" on a private one); \"Automatically delete head branches\" off; only\n" +
+		"It sets the labels request, scope, shaped, delivered, pause and pending; pull request\n" +
+		"creation limited to collaborators; approval required for fork PR workflows (all\n" +
+		"external contributors on a public repository, \"Require approval for fork pull\n" +
+		"request workflows\" on a private one); \"Automatically delete head branches\" off; only\n" +
 		"rebase merge allowed; \"Require branches to be up to date before merging\" off in\n" +
 		"the repository rulesets and the branch protection on the default branch, with\n" +
 		"every other rule kept (it creates none, and lists inherited organization or\n" +
@@ -278,8 +278,9 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		Long: "Show the runner host, logins and the Issues Nibfin works on. It only reads.\n\n" +
 			"Always: the podman machine and its free memory, each Runner's service against\n" +
 			"GitHub's online/busy, and each provider's login.\n\n" +
-			"Without -R (the person view): your open scope Issues across repositories, with\n" +
-			"pause/pending, the pending comment and whether each repository uses the latest image.\n" +
+			"Without -R (the person view): your open scope or request Issues across\n" +
+			"repositories, with pause/pending, the pending comment and whether each repository\n" +
+			"uses the latest image.\n" +
 			"With -R (the repository view): all open Issues of that repository, its image and\n" +
 			"whether a Nibfin run succeeded after the init PR merged.",
 		RunE: func(c *cobra.Command, _ []string) error {

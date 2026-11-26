@@ -94,6 +94,10 @@ export const fixtures: FixtureIssue[] = [
     issue: { ...base('acme/app', 105, 'Spike: evaluate a new charting library', []), runs: undefined, blockedBy: undefined },
   },
   {
+    repo: 'acme/app',
+    issue: { ...base('acme/app', 106, 'Customers ask for exports in more formats', ['request']), runs: [] },
+  },
+  {
     repo: 'acme/docs',
     issue: { ...base('acme/docs', 7, 'Rewrite the getting started guide', ['scope', 'pending']) },
   },

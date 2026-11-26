@@ -29,7 +29,9 @@ const (
 type probeKind int
 
 const (
-	// assigned lists the open scope Issues assigned to the gh user.
+	// assigned lists the open Issues with one label (scope or request)
+	// assigned to the gh user. The /issues list ANDs its labels, so each
+	// label has its own probe.
 	assigned probeKind = iota
 	// runs lists one Nibfin workflow's runs of a repository.
 	runs
@@ -42,6 +44,7 @@ const (
 type probe struct {
 	kind     probeKind
 	repo     string // OWNER/REPO; empty for assigned
+	label    string // assigned only
 	workflow string // runs only
 
 	pages []page
@@ -74,7 +77,7 @@ func (p *probe) id() string {
 	case folder:
 		return "folder " + strings.ToLower(p.repo)
 	}
-	return "assigned"
+	return "assigned " + p.label
 }
 
 func base(repo string) string {
@@ -90,7 +93,7 @@ func (p *probe) path(n int) string {
 		return base(p.repo) + "/contents/.github/workflows"
 	}
 	q := url.Values{
-		"filter": {"assigned"}, "state": {"open"}, "labels": {"scope"},
+		"filter": {"assigned"}, "state": {"open"}, "labels": {p.label},
 		"sort": {"created"}, "direction": {"asc"},
 		"per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(n)},
 	}
@@ -104,7 +107,7 @@ func (p *probe) what() string {
 	case folder:
 		return "the workflow files of " + p.repo
 	}
-	return "the open scope Issues assigned to you"
+	return "the open " + p.label + " Issues assigned to you"
 }
 
 // outcome is what one check found.

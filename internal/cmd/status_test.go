@@ -85,7 +85,7 @@ func TestStatusPersonText(t *testing.T) {
 		"login claude: logged in\n",
 		"login codex: podman_failed: stop\n",
 		"latest image: sha256:aaaaaaaaaaaa\n",
-		"scope Issues assigned to me on github.com:\n",
+		"scope or request Issues assigned to me on github.com:\n",
 		"o/r  image: sha256:aaaaaaaaaaaa (latest)\n",
 		"  #1 One[31m  [pause]\n",
 		"  #2 Two  [pending https://github.com/o/r/issues/2#issuecomment-9]\n",

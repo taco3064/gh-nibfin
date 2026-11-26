@@ -41,7 +41,7 @@ function expectValid(v: unknown): void {
 describe('repo data against schema/status.schema.json', () => {
   it('validates Issues with blockers, runs, runsTruncated and blockedByError', async () => {
     const fake = new FakeGitHub()
-    fake.set(issuesPath(cli), [issueJSON(1, { labels: [{ name: 'pending' }] }), issueJSON(2, { created_at: '2026-11-01T00:00:00Z' }), issueJSON(3)])
+    fake.set(issuesPath(cli), [issueJSON(1, { labels: [{ name: 'pending' }] }), issueJSON(2, { created_at: '2026-11-01T00:00:00Z' }), issueJSON(3, { labels: [{ name: 'request' }] })])
     fake.blockers['taco3064/gh-nibfin#1'] = [
       { repo: 'taco3064/nibfin-core', number: 4, title: 'Open', state: 'OPEN', url: 'https://github.com/taco3064/nibfin-core/issues/4' },
       { repo: cli, number: 3, title: 'Closed', state: 'CLOSED', url: 'https://github.com/taco3064/gh-nibfin/issues/3' },
@@ -57,6 +57,7 @@ describe('repo data against schema/status.schema.json', () => {
     expect(one.pending).toBe(true)
     expect(two.runsTruncated).toBe(true)
     expect(three.blockedByError).toBeDefined()
+    expect(three.labels).toEqual(['request'])
     expect(one.runs?.length).toBeGreaterThan(0)
     for (const r of repos) expectValid(r)
   })

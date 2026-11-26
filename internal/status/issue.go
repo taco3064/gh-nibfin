@@ -27,7 +27,7 @@ type issueStateJSON struct {
 // runners the host's runner report, the source of the execution repository.
 //
 // listed is whether the Issue still belongs to the person view: an open
-// Issue (not a pull request) with the scope label that user is assigned to,
+// Issue (not a pull request) with the scope or request label that user is assigned to,
 // the terms of the person view's search. Only a listed Issue is built, with
 // its pending comment, blockers and runs exactly as status reads them. A
 // missing (404) or deleted (410) Issue is not listed and no error.
@@ -64,12 +64,12 @@ func listedIssue(j issueStateJSON, repo, user string) bool {
 	if got, ok := repoOfURL(j.RepositoryURL); !ok || !strings.EqualFold(got, repo) {
 		return false
 	}
-	scope, assigned := false, false
+	nibfin, assigned := false, false
 	for _, l := range j.Labels {
-		scope = scope || strings.EqualFold(l.Name, "scope")
+		nibfin = nibfin || strings.EqualFold(l.Name, "scope") || strings.EqualFold(l.Name, "request")
 	}
 	for _, a := range j.Assignees {
 		assigned = assigned || strings.EqualFold(a.Login, user)
 	}
-	return scope && assigned
+	return nibfin && assigned
 }
