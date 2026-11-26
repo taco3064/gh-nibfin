@@ -229,7 +229,7 @@ func TestRenderSharedRunner(t *testing.T) {
 		"  queue: max\n",
 		"    uses: ./.github/workflows/nibfin-job.yml\n",
 		"      token: ${{ secrets.NIBFIN_GITHUB_TOKEN }}\n",
-		"        options: [route, shape, deliver, review]\n",
+		"        options: [route, scope, shape, deliver, review]\n",
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("nibfin-shared-runner.yml has no %q", want)
@@ -315,7 +315,7 @@ func TestRenderIssueCaller(t *testing.T) {
 	}
 	for _, want := range []string{
 		`gh workflow run nibfin-shared-runner.yml --repo "$EXECUTION_REPO" "${inputs[@]}"`,
-		`if ! jq -e 'index("scope") != null' <<<"$ISSUE_LABELS" >/dev/null; then`,
+		`if ! jq -e 'index("scope") != null or index("request") != null' <<<"$ISSUE_LABELS" >/dev/null; then`,
 		`if [ "$PUSH_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then`,
 	} {
 		if !strings.Contains(step.Run, want) {
