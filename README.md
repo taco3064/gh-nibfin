@@ -55,6 +55,14 @@ the latest attested main image.
   starts). Without a valid value the Job stops before any container starts.
   No repository variable or input chooses the provider; an old
   `NIBFIN_PROVIDER` repository variable is unused and can be deleted.
+- The stage Job takes the model from the same Runner: its `.env` may set
+  `NIBFIN_MODEL=<model>`, which applies to that Runner only and is read when
+  the runner starts, so restart the Runner after changing it. The Job passes
+  `--model` only when the value is set; without it, Core's default for the
+  provider applies (Claude: Opus; Codex: the Codex CLI's own default). No
+  repository variable or input chooses the model, so Claude and Codex Runners
+  can serve one execution repository side by side; an old `NIBFIN_MODEL`
+  repository variable is unused and can be deleted.
 - Event text, inputs and repository variables reach every script only as
   quoted environment variables, never as `${{ }}` inside a `run:` script.
 - `nibfin-issue.yml` also runs when a review is submitted on a pull request.
@@ -198,7 +206,7 @@ current repository gets no PR. Writing `.github/workflows` needs the
 Then, whether or not the workflows are current, upgrade brings the Runners on
 this host to what `runner add` sets up today. For each configured Runner the
 plan shows its `.env` provider line (`NIBFIN_PROVIDER=<provider>`, other lines
-kept), its systemd user service (the current unit text, enabled and active)
+such as `NIBFIN_MODEL` kept), its systemd user service (the current unit text, enabled and active)
 and, when the gh login is admin of the Runners' repository, its custom labels
 on GitHub (`nibfin` and `nibfin-<user id>`, set with GitHub's set-labels API;
 GitHub's read-only labels stay), each "no change" when already current.
@@ -230,7 +238,11 @@ Windows and macOS.
   (`self-hosted` among them). Only an admin's Runners also get `nibfin`, which
   routing runs on, so routing never runs on a collaborator's host.
 - Each Runner's `.env` holds `NIBFIN_PROVIDER=<provider>` before its service
-  first starts; the stage Job reads the provider from it. `runner add` leaves
+  first starts; the stage Job reads the provider from it. The `.env` may also
+  set `NIBFIN_MODEL=<model>` for that Runner only (see
+  [Workflow templates](#workflow-templates)); `runner add` does not write that
+  line, and `runner add` and `upgrade` keep it and every other line besides
+  the provider line. `runner add` leaves
   Runners that were already complete as they are; `gh nibfin upgrade` brings
   existing Runners to this.
 - The command takes one of two routes by the gh login's access to the

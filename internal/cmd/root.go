@@ -120,6 +120,10 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"Runners reuse the repository the existing Runners use. Each Runner carries the label\n" +
 			"nibfin-<user id> (and nibfin when you are admin of the repository), names its provider\n" +
 			"as NIBFIN_PROVIDER in its .env, and runs as a systemd user service.\n\n" +
+			"A Runner's .env may also set NIBFIN_MODEL=<model> for that Runner only; without it,\n" +
+			"Core's default for the provider applies. runner add does not write that line, and\n" +
+			"runner add and upgrade keep it. Restart the Runner after changing its .env. An old\n" +
+			"NIBFIN_MODEL repository variable is unused and can be deleted.\n\n" +
 			"An admin registers directly. A collaborator with write access gets the registration\n" +
 			"token through a \"Nibfin runner request\" Issue, encrypted to an SSH key of their GitHub\n" +
 			"account that is in ~/.ssh; the command waits up to 10 minutes for the answer. On a\n" +
@@ -235,7 +239,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		"differ from the default branch.\n\n" +
 		"The host part runs whether or not the workflows are current. Each configured\n" +
 		"Runner on this host gets what runner add sets up today: NIBFIN_PROVIDER in its\n" +
-		".env, the current systemd user unit, enabled and active, and, when the gh login\n" +
+		".env (other lines, such as NIBFIN_MODEL, are kept), the current systemd user unit, enabled and active, and, when the gh login\n" +
 		"is admin of the Runners' repository, the labels nibfin and nibfin-<user id>.\n" +
 		"Without admin the labels are left as they are. Runners are changed one at a\n" +
 		"time; a Runner running a Job is restarted only after the Job ends, so the\n" +
