@@ -361,9 +361,10 @@ test('the header freshness and Refresh follow the repository read', async ({ pag
   await pick(page, 'acme/platform')
   await expect(page.locator('[data-slot=repo-summary]')).toBeVisible()
   await expect(freshness(page)).toHaveAttribute('data-state', 'current')
-  // The repository read has no live updates, so the person stream's Live
-  // badge is not shown beside its time.
-  await expect(page.locator('[data-slot=live]')).toHaveCount(0)
+  // The repository read has no live updates, so the header says that it
+  // updates on Refresh instead of the person stream's Live badge.
+  await expect(page.locator('[data-slot=live]')).toHaveAttribute('data-state', 'manual')
+  await expect(page.locator('[data-slot=live]')).toHaveText('Updates on Refresh')
   const personTime = await (async () => {
     await tab(page, 'Person').click()
     await expect(page.locator('[data-slot=live]')).toHaveText('Live')
@@ -392,6 +393,26 @@ test('the header freshness and Refresh follow the repository read', async ({ pag
   await page.getByRole('button', { name: 'Refresh' }).click()
   await expect.poll(() => lastBody(w)).toEqual({})
   await expectClean(w, ['Failed to load resource: the server responded with a status of 502'])
+})
+
+test.describe('in a Traditional Chinese browser', () => {
+  test.use({ locale: 'zh-TW', timezoneId: 'Asia/Taipei' })
+
+  test('times stay in the one English format', async ({ page }) => {
+    const { w } = await open(page, 1280, 'light')
+    await pick(page, 'acme/platform')
+    const summary = page.locator('[data-slot=repo-summary]')
+    await expect(summary).toBeVisible()
+    await expect(freshness(page).locator('time')).toHaveText(/^\d{2}:\d{2}:\d{2}$/)
+    const times = summary.locator('time')
+    expect(await times.count()).toBeGreaterThan(0)
+    for (const t of await times.all()) {
+      await expect(t).toHaveText(/^\d{1,2} [A-Z][a-z]{2,3} \d{4}, \d{2}:\d{2}$/)
+      expect(Number.isNaN(Date.parse((await t.getAttribute('datetime')) ?? ''))).toBe(false)
+    }
+    await shot(page, 'repo-zh-tw-light-1280', false)
+    await expectClean(w)
+  })
 })
 
 test('the reading states of the list and of a repository', async ({ page }) => {

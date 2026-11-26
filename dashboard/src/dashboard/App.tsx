@@ -6,7 +6,7 @@ import { PersonView } from '@/components/person/person-view'
 import { RepoView } from '@/components/repo/repo-view'
 import { ConnectionCard } from '@/components/shell/connection-card'
 import { FreshnessIndicator } from '@/components/shell/freshness-indicator'
-import { LiveBadge, LiveNotes } from '@/components/shell/live-status'
+import { LiveBadge, LiveNotes, RefreshOnlyBadge } from '@/components/shell/live-status'
 import { Note } from '@/components/shell/note'
 import { RunnerView } from '@/components/runner/runner-view'
 import { ThemeControl } from '@/components/theme-control'
@@ -66,7 +66,7 @@ export function App() {
                 })}
               </TabsList>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                {active === status && <LiveBadge live={status.live} />}
+                {active === status ? <LiveBadge live={status.live} /> : <RefreshOnlyBadge />}
                 <FreshnessIndicator readAt={active.readAt} />
                 <Button variant="outline" size="sm" onClick={active.refresh} disabled={active.reading} data-action="refresh">
                   {active.reading ? (

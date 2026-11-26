@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { endsAt, providerTitle, running, safeUrl, type LoginStage, type LoginState } from '@/lib/login'
 import { sendCode, type ApiError } from '@/lib/session'
-import { cn } from '@/lib/utils'
+import { cn, formatClock } from '@/lib/utils'
 
 type Fetch = typeof fetch
 
@@ -183,10 +183,6 @@ function CodeForm({
   )
 }
 
-function endTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
 // LoginPanel shows one provider's login of the CLI's own flow: the URL,
 // then the pasted code field (Claude) or the one-time code to copy (Codex),
 // and its steps to the read-back.
@@ -223,7 +219,7 @@ export function LoginPanel({
       )}
       {state.stage === 'authorizing' && (
         <p data-slot="login-timeout" className="text-xs text-muted-foreground">
-          Ends at <time dateTime={new Date(endsAt(state)).toISOString()}>{endTime(endsAt(state))}</time> if not authorized.
+          Ends at <time dateTime={new Date(endsAt(state)).toISOString()}>{formatClock(endsAt(state))}</time> if not authorized.
         </p>
       )}
       {state.stage === 'done' && (
