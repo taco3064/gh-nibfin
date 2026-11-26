@@ -46,9 +46,17 @@ export function App() {
           <h1 className="flex items-center">
             {/* Wide screens show the wordmark, narrow ones the "b" mark. Both are
                 same-origin files: ?no-inline keeps the wordmark out of a data:
-                URL, which the Dashboard CSP (img-src 'self') would block. */}
-            <img src={wordmark} alt="Nibfin" width={287} height={96} className="hidden h-8 w-auto sm:block" />
-            <img src="/apple-touch-icon.png" alt="Nibfin" width={180} height={180} className="h-8 w-auto sm:hidden" />
+                URL, which the Dashboard CSP (img-src 'self') would block. The
+                artwork is drawn for a dark background; nf-brand-image gives it
+                dark letters in the light theme only (theme.css). */}
+            <img src={wordmark} alt="Nibfin" width={287} height={96} className="nf-brand-image hidden h-8 w-auto sm:block" />
+            <img
+              src="/apple-touch-icon.png"
+              alt="Nibfin"
+              width={180}
+              height={180}
+              className="nf-brand-image h-8 w-auto sm:hidden"
+            />
             <span className="sr-only"> dashboard</span>
           </h1>
           <ThemeControl />

@@ -28,3 +28,10 @@
     outline-offset: 3px;
   }
 }
+
+/* The brand artwork (wordmark and "b" mark) is near-white with dark edges,
+   drawn for a dark background. In the light theme only, invert it so the
+   letters turn dark; hue-rotate keeps the tinted parts near their own hue. */
+:root[data-theme='light'] .nf-brand-image {
+  filter: invert(1) hue-rotate(180deg);
+}

@@ -112,6 +112,12 @@ a[aria-current='page']:hover {
 .hero a {
   text-decoration: none;
 }
+/* The header wordmark and the home hero "b" mark are near-white artwork with
+   dark edges, drawn for a dark background. In the light theme only, invert
+   them so the letters turn dark; hue-rotate keeps tinted parts near their hue. */
+:root[data-theme='light'] :is(.site-title img, .hero > img) {
+  filter: invert(1) hue-rotate(180deg);
+}
 .sl-markdown-content :not(pre) > code {
   color: var(--nf-code);
 }
