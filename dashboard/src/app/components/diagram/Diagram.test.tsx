@@ -108,3 +108,12 @@ describe('Diagram text list', () => {
     expect(listItems(html)).toEqual(['A: Ends here.', 'B?'])
   })
 })
+
+describe('Diagram layout', () => {
+  it('draws both by default', () => {
+    const html = renderToStaticMarkup(<Diagram spec={lanesExample} title="Lanes" />)
+    const svgs = html.match(/<svg[^>]*>/g) ?? []
+    expect(svgs.map((s) => s.match(/data-direction="(\w+)"/)![1])).toEqual(['LR', 'TB'])
+    expect(html).toContain('md:hidden')
+  })
+})

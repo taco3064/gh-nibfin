@@ -13,6 +13,12 @@ import {
   type Point,
 } from './layout'
 
+// DiagramLayout picks the drawings: 'responsive' (the default) draws left to
+// right from the md breakpoint up and top to bottom below it; 'vertical'
+// draws top to bottom at every width, for a flow too long to read across the
+// content column.
+export type DiagramLayout = 'responsive' | 'vertical'
+
 export interface DiagramProps {
   spec: DiagramSpec
   // title is the figure's caption; description, when given, follows it.
@@ -22,7 +28,7 @@ export interface DiagramProps {
   // layout 'responsive' (the default) draws left to right from the md
   // breakpoint up and top to bottom below it; 'vertical' draws top to bottom
   // at every width.
-  layout?: 'responsive' | 'vertical'
+  layout?: DiagramLayout
   // readingOrder 'placement' (the default) lists the nodes in the shown
   // drawing's reading order (the left-to-right one in responsive layout);
   // 'spec' lists them in the order the spec declares them.
@@ -115,6 +121,11 @@ function path(points: Point[]): string {
 // (the CSP allows no inline style). Past its floor a drawing scrolls inside
 // its figure, so its text stays at least about 80% of its natural size.
 const floors: [number, string][] = [
+  [1280, 'min-w-[80rem]'],
+  [1216, 'min-w-[76rem]'],
+  [1152, 'min-w-[72rem]'],
+  [1088, 'min-w-[68rem]'],
+  [1024, 'min-w-[64rem]'],
   [960, 'min-w-[60rem]'],
   [896, 'min-w-[56rem]'],
   [832, 'min-w-[52rem]'],

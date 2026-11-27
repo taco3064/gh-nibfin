@@ -435,11 +435,55 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   // own line (slot), so no two edges share a segment there. The gap fits the
   // slots, then a label clear of them, centred in the gap.
   const forwardOf = (e: DiagramEdge) => rankOf.get(e.to)! > rankOf.get(e.from)!
+  const backOf = (e: DiagramEdge) => rankOf.get(e.to)! < rankOf.get(e.from)!
+  const indexed = spec.edges.map((e, i) => ({ e, i }))
   const slotStart = 10
   const slotStep = 8
   const perGap = Array.from({ length: ranks }, (_, r) => spec.edges.filter((e) => forwardOf(e) && rankOf.get(e.from) === r).length)
   const slots = Math.max(1, ...perGap)
   const flowGap = Math.max(40, maxLabel + 2 * (slotStart + 4 + (slots - 1) * slotStep))
+  const slotZone = slotStart + 4 + (slots - 1) * slotStep
+
+  // Edges against the flow (back edges) run only through node-free space:
+  // out of the source's far side into the gap after its rank, along that gap
+  // to a return channel outside the lanes (right of the last column in TB,
+  // below the last band in LR), along the channel to the gap after the
+  // target's rank, and along that gap into the target's far side. Each back
+  // edge has its own track in the channel, its own slot in the source's gap
+  // and its own band, wide enough for its label, in the target's gap. Inner
+  // tracks go to the edges that span the fewest ranks, so nested back edges
+  // do not cross each other.
+  const back = indexed.filter(({ e }) => backOf(e))
+  const span = ({ e }: { e: DiagramEdge }) => rankOf.get(e.from)! - rankOf.get(e.to)!
+  const trackOf = new Map([...back].sort((p, q) => span(p) - span(q) || p.i - q.i).map(({ i }, k) => [i, k]))
+  const track = (p: { i: number }) => trackOf.get(p.i)!
+  const bandPad = 6
+  const bandSize = (i: number) => {
+    const l = labels[i]
+    return (l ? (lr ? l.width : l.height) : 0) + 2 * bandPad
+  }
+  // In a source's gap the inner tracks take the upper slots; in a target's
+  // gap the outer tracks take the upper bands.
+  const outBack = (r: number) => back.filter(({ e }) => rankOf.get(e.from) === r).sort((p, q) => track(p) - track(q))
+  const inBack = (r: number) => back.filter(({ e }) => rankOf.get(e.to) === r).sort((p, q) => track(q) - track(p))
+  // gaps[r] is the gap after rank r, relative to its start: its size, where
+  // the forward label into rank r + 1 is centred, the back slots and bands.
+  const gaps = Array.from({ length: ranks }, (_, r) => {
+    const outs = outBack(r)
+    const used = perGap[r] + outs.length
+    const zone = Math.max(r === ranks - 1 ? 0 : slotZone, used > 0 ? slotStart + 4 + (used - 1) * slotStep : 0)
+    const backSlot = new Map(outs.map(({ i }, k) => [i, slotStart + (perGap[r] + k) * slotStep]))
+    let cursor = zone
+    const band = new Map<number, number>()
+    for (const { i } of inBack(r)) {
+      band.set(i, cursor + bandSize(i) / 2)
+      cursor += bandSize(i)
+    }
+    if (r === ranks - 1) return { size: outs.length ? zone + 4 : 0, labelAt: 0, backSlot, band }
+    const middle = flowGap - 2 * slotZone
+    return { size: cursor + middle + slotZone, labelAt: cursor + middle / 2, backSlot, band }
+  })
+  const gapTotal = gaps.reduce((sum, g) => sum + g.size, 0)
 
   // cells[lane][rank] lists the lane's nodes of that rank in dagre's order.
   const cells = lanes.map((lane) =>
@@ -456,13 +500,24 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   const rankSize = Array.from({ length: ranks }, (_, r) =>
     Math.max(0, ...spec.nodes.filter((n) => rankOf.get(n.id) === r).map((n) => flowSize(n.id))),
   )
+  const starts = (first: number) => {
+    const out: number[] = []
+    let at = first
+    for (let r = 0; r < ranks; r++) {
+      out.push(at)
+      at += rankSize[r] + gaps[r].size
+    }
+    return out
+  }
 
   const nodes = new Map<string, PlacedNode>()
   const groups: PlacedGroup[] = []
   let rankStart: number[]
+  // laneEnd is where the last lane ends across the flow.
+  let laneEnd = 0
   if (lr) {
-    const width = rankSize.reduce((a, b) => a + b, 0) + (ranks - 1) * flowGap + 2 * pad
-    rankStart = rankSize.map((_, r) => pad + rankSize.slice(0, r).reduce((a, b) => a + b, 0) + r * flowGap)
+    const width = rankSize.reduce((a, b) => a + b, 0) + gapTotal + 2 * pad
+    rankStart = starts(pad)
     let y = 0
     lanes.forEach((lane, li) => {
       const title = groupTitle(lane.title || ' ', width)
@@ -485,14 +540,15 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
         height,
         titleLines: lane.title ? title.lines.map((text, j) => ({ text, x: 10, y: y + 4 + (j + 1) * s.groupTitleLine })) : [],
       })
+      laneEnd = y + height
       y += height + laneGap
     })
   } else {
     const laneWidth = laneContent.map((c) => c + 2 * pad)
     const titles = lanes.map((lane, li) => groupTitle(lane.title || ' ', laneWidth[li]))
     const header = Math.max(pad, ...lanes.map((lane, li) => (lane.title ? titles[li].height + 4 : 0)))
-    rankStart = rankSize.map((_, r) => header + rankSize.slice(0, r).reduce((a, b) => a + b, 0) + r * flowGap)
-    const height = header + rankSize.reduce((a, b) => a + b, 0) + (ranks - 1) * flowGap + pad
+    rankStart = starts(header)
+    const height = header + rankSize.reduce((a, b) => a + b, 0) + gapTotal + pad
     let x = 0
     lanes.forEach((lane, li) => {
       cells[li].forEach((cell, r) => {
@@ -514,45 +570,85 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
           ? titles[li].lines.map((text, j) => ({ text, x: x + 10, y: 4 + (j + 1) * s.groupTitleLine }))
           : [],
       })
+      laneEnd = x + laneWidth[li]
       x += laneWidth[li] + laneGap
     })
   }
+  const gapStart = (r: number) => rankStart[r] + rankSize[r]
 
-  // Forward edges leave and enter their boxes at separate ports, spread
-  // along the side in the order of the other end, so no two edges share a
-  // segment next to a box.
+  // Every edge leaves and enters its boxes at separate ports, spread along
+  // the side, so no two edges share a segment next to a box. Forward edges
+  // enter the near side and leave the far side in the order of the other
+  // end; back edges use the far side after them, towards the channel: the
+  // ones entering first (inner tracks first), then the ones leaving (outer
+  // tracks first).
   const crossCentre = (id: string) => {
     const n = nodes.get(id)!
     return lr ? n.y + n.height / 2 : n.x + n.width / 2
   }
-  const ports = (end: 'from' | 'to') => {
-    const other = end === 'from' ? 'to' : 'from'
-    const at = new Map<number, number>()
-    for (const n of spec.nodes) {
-      const mine = spec.edges
-        .map((e, i) => ({ e, i }))
+  const outPort = new Map<number, number>()
+  const inPort = new Map<number, number>()
+  const backOutPort = new Map<number, number>()
+  const backInPort = new Map<number, number>()
+  for (const n of spec.nodes) {
+    const box = nodes.get(n.id)!
+    const [start, size] = lr ? [box.y, box.height] : [box.x, box.width]
+    const forward = (end: 'from' | 'to') => {
+      const other = end === 'from' ? 'to' : 'from'
+      return indexed
         .filter(({ e }) => e[end] === n.id && forwardOf(e))
         .sort((p, q) => crossCentre(p.e[other]) - crossCentre(q.e[other]) || p.i - q.i)
-      const box = nodes.get(n.id)!
-      const [start, size] = lr ? [box.y, box.height] : [box.x, box.width]
-      mine.forEach(({ i }, k) => at.set(i, start + (size * (k + 1)) / (mine.length + 1)))
     }
-    return at
+    const spread = (side: { i: number; port: Map<number, number> }[]) =>
+      side.forEach(({ i, port }, k) => port.set(i, start + (size * (k + 1)) / (side.length + 1)))
+    spread(forward('to').map(({ i }) => ({ i, port: inPort })))
+    spread([
+      ...forward('from').map(({ i }) => ({ i, port: outPort })),
+      ...back
+        .filter(({ e }) => e.to === n.id)
+        .sort((p, q) => track(p) - track(q))
+        .map(({ i }) => ({ i, port: backInPort })),
+      ...back
+        .filter(({ e }) => e.from === n.id)
+        .sort((p, q) => track(q) - track(p))
+        .map(({ i }) => ({ i, port: backOutPort })),
+    ])
   }
-  const outPort = ports('from')
-  const inPort = ports('to')
   const bendAt = new Map<number, number>()
   for (let r = 0; r < ranks; r++) {
-    spec.edges
-      .map((e, i) => ({ e, i }))
+    indexed
       .filter(({ e }) => forwardOf(e) && rankOf.get(e.from) === r)
       .sort((p, q) => outPort.get(p.i)! - outPort.get(q.i)! || inPort.get(p.i)! - inPort.get(q.i)! || p.i - q.i)
-      .forEach(({ i }, k) => bendAt.set(i, rankStart[r] + rankSize[r] + slotStart + k * slotStep))
+      .forEach(({ i }, k) => bendAt.set(i, gapStart(r) + slotStart + k * slotStep))
   }
 
+  // A back edge's label sits on its stretch along the target's gap, past
+  // every back edge entering a box of that rank and clear of the forward
+  // edges crossing the gap. The channel starts past every such label.
+  const backLabel = new Map<number, number>()
+  let channel = laneEnd + 12
+  for (const { e, i } of back) {
+    const l = labels[i]
+    if (!l) continue
+    const r = rankOf.get(e.to)!
+    const width = lr ? l.height : l.width
+    const stubs = back.filter((p) => rankOf.get(p.e.to) === r).map((p) => backInPort.get(p.i)!)
+    const crossing = indexed
+      .filter((p) => forwardOf(p.e) && rankOf.get(p.e.from)! <= r && rankOf.get(p.e.to)! > r)
+      .map((p) => inPort.get(p.i)!)
+      .sort((a, b) => a - b)
+    let from = Math.max(...stubs) + 8
+    for (const c of crossing) if (c > from - 6 && c < from + width + 6) from = c + 6
+    backLabel.set(i, from)
+    channel = Math.max(channel, from + width + 12)
+  }
+
+  // at places a point given along the flow (f) and across it (c).
+  const at = (f: number, c: number): Point => (lr ? { x: f, y: c } : { x: c, y: f })
   const edges: PlacedEdge[] = spec.edges.map((e, i) => {
     const a = nodes.get(e.from)!
     const b = nodes.get(e.to)!
+    const l = labels[i]
     let points: Point[]
     let mid: Point
     if (forwardOf(e)) {
@@ -561,7 +657,8 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
       const so = outPort.get(i)!
       const ti = inPort.get(i)!
       const m = bendAt.get(i)!
-      const gapMid = rankStart[rankOf.get(e.to)!] - flowGap / 2
+      const before = rankOf.get(e.to)! - 1
+      const gapMid = gapStart(before) + gaps[before].labelAt
       if (lr) {
         const sx = a.x + a.width
         points = so === ti ? [{ x: sx, y: so }, { x: b.x, y: ti }] : [{ x: sx, y: so }, { x: m, y: so }, { x: m, y: ti }, { x: b.x, y: ti }]
@@ -571,15 +668,25 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
         points = so === ti ? [{ x: so, y: sy }, { x: ti, y: b.y }] : [{ x: so, y: sy }, { x: so, y: m }, { x: ti, y: m }, { x: ti, y: b.y }]
         mid = { x: ti, y: gapMid }
       }
+    } else if (backOf(e)) {
+      const rs = rankOf.get(e.from)!
+      const rt = rankOf.get(e.to)!
+      const po = backOutPort.get(i)!
+      const pi = backInPort.get(i)!
+      const slot = gapStart(rs) + gaps[rs].backSlot.get(i)!
+      const band = gapStart(rt) + gaps[rt].band.get(i)!
+      const t = channel + trackOf.get(i)! * slotStep
+      const far = (box: Box) => (lr ? box.x + box.width : box.y + box.height)
+      points = [at(far(a), po), at(slot, po), at(slot, t), at(band, t), at(band, pi), at(far(b), pi)]
+      const width = l ? (lr ? l.height : l.width) : 0
+      mid = at(band, (backLabel.get(i) ?? pi) + width / 2)
     } else {
-      // Same rank or against the flow (a cycle): a straight line between
-      // the borders.
+      // Same rank: a straight line between the borders.
       const p = clip(a, centre(b))
       const q = clip(b, centre(a))
       points = [p, q]
       mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }
     }
-    const l = labels[i]
     return {
       from: e.from,
       to: e.to,
