@@ -5,6 +5,7 @@
 // can output the figure as HTML at build time.
 
 import dagre from '@dagrejs/dagre'
+import type { LucideIcon } from 'lucide-react'
 
 export interface DiagramNode {
   id: string
@@ -14,6 +15,23 @@ export interface DiagramNode {
   badges?: string[]
   // group is the id of the node's group or lane.
   group?: string
+  // icon is drawn before the title.
+  icon?: LucideIcon
+  // kinds are ids of the spec's kinds that mark the node, such as who acts
+  // at a step; the first one also sets the node's border tone.
+  kinds?: string[]
+}
+
+export type KindTone = 'primary' | 'info' | 'warning' | 'success' | 'muted'
+
+// DiagramKind is one legend entry. A node names it by id and shows its icon
+// and title as text, so the meaning never rests on the tone alone.
+export interface DiagramKind {
+  id: string
+  title: string
+  description?: string
+  icon?: LucideIcon
+  tone?: KindTone
 }
 
 export interface DiagramEdge {
@@ -34,6 +52,15 @@ export interface DiagramSpec {
   // groupStyle draws groups as dashed frames around their members (the
   // default) or as lanes: one band per group across the whole figure.
   groupStyle?: 'frames' | 'lanes'
+  // kinds are the legend entries that nodes can name.
+  kinds?: DiagramKind[]
+  // kindsTitle heads the legend and names the kinds in the text list
+  // ("Kinds" when not given).
+  kindsTitle?: string
+  // wrap, for LR only, keeps at most this many ranks in a row; later ranks
+  // continue on the next row, again from the left. TB ignores it, and it
+  // does not combine with groups.
+  wrap?: number
 }
 
 export type Direction = 'LR' | 'TB'
@@ -56,6 +83,7 @@ export interface Box {
 export interface TextLine {
   text: string
   kind: 'title' | 'detail'
+  x: number
   y: number
 }
 
@@ -64,10 +92,21 @@ export interface PlacedBadge extends Box {
   text: string
 }
 
+// PlacedMarker is one kind marker of a node: its icon box and its title's
+// lines with their baselines, relative to the node's top-left corner.
+export interface PlacedMarker {
+  kind: string
+  icon: Box
+  lines: { text: string; x: number; y: number }[]
+}
+
 export interface PlacedNode extends Box {
   id: string
   lines: TextLine[]
   badges: PlacedBadge[]
+  // icon is the box of the node's icon, when it has one.
+  icon?: Box
+  markers: PlacedMarker[]
 }
 
 export interface PlacedLabel extends Box {
@@ -128,6 +167,15 @@ export const sizes = {
   groupTitleLine: 16,
   groupTitleCharWidth: 7.2,
   groupPad: 14,
+  iconSize: 16,
+  iconGap: 6,
+  markerSize: 11,
+  markerLine: 15,
+  markerCharWidth: 6.4,
+  markerIcon: 12,
+  markerGap: 4,
+  rowGap: 48,
+  rowSlot: 8,
   margin: 8,
 } as const
 
@@ -180,24 +228,46 @@ function validate(spec: DiagramSpec) {
     }
     if (e.from === e.to) throw new Error(`diagram: edge from node "${e.from}" to itself`)
   }
+  const kinds = new Set<string>()
+  for (const k of spec.kinds ?? []) {
+    if (kinds.has(k.id)) throw new Error(`diagram: duplicate kind id "${k.id}"`)
+    kinds.add(k.id)
+  }
+  for (const n of spec.nodes) {
+    for (const k of n.kinds ?? []) {
+      if (!kinds.has(k)) throw new Error(`diagram: node "${n.id}" has unknown kind "${k}"`)
+    }
+  }
+  if (spec.wrap !== undefined) {
+    if (!Number.isInteger(spec.wrap) || spec.wrap < 1) throw new Error(`diagram: wrap ${spec.wrap} is not a positive integer`)
+    const grouped = spec.groups?.[0]?.id ?? spec.nodes.find((n) => n.group !== undefined)?.group
+    if (grouped !== undefined) throw new Error(`diagram: wrap does not combine with groups (group "${grouped}")`)
+  }
 }
 
-// nodeContent sizes a node from its text and places its lines and badges.
-function nodeContent(n: DiagramNode): Pick<PlacedNode, 'width' | 'height' | 'lines' | 'badges'> {
+type NodeContent = Pick<PlacedNode, 'width' | 'height' | 'lines' | 'badges' | 'icon' | 'markers'>
+
+// nodeContent sizes a node from its text and places its icon, lines, badges
+// and kind markers.
+function nodeContent(n: DiagramNode, kinds: Map<string, DiagramKind>): NodeContent {
   const s = sizes
   const width = s.nodeWidth
   const inner = width - 2 * s.nodePadX
   const lines: TextLine[] = []
   let y = s.nodePadY
-  for (const text of wrapText(n.title, s.titleChars)) {
+  // An icon sits before the first title line; the title is indented past it
+  // and wraps to the narrower room.
+  const indent = n.icon ? s.iconSize + s.iconGap : 0
+  const titleChars = Math.floor((s.titleChars * (inner - indent)) / inner)
+  for (const text of wrapText(n.title, titleChars)) {
     y += s.titleLine
-    lines.push({ text, kind: 'title', y: y - 4 })
+    lines.push({ text, kind: 'title', x: s.nodePadX + indent, y: y - 4 })
   }
   if (n.detail) {
     y += 4
     for (const text of wrapText(n.detail, s.detailChars)) {
       y += s.detailLine
-      lines.push({ text, kind: 'detail', y: y - 4 })
+      lines.push({ text, kind: 'detail', x: s.nodePadX, y: y - 4 })
     }
   }
   const badges: PlacedBadge[] = []
@@ -215,7 +285,24 @@ function nodeContent(n: DiagramNode): Pick<PlacedNode, 'width' | 'height' | 'lin
     }
     y += s.badgeHeight
   }
-  return { width, height: y + s.nodePadY, lines, badges }
+  // One marker row per kind: a small icon, then the kind's title wrapped
+  // beside it.
+  const markers: PlacedMarker[] = []
+  if (n.kinds?.length) {
+    y += 10
+    const textX = s.nodePadX + s.markerIcon + s.markerGap
+    const chars = (inner - s.markerIcon - s.markerGap) / s.markerCharWidth
+    n.kinds.forEach((id, j) => {
+      if (j > 0) y += 4
+      const top = y
+      const text = wrapText(kinds.get(id)!.title, chars).map((t, i) => ({ text: t, x: textX, y: top + (i + 1) * s.markerLine - 4 }))
+      const icon = { x: s.nodePadX, y: top + (s.markerLine - s.markerIcon) / 2, width: s.markerIcon, height: s.markerIcon }
+      markers.push({ kind: id, icon, lines: text })
+      y += text.length * s.markerLine
+    })
+  }
+  const icon = n.icon && { x: s.nodePadX, y: s.nodePadY + 3, width: s.iconSize, height: s.iconSize }
+  return { width, height: y + s.nodePadY, lines, badges, markers, ...(icon && { icon }) }
 }
 
 function labelSize(text: string): { lines: string[]; width: number; height: number } {
@@ -263,18 +350,21 @@ const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2
 export function layoutDiagram(spec: DiagramSpec, direction: Direction): Placement {
   validate(spec)
   const groupStyle = spec.groupStyle ?? 'frames'
-  const content = new Map(spec.nodes.map((n) => [n.id, nodeContent(n)]))
+  const kinds = new Map((spec.kinds ?? []).map((k) => [k.id, k]))
+  const content = new Map(spec.nodes.map((n) => [n.id, nodeContent(n, kinds)]))
   const labels = spec.edges.map((e) => (e.label ? labelSize(e.label) : undefined))
-  const raw =
+  let raw =
     groupStyle === 'lanes'
       ? layoutLanes(spec, direction, content, labels)
       : layoutFrames(spec, direction, content, labels)
+  if (direction === 'LR' && spec.wrap !== undefined) raw = wrapRows(raw, spec, spec.wrap)
   return normalize(raw, spec, direction, groupStyle)
 }
 
-type Content = Map<string, ReturnType<typeof nodeContent>>
+type Content = Map<string, NodeContent>
 type Labels = (ReturnType<typeof labelSize> | undefined)[]
-type Raw = Pick<Placement, 'nodes' | 'edges' | 'groups'>
+// rowOf, set by wrapRows, gives each node's row for the reading order.
+type Raw = Pick<Placement, 'nodes' | 'edges' | 'groups'> & { rowOf?: Map<string, number> }
 
 // dagreGraph lays out the nodes and edges with dagre; with compound set,
 // each group becomes a cluster that keeps its members together.
@@ -697,6 +787,108 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   return { nodes: spec.nodes.map((n) => nodes.get(n.id)!), edges, groups }
 }
 
+// wrapRows breaks an ungrouped LR placement into rows of at most wrap ranks.
+// Each row starts again at the left, below the previous one. An edge inside a
+// row keeps dagre's route; an edge into the next row leaves its source's
+// bottom, runs along its own line in the gutter between the rows and enters
+// its target's top. It throws for an edge the rows would send backwards, over
+// more than one row break, or through another node.
+function wrapRows(raw: Raw, spec: DiagramSpec, wrap: number): Raw {
+  const s = sizes
+  const flowOf = (n: Box) => Math.round(n.x + n.width / 2)
+  const flows = [...new Set(raw.nodes.map(flowOf))].sort((a, b) => a - b)
+  const rankOf = new Map(raw.nodes.map((n) => [n.id, flows.indexOf(flowOf(n))]))
+  const rowOf = new Map(raw.nodes.map((n) => [n.id, Math.floor(rankOf.get(n.id)! / wrap)]))
+  const rows = Math.max(...rowOf.values()) + 1
+  for (const e of spec.edges) {
+    const step = rowOf.get(e.to)! - rowOf.get(e.from)!
+    if (step < 0) throw new Error(`diagram: wrap ${wrap} sends edge ${e.from} -> ${e.to} back to an earlier row`)
+    if (step > 1) throw new Error(`diagram: wrap ${wrap} sends edge ${e.from} -> ${e.to} across more than one row break`)
+  }
+  const sameRow = (e: PlacedEdge) => rowOf.get(e.from) === rowOf.get(e.to)
+
+  // The extent of each row before moving: its nodes, and its own edges and
+  // their labels.
+  const extent = Array.from({ length: rows }, (_, r) => {
+    const ys: number[] = []
+    for (const n of raw.nodes) if (rowOf.get(n.id) === r) ys.push(n.y, n.y + n.height)
+    for (const e of raw.edges) {
+      if (!sameRow(e) || rowOf.get(e.from) !== r) continue
+      ys.push(...e.points.map((p) => p.y))
+      if (e.label) ys.push(e.label.y, e.label.y + e.label.height)
+    }
+    return { top: Math.min(...ys), bottom: Math.max(...ys) }
+  })
+  // The edges of each gutter (after row r), each with its own line.
+  const crossing = raw.edges.map((e, i) => ({ e, i })).filter(({ e }) => !sameRow(e))
+  const gutters = Array.from({ length: rows - 1 }, (_, r) => crossing.filter(({ e }) => rowOf.get(e.from) === r))
+  const gutterSize = gutters.map(
+    (g) => s.rowGap + Math.max(0, g.length - 1) * s.rowSlot + Math.max(0, ...g.map(({ e }) => e.label?.height ?? 0)),
+  )
+  const shift: Point[] = []
+  let top = extent[0].top
+  for (let r = 0; r < rows; r++) {
+    shift.push({ x: flows[0] - flows[r * wrap], y: top - extent[r].top })
+    top += extent[r].bottom - extent[r].top + (gutterSize[r] ?? 0)
+  }
+
+  const moveBox = <T extends Box>(b: T, d: Point): T => ({ ...b, x: b.x + d.x, y: b.y + d.y })
+  const nodes = raw.nodes.map((n) => moveBox(n, shift[rowOf.get(n.id)!]))
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+
+  // Ports: a node's crossing edges leave (or enter) it at separate points
+  // along its bottom (or top), in the order of their other ends.
+  const centreX = (id: string) => byId.get(id)!.x + byId.get(id)!.width / 2
+  const portOf = (end: 'from' | 'to') => {
+    const other = end === 'from' ? 'to' : 'from'
+    const at = new Map<number, number>()
+    for (const n of nodes) {
+      const mine = crossing.filter(({ e }) => e[end] === n.id).sort((p, q) => centreX(p.e[other]) - centreX(q.e[other]) || p.i - q.i)
+      mine.forEach(({ i }, k) => at.set(i, n.x + (n.width * (k + 1)) / (mine.length + 1)))
+    }
+    return at
+  }
+  const outPort = portOf('from')
+  const inPort = portOf('to')
+  const lineOf = new Map<number, number>()
+  gutters.forEach((g, r) => {
+    const bottom = extent[r].bottom + shift[r].y
+    const first = bottom + (gutterSize[r] - (g.length - 1) * s.rowSlot) / 2
+    ;[...g]
+      .sort((p, q) => outPort.get(p.i)! - outPort.get(q.i)! || inPort.get(p.i)! - inPort.get(q.i)! || p.i - q.i)
+      .forEach(({ i }, k) => lineOf.set(i, first + k * s.rowSlot))
+  })
+
+  const edges = raw.edges.map((e, i): PlacedEdge => {
+    if (sameRow(e)) {
+      const d = shift[rowOf.get(e.from)!]
+      return { ...e, points: e.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y })), label: e.label && moveBox(e.label, d) }
+    }
+    const a = byId.get(e.from)!
+    const b = byId.get(e.to)!
+    const ox = outPort.get(i)!
+    const ix = inPort.get(i)!
+    const y = lineOf.get(i)!
+    // The drop from the source and the rise into the target must not pass
+    // another node of their rows.
+    for (const n of nodes) {
+      if (n.id === a.id || n.id === b.id) continue
+      const spans = ox > n.x && ox < n.x + n.width
+      const spansIn = ix > n.x && ix < n.x + n.width
+      if ((spans && n.y > a.y && rowOf.get(n.id) === rowOf.get(a.id)) || (spansIn && n.y < b.y && rowOf.get(n.id) === rowOf.get(b.id))) {
+        throw new Error(`diagram: wrap ${wrap} routes edge ${e.from} -> ${e.to} through node "${n.id}"`)
+      }
+    }
+    const points =
+      Math.abs(ox - ix) < 0.5
+        ? [{ x: ox, y: a.y + a.height }, { x: ox, y: b.y }]
+        : [{ x: ox, y: a.y + a.height }, { x: ox, y }, { x: ix, y }, { x: ix, y: b.y }]
+    const l = e.label
+    return { ...e, points, label: l && { ...l, x: (ox + ix) / 2 - l.width / 2, y: y - l.height / 2 } }
+  })
+  return { nodes, edges, groups: raw.groups, rowOf }
+}
+
 // normalize moves everything so the figure starts at the margin, and sets
 // the overall size and the reading order.
 function normalize(raw: Raw, spec: DiagramSpec, direction: Direction, groupStyle: Placement['groupStyle']): Placement {
@@ -714,6 +906,9 @@ function normalize(raw: Raw, spec: DiagramSpec, direction: Direction, groupStyle
   const lr = direction === 'LR'
   const order = [...nodes]
     .sort((a, b) => {
+      const ra = raw.rowOf?.get(a.id) ?? 0
+      const rb = raw.rowOf?.get(b.id) ?? 0
+      if (ra !== rb) return ra - rb
       const fa = Math.round(lr ? a.x + a.width / 2 : a.y)
       const fb = Math.round(lr ? b.x + b.width / 2 : b.y)
       if (fa !== fb) return fa - fb
@@ -753,6 +948,8 @@ export interface DescribedNode {
   badges: string[]
   // group is the title of the node's group or lane.
   group?: string
+  // kinds are the titles of the node's kinds, when it has any.
+  kinds?: string[]
   edges: DescribedEdge[]
 }
 
@@ -761,6 +958,7 @@ export interface DescribedNode {
 export function describeDiagram(spec: DiagramSpec, placement: Pick<Placement, 'order'>): DescribedNode[] {
   const nodes = new Map(spec.nodes.map((n) => [n.id, n]))
   const groups = new Map((spec.groups ?? []).map((g) => [g.id, g.title]))
+  const kinds = new Map((spec.kinds ?? []).map((k) => [k.id, k.title]))
   return placement.order.map((id) => {
     const n = nodes.get(id)!
     return {
@@ -769,6 +967,7 @@ export function describeDiagram(spec: DiagramSpec, placement: Pick<Placement, 'o
       detail: n.detail,
       badges: n.badges ?? [],
       group: n.group === undefined ? undefined : groups.get(n.group),
+      ...(n.kinds?.length ? { kinds: n.kinds.map((k) => kinds.get(k)!) } : {}),
       edges: spec.edges
         .filter((e) => e.from === id)
         .map((e) => ({ to: nodes.get(e.to)!.title, label: e.label })),

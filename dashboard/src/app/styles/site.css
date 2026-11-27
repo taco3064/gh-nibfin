@@ -48,6 +48,20 @@
   }
 }
 
+/* The slow dash along a diagram's edges (motion-safe only). It moves one
+   period of the edge's dash pattern (2 + 14) per cycle, forward along it. */
+@theme {
+  --animate-diagram-flow: nf-diagram-flow 1.6s linear infinite;
+  @keyframes nf-diagram-flow {
+    from {
+      stroke-dashoffset: 16;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+}
+
 /* The delivered trend's bars growing in once (motion-safe only). */
 @theme {
   --animate-grow: nf-grow 0.7s ease-out both;

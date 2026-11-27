@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { framesExample, lanesExample } from '@/screenshots/diagram-fixtures'
+import { framesExample, lanesExample, pipelineExample } from '@/screenshots/diagram-fixtures'
 
 import { Diagram } from './Diagram'
 
@@ -40,6 +40,42 @@ describe('Diagram', () => {
     const html = renderToStaticMarkup(<Diagram spec={lanesExample} title="Lanes" />)
     expect(html).toContain('Lane: Make in the workshop.')
     expect(html).not.toContain('Group:')
+  })
+
+  it('shows a legend of the kinds and names them in the text list', () => {
+    const html = renderToStaticMarkup(<Diagram spec={pipelineExample} title="Pipeline" />)
+    const legend = html.match(/<div[^>]*data-slot="diagram-legend"[^>]*>(.*?)<\/ul><\/div>/)![1]
+    expect(legend).toContain('Who works')
+    expect([...legend.matchAll(/data-kind="([^"]+)"/g)].map((m) => m[1])).toEqual(['hands', 'machine', 'wait'])
+    expect(legend).toContain('The saw, the sander or the oven.')
+    const list = html.match(/<ol class="sr-only">(.*)<\/ol>/)![1]
+    const items = [...list.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1].replaceAll('<!-- -->', ''))
+    expect(items[0]).toBe('Cut: Saw the parts to size. Who works: A machine; Handwork. Leads to Sand.')
+    expect(items).toContain('Paint: Two thin coats. Who works: Handwork; Waiting for it to dry. Leads to On the shelf.')
+    // Each kind marker carries its title as text in both drawings.
+    expect(html.match(/data-marker="wait"/g)).toHaveLength(4)
+    // Icons are drawn, still without inline styles.
+    expect(html).toContain('lucide-scissors')
+    expect(html).not.toMatch(/\sstyle="/)
+    expect(html).not.toContain('data-slot="diagram-flow"')
+  })
+
+  it('animates the flow overlay only without reduced motion', () => {
+    const html = renderToStaticMarkup(<Diagram flow spec={pipelineExample} title="Pipeline" />)
+    const overlays = [...html.matchAll(/<path[^>]*data-slot="diagram-flow"[^>]*>/g)].map((m) => m[0])
+    expect(overlays).toHaveLength(2 * pipelineExample.edges.length)
+    for (const o of overlays) {
+      const cls = o.match(/class="([^"]*)"/)![1].split(' ')
+      // Hidden by default; shown and animated only under motion-safe.
+      expect(cls).toContain('hidden')
+      expect(cls).toContain('motion-safe:inline')
+      expect(cls.filter((c) => c.includes('animate-'))).toEqual(['motion-safe:animate-diagram-flow'])
+    }
+    expect(html).not.toMatch(/\sstyle="/)
+  })
+
+  it('draws no legend without kinds', () => {
+    expect(renderToStaticMarkup(<Diagram spec={framesExample} title="x" />)).not.toContain('diagram-legend')
   })
 
   it('fails loudly on an invalid spec', () => {

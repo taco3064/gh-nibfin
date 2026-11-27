@@ -1,4 +1,4 @@
-// Screenshot harness of the shared site diagram (#456). It is built only
+// Screenshot harness of the shared site diagram (#456, #457). It is built only
 // with vite build --mode screenshots into dashboard/.screenshots-dist/ and is
 // not a view of the product or of the site.
 
@@ -11,7 +11,7 @@ import { applyCspNonce } from '@/lib/nonce'
 import { applyTheme } from '@/lib/theme'
 import '@/styles/theme.css'
 
-import { framesExample, lanesExample } from './diagram-fixtures'
+import { framesExample, lanesExample, pipelineExample } from './diagram-fixtures'
 
 applyCspNonce()
 applyTheme()
@@ -33,6 +33,12 @@ function Harness() {
           description="A fictional example: planning at the desk, then making in the workshop."
         />
         <Diagram spec={lanesExample} title="From idea to shelf (groups as lanes)" />
+        <Diagram
+          flow
+          spec={pipelineExample}
+          title="From board to shelf (kinds, icons, rows and flow)"
+          description="A fictional example: who works at each step, wrapped into rows."
+        />
       </main>
     </div>
   )
