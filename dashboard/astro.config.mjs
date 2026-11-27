@@ -9,10 +9,15 @@ import starlight from '@astrojs/starlight'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, envField } from 'astro/config'
 
+import { sentryIntegration } from './src/app/lib/sentry-integration.ts'
+
 const site = process.env.WEBSITE_SITE || 'https://taco3064.github.io'
 const base = process.env.WEBSITE_BASE || '/gh-nibfin/'
 // The public live data Worker the Live page and the Home summary read.
 const liveUrl = process.env.WEBSITE_LIVE_URL || 'wss://nibfin-live.tabacotaco.workers.dev/live'
+// The public Sentry DSN for browser errors (#481). Empty adds no Sentry code
+// and no source maps; GITHUB_SHA names the release when it is set.
+const sentryDsn = process.env.WEBSITE_SENTRY_DSN || ''
 
 const origin = new URL(site)
 if (!/^https?:$/.test(origin.protocol) || origin.origin !== site.replace(/\/$/, '')) {
@@ -45,6 +50,7 @@ export default defineConfig({
     },
   },
   integrations: [
+    ...sentryIntegration({ dsn: sentryDsn, release: process.env.GITHUB_SHA, siteUrl: new URL(base, site).href }),
     react(),
     starlight({
       title: 'Nibfin',
