@@ -440,13 +440,23 @@ test('live page Issue lists have no list markers', async ({ page }) => {
   for (const theme of themes) {
     for (const width of [375, 1280]) {
       const errors = await open(page, 'live/', theme, width)
-      for (const slot of ['unlinked', 'unread']) {
-        const list = repoView(page).locator(`[data-slot=${slot}] > ul`)
-        await expect(list).toBeVisible()
-        expect(await list.evaluate((ul) => getComputedStyle(ul).paddingLeft)).toBe('0px')
-        const markers = await list.locator('li').evaluateAll((lis) => lis.map((li) => getComputedStyle(li).listStyleType))
-        expect(markers.length).toBeGreaterThan(0)
-        for (const m of markers) expect(m).toBe('none')
+      // The short list of Issues without dependencies shows its groups open
+      // with full Issue items (#496).
+      await expect(repoView(page).locator('[data-slot=unlinked] article[data-issue]')).toHaveCount(7)
+      await expect(repoView(page).locator('[data-slot=unlinked] [data-unlinked-row]')).toHaveCount(0)
+      for (const b of await repoView(page).locator('[data-slot=unlinked] [data-unlinked-group] > [data-slot=collapsible-trigger]').all()) {
+        await expect(b).toHaveAttribute('aria-expanded', 'true')
+      }
+      for (const selector of ['[data-slot=unlinked] [data-unlinked-group] ul', '[data-slot=unread] > ul']) {
+        const lists = repoView(page).locator(selector)
+        expect(await lists.count()).toBeGreaterThan(0)
+        for (const list of await lists.all()) {
+          await expect(list).toBeVisible()
+          expect(await list.evaluate((ul) => getComputedStyle(ul).paddingLeft)).toBe('0px')
+          const markers = await list.locator('li').evaluateAll((lis) => lis.map((li) => getComputedStyle(li).listStyleType))
+          expect(markers.length).toBeGreaterThan(0)
+          for (const m of markers) expect(m).toBe('none')
+        }
       }
       await page.locator('[data-slot=unlinked]').scrollIntoViewIfNeeded()
       await page.screenshot({ path: `${outDir}site-live-lists-${theme}-${width}.png` })
