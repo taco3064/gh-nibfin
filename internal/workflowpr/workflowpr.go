@@ -1,7 +1,8 @@
 // Package workflowpr writes a rendered Nibfin workflow set to one fixed
 // branch and keeps one PR open from it into the default branch. A rerun finds
-// the branch and the PR it wrote before: a current branch is not rewritten
-// and an open PR is kept, not duplicated. upgrade and init share it.
+// the branch and the PR it wrote before: a current branch (one commit holding
+// the set on the default branch's head) is not rewritten and an open PR is
+// kept, not duplicated. upgrade and init share it.
 package workflowpr
 
 import (
@@ -99,6 +100,25 @@ func (r Repo) RefSHA(ctx context.Context, branch string) (string, error) {
 	return ref.Object.SHA, nil
 }
 
+// Commit reads one commit object: its tree and its parents.
+func (r Repo) Commit(ctx context.Context, sha string) (tree string, parents []string, err error) {
+	var commit struct {
+		Tree struct {
+			SHA string `json:"sha"`
+		} `json:"tree"`
+		Parents []struct {
+			SHA string `json:"sha"`
+		} `json:"parents"`
+	}
+	if err := r.Client.DoWithContext(ctx, http.MethodGet, r.Base+"/git/commits/"+url.PathEscape(sha), nil, &commit); err != nil {
+		return "", nil, ReadErr(fmt.Sprintf("read the commit %s of %s", sha, r.Name), err)
+	}
+	for _, p := range commit.Parents {
+		parents = append(parents, p.SHA)
+	}
+	return commit.Tree.SHA, parents, nil
+}
+
 // Write sends one changing request to Base+p. A failure is
 // repo_write_failed with go-gh's message; a 403, 404 or 422 also names the
 // workflow scope.
@@ -145,7 +165,10 @@ type PR struct {
 
 	// BranchSHA is the head of Branch, "" when it does not exist.
 	BranchSHA string
-	// BranchCurrent is true when Branch holds Files.
+	// BranchCurrent is true when Branch holds Files as one commit on the
+	// default branch's head. A branch based on an older head is not current:
+	// a rebase merge replays only its own commit and would leave the files
+	// that commit does not change behind.
 	BranchCurrent bool
 	// Open is the open PR from Branch, or nil.
 	Open *PullRequest
@@ -157,7 +180,8 @@ type PR struct {
 	FileDetail string
 }
 
-// Read reads Branch, its files and the open PR from it.
+// Read reads Branch, its files, whether it is one commit on the default
+// branch's head, and the open PR from it.
 func (w *PR) Read(ctx context.Context) error {
 	sha, err := w.Repo.RefSHA(ctx, w.Branch)
 	if err != nil {
@@ -170,18 +194,32 @@ func (w *PR) Read(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		w.BranchCurrent = true
+		equal := true
 		for _, p := range w.Paths {
 			if !bytes.Equal(onBranch[p], w.Files[p]) {
-				w.BranchCurrent = false
+				equal = false
 			}
+		}
+		// A branch whose files differ is rewritten anyway; only an equal one
+		// needs its base checked.
+		if equal {
+			head, err := w.defaultHead(ctx)
+			if err != nil {
+				return err
+			}
+			_, parents, err := w.Repo.Commit(ctx, sha)
+			if err != nil {
+				return err
+			}
+			w.BranchCurrent = len(parents) == 1 && parents[0] == head
 		}
 	}
 	w.Open, err = w.openPR(ctx)
 	return err
 }
 
-// Done reports whether the branch holds the set and its PR is open.
+// Done reports whether the branch holds the set as one commit on the
+// default branch's head and its PR is open.
 func (w *PR) Done() bool { return w.BranchCurrent && w.Open != nil }
 
 // PRItem is the ID of the PR item.
@@ -323,7 +361,8 @@ func (w *PR) openPR(ctx context.Context) (*PullRequest, error) {
 }
 
 // Apply writes one commit on the default branch's head to Branch, unless
-// it is current, and opens the PR, unless one is open.
+// it is current (holds the set as one commit on that head), and opens the
+// PR, unless one is open.
 func (w *PR) Apply(ctx context.Context) error {
 	w.Written = ""
 	steps := w.Steps()
@@ -363,24 +402,30 @@ func (w *PR) Apply(ctx context.Context) error {
 	return nil
 }
 
-// writeBranch writes one commit with every path on the default branch's
-// head and points Branch to it.
-func (w *PR) writeBranch(ctx context.Context) error {
-	r := w.Repo
-	head, err := r.RefSHA(ctx, w.DefaultBranch)
+// defaultHead returns the head of the default branch; a missing branch is an
+// error.
+func (w *PR) defaultHead(ctx context.Context) (string, error) {
+	head, err := w.Repo.RefSHA(ctx, w.DefaultBranch)
 	if err == nil && head == "" {
 		err = fmt.Errorf("the branch %s does not exist", w.DefaultBranch)
 	}
 	if err != nil {
-		return ReadErr(fmt.Sprintf("read the branch %s of %s", w.DefaultBranch, r.Name), err)
+		return "", ReadErr(fmt.Sprintf("read the branch %s of %s", w.DefaultBranch, w.Repo.Name), err)
 	}
-	var commit struct {
-		Tree struct {
-			SHA string `json:"sha"`
-		} `json:"tree"`
+	return head, nil
+}
+
+// writeBranch writes one commit with every path on the default branch's
+// head and points Branch to it.
+func (w *PR) writeBranch(ctx context.Context) error {
+	r := w.Repo
+	head, err := w.defaultHead(ctx)
+	if err != nil {
+		return err
 	}
-	if err := r.Client.DoWithContext(ctx, http.MethodGet, r.Base+"/git/commits/"+url.PathEscape(head), nil, &commit); err != nil {
-		return ReadErr(fmt.Sprintf("read the commit %s of %s", head, r.Name), err)
+	baseTree, _, err := r.Commit(ctx, head)
+	if err != nil {
+		return err
 	}
 
 	type entry struct {
@@ -396,7 +441,7 @@ func (w *PR) writeBranch(ctx context.Context) error {
 	var tree struct {
 		SHA string `json:"sha"`
 	}
-	if err := r.Write(ctx, http.MethodPost, "/git/trees", map[string]any{"base_tree": commit.Tree.SHA, "tree": entries}, &tree, "write the tree"); err != nil {
+	if err := r.Write(ctx, http.MethodPost, "/git/trees", map[string]any{"base_tree": baseTree, "tree": entries}, &tree, "write the tree"); err != nil {
 		return err
 	}
 	var created struct {
