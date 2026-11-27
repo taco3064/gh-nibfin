@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 
+import { expectDiagramFits } from './diagram-fit'
 import { event, liveData, liveUrl, runnerNames, trendCounts, withoutDays, withoutIssues } from './live-site-fixtures'
 
 // Screenshots and checks of the public site (#362) and its Live page and
@@ -86,75 +87,63 @@ for (const { name, path } of pages) {
   }
 }
 
-// How it works draws two top-to-bottom figures at every width: the stage
-// swimlane (#459) and the label state flowchart (#458). The page also holds
-// the responsive architecture figure (#460), checked below.
-const howItWorksFigures = [
-  { name: 'stages', caption: 'The stages, by role', items: 10, first: 'Split into Issues' },
-  { name: 'labels', caption: 'Label states, checked in order', items: 34, first: 'The Issue is closed. Lane: Checks, in order. Leads to closed (yes)' },
+// The site's diagrams (#456–#460, #474). Each figure shows exactly one
+// presentation that fits the box it has: the left-to-right drawing, the
+// top-to-bottom one or the stacked layout, whichever comes first among those
+// that fit. Nothing scrolls sideways, and no text leaves its node, pill or
+// block. At the site's widths the stage swimlane and the architecture are too
+// wide for a drawing at 80% and show the stacked layout.
+const siteDiagrams = [
+  { page: 'how-it-works/', name: 'stages', caption: 'The stages, by role', items: 10, first: 'Split into Issues', shown: ['stacked'] },
+  {
+    page: 'how-it-works/',
+    name: 'labels',
+    caption: 'Label states, checked in order',
+    items: 34,
+    first: 'The Issue is closed. Lane: Checks, in order. Leads to closed (yes)',
+    shown: ['TB', 'stacked'],
+  },
+  { page: 'how-it-works/', name: 'architecture', caption: 'Where Nibfin runs', items: 10, first: 'Login volume: The provider CLI', shown: ['stacked'] },
+  { page: './', name: 'home-flow', caption: 'Who acts at each step', items: 8, first: 'Issue: scope or request label', shown: ['LR', 'TB'] },
 ]
 
-test('how it works draws the stages and the label states top to bottom', async ({ page }) => {
-  for (const theme of themes) {
-    for (const width of widths) {
-      const errors = await open(page, 'how-it-works/', theme, width)
-      await expect(page.locator('figure[data-slot=diagram]')).toHaveCount(howItWorksFigures.length + 1)
-      for (const f of howItWorksFigures) {
-        const figure = page.locator('figure[data-slot=diagram]', { has: page.getByText(f.caption, { exact: true }) })
-        await expect(figure).toHaveCount(1)
-        await expect(figure).toBeVisible()
-        await expect(figure.locator('svg')).toHaveCount(1)
-        await expect(figure.locator('svg[data-direction=TB]')).toBeVisible()
-        await expect(figure.locator('ol > li')).toHaveCount(f.items)
-        await expect(figure.locator('ol > li').first()).toContainText(f.first)
-        // The drawing fits its figure, or scrolls inside it only.
-        const fits = await figure.evaluate((el) => {
-          const box = el.getBoundingClientRect()
-          const scroller = el.querySelector('svg')!.parentElement!
-          return { figure: box.right <= window.innerWidth, scroller: scroller.getBoundingClientRect().right <= box.right + 0.5 }
-        })
-        expect(fits).toEqual({ figure: true, scroller: true })
-        await figure.screenshot({ path: `${outDir}site-how-it-works-${f.name}-${theme}-${width}.png` })
-      }
-      await expectNoPageScroll(page)
-      expect(errors).toEqual([])
-    }
-  }
-})
-
-// The architecture figure of How it works (#460): it sits under its heading,
-// shows the wide drawing from 768 px up and the narrow one below, and never
-// scrolls the page.
 for (const theme of themes) {
-  test(`how-it-works architecture diagram ${theme}`, async ({ page }) => {
-    for (const width of widths) {
-      const errors = await open(page, 'how-it-works/', theme, width)
-      const heading = page.getByRole('heading', { name: 'Architecture', exact: true })
-      await expect(heading).toBeVisible()
-      const figure = page.locator('main [data-slot=diagram]').filter({ hasText: 'Where Nibfin runs' })
-      await expect(figure).toHaveCount(1)
-      await expect(figure).toBeVisible()
-      const below = await figure.evaluate((f) => {
-        const h = document.getElementById('architecture')
-        return h !== null && Boolean(h.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)
-      })
-      expect(below).toBe(true)
-      const wide = figure.locator('[data-slot=diagram-wide]')
-      const narrow = figure.locator('[data-slot=diagram-narrow]')
-      if (width >= 768) {
-        await expect(wide).toBeVisible()
-        await expect(narrow).toBeHidden()
-      } else {
-        await expect(narrow).toBeVisible()
-        await expect(wide).toBeHidden()
+  test(`site diagrams fit their box ${theme}`, async ({ page }) => {
+    for (const path of [...new Set(siteDiagrams.map((d) => d.page))]) {
+      for (const width of widths) {
+        const errors = await open(page, path, theme, width)
+        const here = siteDiagrams.filter((d) => d.page === path)
+        await expect(page.locator('main figure[data-slot=diagram]')).toHaveCount(here.length)
+        for (const d of here) {
+          const figure = page.locator('figure[data-slot=diagram]', { has: page.getByText(d.caption, { exact: true }) })
+          await expect(figure).toHaveCount(1)
+          await expect(figure).toBeVisible()
+          await expect(figure.locator('ol.sr-only > li')).toHaveCount(d.items)
+          await expect(figure.locator('ol.sr-only > li').first()).toContainText(d.first)
+          const shown = await expectDiagramFits(figure, `${d.name} ${width}px ${theme}`)
+          expect(d.shown, `${d.name} ${width}px shows ${shown}`).toContain(shown)
+          await figure.screenshot({ path: `${outDir}site-diagram-${d.name}-${theme}-${width}.png` })
+        }
+        await expectNoPageScroll(page)
+        expect(errors).toEqual([])
       }
-      await expectNoPageScroll(page)
-      await figure.scrollIntoViewIfNeeded()
-      await figure.screenshot({ path: `${outDir}site-how-it-works-diagram-${theme}-${width}.png` })
-      expect(errors).toEqual([])
     }
   })
 }
+
+// The architecture figure sits under its heading.
+test('how-it-works architecture diagram sits under its heading', async ({ page }) => {
+  const errors = await open(page, 'how-it-works/', 'dark', 1280)
+  await expect(page.getByRole('heading', { name: 'Architecture', exact: true })).toBeVisible()
+  const figure = page.locator('main [data-slot=diagram]').filter({ hasText: 'Where Nibfin runs' })
+  await expect(figure).toHaveCount(1)
+  const below = await figure.evaluate((f) => {
+    const h = document.getElementById('architecture')
+    return h !== null && Boolean(h.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+  expect(below).toBe(true)
+  expect(errors).toEqual([])
+})
 
 test('keyboard reaches the skip link first', async ({ page }) => {
   const errors = await open(page, './', 'dark', 1280)
@@ -490,23 +479,19 @@ for (const width of [375, 1280]) {
   })
 }
 
-// The Home flow (#457): the pipeline diagram, top to bottom on a phone and
-// left to right from md up, with its legend.
+// The Home flow (#457): the pipeline diagram with its legend; which drawing
+// shows is checked with the other site diagrams above.
 test('home shows the Issue flow as a pipeline', async ({ page }) => {
   for (const theme of themes) {
     for (const width of widths) {
       const errors = await open(page, './', theme, width)
       const figure = page.locator('figure[data-slot=diagram]')
       await expect(figure).toHaveCount(1)
-      const wide = width >= 768
-      await expect(figure.locator('svg[data-direction=LR]')).toBeVisible({ visible: wide })
-      await expect(figure.locator('svg[data-direction=TB]')).toBeVisible({ visible: !wide })
       await expect(figure.locator('[data-slot=diagram-legend]')).toBeVisible()
       await expect(figure.locator('[data-slot=diagram-legend] li')).toHaveCount(4)
       await expect(figure.locator('ol.sr-only > li')).toHaveCount(8)
       await expect(figure.locator('ol.sr-only > li').last()).toContainText('Who acts: Nibfin, no agent.')
       await expectNoPageScroll(page)
-      await figure.screenshot({ path: `${outDir}site-home-flow-${theme}-${width}.png` })
       expect(errors).toEqual([])
     }
   }

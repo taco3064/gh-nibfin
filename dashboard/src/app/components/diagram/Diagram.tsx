@@ -10,15 +10,16 @@ import {
   titlePlate,
   type DiagramKind,
   type DiagramSpec,
-  type KindTone,
   type Placement,
   type Point,
 } from './layout'
+import { Stacked } from './Stacked'
+import { toneOf } from './tones'
 
-// DiagramLayout picks the drawings: 'responsive' (the default) draws left to
-// right from the md breakpoint up and top to bottom below it; 'vertical'
-// draws top to bottom at every width, for a flow too long to read across the
-// content column.
+// DiagramLayout lists the drawings to try: 'responsive' (the default) tries
+// left to right, then top to bottom; 'vertical' tries only top to bottom, for
+// a flow too long to read across. When no drawing fits its box, the figure
+// shows the stacked layout: one block per node.
 export type DiagramLayout = 'responsive' | 'vertical'
 
 export interface DiagramProps {
@@ -29,33 +30,83 @@ export interface DiagramProps {
   // flow animates a slow dash along every edge, only without reduced motion.
   flow?: boolean
   className?: string
-  // layout 'responsive' (the default) draws left to right from the md
-  // breakpoint up and top to bottom below it; 'vertical' draws top to bottom
-  // at every width.
+  // layout 'responsive' (the default) shows the left-to-right drawing where
+  // it fits, else the top-to-bottom one; 'vertical' only ever shows the
+  // top-to-bottom one. Either falls back to the stacked layout.
   layout?: DiagramLayout
-  // readingOrder 'placement' (the default) lists the nodes in the shown
+  // readingOrder 'placement' (the default) lists the nodes in the first
   // drawing's reading order (the left-to-right one in responsive layout);
   // 'spec' lists them in the order the spec declares them.
   readingOrder?: 'placement' | 'spec'
 }
 
-// tones are literal classes per kind tone, so Tailwind sees them and no
-// inline style is needed.
-const tones: Record<KindTone, { stroke: string; text: string; border: string }> = {
-  primary: { stroke: 'stroke-primary', text: 'text-primary', border: 'border-primary' },
-  info: { stroke: 'stroke-info', text: 'text-info', border: 'border-info' },
-  warning: { stroke: 'stroke-warning', text: 'text-warning', border: 'border-warning' },
-  success: { stroke: 'stroke-success', text: 'text-success', border: 'border-success' },
-  muted: { stroke: 'stroke-muted-foreground', text: 'text-muted-foreground', border: 'border-muted-foreground' },
+// steps are the box widths a drawing may need, with literal container query
+// classes that show or hide a presentation from that width up (the CSP allows
+// no inline style, and Tailwind only sees literal classes).
+const steps: { px: number; show: string; hide: string }[] = [
+  { px: 1280, show: '@min-[1280px]:block', hide: '@min-[1280px]:hidden' },
+  { px: 1216, show: '@min-[1216px]:block', hide: '@min-[1216px]:hidden' },
+  { px: 1152, show: '@min-[1152px]:block', hide: '@min-[1152px]:hidden' },
+  { px: 1088, show: '@min-[1088px]:block', hide: '@min-[1088px]:hidden' },
+  { px: 1024, show: '@min-[1024px]:block', hide: '@min-[1024px]:hidden' },
+  { px: 960, show: '@min-[960px]:block', hide: '@min-[960px]:hidden' },
+  { px: 896, show: '@min-[896px]:block', hide: '@min-[896px]:hidden' },
+  { px: 832, show: '@min-[832px]:block', hide: '@min-[832px]:hidden' },
+  { px: 768, show: '@min-[768px]:block', hide: '@min-[768px]:hidden' },
+  { px: 704, show: '@min-[704px]:block', hide: '@min-[704px]:hidden' },
+  { px: 640, show: '@min-[640px]:block', hide: '@min-[640px]:hidden' },
+  { px: 576, show: '@min-[576px]:block', hide: '@min-[576px]:hidden' },
+  { px: 512, show: '@min-[512px]:block', hide: '@min-[512px]:hidden' },
+  { px: 448, show: '@min-[448px]:block', hide: '@min-[448px]:hidden' },
+  { px: 384, show: '@min-[384px]:block', hide: '@min-[384px]:hidden' },
+  { px: 320, show: '@min-[320px]:block', hide: '@min-[320px]:hidden' },
+]
+type Step = (typeof steps)[number]
+
+// floorOf is the box width a drawing of natural width needs so its text stays
+// at about 80% of its size or more: the largest step within 80% of its width.
+// It is 'any' for a drawing whose 80% is under the smallest step, and
+// undefined for one whose 80% is past the largest: that drawing never shows.
+function floorOf(width: number): Step | 'any' | undefined {
+  const at = width * 0.8
+  if (at > steps[0].px) return undefined
+  return steps.find((s) => s.px <= at) ?? 'any'
 }
-const toneOf = (k: DiagramKind | undefined) => tones[k?.tone ?? 'muted']
+
+// Candidate is a drawing to try, with the classes that show it.
+interface Candidate {
+  placement: Placement
+  className: string
+}
+
+// choose keeps, in order of preference, the drawings that can show, and
+// gives each the classes that show it only where its box is at least its
+// floor and no earlier drawing fits. stacked is the classes of the stacked
+// layout, shown where no drawing fits, or undefined when one always does.
+function choose(placements: Placement[]): { drawings: Candidate[]; stacked?: string } {
+  const drawings: Candidate[] = []
+  // earlier is the smallest floor of the drawings kept so far.
+  let earlier: Step | 'any' | undefined
+  for (const placement of placements) {
+    const floor = floorOf(placement.width)
+    if (floor === undefined || earlier === 'any') continue
+    if (earlier && floor !== 'any' && floor.px >= earlier.px) continue
+    const show = floor === 'any' ? 'block' : `hidden ${floor.show}`
+    drawings.push({ placement, className: earlier ? `${show} ${earlier.hide}` : show })
+    earlier = floor
+  }
+  if (earlier === 'any') return { drawings }
+  return { drawings, stacked: earlier ? `block ${earlier.hide}` : 'block' }
+}
 
 /**
  * A static figure of boxes, arrows and groups or lanes for the site (#456).
  * It renders without state or effects, so Astro outputs it as HTML at build
- * time: a left-to-right drawing from the md breakpoint up and a top-to-bottom
- * one below it (with layout="vertical", the top-to-bottom one at every width),
- * hidden from assistive technology, and a visually hidden ordered list that
+ * time. The figure is a size container (#474): of its presentations (the
+ * left-to-right drawing, the top-to-bottom one and the stacked layout) it
+ * shows the first that fits the box it actually has, through container
+ * queries, so nothing scrolls sideways and nothing is cut off. All of them
+ * are hidden from assistive technology; a visually hidden ordered list
  * carries the same information at every width.
  */
 export function Diagram({
@@ -68,32 +119,26 @@ export function Diagram({
   readingOrder = 'placement',
 }: DiagramProps) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '')
-  const vertical = layout === 'vertical'
   const narrow = layoutDiagram(spec, 'TB')
-  const wide = vertical ? undefined : layoutDiagram(spec, 'LR')
+  const wide = layout === 'vertical' ? undefined : layoutDiagram(spec, 'LR')
   const items = describeDiagram(spec, readingOrder === 'spec' ? { order: spec.nodes.map((n) => n.id) } : (wide ?? narrow))
   const lanes = (spec.groupStyle ?? 'frames') === 'lanes'
   const kindsTitle = spec.kindsTitle ?? 'Kinds'
+  const { drawings, stacked } = choose(wide ? [wide, narrow] : [narrow])
   return (
     <figure className={cn('not-content m-0 flex min-w-0 flex-col gap-3 p-0', className)} data-slot="diagram">
       <figcaption className="m-0 flex flex-col gap-1">
         <span className="font-heading text-base font-semibold text-foreground">{title}</span>
         {description && <span className="text-sm text-muted-foreground">{description}</span>}
       </figcaption>
-      {wide ? (
-        <>
-          <div className="hidden max-w-full overflow-x-auto md:block" data-slot="diagram-wide">
-            <Drawing spec={spec} flow={flow} placement={wide} marker={`nf-diagram-${id}-lr`} />
+      <div className="@container min-w-0" data-slot="diagram-box">
+        {drawings.map(({ placement, className: show }) => (
+          <div key={placement.direction} className={cn('min-w-0', show)} data-slot="diagram-drawing" data-direction={placement.direction}>
+            <Drawing spec={spec} flow={flow} placement={placement} marker={`nf-diagram-${id}-${placement.direction.toLowerCase()}`} />
           </div>
-          <div className="max-w-full overflow-x-auto md:hidden" data-slot="diagram-narrow">
-            <Drawing spec={spec} flow={flow} placement={narrow} marker={`nf-diagram-${id}-tb`} />
-          </div>
-        </>
-      ) : (
-        <div className="max-w-full overflow-x-auto" data-slot="diagram-vertical">
-          <Drawing spec={spec} flow={flow} placement={narrow} marker={`nf-diagram-${id}-tb`} />
-        </div>
-      )}
+        ))}
+        {stacked !== undefined && <Stacked spec={spec} items={items} className={stacked} />}
+      </div>
       {spec.kinds && spec.kinds.length > 0 && <Legend kinds={spec.kinds} title={kindsTitle} />}
       <ol className="sr-only">
         {items.map((item) => (
@@ -165,33 +210,6 @@ function path(points: Point[]): string {
   return `${d} L${f(last.x)},${f(last.y)}`
 }
 
-// floors are the minimum widths a drawing may shrink to, as literal classes
-// (the CSP allows no inline style). Past its floor a drawing scrolls inside
-// its figure, so its text stays at least about 80% of its natural size.
-const floors: [number, string][] = [
-  [1280, 'min-w-[80rem]'],
-  [1216, 'min-w-[76rem]'],
-  [1152, 'min-w-[72rem]'],
-  [1088, 'min-w-[68rem]'],
-  [1024, 'min-w-[64rem]'],
-  [960, 'min-w-[60rem]'],
-  [896, 'min-w-[56rem]'],
-  [832, 'min-w-[52rem]'],
-  [768, 'min-w-[48rem]'],
-  [704, 'min-w-[44rem]'],
-  [640, 'min-w-[40rem]'],
-  [576, 'min-w-[36rem]'],
-  [512, 'min-w-[32rem]'],
-  [448, 'min-w-[28rem]'],
-  [384, 'min-w-96'],
-  [320, 'min-w-80'],
-]
-
-// minWidth picks the largest floor within 80% of the natural width.
-function minWidth(width: number): string | undefined {
-  return floors.find(([px]) => px <= width * 0.8)?.[1]
-}
-
 function Drawing({ spec, flow, placement: p, marker }: { spec: DiagramSpec; flow: boolean; placement: Placement; marker: string }) {
   const s = sizes
   const kinds = new Map((spec.kinds ?? []).map((k) => [k.id, k]))
@@ -201,7 +219,7 @@ function Drawing({ spec, flow, placement: p, marker }: { spec: DiagramSpec; flow
       viewBox={`0 0 ${p.width} ${p.height}`}
       width={p.width}
       height={p.height}
-      className={cn('m-0 block h-auto max-w-full font-sans', minWidth(p.width))}
+      className="m-0 block h-auto max-w-full font-sans"
       aria-hidden="true"
       data-direction={p.direction}
     >
@@ -331,7 +349,7 @@ function Drawing({ spec, flow, placement: p, marker }: { spec: DiagramSpec; flow
               </text>
             ))}
             {n.badges.map((b, j) => (
-              <g key={j}>
+              <g key={j} data-badge={b.text}>
                 <rect x={b.x} y={b.y} width={b.width} height={b.height} rx={b.height / 2} className="fill-none stroke-border" />
                 <text
                   x={b.x + b.width / 2}
