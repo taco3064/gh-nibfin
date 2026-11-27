@@ -11,3 +11,7 @@ const tones: Record<KindTone, { stroke: string; text: string; border: string }> 
 }
 
 export const toneOf = (k: DiagramKind | undefined) => tones[k?.tone ?? 'muted']
+
+// toneClasses are the classes of one tone, for a figure that tones its own
+// blocks (#476).
+export const toneClasses = (tone: KindTone) => tones[tone]

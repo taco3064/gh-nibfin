@@ -1,4 +1,6 @@
 export { Diagram, type DiagramLayout, type DiagramProps } from './Diagram'
+export { DiagramText, type DiagramTextProps } from './DiagramText'
+export { toneClasses } from './tones'
 export {
   describeDiagram,
   edgeText,

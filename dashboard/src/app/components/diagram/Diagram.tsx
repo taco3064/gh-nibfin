@@ -4,7 +4,6 @@ import { cn } from '@/lib/utils'
 
 import {
   describeDiagram,
-  edgeText,
   layoutDiagram,
   sizes,
   titlePlate,
@@ -13,6 +12,7 @@ import {
   type Placement,
   type Point,
 } from './layout'
+import { DiagramText } from './DiagramText'
 import { Stacked } from './Stacked'
 import { toneOf } from './tones'
 
@@ -140,24 +140,9 @@ export function Diagram({
         {stacked !== undefined && <Stacked spec={spec} items={items} className={stacked} />}
       </div>
       {spec.kinds && spec.kinds.length > 0 && <Legend kinds={spec.kinds} title={kindsTitle} />}
-      <ol className="sr-only">
-        {items.map((item) => (
-          <li key={item.id}>
-            {sentence(item.detail ? `${item.title}: ${item.detail}` : item.title)}
-            {item.badges.length > 0 && ` Labels: ${item.badges.join(', ')}.`}
-            {item.kinds && ` ${kindsTitle}: ${item.kinds.join('; ')}.`}
-            {item.group && ` ${lanes ? 'Lane' : 'Group'}: ${item.group}.`}
-            {item.edges.length > 0 && ` Leads ${item.edges.map(edgeText).join(', ')}.`}
-          </li>
-        ))}
-      </ol>
+      <DiagramText items={items} kindsTitle={kindsTitle} lanes={lanes} />
     </figure>
   )
-}
-
-// sentence ends text with a full stop unless it already ends with one.
-function sentence(text: string): string {
-  return /[.!?]$/.test(text) ? text : `${text}.`
 }
 
 // Legend explains each kind: its tone and icon, its title and description.
