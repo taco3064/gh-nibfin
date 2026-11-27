@@ -150,9 +150,13 @@ export const sizes = {
   titleSize: 14,
   titleLine: 18,
   titleChars: 15,
+  // titleCharWidth and detailCharWidth are the character widths the limits
+  // above assume at the default node width (124 inner units).
+  titleCharWidth: 124 / 15,
   detailSize: 12,
   detailLine: 16,
   detailChars: 20,
+  detailCharWidth: 124 / 20,
   badgeSize: 11,
   badgeCharWidth: 6.8,
   badgeHeight: 18,
@@ -179,22 +183,14 @@ export const sizes = {
   margin: 8,
 } as const
 
-// wrapText breaks text at spaces into lines of at most maxChars characters;
-// a word longer than that is split.
+// wrapText breaks text at whitespace into lines of at most maxChars
+// characters. It never splits a word: a word longer than the limit gets a
+// line of its own, and hyphens are not break points.
 export function wrapText(text: string, maxChars: number): string[] {
-  const limit = Math.max(1, Math.floor(maxChars))
+  const limit = Math.max(1, Math.floor(maxChars + 1e-9))
   const lines: string[] = []
   let line = ''
-  for (const raw of text.trim().split(/\s+/)) {
-    let word = raw
-    while (word.length > limit) {
-      if (line) {
-        lines.push(line)
-        line = ''
-      }
-      lines.push(word.slice(0, limit))
-      word = word.slice(limit)
-    }
+  for (const word of text.trim().split(/\s+/)) {
     if (!word) continue
     if (!line) line = word
     else if (line.length + 1 + word.length <= limit) line = `${line} ${word}`
@@ -206,6 +202,14 @@ export function wrapText(text: string, maxChars: number): string[] {
   if (line) lines.push(line)
   return lines
 }
+
+// longestWord is the length of text's longest unbreakable word.
+export function longestWord(text: string): number {
+  return Math.max(0, ...text.trim().split(/\s+/).map((w) => w.length))
+}
+
+// badgeWidth is the width of a badge's pill, which always holds its text.
+export const badgeWidth = (text: string) => text.length * sizes.badgeCharWidth + 2 * sizes.badgePadX
 
 // validate rejects specs that would draw a wrong figure, naming the id.
 function validate(spec: DiagramSpec) {
@@ -248,24 +252,32 @@ function validate(spec: DiagramSpec) {
 type NodeContent = Pick<PlacedNode, 'width' | 'height' | 'lines' | 'badges' | 'icon' | 'markers'>
 
 // nodeContent sizes a node from its text and places its icon, lines, badges
-// and kind markers.
+// and kind markers. A node is sizes.nodeWidth wide, or wider when one of its
+// unbreakable tokens (a word of its title, detail or kind titles, or a badge)
+// needs more room, so no text leaves the node.
 function nodeContent(n: DiagramNode, kinds: Map<string, DiagramKind>): NodeContent {
   const s = sizes
-  const width = s.nodeWidth
-  const inner = width - 2 * s.nodePadX
-  const lines: TextLine[] = []
-  let y = s.nodePadY
   // An icon sits before the first title line; the title is indented past it
   // and wraps to the narrower room.
   const indent = n.icon ? s.iconSize + s.iconGap : 0
-  const titleChars = Math.floor((s.titleChars * (inner - indent)) / inner)
-  for (const text of wrapText(n.title, titleChars)) {
+  const markerIndent = s.markerIcon + s.markerGap
+  const needed = Math.max(
+    indent + longestWord(n.title) * s.titleCharWidth,
+    longestWord(n.detail ?? '') * s.detailCharWidth,
+    ...(n.kinds ?? []).map((id) => markerIndent + longestWord(kinds.get(id)?.title ?? '') * s.markerCharWidth),
+    ...(n.badges ?? []).map(badgeWidth),
+  )
+  const width = Math.max(s.nodeWidth, Math.ceil(needed + 2 * s.nodePadX))
+  const inner = width - 2 * s.nodePadX
+  const lines: TextLine[] = []
+  let y = s.nodePadY
+  for (const text of wrapText(n.title, (inner - indent) / s.titleCharWidth)) {
     y += s.titleLine
     lines.push({ text, kind: 'title', x: s.nodePadX + indent, y: y - 4 })
   }
   if (n.detail) {
     y += 4
-    for (const text of wrapText(n.detail, s.detailChars)) {
+    for (const text of wrapText(n.detail, inner / s.detailCharWidth)) {
       y += s.detailLine
       lines.push({ text, kind: 'detail', x: s.nodePadX, y: y - 4 })
     }
@@ -275,7 +287,7 @@ function nodeContent(n: DiagramNode, kinds: Map<string, DiagramKind>): NodeConte
     y += 8
     let x = s.nodePadX
     for (const text of n.badges) {
-      const w = Math.min(inner, text.length * s.badgeCharWidth + 2 * s.badgePadX)
+      const w = badgeWidth(text)
       if (x > s.nodePadX && x + w > s.nodePadX + inner) {
         x = s.nodePadX
         y += s.badgeHeight + s.badgeGap
@@ -290,8 +302,8 @@ function nodeContent(n: DiagramNode, kinds: Map<string, DiagramKind>): NodeConte
   const markers: PlacedMarker[] = []
   if (n.kinds?.length) {
     y += 10
-    const textX = s.nodePadX + s.markerIcon + s.markerGap
-    const chars = (inner - s.markerIcon - s.markerGap) / s.markerCharWidth
+    const textX = s.nodePadX + markerIndent
+    const chars = (inner - markerIndent) / s.markerCharWidth
     n.kinds.forEach((id, j) => {
       if (j > 0) y += 4
       const top = y
@@ -585,7 +597,12 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   const flowSize = (id: string) => (lr ? content.get(id)!.width : content.get(id)!.height)
   const cellCross = (cell: DiagramNode[]) =>
     cell.reduce((sum, n) => sum + crossSize(n.id), 0) + Math.max(0, cell.length - 1) * cellGap
-  const laneContent = cells.map((row) => Math.max(sizes.nodeWidth / 2, ...row.map(cellCross)))
+  // A TB lane is also wide enough for its title's longest word, which never
+  // breaks: the title starts 10 units in, and its plate reaches 4 past it.
+  const titleNeed = (title: string) => (lr ? 0 : longestWord(title) * s.groupTitleCharWidth + 14 - 2 * pad)
+  const laneContent = cells.map((row, li) =>
+    Math.max(sizes.nodeWidth / 2, titleNeed(lanes[li].title), ...row.map(cellCross)),
+  )
   // Size of each rank along the flow.
   const rankSize = Array.from({ length: ranks }, (_, r) =>
     Math.max(0, ...spec.nodes.filter((n) => rankOf.get(n.id) === r).map((n) => flowSize(n.id))),
