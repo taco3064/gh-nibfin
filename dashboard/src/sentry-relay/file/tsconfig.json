@@ -1,0 +1,26 @@
+{
+  // The filer runs with Node 24 straight from TypeScript (node main.ts), so it
+  // uses only erasable syntax and .ts import extensions.
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../../node_modules/.tmp/tsconfig.sentry-file.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["**/*.ts", "../payload.ts", "../testing.ts"]
+}
