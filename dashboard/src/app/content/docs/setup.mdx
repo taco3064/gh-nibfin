@@ -3,6 +3,8 @@ title: Setup and management
 description: Runners, the Claude login and its connectors, collaborators' Runners, working with several people, required reviews, the Dashboard and .nibfin.json.
 ---
 
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
 This page covers running Nibfin day to day: the Runners that do the work, what a
 Job can reach through the Claude login and how to limit it, adding your team,
 how reviews fit in, the local Dashboard, and the per-repository
@@ -20,6 +22,19 @@ the host. On Windows and macOS they live inside the `podman machine` Linux VM.
 [`gh nibfin runner add <claude|codex> [--count N]`](../cli/#runner-add) adds N
 Runners for one provider, two by default.
 
+<Steps>
+
+1. **Run `gh nibfin runner add <claude|codex> [--count N]`** in the repository
+   that becomes your execution repository.
+
+2. **Log in when asked.** When the provider is not logged in yet, `runner add`
+   runs [`login`](../cli/#login) for it.
+
+3. **Run it again if it was interrupted.** An interrupted `runner add` is
+   finished by running it again.
+
+</Steps>
+
 - The first Runner on a host registers to the repository of the current
   directory. That repository is your **execution repository**: every other
   repository you prepare with `init` sends its Jobs there. Later Runners reuse
@@ -29,9 +44,6 @@ Runners for one provider, two by default.
 - Each Runner's `.env` names its provider as `NIBFIN_PROVIDER`, and the Job
   takes the provider from the Runner that picks it up. No Issue, repository
   variable or workflow input chooses it.
-- When the provider is not logged in yet, `runner add` runs
-  [`login`](../cli/#login) for it.
-- An interrupted `runner add` is finished by running it again.
 
 To use both providers, add Runners for each. To switch a provider, remove its
 Runners and add Runners for the other.
@@ -41,16 +53,32 @@ Runners and add Runners for the other.
 A Runner only takes Jobs while it runs, so `runner add` keeps it running while
 the host is on. It never changes power or sleep settings.
 
-- **Windows:** it sets `[wsl2] vmIdleTimeout=-1` in `%UserProfile%\.wslconfig`,
-  keeping your other settings, and adds the Task Scheduler task
-  `Nibfin podman machine`. The task starts the machine at logon and on resume
-  from sleep.
-- **macOS:** it adds a LaunchAgent that starts the machine at login.
-- **Linux:** the Runners are systemd user services, and linger keeps them
-  running after you log out.
+<Tabs syncKey="platform">
+  <TabItem label="Windows">
 
-When the host's last Runner goes, the task or LaunchAgent goes with it. The
-`.wslconfig` setting stays, since other WSL users may rely on it.
+`runner add` sets `[wsl2] vmIdleTimeout=-1` in `%UserProfile%\.wslconfig`,
+keeping your other settings, and adds the Task Scheduler task
+`Nibfin podman machine`. The task starts the machine at logon and on resume
+from sleep.
+
+When the host's last Runner goes, the task goes with it. The `.wslconfig`
+setting stays, since other WSL users may rely on it.
+
+  </TabItem>
+  <TabItem label="macOS">
+
+`runner add` adds a LaunchAgent that starts the machine at login.
+
+When the host's last Runner goes, the LaunchAgent goes with it.
+
+  </TabItem>
+  <TabItem label="Linux">
+
+The Runners are systemd user services, and linger keeps them running after
+you log out.
+
+  </TabItem>
+</Tabs>
 
 ### Removing Runners
 
@@ -133,33 +161,61 @@ change it, so commit the rule yourself.
 ### Limiting connectors
 
 Limit connectors in Claude's user settings: the `settings.json` at the root of
-the `nibfin-home-claude` volume. On Windows and macOS, run `podman machine ssh`
-first; on Linux, run this on the host:
+the `nibfin-home-claude` volume.
 
-```sh
-cd "$(podman volume inspect nibfin-home-claude --format '{{.Mountpoint}}')"
-vi settings.json
-```
+<Steps>
 
-If access is denied, run `podman unshare vi settings.json` instead. Keep the file a JSON
-object and keep the `enableAllProjectMcpServers` line Nibfin added. A file that
-is not a JSON object stops Jobs with `AGENT_CONFIG_INVALID`.
+1. **Open a shell where the volume lives.**
 
-```json
-{
-  "enableAllProjectMcpServers": true,
-  "deniedMcpServers": [
-    { "serverName": "claude.ai Example" },
-    { "serverUrl": "https://mcp.example.com/*" }
-  ],
-  "permissions": {
-    "deny": [
-      "mcp__claude_ai_Other__create_item",
-      "mcp__claude_ai_Other__delete_item"
-    ]
-  }
-}
-```
+   <Tabs syncKey="platform">
+     <TabItem label="Windows">
+
+     Run `podman machine ssh` first.
+
+     </TabItem>
+     <TabItem label="macOS">
+
+     Run `podman machine ssh` first.
+
+     </TabItem>
+     <TabItem label="Linux">
+
+     Run the next step on the host.
+
+     </TabItem>
+   </Tabs>
+
+2. **Open `settings.json` in the volume.**
+
+   ```sh
+   cd "$(podman volume inspect nibfin-home-claude --format '{{.Mountpoint}}')"
+   vi settings.json
+   ```
+
+   If access is denied, run `podman unshare vi settings.json` instead.
+
+3. **Add the deny settings.** Keep the file a JSON object and keep the
+   `enableAllProjectMcpServers` line Nibfin added.
+
+   ```json
+   {
+     "enableAllProjectMcpServers": true,
+     "deniedMcpServers": [
+       { "serverName": "claude.ai Example" },
+       { "serverUrl": "https://mcp.example.com/*" }
+     ],
+     "permissions": {
+       "deny": [
+         "mcp__claude_ai_Other__create_item",
+         "mcp__claude_ai_Other__delete_item"
+       ]
+     }
+   }
+   ```
+
+</Steps>
+
+A file that is not a JSON object stops Jobs with `AGENT_CONFIG_INVALID`.
 
 - **`deniedMcpServers`** keeps whole connectors out of Jobs. A `serverName`
   entry matches the connector's claude.ai display name exactly, and that name
@@ -204,6 +260,8 @@ assigned to them run on their machines.
 
 ### Joining
 
+<Steps>
+
 1. **The Owner invites them.** Making someone a collaborator with write access
    to the execution repository approves their Runners. There is no other
    approval step.
@@ -220,6 +278,8 @@ assigned to them run on their machines.
    registration token encrypted to their SSH key. `runner add` decrypts it on
    their host, registers, and closes the request. It waits up to 10 minutes for
    the answer.
+
+</Steps>
 
 **Private and public execution repositories.** Only a private execution
 repository gets a deploy key. Before it opens the request, `runner add` creates
@@ -241,12 +301,18 @@ protect against the code an official Job runs inside its container.
 
 ### Removing a collaborator's Runners
 
-A collaborator's `gh nibfin runner remove` only cleans their own host: GitHub
-lets only an admin delete registrations. To finish the removal, the Owner:
+<Steps>
 
-- deletes the Runner registrations under **Settings → Actions → Runners**;
-- on a private execution repository, deletes the deploy key
-  `nibfin-runner-<login>` under **Settings → Deploy keys**.
+1. **The collaborator runs `gh nibfin runner remove`.** It only cleans their
+   own host: GitHub lets only an admin delete registrations.
+
+2. **The Owner deletes the Runner registrations** under
+   **Settings → Actions → Runners**.
+
+3. **On a private execution repository, the Owner deletes the deploy key**
+   `nibfin-runner-<login>` under **Settings → Deploy keys**.
+
+</Steps>
 
 A collaborator's `gh nibfin status` shows their local services only. GitHub's
 online and busy state needs admin, so it shows as `needs admin`.
