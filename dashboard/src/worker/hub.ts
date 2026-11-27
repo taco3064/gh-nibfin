@@ -5,7 +5,7 @@ import { publicData } from './build'
 import type { GitHub } from './github'
 import type { ApiError, LiveEvent } from './messages'
 import { check, minInterval, type CheckResult } from './poller'
-import { currentErrors, initialState, type State } from './state'
+import { currentErrors, initialState, loadedState, type State } from './state'
 
 export interface Socket {
   send(message: string): void
@@ -59,7 +59,8 @@ export function createHub({ store, github, now }: HubDeps) {
     // checked with the last good time or the current errors, and starts
     // polling when it was stopped.
     async connect(socket: Socket): Promise<void> {
-      const state = await store.load()
+      const stored = await store.load()
+      const state = stored ? loadedState(stored) : undefined
       if (state) {
         const errors = currentErrors(state)
         const status: LiveEvent[] = errors.length > 0 ? errorEvents(errors) : state.okAt !== null ? [{ event: 'checked', at: iso(state.okAt) }] : []
@@ -72,7 +73,8 @@ export function createHub({ store, github, now }: HubDeps) {
     // changed. The next alarm is set before GitHub is called, so neither a
     // failure nor an exception ends the polling.
     async alarm(): Promise<void> {
-      let state = (await store.load()) ?? initialState()
+      const stored = await store.load()
+      let state = stored ? loadedState(stored) : initialState()
       if (state.seq > state.sentSeq) {
         broadcast(store, snapshot(state))
         state.sentSeq = state.seq

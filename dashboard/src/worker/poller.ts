@@ -10,6 +10,8 @@ import {
   currentErrors,
   deliveredQuery,
   repos,
+  trendQuery,
+  trendStart,
   workflows,
   type BlockersEntry,
   type IssueBase,
@@ -20,6 +22,7 @@ import {
   type RunsResult,
   type Source,
   type State,
+  type TrendResult,
 } from './state'
 
 export const minInterval = 30_000
@@ -155,6 +158,65 @@ async function readIssues(gh: GitHub, repo: string, p: Probe<IssuesResult>, now:
   }
   if (pages.length !== (p.result?.pages.length ?? -1)) changed = true
   return changed ? { kind: 'new', result: { pages }, etags, poll } : { kind: 'same', poll }
+}
+
+// trendPages caps the trend read at 300 delivered Issues in 7 days, well
+// inside the request budget.
+export const trendPages = 3
+
+function trendFail(what: string): GitHubError {
+  return new GitHubError(200, null, { code: 'github_api_failed', message: `read the delivered trend: ${what}` })
+}
+
+// readTrend reads every delivered Issue closed since Taipei midnight 6 days
+// before today, page by page in a fixed order, and keeps only their close
+// times. It fails as a whole, keeping the stored result, when a page fails,
+// GitHub reports incomplete results, the Issues read differ from
+// total_count, or more than trendPages pages would be needed. It is read
+// when due, and at once when the Taipei day has moved past the stored one.
+// A stored single-page answer is asked for with its ETag.
+async function readTrend(gh: GitHub, p: Probe<TrendResult>, now: number): Promise<Outcome<TrendResult>> {
+  const start = trendStart(now)
+  const sameDay = p.result !== null && p.result.start === start
+  if (now < p.due && (p.result === null || sameDay)) return { kind: 'skip' }
+  const q = trendQuery(start)
+  const seen = new Set<string>()
+  const closedAt: string[] = []
+  const etags: (string | null)[] = []
+  let poll: number | null = null
+  try {
+    for (let page = 1; ; page++) {
+      const path = searchPath(q, { perPage, page, sort: 'created', order: 'asc' })
+      const etag = page === 1 && sameDay && p.etags.length === 1 ? (p.etags[0] ?? null) : null
+      const res = await gh.get(path, etag)
+      poll = Math.max(poll ?? 0, res.pollInterval ?? 0) || null
+      if (res.status === 304) {
+        if (etag === null) throw new GitHubError(304, null, { code: 'github_api_failed', message: `GET ${path}: HTTP 304 without a stored answer` })
+        return { kind: 'same', poll }
+      }
+      const body = obj(res.body)
+      const total = body.total_count
+      if (typeof total !== 'number') throw trendFail('no total_count')
+      if (body.incomplete_results === true) throw trendFail('GitHub reported incomplete results')
+      if (total > trendPages * perPage) throw trendFail(`${total} Issues need more than ${trendPages} pages`)
+      const items = list(body.items).map(obj)
+      for (const it of items) {
+        const key = str(it.html_url) || `${str(it.repository_url)}#${String(it.number)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        closedAt.push(str(it.closed_at))
+      }
+      etags.push(res.etag)
+      if (closedAt.length >= total || items.length < perPage) {
+        if (closedAt.length !== total) throw trendFail(`read ${closedAt.length} Issues, but total_count is ${total}`)
+        break
+      }
+      if (page >= trendPages) throw trendFail(`more than ${trendPages} pages`)
+    }
+  } catch (e) {
+    return { kind: 'failed', error: asError(e) }
+  }
+  return { kind: 'new', result: { start, closedAt }, etags, poll }
 }
 
 function parseRuns(repo: string) {
@@ -439,6 +501,10 @@ export async function check(input: State, gh: GitHub, now: number): Promise<Chec
     if (o.kind === 'new' && !blockersOk) defer(state.repos[repo].issues)
     else commit(state.repos[repo].issues, o, now)
   }
+
+  // The trend runs last: a spent request budget then holds back only the
+  // trend, read again on the next check.
+  commit(state.search.trend, await readTrend(gh, state.search.trend, now), now)
 
   const errors = currentErrors(state)
   if (errors.length === 0) state.okAt = now

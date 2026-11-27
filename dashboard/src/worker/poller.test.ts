@@ -9,6 +9,8 @@ import { FakeGitHub, inProgressPath, issueJSON, issuesPath, jobsPath, runJSON, r
 const core = 'taco3064/nibfin-core'
 const cli = 'taco3064/gh-nibfin'
 const t0 = Date.parse('2026-11-25T00:00:00Z')
+// The 7 Taipei days that end on 25 Nov, the Taipei date of t0, without a delivery.
+const noDays = ['19', '20', '21', '22', '23', '24', '25'].map((d) => ({ date: `2026-11-${d}`, delivered: 0 }))
 
 async function run(fake: FakeGitHub, state: State, now: number, budget?: number) {
   fake.reset()
@@ -59,7 +61,7 @@ describe('check', () => {
     const is = issuesOf(state, cli)
     expect(is).toHaveLength(1)
     expect(is[0]).toMatchObject({ number: 1, labels: ['Pause', 'scope'], pause: true, pending: false, blockedBy: [], runs: [] })
-    expect(state.data?.summary).toEqual({ since: '2026-11-21T00:00:00+08:00', created: 50, delivered: 42 })
+    expect(state.data?.summary).toEqual({ since: '2026-11-21T00:00:00+08:00', created: 50, delivered: 42, days: noDays })
   })
 
   it('makes no follow-up and reports no change when every probe answers 304', async () => {
@@ -71,8 +73,9 @@ describe('check', () => {
     expect(two.errors).toEqual([])
     expect(fake.graphqlCalls()).toHaveLength(0)
     const etagged = fake.requests.filter((r) => r.headers['If-None-Match'])
-    // Every conditional read sent its ETag; only the two searches carry none.
-    expect(fake.requests.length - etagged.length).toBe(2)
+    // Every conditional read sent its ETag; only the three searches, whose
+    // answers carried none, send none.
+    expect(fake.requests.length - etagged.length).toBe(3)
     expect(two.state.seq).toBe(1)
     expect(two.state.okAt).toBe(t0 + minInterval)
   })
@@ -343,7 +346,7 @@ describe('check', () => {
       await first(fake)
       const qs = fake
         .gets()
-        .filter((p) => p.startsWith('search/issues?'))
+        .filter((p) => p.startsWith('search/issues?per_page=1&'))
         .map((p) => new URLSearchParams(p.slice('search/issues?'.length)).get('q'))
       expect(qs).toEqual([created, delivered])
       expect(qs[1]).not.toContain('created:')
@@ -354,7 +357,7 @@ describe('check', () => {
       fake.set(searchPathOf(created), { total_count: 7, items: [] }, null)
       fake.set(searchPathOf(delivered), { total_count: 3, items: [] }, null)
       const { state } = await first(fake)
-      expect(state.data?.summary).toEqual({ since: '2026-11-21T00:00:00+08:00', created: 7, delivered: 3 })
+      expect(state.data?.summary).toEqual({ since: '2026-11-21T00:00:00+08:00', created: 7, delivered: 3, days: noDays })
     })
 
     it('keeps the previous counts on a failure, and is null before the first success', async () => {
@@ -364,7 +367,7 @@ describe('check', () => {
       expect(one.state.data?.summary).toMatchObject({ created: 50, delivered: null, error: { code: 'github_api_failed' } })
       fake.set(searchPathOf(delivered), { total_count: 42 }, null)
       const two = await run(fake, one.state, t0 + minInterval)
-      expect(two.state.data?.summary).toEqual({ since: '2026-11-21T00:00:00+08:00', created: 50, delivered: 42 })
+      expect(two.state.data?.summary).toEqual({ since: '2026-11-21T00:00:00+08:00', created: 50, delivered: 42, days: noDays })
       fake.fail(searchPathOf(created), 500, 'boom')
       const three = await run(fake, two.state, t0 + 2 * minInterval)
       expect(three.state.data?.summary).toMatchObject({ created: 50, delivered: 42, error: { message: expect.stringContaining('HTTP 500') } })
@@ -377,5 +380,162 @@ describe('check', () => {
       const { state } = await first(fake)
       expect(state.data?.summary).toMatchObject({ created: null, delivered: null, error: { code: 'github_api_failed' } })
     })
+  })
+})
+
+describe('delivered trend', () => {
+  // closed builds a trend item; n makes its URL unique.
+  const closed = (n: number, at: string) => ({ html_url: `https://github.com/taco3064/gh-nibfin/issues/${n}`, closed_at: at })
+  const trend = (state: State) => state.data?.summary.days
+  const trendQ = 'repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=2026-11-19T00:00:00+08:00'
+
+  it('reads the Issues closed since Taipei midnight 6 days ago and buckets them by Taipei day', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = [
+      closed(1, '2026-11-18T16:00:00Z'), // 19 Nov 00:00 in Taipei
+      closed(2, '2026-11-20T03:00:00Z'),
+      closed(3, '2026-11-20T15:59:59Z'), // still 20 Nov in Taipei
+      closed(4, '2026-11-20T16:00:00Z'), // 21 Nov in Taipei
+      closed(5, '2026-11-24T16:30:00Z'), // 25 Nov in Taipei
+    ]
+    const { state, errors } = await first(fake)
+    expect(errors).toEqual([])
+    expect(fake.trendQueries()).toEqual([trendQ])
+    const path = fake.gets().find((p) => p.startsWith('search/issues?per_page=100&page=1'))
+    expect(path).toContain('sort=created&order=asc')
+    expect(trend(state)).toEqual([
+      { date: '2026-11-19', delivered: 1 },
+      { date: '2026-11-20', delivered: 2 },
+      { date: '2026-11-21', delivered: 1 },
+      { date: '2026-11-22', delivered: 0 },
+      { date: '2026-11-23', delivered: 0 },
+      { date: '2026-11-24', delivered: 0 },
+      { date: '2026-11-25', delivered: 1 },
+    ])
+    // The stored result and the built data hold close times and counts only.
+    expect(Object.keys(state.search.trend.result ?? {})).toEqual(['start', 'closedAt'])
+    expect(JSON.stringify(state.data?.summary)).not.toContain('issues/')
+  })
+
+  it('puts 2026-11-26T16:30:00Z on 27 Nov', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = [closed(1, '2026-11-26T16:30:00Z')]
+    const now = Date.parse('2026-11-27T01:00:00Z')
+    const { state } = await run(fake, initialState(), now)
+    const days = trend(state) ?? []
+    expect(days.map((d) => d.date)).toEqual(['2026-11-21', '2026-11-22', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27'])
+    expect(days.map((d) => d.delivered)).toEqual([0, 0, 0, 0, 0, 0, 1])
+  })
+
+  it('reads more than 100 Issues over two pages', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = Array.from({ length: 130 }, (_, i) => closed(i + 1, i < 100 ? '2026-11-23T02:00:00Z' : '2026-11-24T02:00:00Z'))
+    const { state, errors } = await first(fake)
+    expect(errors).toEqual([])
+    expect(fake.trendQueries()).toHaveLength(2)
+    expect(fake.gets().some((p) => p.includes('per_page=100&page=2'))).toBe(true)
+    expect(trend(state)?.map((d) => d.delivered)).toEqual([0, 0, 0, 0, 100, 30, 0])
+  })
+
+  it('fails without sending a page past the cap when more than 3 pages are needed', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = Array.from({ length: 100 }, (_, i) => closed(i + 1, '2026-11-23T02:00:00Z'))
+    fake.trend.total = 301
+    const { state, errors } = await first(fake)
+    expect(fake.trendQueries()).toHaveLength(1)
+    expect(errors.map((e) => e.message)).toEqual(['read the delivered trend: 301 Issues need more than 3 pages'])
+    expect(trend(state)).toBeUndefined()
+    expect(state.data?.summary).toMatchObject({ created: 50, delivered: 42, error: { code: 'github_api_failed', message: 'read the delivered trend: 301 Issues need more than 3 pages' } })
+  })
+
+  it('fails on incomplete results and on a count that differs from total_count', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = [closed(1, '2026-11-23T02:00:00Z')]
+    fake.trend.incomplete = true
+    const one = await first(fake)
+    expect(one.errors.map((e) => e.message)).toEqual(['read the delivered trend: GitHub reported incomplete results'])
+    expect(trend(one.state)).toBeUndefined()
+
+    fake.trend = { items: [closed(1, '2026-11-23T02:00:00Z'), closed(1, '2026-11-23T02:00:00Z')] }
+    const two = await first(fake)
+    expect(two.errors.map((e) => e.message)).toEqual(['read the delivered trend: read 1 Issues, but total_count is 2'])
+    expect(trend(two.state)).toBeUndefined()
+  })
+
+  it('keeps the stored result on a failed page, leaves days out and reads again next check', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = [closed(1, '2026-11-23T02:00:00Z')]
+    const one = await first(fake)
+    expect(trend(one.state)?.[4]).toEqual({ date: '2026-11-23', delivered: 1 })
+    fake.trend.items = Array.from({ length: 150 }, (_, i) => closed(i + 1, '2026-11-24T02:00:00Z'))
+    fake.trend.failPage = { page: 2, status: 502 }
+    const two = await run(fake, one.state, t0 + minInterval)
+    expect(two.errors).toHaveLength(1)
+    expect(two.errors[0].message).toContain('HTTP 502')
+    expect(two.state.search.trend.result).toEqual(one.state.search.trend.result)
+    expect(two.state.data?.summary.days).toBeUndefined()
+    expect(two.state.data?.summary).toMatchObject({ created: 50, delivered: 42, error: { message: expect.stringContaining('HTTP 502') } })
+    fake.trend.failPage = undefined
+    const three = await run(fake, two.state, t0 + 2 * minInterval)
+    expect(three.errors).toEqual([])
+    expect(trend(three.state)?.[5]).toEqual({ date: '2026-11-24', delivered: 150 })
+    expect(three.state.data?.summary.error).toBeUndefined()
+  })
+
+  it('names the count error before the trend error', async () => {
+    const fake = new FakeGitHub()
+    fake.fail(searchPathOf('repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue created:>=2026-11-21T00:00:00+08:00'), 403, 'rate limit')
+    fake.trend.incomplete = true
+    const { state } = await first(fake)
+    expect(state.data?.summary.error?.message).toContain('HTTP 403: rate limit')
+  })
+
+  it('sends the ETag of a stored single-page answer and keeps it on 304', async () => {
+    const fake = new FakeGitHub()
+    fake.trend = { items: [closed(1, '2026-11-23T02:00:00Z')], etag: 'W/"t1"' }
+    const one = await first(fake)
+    const two = await run(fake, one.state, t0 + minInterval)
+    const req = fake.requests.find((r) => r.path.startsWith('search/issues?per_page=100'))
+    expect(req?.headers['If-None-Match']).toBe('W/"t1"')
+    expect(two.changed).toBe(false)
+    expect(two.errors).toEqual([])
+    expect(trend(two.state)?.[4].delivered).toBe(1)
+  })
+
+  it('reads the new 7 days at the first check after Taipei midnight, before the probe is due', async () => {
+    const fake = new FakeGitHub()
+    fake.trend = { items: [closed(1, '2026-11-23T02:00:00Z')], etag: 'W/"t1"' }
+    const late = Date.parse('2026-11-25T15:59:50Z') // 23:59:50 on 25 Nov in Taipei
+    const one = await run(fake, initialState(), late)
+    expect(trend(one.state)?.at(-1)?.date).toBe('2026-11-25')
+    // 10 s before the probe would be due again; the same day reads nothing.
+    await run(fake, one.state, late + 5_000)
+    expect(fake.trendQueries()).toEqual([])
+    const two = await run(fake, one.state, late + 20_000)
+    const req = fake.requests.find((r) => r.path.startsWith('search/issues?per_page=100'))
+    expect(req?.headers['If-None-Match']).toBeUndefined()
+    expect(fake.trendQueries()).toEqual([trendQ.replace('2026-11-19', '2026-11-20')])
+    expect(trend(two.state)?.map((d) => d.date)).toEqual(['2026-11-20', '2026-11-21', '2026-11-22', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26'])
+    expect(trend(two.state)?.map((d) => d.delivered)).toEqual([0, 0, 0, 1, 0, 0, 0])
+  })
+
+  it('reads the trend last: a spent budget holds back only the trend, read on the next check', async () => {
+    const fake = new FakeGitHub()
+    fake.set(issuesPath(cli), [issueJSON(1)])
+    fake.trend.items = [closed(1, '2026-11-23T02:00:00Z')]
+    // 3 × (issues, 2 workflows, runners), 2 searches and 1 blocker query.
+    const one = await run(fake, initialState(), t0, 15)
+    expect(fake.requests).toHaveLength(15)
+    expect(fake.trendQueries()).toEqual([])
+    expect(one.errors).toHaveLength(1)
+    expect(one.errors[0].message).toContain('request budget of this check reached')
+    expect(one.state.data?.summary).toMatchObject({ created: 50, delivered: 42, error: { message: expect.stringContaining('request budget of this check reached') } })
+    expect(one.state.data?.summary.days).toBeUndefined()
+    expect(issuesOf(one.state, cli).map((i) => i.number)).toEqual([1])
+    expect(one.state.blockers.lastError).toBeNull()
+    const two = await run(fake, one.state, t0 + minInterval)
+    expect(fake.trendQueries()).toEqual([trendQ])
+    expect(two.errors).toEqual([])
+    expect(trend(two.state)?.[4].delivered).toBe(1)
   })
 })

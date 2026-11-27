@@ -2,9 +2,9 @@
 // TypeScript ports of the status rules in internal/status (toIssue,
 // IssueOfTitle and the run order), which cannot run in a Worker.
 
-import type { ApiError, Issue, Job, LiveData, RepoData, RepoRunners, Run, Runner, Summary } from './messages'
-import type { BlockersEntry, IssueBase, RunsResult, State } from './state'
-import { repos, since, workflows } from './state'
+import type { ApiError, Issue, Job, LiveData, RepoData, RepoRunners, Run, Runner, Summary, TrendDay } from './messages'
+import type { BlockersEntry, IssueBase, RunsResult, State, TrendResult } from './state'
+import { addDays, repos, since, taipeiDate, trendDays, workflows } from './state'
 
 const runPrefix = 'nibfin · '
 
@@ -162,12 +162,26 @@ function repoRunners(state: State, repo: string): RepoRunners {
   return out
 }
 
+// trendDaysOf buckets the close times by Asia/Taipei date into the
+// trendDays days from start, oldest first, with 0 for a day without any.
+export function trendDaysOf(result: TrendResult): TrendDay[] {
+  const days: TrendDay[] = Array.from({ length: trendDays }, (_, i) => ({ date: addDays(result.start, i), delivered: 0 }))
+  for (const at of result.closedAt) {
+    const day = days.find((d) => d.date === taipeiDate(Date.parse(at)))
+    if (day) day.delivered++
+  }
+  return days
+}
+
 function summary(state: State): Summary {
-  const { created, delivered } = state.search
+  const { created, delivered, trend } = state.search
   const out: Summary = { since, created: created.result?.total ?? null, delivered: delivered.result?.total ?? null }
-  const error = created.lastError ?? delivered.lastError
+  // The trend carries counts only, never the Issues it read.
+  if (trend.result !== null && trend.lastError === null) out.days = trendDaysOf(trend.result)
+  let error = created.lastError ?? delivered.lastError
+  if (!error && (out.created === null || out.delivered === null)) error = notRead('the Summary')
+  error ??= trend.lastError
   if (error) out.error = error
-  else if (out.created === null || out.delivered === null) out.error = notRead('the Summary')
   return out
 }
 

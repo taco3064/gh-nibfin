@@ -18,6 +18,34 @@ export const since = '2026-11-21T00:00:00+08:00'
 export const createdQuery = `repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue created:>=${since}`
 export const deliveredQuery = `repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=${since}`
 
+// trendDays is the length of the delivered trend, today included.
+export const trendDays = 7
+
+// trendQuery is deliveredQuery closed since Taipei midnight of start
+// (YYYY-MM-DD), the trend's first day.
+export function trendQuery(start: string): string {
+  return `repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=${start}T00:00:00+08:00`
+}
+
+const taipeiOffset = 8 * 3600_000 // Asia/Taipei is UTC+8, without daylight saving time
+
+// taipeiDate is the Asia/Taipei date of an instant as YYYY-MM-DD, or "" for
+// an invalid time.
+export function taipeiDate(ms: number): string {
+  if (!Number.isFinite(ms)) return ''
+  return new Date(ms + taipeiOffset).toISOString().slice(0, 10)
+}
+
+// addDays moves a YYYY-MM-DD date by n days.
+export function addDays(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+}
+
+// trendStart is the first day of the trend that ends today in Asia/Taipei.
+export function trendStart(now: number): string {
+  return addDays(taipeiDate(now), -(trendDays - 1))
+}
+
 // Source is anything a check reads: its last error and when it happened.
 export interface Source {
   lastError: ApiError | null
@@ -63,6 +91,13 @@ export interface JobBase {
   url: string
 }
 
+// TrendResult holds the close time of every delivered Issue closed since
+// Taipei midnight of start, read over every page of the trend search.
+export interface TrendResult {
+  start: string
+  closedAt: string[]
+}
+
 export interface BlockersEntry {
   blockedBy: Blocker[]
   error?: ApiError
@@ -79,7 +114,7 @@ export interface RepoState {
 export interface State {
   version: 1
   repos: Record<string, RepoState>
-  search: { created: Probe<{ total: number }>; delivered: Probe<{ total: number }> }
+  search: { created: Probe<{ total: number }>; delivered: Probe<{ total: number }>; trend: Probe<TrendResult> }
   blockers: Source & { byIssue: Record<string, BlockersEntry> }
   fatal: ApiError | null // a failure no probe could start past, the missing token
   okAt: number | null // the last check every source passed
@@ -107,7 +142,7 @@ export function initialState(): State {
   return {
     version: 1,
     repos: r,
-    search: { created: probe(), delivered: probe() },
+    search: { created: probe(), delivered: probe(), trend: probe() },
     blockers: { byIssue: {}, lastError: null, errorAt: null },
     fatal: null,
     okAt: null,
@@ -118,6 +153,13 @@ export function initialState(): State {
   }
 }
 
+// loadedState fills in what a state stored by an older Worker lacks, so a
+// Worker deployed over old storage reads it: the trend probe, added later.
+export function loadedState(state: State): State {
+  if (!state.search.trend) state.search.trend = probe()
+  return state
+}
+
 // sources lists every source of the state in a fixed order.
 export function sources(state: State): Source[] {
   const out: Source[] = []
@@ -125,7 +167,7 @@ export function sources(state: State): Source[] {
     const r = state.repos[repo]
     out.push(r.issues, ...workflows.map((wf) => r.runs[wf]), r.runners, r.inProgress, r.jobs)
   }
-  out.push(state.search.created, state.search.delivered, state.blockers)
+  out.push(state.search.created, state.search.delivered, state.blockers, state.search.trend)
   return out
 }
 

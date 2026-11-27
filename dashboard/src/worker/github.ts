@@ -118,10 +118,22 @@ async function githubMessage(res: Response): Promise<string> {
   }
 }
 
+export interface SearchOptions {
+  perPage?: number // 1 by default: only total_count is read
+  page?: number
+  sort?: string
+  order?: 'asc' | 'desc'
+}
+
 // searchPath builds a search/issues path; URLSearchParams encodes the
 // spaces, colons and the + of a UTC offset in q.
-export function searchPath(q: string): string {
-  return `search/issues?${new URLSearchParams({ per_page: '1', q }).toString()}`
+export function searchPath(q: string, { perPage = 1, page, sort, order }: SearchOptions = {}): string {
+  const params = new URLSearchParams({ per_page: String(perPage) })
+  if (page !== undefined) params.set('page', String(page))
+  if (sort !== undefined) params.set('sort', sort)
+  if (order !== undefined) params.set('order', order)
+  params.set('q', q)
+  return `search/issues?${params.toString()}`
 }
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
