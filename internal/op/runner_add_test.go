@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/taco3064/gh-nibfin/internal/runners"
 )
@@ -223,6 +224,9 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		if exit == 0 && !f.purgeNoop {
 			delete(f.slots, args[1])
 		}
+	}
+	if out, ok := f.shellOut[name]; ok {
+		stdout = out
 	}
 	c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
 	c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=shell",
@@ -606,6 +610,102 @@ func TestRunnerAddScrubsToken(t *testing.T) {
 	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
 	if Code(err) != CodeRunnerInstallFailed || strings.Contains(err.Error(), "SECRETTOKEN") || !strings.Contains(err.Error(), "Forbidden") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// configureFailure runs runner add on a podman machine whose configure
+// script exits 1 with the given stderr and stdout, and returns the error.
+func configureFailure(t *testing.T, stderr, stdout string) error {
+	t.Helper()
+	f := &fakeHost{vm: true, probe: strings.Replace(defaultProbe, "linger 0", "linger 1", 1),
+		slots: map[string]*fakeSlot{}, volumes: map[string]bool{"nibfin-tools": true, "claude": true},
+		loggedIn: map[string]bool{"claude": true}, token: "SECRETTOKEN"}
+	f.shellExit = map[string]int{"configure": 1}
+	f.shellErr = map[string]string{"configure": stderr}
+	f.shellOut = map[string]string{"configure": stdout}
+	useRunnerHost(t, f)
+	_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+	if Code(err) != CodeRunnerInstallFailed {
+		t.Fatalf("code = %q, err = %v", Code(err), err)
+	}
+	return err
+}
+
+func TestRunnerAddConfigureKeepsStderr(t *testing.T) {
+	err := configureFailure(t, "Http response code: NotFound\n", "")
+	msg := err.Error()
+	for _, want := range []string{"configure claude-1 on ", "exit status 1", "stderr: Http response code: NotFound"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("missing %q in %q", want, msg)
+		}
+	}
+	if strings.Contains(msg, "stdout:") {
+		t.Errorf("empty stdout shown: %q", msg)
+	}
+}
+
+func TestRunnerAddConfigureKeepsStdout(t *testing.T) {
+	err := configureFailure(t, "", "Must not run with sudo\n")
+	msg := err.Error()
+	for _, want := range []string{"configure claude-1 on ", "exit status 1", "stdout: Must not run with sudo"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("missing %q in %q", want, msg)
+		}
+	}
+	if strings.Contains(msg, "stderr:") {
+		t.Errorf("empty stderr shown: %q", msg)
+	}
+}
+
+func TestRunnerAddConfigureMasksTokenInOutput(t *testing.T) {
+	err := configureFailure(t, "denied for SECRETTOKEN\n", "token=SECRETTOKEN rejected\n")
+	b, jerr := json.Marshal(err)
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	for _, s := range []string{err.Error(), string(b)} {
+		if strings.Contains(s, "SECRETTOKEN") || !strings.Contains(s, "stderr: denied for [token]") ||
+			!strings.Contains(s, "stdout: token=[token] rejected") {
+			t.Errorf("not masked: %s", s)
+		}
+	}
+}
+
+func TestRunnerAddConfigureKeepsOutputTail(t *testing.T) {
+	var out strings.Builder
+	for i := 1; i <= 200; i++ {
+		fmt.Fprintf(&out, "line %03d %s\n", i, strings.Repeat("x", 40))
+	}
+	msg := configureFailure(t, "", out.String()).Error()
+	_, tail, ok := strings.Cut(msg, "stdout: ")
+	if !ok {
+		t.Fatalf("no stdout in %q", msg)
+	}
+	if !strings.HasPrefix(tail, childCutMark) || !strings.Contains(tail, "line 200 ") || strings.Contains(tail, "line 001 ") ||
+		strings.Contains(tail, "line 180 ") || strings.Count(tail, "line ") > childTailLines {
+		t.Errorf("tail = %q", tail)
+	}
+	if len(tail) > childTailBytes+len(childCutMark) {
+		t.Errorf("tail is %d bytes", len(tail))
+	}
+}
+
+func TestOutputTailBounds(t *testing.T) {
+	if got := outputTail(" \n\n"); got != "" {
+		t.Errorf("blank = %q", got)
+	}
+	if got := outputTail("a\r\nb\n"); got != "a | b" {
+		t.Errorf("short = %q", got)
+	}
+	long := strings.Repeat("é", childTailBytes) + "END"
+	got := outputTail(long)
+	if !strings.HasPrefix(got, childCutMark) || !strings.HasSuffix(got, "END") || !utf8.ValidString(got) ||
+		len(got) > childTailBytes+len(childCutMark) {
+		t.Errorf("long line kept %d bytes: valid=%v", len(got), utf8.ValidString(got))
+	}
+	many := strings.Repeat(strings.Repeat("y", 300)+"\n", 10)
+	if got := outputTail(many); !strings.HasPrefix(got, childCutMark) || len(got) > childTailBytes+len(childCutMark) {
+		t.Errorf("bytes cap: %d", len(got))
 	}
 }
 

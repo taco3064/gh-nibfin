@@ -71,13 +71,15 @@ type fakeHost struct {
 
 	// The runner host, for Shell (see runner_add_test.go). A nil slots
 	// map means one complete runner per provider.
-	slots      map[string]*fakeSlot
-	vm, wsl    bool
-	probe      string
-	linger     bool
-	shells     []shellCall
-	shellExit  map[string]int
-	shellErr   map[string]string
+	slots     map[string]*fakeSlot
+	vm, wsl   bool
+	probe     string
+	linger    bool
+	shells    []shellCall
+	shellExit map[string]int
+	shellErr  map[string]string
+	// shellOut overrides the stdout of the named script.
+	shellOut   map[string]string
 	archiveSHA string
 	token      string
 	units      map[string]string
