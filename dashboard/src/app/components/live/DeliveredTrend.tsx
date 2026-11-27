@@ -2,7 +2,8 @@ import type { TrendDay } from '../../../worker/messages'
 import { trendBarPercent, trendDay, trendDayText, trendTotal } from '../../lib/summary'
 
 // DeliveredTrend draws the delivered count of each of the last 7 Taipei
-// days as small bars, today last. Each day's count and date stay as text:
+// days as bars in a full-width row, today last; the week's maximum fills
+// the plot height. Each day's count and date stay as text:
 // visible above and below its bar, and one sentence per day for screen
 // readers. Bars grow in under motion-safe only; with reduced motion they
 // show at their final height.
@@ -10,11 +11,11 @@ export function DeliveredTrend({ days }: { days: TrendDay[] }) {
   const max = Math.max(0, ...days.map((d) => d.delivered))
   const total = trendTotal(days)
   return (
-    <figure className="m-0 flex min-w-0 flex-col gap-2" data-slot="delivered-trend">
-      <figcaption className="text-xs text-muted-foreground">
+    <figure className="m-0 flex min-w-0 flex-col gap-3" data-slot="delivered-trend">
+      <figcaption className="text-sm text-muted-foreground">
         Delivered per day, last 7 days <span className="whitespace-nowrap">({total} in total)</span>
       </figcaption>
-      <ol className="m-0 grid list-none grid-cols-7 gap-1 p-0 sm:gap-1.5">
+      <ol className="m-0 grid list-none grid-cols-7 gap-1.5 p-0 sm:gap-3">
         {days.map((d, i) => {
           const day = trendDay(d.date)
           const pct = trendBarPercent(d.delivered, max)
@@ -28,7 +29,7 @@ export function DeliveredTrend({ days }: { days: TrendDay[] }) {
               <span aria-hidden="true" className="text-xs font-semibold tabular-nums text-foreground">
                 {d.delivered}
               </span>
-              <span aria-hidden="true" className="flex h-14 w-full max-w-8 items-end border-b border-border">
+              <span aria-hidden="true" className="flex h-32 w-full max-w-16 items-end border-b border-border sm:h-40">
                 {pct > 0 && (
                   <span
                     data-slot="trend-bar"
