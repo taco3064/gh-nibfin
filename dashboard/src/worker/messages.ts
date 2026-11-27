@@ -33,11 +33,21 @@ export interface RepoData {
 // Summary counts Issues since the showcase start, summed over the three
 // repositories: created since then, and closed since then with delivered
 // whenever they were created. A count is null before its first read.
+// days is the delivered count of each of the last 7 Asia/Taipei days,
+// oldest first and today last, by the same delivered rule; it is absent
+// until that trend is read and whenever its last read failed.
 export interface Summary {
   since: '2026-11-21T00:00:00+08:00'
   created: number | null
   delivered: number | null
+  days?: TrendDay[]
   error?: ApiError
+}
+
+// TrendDay is one Asia/Taipei day; date is YYYY-MM-DD.
+export interface TrendDay {
+  date: string
+  delivered: number
 }
 
 // RepoRunners lists one repository's self-hosted runners. repo is

@@ -249,3 +249,24 @@ describe('hub', () => {
     for (const saved of store.saved) expect(saved).not.toContain(token)
   })
 })
+
+describe('hub with state stored before the trend', () => {
+  it('loads it, greets a page and checks without throwing', async () => {
+    const { store, hub, fake } = setup()
+    const s = new FakeSocket()
+    store.clients.push(s)
+    await hub.connect(s)
+    await hub.alarm()
+    const old = structuredClone(store.state) as State
+    delete (old.search as Partial<State['search']>).trend
+    store.state = old
+    const late = new FakeSocket()
+    store.clients.push(late)
+    await hub.connect(late)
+    expect(kinds(late)).toContain('snapshot')
+    fake.reset()
+    await hub.alarm()
+    expect(store.state?.search.trend.result).toEqual({ start: '2026-11-19', closedAt: [] })
+    expect(fake.trendQueries()).toHaveLength(1)
+  })
+})

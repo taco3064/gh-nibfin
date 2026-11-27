@@ -83,3 +83,55 @@ describe('repo data against schema/status.schema.json', () => {
     expect(validate({ ...repo, issues: [noRuns] })).toBe(false)
   })
 })
+
+// The Summary is Worker-only: status --json has none. Its schema is the
+// Summary type of messages.ts, written out here.
+const apiError = { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'], additionalProperties: false }
+const validateSummary = ajv.compile({
+  type: 'object',
+  properties: {
+    since: { const: '2026-11-21T00:00:00+08:00' },
+    created: { type: ['integer', 'null'], minimum: 0 },
+    delivered: { type: ['integer', 'null'], minimum: 0 },
+    days: {
+      type: 'array',
+      minItems: 7,
+      maxItems: 7,
+      items: {
+        type: 'object',
+        properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, delivered: { type: 'integer', minimum: 0 } },
+        required: ['date', 'delivered'],
+        additionalProperties: false,
+      },
+    },
+    error: apiError,
+  },
+  required: ['since', 'created', 'delivered'],
+  additionalProperties: false,
+})
+
+describe('Summary against the Summary type of messages.ts', () => {
+  async function summaryOf(fake: FakeGitHub) {
+    const { state } = await check(initialState(), createGitHub({ token, fetch: fake.fetch, ...quick }), t0)
+    return state.data?.summary
+  }
+
+  it('validates a Summary with days', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.items = [{ html_url: 'https://github.com/x/y/issues/1', closed_at: '2026-11-24T01:00:00Z' }]
+    const s = await summaryOf(fake)
+    expect(s?.days).toHaveLength(7)
+    expect(validateSummary(s)).toBe(true)
+    expect(validateSummary({ ...s, days: s?.days?.slice(1) })).toBe(false)
+    expect(validateSummary({ ...s, days: s?.days?.map((d) => ({ ...d, title: 'x' })) })).toBe(false)
+  })
+
+  it('validates a Summary without days after a failed trend read', async () => {
+    const fake = new FakeGitHub()
+    fake.trend.failPage = { page: 1, status: 500 }
+    const s = await summaryOf(fake)
+    expect(s?.days).toBeUndefined()
+    expect(s?.error).toBeDefined()
+    expect(validateSummary(s)).toBe(true)
+  })
+})

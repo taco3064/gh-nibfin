@@ -58,6 +58,10 @@ export class FakeGitHub {
   blockers: Record<string, Blocker[]> = {}
   graphqlErrors: { message: string; path: (string | number)[] }[] = []
   graphqlStatus = 200
+  // trend answers any trend search (per_page=100), page by page: its
+  // items, total_count (items.length unless set), incomplete_results, an
+  // ETag, and a failure of one page.
+  trend: { items: { html_url: string; closed_at: string }[]; total?: number; incomplete?: boolean; etag?: string; failPage?: { page: number; status: number } } = { items: [] }
   private n = 0
 
   constructor() {
@@ -99,12 +103,35 @@ export class FakeGitHub {
     const body = typeof init?.body === 'string' ? init.body : null
     this.requests.push({ method: init?.method ?? 'GET', path, headers, body })
     if (path === 'graphql') return this.graphql(JSON.parse(body ?? '{}') as { query: string; variables: Record<string, string> })
+    if (!this.routes.has(path) && path.startsWith('search/issues?')) {
+      const params = new URLSearchParams(path.slice('search/issues?'.length))
+      if (params.get('per_page') === '100') return this.trendPage(Number(params.get('page') ?? '1'), headers)
+    }
     const a = this.routes.get(path) ?? { status: 404, body: { message: 'Not Found' } }
     const h = new Headers(a.headers)
     if (a.etag) h.set('etag', a.etag)
     if (a.status === 200 && a.etag && headers['If-None-Match'] === a.etag) return new Response(null, { status: 304, headers: h })
     h.set('content-type', 'application/json')
     return new Response(JSON.stringify(a.body), { status: a.status ?? 200, headers: h })
+  }
+
+  // trendQueries lists the q of every trend page request.
+  trendQueries(): string[] {
+    return this.gets()
+      .filter((p) => p.startsWith('search/issues?') && new URLSearchParams(p.slice('search/issues?'.length)).get('per_page') === '100')
+      .map((p) => new URLSearchParams(p.slice('search/issues?'.length)).get('q') ?? '')
+  }
+
+  private trendPage(page: number, headers: Record<string, string>): Response {
+    const t = this.trend
+    if (t.failPage?.page === page) return new Response(JSON.stringify({ message: 'Server Error' }), { status: t.failPage.status })
+    const h = new Headers({ 'content-type': 'application/json' })
+    if (t.etag) {
+      h.set('etag', t.etag)
+      if (page === 1 && headers['If-None-Match'] === t.etag) return new Response(null, { status: 304, headers: h })
+    }
+    const items = t.items.slice((page - 1) * 100, page * 100)
+    return new Response(JSON.stringify({ total_count: t.total ?? t.items.length, incomplete_results: t.incomplete ?? false, items }), { status: 200, headers: h })
   }
 
   private graphql({ query, variables }: { query: string; variables: Record<string, string> }): Response {
