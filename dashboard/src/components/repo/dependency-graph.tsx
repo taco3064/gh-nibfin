@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
+import { Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { Check, CircleCheck, Search, X } from 'lucide-react'
 import {
   Controls,
@@ -102,6 +102,9 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
     const edges: GraphEdge[] = filtered.edges.filter((e) => !e.closed)
     return { keys, edges }
   }, [layout, closed, filtered])
+  // drawnKey names what the canvas draws, so a failed drawing is tried
+  // again once a snapshot or refresh changes it.
+  const drawnKey = useMemo(() => `${drawn.keys.join(' ')}|${drawn.edges.map((e) => `${e.from}>${e.to}`).join(' ')}`, [drawn])
   // blocks lists, per blocker, the shown Issues it blocks.
   const blocks = useMemo(() => {
     const m = new Map<string, string[]>()
@@ -173,11 +176,13 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
             </p>
           )}
           {drawn.keys.length > 0 && (
-            <SharedContext.Provider value={shared}>
-              <ReactFlowProvider>
-                <GraphRegion keys={drawn.keys} edges={drawn.edges} context={context} blocks={blocks} groups={groups} />
-              </ReactFlowProvider>
-            </SharedContext.Provider>
+            <GraphBoundary drawn={drawnKey}>
+              <SharedContext.Provider value={shared}>
+                <ReactFlowProvider>
+                  <GraphRegion keys={drawn.keys} edges={drawn.edges} context={context} blocks={blocks} groups={groups} />
+                </ReactFlowProvider>
+              </SharedContext.Provider>
+            </GraphBoundary>
           )}
           {unreadAlone.length > 0 && (
             <div className="flex flex-col gap-3" data-slot="unread">
@@ -375,12 +380,43 @@ interface FlowData extends Record<string, unknown> {
 
 type FlowNode = Node<FlowData, 'graph'>
 
+// FlowNodeView draws a node from React Flow's store. After an update React
+// Flow can still render, for one render, an id that has left the graph;
+// such a node draws nothing, and the next render draws the new state.
 function FlowNodeView({ id, data }: NodeProps<FlowNode>) {
   const shared = useContext(SharedContext)!
-  return <NodeView node={shared.graph.nodes.get(id)!} context={data.context} blocks={data.blocks} closed={data.closed} graphNode width={data.width} {...shared} />
+  const node = shared.graph.nodes.get(id)
+  if (!node) return null
+  return <NodeView node={node} context={data.context} blocks={data.blocks} closed={data.closed} graphNode width={data.width} {...shared} />
 }
 
 const nodeTypes = { graph: FlowNodeView }
+
+// GraphBoundary keeps a failure while drawing the canvas inside the graph:
+// the canvas gives way to a note with the error, and the rest of the view
+// and the page keep working. It tries again when the drawn graph changes.
+class GraphBoundary extends Component<{ drawn: string; children: ReactNode }, { error: Error | null; drawn: string }> {
+  state = { error: null as Error | null, drawn: this.props.drawn }
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error : new Error(String(error)) }
+  }
+
+  static getDerivedStateFromProps(props: { drawn: string }, state: { drawn: string }) {
+    return props.drawn === state.drawn ? null : { error: null, drawn: props.drawn }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <Note tone="danger" data-note="graph-error">
+          The graph could not be drawn: {this.state.error.message}
+        </Note>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // nodeWidth is a node's width in LR; in TB the nodes take the region's width.
 const nodeWidth = 288
