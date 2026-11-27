@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { framesExample, lanesExample } from '@/screenshots/diagram-fixtures'
+import { Bot } from 'lucide-react'
+
+import { framesExample, lanesExample, pipelineExample } from '@/screenshots/diagram-fixtures'
 
 import { stageLanes } from '../../lib/stage-lanes'
 
@@ -8,6 +10,7 @@ import {
   describeDiagram,
   edgeText,
   layoutDiagram,
+  sizes,
   titlePlate,
   wrapText,
   type Box,
@@ -179,6 +182,16 @@ function expectBackRoutes(p: Placement) {
   }
 }
 
+// clone copies a spec deeply but keeps its icon components, which
+// structuredClone cannot copy.
+const clone = (spec: DiagramSpec): DiagramSpec => ({
+  ...spec,
+  nodes: spec.nodes.map((n) => ({ ...n, badges: n.badges && [...n.badges], kinds: n.kinds && [...n.kinds] })),
+  edges: spec.edges.map((e) => ({ ...e })),
+  groups: spec.groups?.map((g) => ({ ...g })),
+  kinds: spec.kinds?.map((k) => ({ ...k })),
+})
+
 describe('layoutDiagram', () => {
   for (const direction of directions) {
     it(`places an ungrouped diagram ${direction} without overlaps`, () => {
@@ -275,8 +288,8 @@ describe('layoutDiagram', () => {
   })
 
   it('is deterministic', () => {
-    for (const spec of [framesExample, lanesExample, backExample, stageLanes]) {
-      for (const d of directions) expect(layoutDiagram(spec, d)).toEqual(layoutDiagram(structuredClone(spec), d))
+    for (const spec of [framesExample, lanesExample, backExample, stageLanes, pipelineExample]) {
+      for (const d of directions) expect(layoutDiagram(spec, d)).toEqual(layoutDiagram(clone(spec), d))
     }
   })
 
@@ -303,6 +316,130 @@ describe('layoutDiagram', () => {
     expect(() => layoutDiagram({ nodes: [n('a')], edges: [{ from: 'qq', to: 'a' }] }, 'LR')).toThrow('unknown node "qq"')
     expect(() => layoutDiagram({ nodes: [n('a', 'nope')], edges: [] }, 'LR')).toThrow('node "a" is in unknown group "nope"')
     expect(() => layoutDiagram({ nodes: [n('a')], edges: [{ from: 'a', to: 'a' }] }, 'LR')).toThrow('node "a" to itself')
+  })
+})
+
+// chain is n nodes in a line, wrapped into rows of wrap ranks.
+const chain = (n: number, wrap?: number): DiagramSpec => {
+  const nodes = Array.from({ length: n }, (_, i) => ({ id: `s${i}`, title: `Step ${i}`, detail: i % 2 ? 'with a detail' : undefined }))
+  return { nodes, edges: nodes.slice(1).map((m, i) => ({ from: nodes[i].id, to: m.id })), wrap }
+}
+
+// rowsOf groups the node ids into rows of vertically overlapping boxes, each
+// row from left to right.
+const rowsOf = (p: Placement) => {
+  const rows: Box[][] = []
+  for (const n of [...p.nodes].sort((a, b) => a.y - b.y)) {
+    const row = rows.find((r) => r.some((m) => m.y < n.y + n.height && n.y < m.y + m.height))
+    if (row) row.push(n)
+    else rows.push([n])
+  }
+  return rows.map((r) => [...r].sort((a, b) => a.x - b.x).map((n) => (n as Placement['nodes'][number]).id))
+}
+
+describe('wrap', () => {
+  it('keeps at most wrap ranks per row, each row from the left, below the last', () => {
+    const spec = chain(8, 4)
+    const p = layoutDiagram(spec, 'LR')
+    expectCommon(spec, p)
+    const rows = rowsOf(p)
+    expect(rows).toEqual([
+      ['s0', 's1', 's2', 's3'],
+      ['s4', 's5', 's6', 's7'],
+    ])
+    expect(node(p, 's4').x).toBe(node(p, 's0').x)
+    expect(node(p, 's0').x).toBe(sizes.margin)
+    const bottom = Math.max(...rows[0].map((id) => node(p, id).y + node(p, id).height))
+    for (const id of rows[1]) expect(node(p, id).y).toBeGreaterThan(bottom)
+    // About four ranks wide, not eight.
+    expect(p.width).toBeLessThan(4 * sizes.nodeWidth + 4 * 40 + 2 * sizes.margin)
+    expect(p.order).toEqual(spec.nodes.map((n) => n.id))
+  })
+
+  it('routes an edge into the next row through the gutter, crossing no node', () => {
+    const spec = { ...chain(6, 3), edges: [...chain(6).edges.map((e) => (e.from === 's2' ? { ...e, label: 'next day' } : e))] }
+    const p = layoutDiagram(spec, 'LR')
+    expectCommon(spec, p)
+    const e = p.edges.find((x) => x.from === 's2')!
+    const a = node(p, 's2')
+    const b = node(p, 's3')
+    // Down from the source's bottom, along the gutter, down into the target's top.
+    expect(e.points[0].y).toBeCloseTo(a.y + a.height)
+    expect(e.points.at(-1)!.y).toBeCloseTo(b.y)
+    for (const [q, r] of segments(e.points)) expect(q.x === r.x || q.y === r.y).toBe(true)
+    for (const n of p.nodes) {
+      for (const [q, r] of segments(e.points)) {
+        const seg = { x: Math.min(q.x, r.x), y: Math.min(q.y, r.y), width: Math.abs(q.x - r.x), height: Math.abs(q.y - r.y) }
+        expect(intersects(n, { ...seg, x: seg.x - 0.1, y: seg.y - 0.1, width: seg.width + 0.2, height: seg.height + 0.2 }), `crosses ${n.id}`).toBe(
+          false,
+        )
+      }
+    }
+    // The label sits on the gutter line, between the rows.
+    expect(e.label!.y).toBeGreaterThan(a.y + a.height)
+    expect(e.label!.y + e.label!.height).toBeLessThan(b.y)
+    for (const n of p.nodes) expect(intersects(n, e.label!)).toBe(false)
+  })
+
+  it('leaves TB and unwrapped specs alone', () => {
+    expect(layoutDiagram(chain(8, 4), 'TB')).toEqual(layoutDiagram(chain(8), 'TB'))
+    expect(layoutDiagram(chain(3, 4), 'LR').nodes).toEqual(layoutDiagram(chain(3), 'LR').nodes)
+    expectCommon(pipelineExample, layoutDiagram(pipelineExample, 'LR'))
+    expectCommon(pipelineExample, layoutDiagram(pipelineExample, 'TB'))
+  })
+
+  it('names the offending id of an invalid wrap', () => {
+    expect(() => layoutDiagram({ ...chain(3), wrap: 0 }, 'LR')).toThrow('wrap 0 is not a positive integer')
+    expect(() => layoutDiagram({ ...chain(3), wrap: 1.5 }, 'TB')).toThrow('wrap 1.5 is not a positive integer')
+    expect(() => layoutDiagram({ ...framesExample, wrap: 2 }, 'LR')).toThrow('wrap does not combine with groups (group "plan")')
+    // Back to an earlier row: a cycle that dagre reverses.
+    const back = { ...chain(4, 2), edges: [...chain(4).edges, { from: 's3', to: 's0' }] }
+    expect(() => layoutDiagram(back, 'LR')).toThrow('edge s3 -> s0 back to an earlier row')
+    const skip = { ...chain(4, 1), edges: [...chain(4).edges, { from: 's0', to: 's2' }] }
+    expect(() => layoutDiagram(skip, 'LR')).toThrow('edge s0 -> s2 across more than one row break')
+  })
+})
+
+describe('icons and kinds', () => {
+  const kinds = [
+    { id: 'a', title: 'Agent work', icon: Bot },
+    { id: 'p', title: 'A person’s control point' },
+  ]
+
+  it('indents the title past the icon and adds one marker row per kind', () => {
+    const plain = layoutDiagram({ nodes: [{ id: 'n', title: 'Shape', detail: 'Author' }], edges: [] }, 'TB').nodes[0]
+    const marked = layoutDiagram(
+      { nodes: [{ id: 'n', title: 'Shape', detail: 'Author', icon: Bot, kinds: ['a', 'p'] }], edges: [], kinds },
+      'TB',
+    ).nodes[0]
+    expect(plain.icon).toBeUndefined()
+    expect(plain.markers).toEqual([])
+    expect(marked.icon).toBeDefined()
+    const title = marked.lines.find((l) => l.kind === 'title')!
+    expect(title.x).toBeGreaterThanOrEqual(marked.icon!.x + marked.icon!.width)
+    expect(marked.lines.find((l) => l.kind === 'detail')!.x).toBe(plain.lines[1].x)
+    expect(marked.markers.map((m) => m.kind)).toEqual(['a', 'p'])
+    expect(marked.markers.map((m) => m.lines.map((l) => l.text).join(' '))).toEqual(['Agent work', 'A person’s control point'])
+    expect(marked.height).toBeGreaterThan(plain.height)
+    const last = marked.markers.at(-1)!.lines.at(-1)!
+    expect(last.y).toBeLessThan(marked.height)
+    for (const m of marked.markers) for (const l of m.lines) expect(l.x).toBeGreaterThanOrEqual(m.icon.x + m.icon.width)
+  })
+
+  it('names the offending id of an invalid kind', () => {
+    expect(() => layoutDiagram({ nodes: [{ id: 'n', title: 'N' }], edges: [], kinds: [kinds[0], kinds[0]] }, 'LR')).toThrow(
+      'duplicate kind id "a"',
+    )
+    expect(() => layoutDiagram({ nodes: [{ id: 'n', title: 'N', kinds: ['zz'] }], edges: [], kinds }, 'LR')).toThrow(
+      'node "n" has unknown kind "zz"',
+    )
+  })
+
+  it('lists the kind titles in the text alternative', () => {
+    const spec: DiagramSpec = { nodes: [{ id: 'n', title: 'N', kinds: ['p', 'a'] }, { id: 'm', title: 'M' }], edges: [], kinds }
+    const d = describeDiagram(spec, layoutDiagram(spec, 'LR'))
+    expect(d.find((x) => x.id === 'n')!.kinds).toEqual(['A person’s control point', 'Agent work'])
+    expect(d.find((x) => x.id === 'm')!.kinds).toBeUndefined()
   })
 })
 
