@@ -18,15 +18,20 @@
 @source '../../components/repo';
 @source '../../components/shell';
 
-/* Without preflight, buttons keep the browser's face. Reset only those of
-   the shared components (islands and their dialogs), in the base layer so
-   every utility still wins. */
+/* Without preflight, buttons and lists keep the browser's face. Reset only
+   those of the shared components (islands and their dialogs), in the base
+   layer so every utility still wins; Markdown lists keep their bullets. */
 @layer base {
   :where(.not-content, [role='dialog']) :where(button) {
     background-color: transparent;
     border: 0 solid;
     color: inherit;
     font: inherit;
+  }
+  :where(.not-content, [role='dialog']) :where(ul, ol) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
 }
 
