@@ -3,7 +3,7 @@ title: Setup and management
 description: Runners, the Claude login and its connectors, collaborators' Runners, working with several people, required reviews, the Dashboard and .nibfin.json.
 ---
 
-import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Card, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 This page covers running Nibfin day to day: the Runners that do the work, what a
 Job can reach through the Claude login and how to limit it, adding your team,
@@ -12,6 +12,12 @@ how reviews fit in, the local Dashboard, and the per-repository
 arguments.
 
 ## Runners
+
+<Card title="In this section">
+
+How Runners are added, kept running, removed and given a model on each host. Read it before your first `runner add`, or when a Runner goes offline.
+
+</Card>
 
 A Runner is the official GitHub Actions runner, set up by gh nibfin to run
 Nibfin's Jobs in Podman containers on your machine. On Linux the Runners live on
@@ -117,6 +123,12 @@ provider:
 
 ## The Claude login and connectors
 
+<Card title="In this section">
+
+What a Claude Runner's Jobs can reach through its claude.ai login, and how to limit those connectors. For anyone running Claude Runners with connectors on claude.ai.
+
+</Card>
+
 A Claude Runner's Jobs use the login stored in the `nibfin-home-claude` volume.
 What that login can reach, a Job can reach too.
 
@@ -140,6 +152,9 @@ A rule under `.rulesync/rules/` can tell the agent where your repository's
 specification lives and which tool reads it. Connector tools load on demand, so
 the rule names the tool to look for:
 
+<details>
+<summary>Example rule in `.rulesync/rules/`</summary>
+
 ```md
 ---
 root: true
@@ -154,6 +169,8 @@ The specification for this repository is <where it lives>.
 Read it with the <tool name> tool before you rely on a requirement.
 If the tool is not loaded yet, search for it by name first.
 ```
+
+</details>
 
 `.rulesync/` is a [protected path](#protected-paths): Nibfin's agents never
 change it, so commit the rule yourself.
@@ -197,6 +214,9 @@ the `nibfin-home-claude` volume.
 3. **Add the deny settings.** Keep the file a JSON object and keep the
    `enableAllProjectMcpServers` line Nibfin added.
 
+   <details>
+   <summary>Example `settings.json`</summary>
+
    ```json
    {
      "enableAllProjectMcpServers": true,
@@ -212,6 +232,8 @@ the `nibfin-home-claude` volume.
      }
    }
    ```
+
+   </details>
 
 </Steps>
 
@@ -240,11 +262,16 @@ documentation.
 
 ### What keeps or removes these settings
 
+<details>
+<summary>How image updates, `upgrade` and `runner remove` treat these settings</summary>
+
 - They live in the login volume, not in the image. Image updates and
   [`gh nibfin upgrade`](../cli/#upgrade) leave them as they are; Nibfin only
   merges `enableAllProjectMcpServers` into the file.
 - [`gh nibfin runner remove claude --delete-login`](../cli/#runner-remove)
   deletes the whole volume, these settings included.
+
+</details>
 
 :::note[A harmless warning]
 With `deniedMcpServers` in your user settings, Claude prints a line saying a
@@ -254,6 +281,12 @@ policy, and does not affect the Job.
 :::
 
 ## Collaborators' Runners
+
+<Card title="In this section">
+
+How team members add Runners of their own to your execution repository, and how those Runners are removed. For Owners adding team members' machines.
+
+</Card>
 
 Team members can add their own Runners to your execution repository, so Issues
 assigned to them run on their machines.
@@ -331,6 +364,12 @@ Windows user folder. gh nibfin does not change that setting.
 
 ## Working with several people
 
+<Card title="In this section">
+
+How Nibfin picks one Assignee for each Job, and the consent step before work for someone else starts. For Issues with several Assignees or an Assignee other than the Owner.
+
+</Card>
+
 Nibfin dispatches an Issue to one person, chosen from its Assignees each time
 it dispatches.
 
@@ -366,6 +405,12 @@ Removing `pause` is the go-ahead: read the Issue, then remove the label, or run
 
 ## Required reviews
 
+<Card title="In this section">
+
+How Nibfin merges when the base branch requires approving reviews. For repositories whose rulesets require approvals.
+
+</Card>
+
 Nibfin follows the merge rules your repository actually sets. When a ruleset on
 the base branch requires approving reviews:
 
@@ -390,6 +435,12 @@ Nibfin's pull requests can never merge.
 :::
 
 ## Dashboard
+
+<Card title="In this section">
+
+The local browser view of the same commands: its three views and how its operations run. For anyone who prefers a browser to the terminal.
+
+</Card>
 
 [`gh nibfin dashboard`](../cli/#dashboard) opens the same commands in your
 browser. It listens on `127.0.0.1` only and opens a one-time session URL. The
@@ -434,6 +485,12 @@ change back; a failure shows its code and the next step. Pause and Resume apply
 at once.
 
 ## `.nibfin.json`
+
+<Card title="In this section">
+
+The optional file that sets a repository's tool versions and role skill changes, and the paths Nibfin's agents never change. For repositories that need specific tool versions or role skill changes.
+
+</Card>
 
 An optional `.nibfin.json` at a repository's root describes the environment of
 that repository's Jobs. It cannot choose who works on an Issue, the provider,
