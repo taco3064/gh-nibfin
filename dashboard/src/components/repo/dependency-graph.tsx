@@ -59,16 +59,6 @@ export interface DependencyGraphProps {
 
 const stages = Object.keys(stageLabels) as Stage[]
 
-// stageAccent colours the bar on top of an Issue node by its stage, from
-// labels only. The stage track inside the node names the stage in text.
-const stageAccent: Record<Stage, string> = {
-  none: 'bg-border',
-  scope: 'bg-warning',
-  shape: 'bg-info',
-  deliver: 'bg-primary',
-  done: 'bg-success',
-}
-
 // joinLabels names keys as "#1, #2 and #3".
 function joinLabels(labels: readonly string[]): string {
   if (labels.length <= 1) return labels.join('')
@@ -295,8 +285,9 @@ function NodeView({
   context: boolean
   blocks: string[]
   closed: GraphNode[]
-  // graphNode draws the node on the canvas: stacked, with its stage accent
-  // and its closed blockers' marker. Otherwise it is a list entry.
+  // graphNode draws the node on the canvas: stacked, with its closed
+  // blockers' marker; its stage track names the stage. Otherwise it is a
+  // list entry.
   graphNode: boolean
   width?: number
 }) {
@@ -313,10 +304,7 @@ function NodeView({
       {context && <p className="px-1 text-xs font-medium text-muted-foreground">Context: blocks a shown Issue</p>}
       {node.kind === 'issue' ? (
         graphNode ? (
-          <div className="flex flex-col">
-            <span aria-hidden="true" data-slot="stage-accent" className={cn('h-1.5 rounded-t-lg', stageAccent[stage!])} />
-            <IssueItem issue={node.issue} repo={graph.repo} access={access} onChanged={onChanged} stacked className="rounded-t-none border-t-0" />
-          </div>
+          <IssueItem issue={node.issue} repo={graph.repo} access={access} onChanged={onChanged} stacked />
         ) : (
           <IssueItem issue={node.issue} repo={graph.repo} access={access} onChanged={onChanged} />
         )
