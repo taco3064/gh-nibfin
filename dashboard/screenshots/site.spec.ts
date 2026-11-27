@@ -87,7 +87,8 @@ for (const { name, path } of pages) {
 }
 
 // How it works draws two top-to-bottom figures at every width: the stage
-// swimlane (#459) and the label state flowchart (#458).
+// swimlane (#459) and the label state flowchart (#458). The page also holds
+// the responsive architecture figure (#460), checked below.
 const howItWorksFigures = [
   { name: 'stages', caption: 'The stages, by role', items: 10, first: 'Split into Issues' },
   { name: 'labels', caption: 'Label states, checked in order', items: 34, first: 'The Issue is closed. Lane: Checks, in order. Leads to closed (yes)' },
@@ -97,7 +98,7 @@ test('how it works draws the stages and the label states top to bottom', async (
   for (const theme of themes) {
     for (const width of widths) {
       const errors = await open(page, 'how-it-works/', theme, width)
-      await expect(page.locator('figure[data-slot=diagram]')).toHaveCount(howItWorksFigures.length)
+      await expect(page.locator('figure[data-slot=diagram]')).toHaveCount(howItWorksFigures.length + 1)
       for (const f of howItWorksFigures) {
         const figure = page.locator('figure[data-slot=diagram]', { has: page.getByText(f.caption, { exact: true }) })
         await expect(figure).toHaveCount(1)
@@ -120,6 +121,40 @@ test('how it works draws the stages and the label states top to bottom', async (
     }
   }
 })
+
+// The architecture figure of How it works (#460): it sits under its heading,
+// shows the wide drawing from 768 px up and the narrow one below, and never
+// scrolls the page.
+for (const theme of themes) {
+  test(`how-it-works architecture diagram ${theme}`, async ({ page }) => {
+    for (const width of widths) {
+      const errors = await open(page, 'how-it-works/', theme, width)
+      const heading = page.getByRole('heading', { name: 'Architecture', exact: true })
+      await expect(heading).toBeVisible()
+      const figure = page.locator('main [data-slot=diagram]').filter({ hasText: 'Where Nibfin runs' })
+      await expect(figure).toHaveCount(1)
+      await expect(figure).toBeVisible()
+      const below = await figure.evaluate((f) => {
+        const h = document.getElementById('architecture')
+        return h !== null && Boolean(h.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING)
+      })
+      expect(below).toBe(true)
+      const wide = figure.locator('[data-slot=diagram-wide]')
+      const narrow = figure.locator('[data-slot=diagram-narrow]')
+      if (width >= 768) {
+        await expect(wide).toBeVisible()
+        await expect(narrow).toBeHidden()
+      } else {
+        await expect(narrow).toBeVisible()
+        await expect(wide).toBeHidden()
+      }
+      await expectNoPageScroll(page)
+      await figure.scrollIntoViewIfNeeded()
+      await figure.screenshot({ path: `${outDir}site-how-it-works-diagram-${theme}-${width}.png` })
+      expect(errors).toEqual([])
+    }
+  })
+}
 
 test('keyboard reaches the skip link first', async ({ page }) => {
   const errors = await open(page, './', 'dark', 1280)
