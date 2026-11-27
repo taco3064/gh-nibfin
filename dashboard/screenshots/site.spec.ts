@@ -145,6 +145,62 @@ test('how-it-works architecture diagram sits under its heading', async ({ page }
   expect(errors).toEqual([])
 })
 
+// How it works folds the prose that repeats its three diagrams into closed
+// "Read as text" disclosures (#477); the headings stay outside them, so every
+// section anchor still exists.
+const howItWorksAnchors = ['the-stages', 'labels-and-states', 'pending-and-pause', 'architecture', 'security']
+
+for (const theme of themes) {
+  test(`how-it-works text disclosures ${theme}`, async ({ page }) => {
+    for (const width of widths) {
+      const errors = await open(page, 'how-it-works/', theme, width)
+      const disclosures = page.locator('.sl-markdown-content details')
+      await expect(disclosures).toHaveCount(3)
+      await expect(disclosures.locator('> summary')).toHaveText(['Read as text', 'Read as text', 'Read as text'])
+      for (const d of await disclosures.all()) await expect(d).not.toHaveAttribute('open')
+      await expect(disclosures.locator('h2, h3')).toHaveCount(0)
+      for (const id of howItWorksAnchors) await expect(page.locator(`.sl-markdown-content h2#${id}`)).toHaveCount(1)
+      await expect(page.getByText('Approved requirements are split into ordered Issues')).toBeHidden()
+      await expectNoPageScroll(page)
+      await page.screenshot({ path: `${outDir}site-how-it-works-closed-${theme}-${width}.png`, fullPage: true })
+      for (const summary of await disclosures.locator('> summary').all()) await summary.click()
+      for (const d of await disclosures.all()) await expect(d).toHaveAttribute('open')
+      await expect(disclosures.nth(0).locator('ol > li')).toHaveCount(5)
+      await expect(disclosures.nth(2).locator('ul > li')).toHaveCount(6)
+      await expect(page.getByText('Approved requirements are split into ordered Issues')).toBeVisible()
+      await expectNoPageScroll(page)
+      await page.screenshot({ path: `${outDir}site-how-it-works-open-${theme}-${width}.png`, fullPage: true })
+      expect(errors).toEqual([])
+    }
+  })
+}
+
+test('keyboard opens a How it works text disclosure', async ({ page }) => {
+  for (const theme of themes) {
+    const errors = await open(page, 'how-it-works/', theme, 1280)
+    const summary = page.locator('.sl-markdown-content details > summary').first()
+    await summary.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.sl-markdown-content details').first()).toHaveAttribute('open')
+    await expect(summary).toBeFocused()
+    const box = (await summary.boundingBox())!
+    await page.screenshot({
+      path: `${outDir}site-how-it-works-summary-focus-${theme}-1280.png`,
+      clip: { x: box.x - 16, y: box.y - 16, width: box.width + 32, height: box.height + 120 },
+    })
+    expect(errors).toEqual([])
+  }
+})
+
+test('search finds text inside a closed How it works disclosure', async ({ page }) => {
+  const errors = await open(page, './', 'dark', 1280)
+  await page.getByRole('button', { name: 'Search' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Search' }).fill('required approvals')
+  await expect(dialog.getByRole('link', { name: 'How it works' }).first()).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('keyboard reaches the skip link first', async ({ page }) => {
   const errors = await open(page, './', 'dark', 1280)
   await page.keyboard.press('Tab')
