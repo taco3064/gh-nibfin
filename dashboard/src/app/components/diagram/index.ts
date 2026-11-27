@@ -1,4 +1,4 @@
-export { Diagram, type DiagramProps } from './Diagram'
+export { Diagram, type DiagramLayout, type DiagramProps } from './Diagram'
 export {
   describeDiagram,
   edgeText,
