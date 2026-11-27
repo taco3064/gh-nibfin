@@ -70,6 +70,19 @@ async function expectNoPageScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 }
 
+// oneLine tells whether a stage track's steps and its visible current name
+// share one row.
+async function oneLine(track: Locator) {
+  return track.evaluate((ol) => {
+    const parts = [...ol.querySelectorAll('li'), ...(ol.parentElement?.querySelectorAll(':scope > [data-slot=stage-current]') ?? [])]
+    const mids = parts.map((p) => {
+      const r = p.getBoundingClientRect()
+      return r.top + r.height / 2
+    })
+    return mids.every((m) => Math.abs(m - mids[0]) < 2) && ol.getBoundingClientRect().height <= 24
+  })
+}
+
 function item(page: Page, repo: string, n: number): Locator {
   return page.locator(`article[data-issue="${url(repo, n)}"]`)
 }
@@ -101,6 +114,30 @@ for (const width of widths) {
       await expect(track('acme/app', 106).locator('[aria-current=step]')).toHaveText('Scope (current)')
       await expect(track('acme/legacy', 3).locator('[aria-current=step]')).toHaveText('Shape (current)')
       await expect(track('acme/legacy', 3).locator('[data-state=upcoming]')).toHaveText(['Deliver', 'Done'])
+      // The track is one line: compact on a phone, full where it fits.
+      const tracks = page.locator('article[data-issue] ol[data-slot=stage-track]')
+      expect(await tracks.count()).toBeGreaterThan(0)
+      if (width === 375 || width === 1280) {
+        const form = width === 375 ? 'compact' : 'full'
+        for (const t of await tracks.all()) await expect(t).toHaveAttribute('data-form', form)
+      }
+      for (const t of await tracks.all()) expect(await oneLine(t), await t.getAttribute('data-stage') ?? '').toBe(true)
+      if (width === 1280) {
+        for (const t of await tracks.all()) {
+          for (const l of await t.locator('li > span > span:not([aria-hidden])').all()) await expect(l).toBeVisible()
+        }
+      }
+      if (width === 375) {
+        // The compact form keeps the list: its name, the four stage names
+        // with their state words and the current step.
+        const t = track('acme/app', 101)
+        await expect(t).toHaveAccessibleName('Stage')
+        await expect(t.getByRole('listitem')).toHaveText(['Scope (completed)', 'Shape (completed)', 'Deliver (current)', 'Done'])
+        await expect(t.locator('[aria-current=step]')).toHaveCount(1)
+        await expect(t.locator('[aria-current=step]')).toHaveText('Deliver (current)')
+        await expect(item(page, 'acme/app', 101).locator('[data-slot=stage-current]')).toHaveText('Deliver')
+        await expect(item(page, 'acme/app', 104).locator('[data-slot=stage-current]')).toHaveText('Done')
+      }
       await expect(item(page, 'acme/app', 102).locator('[data-badge=paused]')).toHaveText('Paused')
       await expect(item(page, 'acme/app', 103).locator('[data-badge=pending] a')).toHaveAttribute(
         'href',
