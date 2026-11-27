@@ -600,9 +600,10 @@ func (a *runnerAdd) probe(ctx context.Context) (hostProbe, error) {
 	return probeHost(ctx, a.host, CodeRunnerInstallFailed)
 }
 
-// script runs a runner-host script; a failure is runner_install_failed.
+// script runs a runner-host script; a failure is runner_install_failed with
+// the child's exit status and the masked end of its stderr and stdout.
 func (a *runnerAdd) script(ctx context.Context, what, script string, stdin io.Reader, secret string, args ...string) (string, error) {
-	out, _, err := hostScript(ctx, a.host, CodeRunnerInstallFailed, what, script, stdin, secret, args...)
+	out, _, err := hostScriptOutput(ctx, a.host, CodeRunnerInstallFailed, what, script, stdin, secret, args...)
 	return out, err
 }
 
