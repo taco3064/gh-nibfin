@@ -86,27 +86,36 @@ for (const { name, path } of pages) {
   }
 }
 
-// The label states are a top-to-bottom flowchart at every width (#458).
-test('how it works draws the label states as a flowchart', async ({ page }) => {
+// How it works draws two top-to-bottom figures at every width: the stage
+// swimlane (#459) and the label state flowchart (#458).
+const howItWorksFigures = [
+  { name: 'stages', caption: 'The stages, by role', items: 10, first: 'Split into Issues' },
+  { name: 'labels', caption: 'Label states, checked in order', items: 34, first: 'The Issue is closed. Lane: Checks, in order. Leads to closed (yes)' },
+]
+
+test('how it works draws the stages and the label states top to bottom', async ({ page }) => {
   for (const theme of themes) {
     for (const width of widths) {
       const errors = await open(page, 'how-it-works/', theme, width)
-      const figure = page.locator('figure[data-slot=diagram]')
-      await expect(figure).toHaveCount(1)
-      await expect(figure).toBeVisible()
-      await expect(figure.locator('svg')).toHaveCount(1)
-      await expect(figure.locator('svg[data-direction=TB]')).toBeVisible()
-      await expect(figure.locator('ol > li')).toHaveCount(34)
-      await expect(figure.locator('ol > li').first()).toContainText('The Issue is closed. Lane: Checks, in order. Leads to closed (yes)')
-      // The drawing fits its figure, or scrolls inside it only.
-      const fits = await figure.evaluate((f) => {
-        const box = f.getBoundingClientRect()
-        const scroller = f.querySelector('svg')!.parentElement!
-        return { figure: box.right <= window.innerWidth, scroller: scroller.getBoundingClientRect().right <= box.right + 0.5 }
-      })
-      expect(fits).toEqual({ figure: true, scroller: true })
+      await expect(page.locator('figure[data-slot=diagram]')).toHaveCount(howItWorksFigures.length)
+      for (const f of howItWorksFigures) {
+        const figure = page.locator('figure[data-slot=diagram]', { has: page.getByText(f.caption, { exact: true }) })
+        await expect(figure).toHaveCount(1)
+        await expect(figure).toBeVisible()
+        await expect(figure.locator('svg')).toHaveCount(1)
+        await expect(figure.locator('svg[data-direction=TB]')).toBeVisible()
+        await expect(figure.locator('ol > li')).toHaveCount(f.items)
+        await expect(figure.locator('ol > li').first()).toContainText(f.first)
+        // The drawing fits its figure, or scrolls inside it only.
+        const fits = await figure.evaluate((el) => {
+          const box = el.getBoundingClientRect()
+          const scroller = el.querySelector('svg')!.parentElement!
+          return { figure: box.right <= window.innerWidth, scroller: scroller.getBoundingClientRect().right <= box.right + 0.5 }
+        })
+        expect(fits).toEqual({ figure: true, scroller: true })
+        await figure.screenshot({ path: `${outDir}site-how-it-works-${f.name}-${theme}-${width}.png` })
+      }
       await expectNoPageScroll(page)
-      await figure.screenshot({ path: `${outDir}site-how-it-works-labels-${theme}-${width}.png` })
       expect(errors).toEqual([])
     }
   }
