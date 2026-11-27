@@ -4,6 +4,10 @@ import { Bot } from 'lucide-react'
 
 import { framesExample, lanesExample, pipelineExample } from '@/screenshots/diagram-fixtures'
 
+import { architecture } from '../../lib/architecture'
+import { issueFlow } from '../../lib/issue-flow'
+import { labelStateDiagram } from '../../lib/label-flow'
+import { labelStates } from '../../lib/labels'
 import { stageLanes } from '../../lib/stage-lanes'
 
 import {
@@ -444,15 +448,104 @@ describe('icons and kinds', () => {
 })
 
 describe('wrapText', () => {
-  it('keeps every line within the limit', () => {
+  it('keeps every line within the limit, except a single word longer than it', () => {
     const text = 'The quick brown fox jumps over the extraordinarily lazy dog'
     for (const limit of [4, 8, 12, 20]) {
       const lines = wrapText(text, limit)
-      for (const l of lines) expect(l.length).toBeLessThanOrEqual(limit)
-      expect(lines.join('').replaceAll(' ', '')).toBe(text.replaceAll(' ', ''))
+      for (const l of lines) if (l.includes(' ')) expect(l.length).toBeLessThanOrEqual(limit)
+      expect(lines.join(' ')).toBe(text)
     }
     expect(wrapText('one two three', 7)).toEqual(['one two', 'three'])
-    expect(wrapText('abcdefghij', 4)).toEqual(['abcd', 'efgh', 'ij'])
+  })
+
+  it('never splits a word, at hyphens or anywhere else', () => {
+    expect(wrapText('abcdefghij', 4)).toEqual(['abcdefghij'])
+    expect(wrapText('a multiple-assignees b', 15)).toEqual(['a', 'multiple-assignees', 'b'])
+    expect(wrapText('NIBFIN_GITHUB_TOKEN', 5)).toEqual(['NIBFIN_GITHUB_TOKEN'])
+  })
+})
+
+// siteSpecs are the diagrams the site shows.
+const siteSpecs: [string, DiagramSpec][] = [
+  ['Home flow', issueFlow],
+  ['stage lanes', stageLanes],
+  ['label states', labelStateDiagram(labelStates)],
+  ['architecture', architecture],
+]
+const words = (t: string) => t.trim().split(/\s+/).join(' ')
+
+describe('text stays whole', () => {
+  for (const [name, spec] of siteSpecs) {
+    for (const direction of directions) {
+      it(`breaks only between words in the ${name} (${direction})`, () => {
+        const p = layoutDiagram(spec, direction)
+        const kinds = new Map((spec.kinds ?? []).map((k) => [k.id, k.title]))
+        for (const n of p.nodes) {
+          const src = spec.nodes.find((m) => m.id === n.id)!
+          // Joining the lines with one space gives back the source: no line
+          // ends or starts inside a word.
+          const text = (kind: 'title' | 'detail') => n.lines.filter((l) => l.kind === kind).map((l) => l.text).join(' ')
+          expect(text('title'), n.id).toBe(words(src.title))
+          expect(text('detail'), n.id).toBe(src.detail ? words(src.detail) : '')
+          for (const m of n.markers) expect(m.lines.map((l) => l.text).join(' ')).toBe(words(kinds.get(m.kind)!))
+          expect(n.badges.map((b) => b.text)).toEqual(src.badges ?? [])
+        }
+        spec.edges.forEach((e, i) => {
+          if (e.label) expect(p.edges[i].label!.lines.join(' ')).toBe(words(e.label))
+        })
+        for (const g of p.groups) if (g.title) expect(g.titleLines.map((t) => t.text).join(' ')).toBe(words(g.title))
+      })
+
+      it(`keeps every token inside its node, badge or frame in the ${name} (${direction})`, () => {
+        const p = layoutDiagram(spec, direction)
+        for (const n of p.nodes) {
+          const inner = n.width - sizes.nodePadX
+          for (const l of n.lines) {
+            const w = l.text.length * (l.kind === 'title' ? sizes.titleCharWidth : sizes.detailCharWidth)
+            expect(l.x + w, `${n.id} "${l.text}"`).toBeLessThanOrEqual(inner + eps)
+          }
+          for (const m of n.markers) {
+            for (const l of m.lines) expect(l.x + l.text.length * sizes.markerCharWidth, `${n.id} "${l.text}"`).toBeLessThanOrEqual(inner + eps)
+          }
+          for (const b of n.badges) {
+            // The pill holds its whole text, and the node holds the pill.
+            expect(b.width).toBeGreaterThanOrEqual(b.text.length * sizes.badgeCharWidth + 2 * sizes.badgePadX - eps)
+            expect(b.x + b.width, `${n.id} badge ${b.text}`).toBeLessThanOrEqual(inner + eps)
+            expect(b.y + b.height).toBeLessThanOrEqual(n.height - sizes.nodePadY + eps)
+          }
+        }
+        for (const g of p.groups) {
+          for (const t of g.titleLines) {
+            const plate = titlePlate(t)
+            expect(plate.x + plate.width, `title "${t.text}"`).toBeLessThanOrEqual(g.x + g.width + eps)
+          }
+        }
+      })
+    }
+  }
+
+  it('widens a node for a long word or badge, and only then', () => {
+    const plain = layoutDiagram({ nodes: [{ id: 'a', title: 'Short title' }], edges: [] }, 'TB').nodes[0]
+    expect(plain.width).toBe(sizes.nodeWidth)
+    const word = layoutDiagram({ nodes: [{ id: 'a', title: 'multiple-assignees' }], edges: [] }, 'TB').nodes[0]
+    expect(word.width).toBeGreaterThan(sizes.nodeWidth)
+    expect(word.lines.map((l) => l.text)).toEqual(['multiple-assignees'])
+    const badge = layoutDiagram({ nodes: [{ id: 'a', title: 'Peer', badges: ['NIBFIN_GITHUB_TOKEN'] }], edges: [] }, 'TB').nodes[0]
+    expect(badge.badges[0].width).toBeCloseTo(19 * sizes.badgeCharWidth + 2 * sizes.badgePadX)
+    expect(badge.width).toBeGreaterThanOrEqual(badge.badges[0].width + 2 * sizes.nodePadX)
+  })
+
+  it('widens a top-to-bottom lane for its title’s longest word', () => {
+    const spec: DiagramSpec = {
+      groupStyle: 'lanes',
+      groups: [{ id: 'g', title: 'An extraordinarily-long-hyphenated-lane-title' }],
+      nodes: [{ id: 'a', title: 'A', group: 'g' }],
+      edges: [],
+    }
+    const p = layoutDiagram(spec, 'TB')
+    const t = p.groups[0].titleLines
+    expect(t.map((l) => l.text)).toEqual(['An', 'extraordinarily-long-hyphenated-lane-title'])
+    for (const l of t) expect(titlePlate(l).x + titlePlate(l).width).toBeLessThanOrEqual(p.groups[0].x + p.groups[0].width + eps)
   })
 })
 
