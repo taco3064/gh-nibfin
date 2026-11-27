@@ -15,6 +15,7 @@ import {
   nodeName,
   portPoint,
   positionGraph,
+  unlinkedGroups,
   type GraphEdge,
   type Size,
 } from './graph'
@@ -367,5 +368,47 @@ describe('nodeName', () => {
 
   it('names a blocker outside the list by its state', () => {
     expect(nodeName(g, g.nodes.get(k(7, 'acme/infra'))!, true, 0)).toBe('acme/infra#7 Infra prerequisite, open blocker not listed here, context: blocks a shown Issue')
+  })
+})
+
+describe('unlinkedGroups', () => {
+  it('groups by stage in the track order, then Not in Nibfin, then Paused or Pending', () => {
+    const g = buildGraph({
+      repo,
+      issues: [
+        issue(1, [], { labels: [] }),
+        issue(2, [], { labels: ['scope', 'shaped', 'delivered'] }),
+        issue(3, [], { labels: ['scope', 'shaped'] }),
+        issue(4, [], { labels: ['scope'] }),
+        issue(5, [], { labels: ['request'] }),
+        issue(6, [], { labels: ['scope'], pause: true }),
+      ],
+    })
+    const groups = unlinkedGroups(g, [k(1), k(2), k(3), k(4), k(5), k(6)])
+    expect(groups.map((x) => [x.id, x.label, x.keys])).toEqual([
+      ['scope', 'Scope', [k(5)]],
+      ['shape', 'Shape', [k(4)]],
+      ['deliver', 'Deliver', [k(3)]],
+      ['done', 'Done', [k(2)]],
+      ['none', 'Not in Nibfin', [k(1)]],
+      ['held', 'Paused or Pending', [k(6)]],
+    ])
+  })
+
+  it('lists a paused or pending Issue only under Paused or Pending', () => {
+    const g = buildGraph({
+      repo,
+      issues: [issue(1, [], { labels: ['scope', 'shaped'], pending: true }), issue(2, [], { labels: [], pause: true, pending: true })],
+    })
+    expect(unlinkedGroups(g, [k(1), k(2)])).toEqual([{ id: 'held', label: 'Paused or Pending', keys: [k(1), k(2)] }])
+  })
+
+  it('drops empty groups and keeps the given order of keys', () => {
+    const g = buildGraph({ repo, issues: [issue(1), issue(2, [], { labels: [] }), issue(3)] })
+    expect(unlinkedGroups(g, [k(3), k(2), k(1)])).toEqual([
+      { id: 'shape', label: 'Shape', keys: [k(3), k(1)] },
+      { id: 'none', label: 'Not in Nibfin', keys: [k(2)] },
+    ])
+    expect(unlinkedGroups(g, [])).toEqual([])
   })
 })

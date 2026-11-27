@@ -475,3 +475,35 @@ export function nodeName(graph: Pick<Graph, 'repo'>, node: GraphNode, context: b
   if (closed > 0) parts.push(`${closed} closed ${closed === 1 ? 'blocker' : 'blockers'}`)
   return parts.join(', ')
 }
+
+// UnlinkedGroupId names a group of the Issues without dependencies: a
+// stage from labels, or held for a paused or pending Issue.
+export type UnlinkedGroupId = 'scope' | 'shape' | 'deliver' | 'done' | 'none' | 'held'
+
+export interface UnlinkedGroup {
+  id: UnlinkedGroupId
+  label: string
+  keys: string[]
+}
+
+// The groups follow the stage track's order, then Not in Nibfin, then
+// Paused or Pending.
+const unlinkedOrder: readonly UnlinkedGroupId[] = ['scope', 'shape', 'deliver', 'done', 'none', 'held']
+
+export const heldLabel = 'Paused or Pending'
+
+// unlinkedGroups groups the Issues without dependencies (#496): a paused or
+// pending Issue only under Paused or Pending, any other under its stage from
+// labels. Groups keep the given order of keys and empty ones are dropped.
+export function unlinkedGroups(graph: Pick<Graph, 'nodes'>, keys: readonly string[]): UnlinkedGroup[] {
+  const by = new Map<UnlinkedGroupId, string[]>()
+  for (const k of keys) {
+    const node = graph.nodes.get(k)
+    if (!node) continue
+    const id: UnlinkedGroupId = node.kind !== 'issue' ? 'none' : node.issue.pause || node.issue.pending ? 'held' : stageOf(node.issue.labels)
+    by.set(id, [...(by.get(id) ?? []), k])
+  }
+  return unlinkedOrder
+    .filter((id) => by.has(id))
+    .map((id) => ({ id, label: id === 'held' ? heldLabel : stageLabels[id], keys: by.get(id)! }))
+}
