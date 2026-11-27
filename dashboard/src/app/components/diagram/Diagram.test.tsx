@@ -200,8 +200,8 @@ describe('Diagram presentations', () => {
     const idea = block(html, 'idea')
     expect(idea).toContain('Idea')
     expect(idea).toContain('Someone writes down a wish')
-    expect(idea).toContain('data-slot="diagram-stacked-group">Plan at the desk<')
-    expect(idea).toMatch(/whitespace-nowrap">draft</)
+    expect(idea).toMatch(/<span data-slot="diagram-stacked-group"[^>]*>Plan at the desk</)
+    expect(idea).toMatch(/<span data-slot="badge"[^>]*class="[^"]*whitespace-nowrap[^"]*font-mono[^"]*">draft</)
     expect(edges(idea)).toEqual(['Sketch', 'Notes (unclear)'])
     expect(edges(block(html, 'check'))).toEqual(['Show it (stands)', 'Archive the notes'])
     expect(block(html, 'archive')).not.toContain('diagram-stacked-group')
@@ -213,7 +213,7 @@ describe('Diagram presentations', () => {
     for (const n of stageLanes.nodes) {
       const b = block(lanes, n.id)
       const group = stageLanes.groups!.find((g) => g.id === n.group)!.title
-      expect(b).toContain(`data-slot="diagram-stacked-group">${group}<`)
+      expect(b).toMatch(new RegExp(`<span data-slot="diagram-stacked-group"[^>]*>${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<`))
       const out = stageLanes.edges.filter((e) => e.from === n.id)
       expect(edges(b)).toEqual(out.map((e) => `${stageLanes.nodes.find((m) => m.id === e.to)!.title}${e.label ? ` (${e.label})` : ''}`))
     }

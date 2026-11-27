@@ -1,5 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 import { toneOf } from './tones'
@@ -26,10 +28,10 @@ export function Stacked({ spec, items, className }: { spec: DiagramSpec; items: 
           const tone = marks.length ? toneOf(marks[0]) : undefined
           const Icon = node.icon
           return (
-            <div
+            <Card
               key={item.id}
               className={cn(
-                'flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 text-card-foreground',
+                'min-w-0 gap-2 rounded-lg p-3 shadow-none',
                 marks.length ? 'border-[1.5px]' : '',
                 tone ? tone.border : 'border-border',
               )}
@@ -41,21 +43,22 @@ export function Stacked({ spec, items, className }: { spec: DiagramSpec; items: 
                   <span className="font-heading text-sm font-semibold">{item.title}</span>
                 </span>
                 {item.group && (
-                  <span
-                    className="rounded-full border border-border-subtle bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground"
+                  <Badge
+                    variant="outline"
+                    className="border-border-subtle bg-muted/40 font-normal text-muted-foreground"
                     data-slot="diagram-stacked-group"
                   >
                     {item.group}
-                  </span>
+                  </Badge>
                 )}
               </div>
               {item.detail && <span className="text-sm text-muted-foreground">{item.detail}</span>}
               {item.badges.length > 0 && (
                 <span className="flex flex-wrap gap-1">
                   {item.badges.map((b) => (
-                    <span key={b} className="rounded-full border border-border px-2 font-mono text-xs whitespace-nowrap">
+                    <Badge key={b} variant="outline" className="py-0 font-mono font-normal">
                       {b}
-                    </span>
+                    </Badge>
                   ))}
                 </span>
               )}
@@ -89,7 +92,7 @@ export function Stacked({ spec, items, className }: { spec: DiagramSpec; items: 
                   ))}
                 </ul>
               )}
-            </div>
+            </Card>
           )
         })}
       </div>
