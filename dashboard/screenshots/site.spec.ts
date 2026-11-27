@@ -610,6 +610,42 @@ test('search finds the connector settings on the Setup page', async ({ page }) =
   expect(errors).toEqual([])
 })
 
+// Every top-level section opens with a summary card, and the advanced detail
+// is folded in a closed <details> that the keyboard opens.
+test('the Setup and CLI sections open with a summary and fold advanced detail', async ({ page }) => {
+  const sectionsOpenWithSummary = () =>
+    page.locator('.sl-markdown-content h2').evaluateAll((hs) =>
+      hs.map((h) => {
+        // A generated command section wraps its h2; a Markdown h2 sits in Starlight's heading wrapper.
+        const start = h.closest('section[data-command]') ? h : (h.closest('.sl-heading-wrapper') ?? h)
+        const next = start.nextElementSibling
+        return { id: h.id, summary: !!next && next.matches('.card, [data-slot=summary]') && next.textContent!.trim().length > 'In this section'.length }
+      }),
+    )
+  const errors = await open(page, 'setup/', 'dark', 1280)
+  const setup = await sectionsOpenWithSummary()
+  expect(setup.map((s) => s.id)).toEqual(['runners', 'the-claude-login-and-connectors', 'collaborators-runners', 'working-with-several-people', 'required-reviews', 'dashboard', 'nibfinjson'])
+  for (const s of setup) expect(s, s.id).toEqual({ id: s.id, summary: true })
+  const folded = page.locator('.sl-markdown-content details')
+  await expect(folded.locator('> summary')).toHaveText(['Example rule in .rulesync/rules/', 'Example settings.json', 'How image updates, upgrade and runner remove treat these settings'])
+  for (const d of await folded.all()) await expect(d).not.toHaveAttribute('open')
+  await expect(page.getByText('"deniedMcpServers": [')).toBeHidden()
+  await folded.nth(1).locator('> summary').focus()
+  await page.keyboard.press('Enter')
+  await expect(folded.nth(1)).toHaveAttribute('open')
+  await expect(page.getByText('"deniedMcpServers": [')).toBeVisible()
+
+  await open(page, 'cli/', 'dark', 1280)
+  const cli = await sectionsOpenWithSummary()
+  expect(cli.at(-1)!.id).toBe('troubleshooting')
+  for (const s of cli) expect(s, s.id).toEqual({ id: s.id, summary: true })
+  const codes = page.locator('.sl-markdown-content details:not([data-slot=details])')
+  await expect(codes.locator('> summary')).toHaveText(['Codes from gh nibfin on your host', 'Codes in a pending comment from a Job'])
+  for (const d of await page.locator('.sl-markdown-content details').all()) await expect(d).not.toHaveAttribute('open')
+  await expect(page.getByText('podman_missing', { exact: true })).toBeHidden()
+  expect(errors).toEqual([])
+})
+
 test('the Setup and CLI pages link to anchors that exist', async ({ page }) => {
   const errors = await open(page, 'cli/', 'dark', 1280)
   const cliIds = await page.locator('[id]').evaluateAll((els) => els.map((e) => e.id))

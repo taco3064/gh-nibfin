@@ -84,13 +84,27 @@ function ArgTable({ path, args }: { path: string; args: ArgRow[] }) {
   )
 }
 
+// Summary is a command section's summary card: the command's lead text from
+// the CLI definition, in the same frame as the Starlight Card summaries the
+// hand-written sections open with.
+function Summary({ lead }: { lead: string }) {
+  return (
+    <article className="card" data-slot="summary">
+      <p className="title">In this section</p>
+      <div className="body">
+        <p>{lead}</p>
+      </div>
+    </article>
+  )
+}
+
 function Entry({ entry }: { entry: CommandEntry }) {
   return (
     <section aria-labelledby={entry.slug} data-command={entry.path} className="pt-6">
       <h2 id={entry.slug}>
         {rootCommand} {entry.path}
       </h2>
-      {entry.lead ? <p>{entry.lead}</p> : null}
+      {entry.lead ? <Summary lead={entry.lead} /> : null}
       {entry.subcommands.length > 0 ? (
         <ul>
           {entry.subcommands.map((s) => (

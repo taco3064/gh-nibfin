@@ -3,6 +3,7 @@ title: CLI commands
 description: Every gh nibfin command with its flags and arguments, generated from the CLI definition, and troubleshooting.
 ---
 
+import { Card } from '@astrojs/starlight/components'
 import commands from '../../data/commands.json'
 import { CommandIndex, CommandReference } from '../../components/CommandReference'
 
@@ -28,6 +29,12 @@ source the Dashboard builds its forms from, so it always matches the CLI.
 
 ## Troubleshooting
 
+<Card title="In this section">
+
+How to get an Issue moving again after `pending`, what the common failure codes mean, and what to do about an offline Runner. Read it when a command or a Job stops.
+
+</Card>
+
 ### Recovering from `pending`
 
 Nibfin adds `pending` when an Issue needs a person, for example a stage that
@@ -49,7 +56,8 @@ offline Runner, leaves none; see [An offline Runner](#an-offline-runner).
 
 ### Common failure codes
 
-Codes from `gh nibfin` on your host:
+<details>
+<summary>Codes from `gh nibfin` on your host</summary>
 
 - `podman_missing`: Podman is not installed. [Install Podman](https://podman.io/docs/installation); gh nibfin never installs system software.
 - `machine_missing`: Windows or macOS has no `podman machine`. Run `podman machine init`.
@@ -72,7 +80,10 @@ Codes from `gh nibfin` on your host:
 - `listen_failed`: The Dashboard's port is taken. Use another `--port`, or leave it out for any free port.
 - `proof_invalid`: The Dashboard's session URL was wrong or already used. Restart `gh nibfin dashboard` for a new URL.
 
-Codes in a `pending` comment from a Job:
+</details>
+
+<details>
+<summary>Codes in a `pending` comment from a Job</summary>
 
 - `STAGE_BLOCKED`: The stage stopped and named something only a person can decide or supply. Read the comment, answer or fix it on the Issue, then remove `pending`.
 - `STAGE_PROTECTED_PATH`: The branch changed a [protected path](../setup/#protected-paths). Change that path through your own maintenance route, then remove `pending`.
@@ -81,6 +92,8 @@ Codes in a `pending` comment from a Job:
 - `STAGE_NO_PROGRESS`: The stage ended without progress, and the same stage would run again. Read the comment and the run log, fix what they name, then remove `pending`.
 - `AGENT_USAGE_LIMIT`: The provider's usage limit was reached. Remove `pending` after the reset time the comment gives.
 - `GITHUB_READ_FAILED`: A read from GitHub failed. Usually temporary: remove `pending` to retry.
+
+</details>
 
 ### An offline Runner
 
