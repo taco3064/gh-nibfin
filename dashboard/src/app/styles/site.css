@@ -48,6 +48,19 @@
   }
 }
 
+/* The delivered trend's bars growing in once (motion-safe only). */
+@theme {
+  --animate-grow: nf-grow 0.7s ease-out both;
+  @keyframes nf-grow {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+}
+
 /* Unlayered, so these win over Starlight's and starlight-tailwind's defaults
    in both themes; tokens.css switches the --nf- values by data-theme. */
 :root {

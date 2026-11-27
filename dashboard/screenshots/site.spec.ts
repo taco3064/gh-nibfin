@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 
-import { event, liveData, liveUrl, runnerNames, withoutIssues } from './live-site-fixtures'
+import { event, liveData, liveUrl, runnerNames, trendCounts, withoutDays, withoutIssues } from './live-site-fixtures'
 
 // Screenshots and checks of the public site (#362) and its Live page and
 // Home summary (#365), served from dist-site/ under its base path by vite
@@ -219,6 +219,70 @@ for (const theme of themes) {
   })
 }
 
+// The stage track of the busy card of runner n (1-based), by its place.
+const track = (page: Page, n: number) => page.locator('[data-slot=runner-card]').nth(n - 1).locator('[data-slot=runner-stage]')
+
+async function expectTrack(page: Page, n: number, states: string, current: string | null) {
+  const steps = track(page, n).locator('[data-slot=run-stage-track] li')
+  await expect(steps).toHaveText([/^Scope/, /^Shape/, /^Deliver/, /^Review/, /^Finish/])
+  expect((await steps.evaluateAll((lis) => lis.map((li) => li.getAttribute('data-state')?.[0]))).join('')).toBe(states)
+  const cur = track(page, n).locator('[aria-current=step]')
+  if (current === null) await expect(cur).toHaveCount(0)
+  else await expect(cur).toHaveAttribute('data-step', current)
+}
+
+for (const theme of themes) {
+  test(`live page delivered trend and runner stage tracks ${theme}`, async ({ page }) => {
+    const worker = await mockWorker(page)
+    worker.greeting = [event({ event: 'snapshot', at: '2026-11-25T08:00:00Z', result: liveData(128, 57, true) }), event({ event: 'checked', at: new Date().toISOString() })]
+    for (const width of widths) {
+      const errors = await open(page, 'live/', theme, width, worker)
+      const trend = page.locator('[data-slot=summary-delivered] [data-slot=delivered-trend]')
+      await expect(trend).toBeVisible()
+      await expect(trend.locator('figcaption')).toHaveText(`Delivered per day, last 7 days (${trendCounts.reduce((a, b) => a + b, 0)} in total)`)
+      const days = trend.locator('[data-slot=trend-day]')
+      await expect(days).toHaveCount(7)
+      expect(await days.evaluateAll((lis) => lis.map((li) => Number(li.getAttribute('data-value'))))).toEqual(trendCounts)
+      // Each day's date and exact count are text, today last.
+      await expect(days.first()).toContainText('Sat 21 Nov: 4 delivered')
+      await expect(days.last()).toContainText('Fri 27 Nov: 3 delivered (today)')
+      // The day without a delivery has only the baseline.
+      await expect(days.nth(2).locator('[data-slot=trend-bar]')).toHaveCount(0)
+      await expect(days.nth(4).locator('[data-slot=trend-bar]')).toHaveAttribute('style', 'height: 100%;')
+
+      await expectTrack(page, 1, 'cccuu', 'deliver')
+      await expect(track(page, 2).locator('[data-slot=runner-waking]')).toHaveText(/^Waking/)
+      await expectTrack(page, 2, 'uuuuu', null)
+      await expectTrack(page, 4, 'ccuuu', 'shape')
+      // Idle and offline cards have no track.
+      await expect(page.locator('[data-slot=runner-card][data-runner-state=idle], [data-slot=runner-card][data-runner-state=offline]').locator('[data-slot=run-stage-track]')).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await expectNoRunnerName(page)
+      await page.locator('[data-slot=summary]').screenshot({ path: `${outDir}site-live-trend-${theme}-${width}.png` })
+      await page.locator('[data-slot=capacity]').screenshot({ path: `${outDir}site-live-capacity-${theme}-${width}.png` })
+      expect(errors).toEqual([])
+    }
+  })
+}
+
+test('live page without a trend shows no chart and an unknown stage as text', async ({ page }) => {
+  const worker = await mockWorker(page)
+  const data = withoutDays(liveData())
+  const [first] = data.runners[0].runners
+  first.job = first.job && { ...first.job, title: 'Nibfin · taco3064/nibfin-core#14 · accept', stage: 'accept' }
+  worker.greeting = [event({ event: 'snapshot', at: '2026-11-25T08:00:00Z', result: data }), event({ event: 'checked', at: new Date().toISOString() })]
+  for (const width of [375, 1280]) {
+    const errors = await open(page, 'live/', 'dark', width, worker)
+    await expect(page.locator('[data-slot=summary-delivered] [data-slot=rolling-number]')).toHaveAttribute('data-value', '57')
+    await expect(page.locator('[data-slot=delivered-trend]')).toHaveCount(0)
+    await expect(track(page, 1)).toHaveText('accept')
+    await expect(track(page, 1).locator('[data-slot=run-stage-track]')).toHaveCount(0)
+    await expectNoPageScroll(page)
+    await page.locator('[data-slot=summary]').screenshot({ path: `${outDir}site-live-no-trend-dark-${width}.png` })
+    expect(errors).toEqual([])
+  }
+})
+
 test('live page Issue lists have no list markers', async ({ page }) => {
   for (const theme of themes) {
     for (const width of [375, 1280]) {
@@ -354,6 +418,11 @@ test('live page respects reduced motion', async ({ page }) => {
   await expect(page.locator('[data-slot=runner-card][data-runner-state=busy]')).toHaveCount(3)
   worker.send(event({ event: 'snapshot', at: '2026-11-25T08:05:00Z', result: liveData(131, 58, true) }))
   await expect(page.locator('[data-slot=summary-created] [data-slot=rolling-number]')).toHaveAttribute('data-value', '131')
+  // The trend bars and the stage tracks, with their pulse marks, are there.
+  await expect(page.locator('[data-slot=trend-bar]')).toHaveCount(6)
+  await expect(page.locator('[data-slot=run-stage-pulse]')).toHaveCount(2)
+  await expect(page.locator('[data-slot=runner-waking]')).toHaveCount(1)
+  await page.locator('[data-slot=summary]').screenshot({ path: `${outDir}site-live-trend-reduced-light-1280.png` })
   // Nothing moves: no keyframe animation and no transform transition. The
   // shared badges keep their short color transitions.
   const moving = await page.evaluate(() =>
