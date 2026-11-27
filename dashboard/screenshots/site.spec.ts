@@ -481,6 +481,58 @@ for (const width of [375, 1280]) {
   })
 }
 
+// The Home flow (#457): the pipeline diagram, top to bottom on a phone and
+// left to right from md up, with its legend.
+test('home shows the Issue flow as a pipeline', async ({ page }) => {
+  for (const theme of themes) {
+    for (const width of widths) {
+      const errors = await open(page, './', theme, width)
+      const figure = page.locator('figure[data-slot=diagram]')
+      await expect(figure).toHaveCount(1)
+      const wide = width >= 768
+      await expect(figure.locator('svg[data-direction=LR]')).toBeVisible({ visible: wide })
+      await expect(figure.locator('svg[data-direction=TB]')).toBeVisible({ visible: !wide })
+      await expect(figure.locator('[data-slot=diagram-legend]')).toBeVisible()
+      await expect(figure.locator('[data-slot=diagram-legend] li')).toHaveCount(4)
+      await expect(figure.locator('ol.sr-only > li')).toHaveCount(8)
+      await expect(figure.locator('ol.sr-only > li').last()).toContainText('Who acts: Nibfin, no agent.')
+      await expectNoPageScroll(page)
+      await figure.screenshot({ path: `${outDir}site-home-flow-${theme}-${width}.png` })
+      expect(errors).toEqual([])
+    }
+  }
+})
+
+test('home flow respects reduced motion', async ({ page }) => {
+  const flowing = () =>
+    page.evaluate(() =>
+      document
+        .getAnimations()
+        .filter((a) => a instanceof CSSAnimation && a.animationName === 'nf-diagram-flow')
+        .filter((a) => (a.effect as KeyframeEffect | null)?.target?.closest('figure[data-slot=diagram]')).length,
+    )
+  // A straight overlay has an empty box, so read its display instead.
+  const overlayDisplay = () =>
+    page.locator('svg[data-direction=LR] [data-slot=diagram-flow]').evaluateAll((ps) => [...new Set(ps.map((p) => getComputedStyle(p).display))])
+  let errors = await open(page, './', 'dark', 1280)
+  // Without reduced motion a dash flows along every shown edge.
+  expect(await flowing()).toBeGreaterThan(0)
+  expect(await overlayDisplay()).toEqual(['inline'])
+  expect(errors).toEqual([])
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  errors = await open(page, './', 'dark', 1280)
+  expect(await flowing()).toBe(0)
+  // Nothing in the figure moves, and the overlay is not shown.
+  const moving = await page.evaluate(
+    () => document.getAnimations().filter((a) => (a.effect as KeyframeEffect | null)?.target?.closest('figure[data-slot=diagram]')).length,
+  )
+  expect(moving).toBe(0)
+  expect(await overlayDisplay()).toEqual(['none'])
+  await page.locator('figure[data-slot=diagram]').screenshot({ path: `${outDir}site-home-flow-reduced-dark-1280.png` })
+  expect(errors).toEqual([])
+})
+
 test('live page respects reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const worker = await mockWorker(page)
