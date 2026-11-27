@@ -80,3 +80,36 @@ export function jobTarget(job: Job): JobTarget {
   if (job.ref !== null) return { kind: 'ref', label: job.repo ? `${job.repo}@${job.ref}` : job.ref }
   return { kind: 'title', label: job.title }
 }
+
+// The stages of a job's run title along an Issue's path; route only wakes
+// an Issue and comes before them.
+export const runStages = ['scope', 'shape', 'deliver', 'review', 'finish'] as const
+export type RunStage = (typeof runStages)[number]
+
+export type RunStepState = 'complete' | 'current' | 'upcoming'
+
+export interface RunStep {
+  stage: RunStage
+  label: string
+  state: RunStepState
+}
+
+// RunTrack is a job's place on the stage track: at a stage, waking (route,
+// no stage current yet) or unknown (any other or no stage), which has no
+// track.
+export type RunTrack = { kind: 'stage'; stage: RunStage; steps: RunStep[] } | { kind: 'waking'; steps: RunStep[] } | { kind: 'unknown' }
+
+const runStageLabels: Record<RunStage, string> = { scope: 'Scope', shape: 'Shape', deliver: 'Deliver', review: 'Review', finish: 'Finish' }
+
+// runStageSteps places a job's stage on the track: steps before it
+// complete, it current, later ones upcoming. route is waking with every
+// step upcoming. It is separate from the label-based Issue stage track.
+export function runStageSteps(stage: string | null): RunTrack {
+  const s = (stage ?? '').trim().toLowerCase()
+  const steps = (at: number): RunStep[] =>
+    runStages.map((st, i) => ({ stage: st, label: runStageLabels[st], state: i < at ? 'complete' : i === at ? 'current' : 'upcoming' }))
+  if (s === 'route') return { kind: 'waking', steps: steps(-1) }
+  const at = runStages.indexOf(s as RunStage)
+  if (at < 0) return { kind: 'unknown' }
+  return { kind: 'stage', stage: runStages[at], steps: steps(at) }
+}

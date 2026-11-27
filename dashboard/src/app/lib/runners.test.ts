@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Job, RepoRunners, Runner } from '../../worker/messages'
-import { capacityCounts, jobTarget, runnerCards, runnerErrors, safeUrl } from './runners'
+import { capacityCounts, jobTarget, runStageSteps, runnerCards, runnerErrors, safeUrl } from './runners'
 
 const job = (over: Partial<Job> = {}): Job => ({
   title: 'Nibfin · acme/app#12 · shape',
@@ -91,5 +91,32 @@ describe('safeUrl', () => {
     expect(safeUrl('http://github.com/x')).toBeUndefined()
     expect(safeUrl('not a url')).toBeUndefined()
     expect(safeUrl(null)).toBeUndefined()
+  })
+})
+
+describe('runStageSteps', () => {
+  const states = (stage: string | null) => {
+    const t = runStageSteps(stage)
+    return t.kind === 'unknown' ? t.kind : `${t.kind}:${t.steps.map((s) => s.state[0]).join('')}`
+  }
+
+  it('places each stage on the five-step track', () => {
+    expect(states('scope')).toBe('stage:cuuuu')
+    expect(states('shape')).toBe('stage:ccuuu')
+    expect(states('deliver')).toBe('stage:cccuu')
+    expect(states('review')).toBe('stage:ccccu')
+    expect(states('finish')).toBe('stage:ccccc')
+    expect(runStageSteps('deliver')).toMatchObject({ kind: 'stage', stage: 'deliver' })
+    expect((runStageSteps('Review') as { steps: { label: string }[] }).steps.map((s) => s.label)).toEqual(['Scope', 'Shape', 'Deliver', 'Review', 'Finish'])
+  })
+
+  it('shows route as waking with no step current', () => {
+    expect(states('route')).toBe('waking:uuuuu')
+  })
+
+  it('gives unknown for another or no stage', () => {
+    expect(states('accept')).toBe('unknown')
+    expect(states('')).toBe('unknown')
+    expect(states(null)).toBe('unknown')
   })
 })

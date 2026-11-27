@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 
 import type { RepoRunners } from '../../../worker/messages'
 import { capacityCounts, jobTarget, runnerCards, runnerErrors, safeUrl, type RunnerCard, type RunnerState } from '../../lib/runners'
+import { RunStageTrack } from './RunStageTrack'
 
 const linkClass = 'rounded-sm text-link underline-offset-4 hover:underline'
 
@@ -77,9 +78,10 @@ function Card({ card }: { card: RunnerCard }) {
                   target.label
                 )}
               </dd>
-              <dt className="text-muted-foreground">Stage</dt>
-              <dd className="m-0" data-slot="runner-stage">
-                {job.stage ?? 'unknown'}
+              {/* The stage track takes the card's full width, under its term. */}
+              <dt className="col-span-2 mt-1 text-muted-foreground">Stage</dt>
+              <dd className="col-span-2 m-0 mb-1 min-w-0" data-slot="runner-stage" data-stage={job.stage ?? ''}>
+                <RunStageTrack stage={job.stage} />
               </dd>
               {jobUrl && (
                 <>

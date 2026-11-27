@@ -76,6 +76,17 @@ function coreIssues(): Issue[] {
   return out
 }
 
+// The fictional delivered trend: 21 to 27 Nov, today last, one day without
+// a delivery.
+export const trendCounts = [4, 9, 0, 7, 12, 6, 3]
+const trendDays = trendCounts.map((delivered, i) => ({ date: `2026-11-${21 + i}`, delivered }))
+
+// withoutDays is data whose trend was never read or whose last read failed.
+export function withoutDays(data: LiveData): LiveData {
+  const { days: _days, ...summary } = data.summary
+  return { ...data, summary }
+}
+
 const runnerName = (n: number) => `fictional-host-${n}-runner`
 
 export function liveData(created = 128, delivered = 57, second = false): LiveData {
@@ -87,7 +98,7 @@ export function liveData(created = 128, delivered = 57, second = false): LiveDat
       { repo: `github.com/${cli}`, issues: null, issuesError: { code: 'github_api_failed', message: `GET repos/${cli}/issues: HTTP 502` } },
       { repo: `github.com/${full('nibfin-e2e')}`, issues: [] },
     ],
-    summary: { since: '2026-11-21T00:00:00+08:00', created, delivered },
+    summary: { since: '2026-11-21T00:00:00+08:00', created, delivered, days: trendDays },
     runners: [
       {
         repo: core,
