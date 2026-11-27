@@ -19,20 +19,37 @@ export interface DiagramProps {
   title: string
   description?: string
   className?: string
+  // layout 'responsive' (the default) draws left to right from the md
+  // breakpoint up and top to bottom below it; 'vertical' draws top to bottom
+  // at every width.
+  layout?: 'responsive' | 'vertical'
+  // readingOrder 'placement' (the default) lists the nodes in the shown
+  // drawing's reading order (the left-to-right one in responsive layout);
+  // 'spec' lists them in the order the spec declares them.
+  readingOrder?: 'placement' | 'spec'
 }
 
 /**
  * A static figure of boxes, arrows and groups or lanes for the site (#456).
  * It renders without state or effects, so Astro outputs it as HTML at build
  * time: a left-to-right drawing from the md breakpoint up and a top-to-bottom
- * one below it, both hidden from assistive technology, and a visually hidden
- * ordered list that carries the same information at every width.
+ * one below it (with layout="vertical", the top-to-bottom one at every width),
+ * hidden from assistive technology, and a visually hidden ordered list that
+ * carries the same information at every width.
  */
-export function Diagram({ spec, title, description, className }: DiagramProps) {
+export function Diagram({
+  spec,
+  title,
+  description,
+  className,
+  layout = 'responsive',
+  readingOrder = 'placement',
+}: DiagramProps) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '')
-  const wide = layoutDiagram(spec, 'LR')
+  const vertical = layout === 'vertical'
   const narrow = layoutDiagram(spec, 'TB')
-  const items = describeDiagram(spec, wide)
+  const wide = vertical ? undefined : layoutDiagram(spec, 'LR')
+  const items = describeDiagram(spec, readingOrder === 'spec' ? { order: spec.nodes.map((n) => n.id) } : (wide ?? narrow))
   const lanes = (spec.groupStyle ?? 'frames') === 'lanes'
   return (
     <figure className={cn('not-content m-0 flex min-w-0 flex-col gap-3 p-0', className)} data-slot="diagram">
@@ -40,17 +57,25 @@ export function Diagram({ spec, title, description, className }: DiagramProps) {
         <span className="font-heading text-base font-semibold text-foreground">{title}</span>
         {description && <span className="text-sm text-muted-foreground">{description}</span>}
       </figcaption>
-      <div className="hidden max-w-full overflow-x-auto md:block" data-slot="diagram-wide">
-        <Drawing placement={wide} marker={`nf-diagram-${id}-lr`} />
-      </div>
-      <div className="max-w-full overflow-x-auto md:hidden" data-slot="diagram-narrow">
-        <Drawing placement={narrow} marker={`nf-diagram-${id}-tb`} />
-      </div>
+      {wide ? (
+        <>
+          <div className="hidden max-w-full overflow-x-auto md:block" data-slot="diagram-wide">
+            <Drawing placement={wide} marker={`nf-diagram-${id}-lr`} />
+          </div>
+          <div className="max-w-full overflow-x-auto md:hidden" data-slot="diagram-narrow">
+            <Drawing placement={narrow} marker={`nf-diagram-${id}-tb`} />
+          </div>
+        </>
+      ) : (
+        <div className="max-w-full overflow-x-auto" data-slot="diagram-vertical">
+          <Drawing placement={narrow} marker={`nf-diagram-${id}-tb`} />
+        </div>
+      )}
       <ol className="sr-only">
         {items.map((item) => (
           <li key={item.id}>
-            {item.title}
-            {item.detail && `: ${item.detail}`}.{item.badges.length > 0 && ` Labels: ${item.badges.join(', ')}.`}
+            {sentence(item.detail ? `${item.title}: ${item.detail}` : item.title)}
+            {item.badges.length > 0 && ` Labels: ${item.badges.join(', ')}.`}
             {item.group && ` ${lanes ? 'Lane' : 'Group'}: ${item.group}.`}
             {item.edges.length > 0 && ` Leads ${item.edges.map(edgeText).join(', ')}.`}
           </li>
@@ -58,6 +83,11 @@ export function Diagram({ spec, title, description, className }: DiagramProps) {
       </ol>
     </figure>
   )
+}
+
+// sentence ends text with a full stop unless it already ends with one.
+function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`
 }
 
 // path draws a polyline whose corners are rounded.

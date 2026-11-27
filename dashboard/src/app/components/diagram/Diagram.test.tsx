@@ -48,3 +48,63 @@ describe('Diagram', () => {
     ).toThrow('unknown node "b"')
   })
 })
+
+// listItems reads the visually hidden list's items as text.
+function listItems(html: string): string[] {
+  const list = html.match(/<ol class="sr-only">(.*)<\/ol>/)![1]
+  return [...list.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1].replaceAll('<!-- -->', ''))
+}
+
+// declaredLast is declared before the node it follows, so its declaration
+// order differs from its placement order.
+const declaredLast = {
+  nodes: [
+    { id: 'b', title: 'Second' },
+    { id: 'a', title: 'First' },
+  ],
+  edges: [{ from: 'a', to: 'b' }],
+}
+
+describe('Diagram options', () => {
+  it('draws only top to bottom at every width with layout="vertical"', () => {
+    const html = renderToStaticMarkup(<Diagram spec={lanesExample} title="Lanes" layout="vertical" />)
+    const svgs = html.match(/<svg[^>]*>/g) ?? []
+    expect(svgs).toHaveLength(1)
+    expect(svgs[0]).toContain('aria-hidden="true"')
+    expect(svgs[0]).toContain('data-direction="TB"')
+    const wrapper = html.match(/<div class="([^"]*)" data-slot="diagram-vertical">/)
+    expect(wrapper).not.toBeNull()
+    expect(wrapper![1].split(' ')).not.toContain('hidden')
+    expect(wrapper![1].split(' ')).not.toContain('md:hidden')
+    expect(wrapper![1].split(' ')).toContain('overflow-x-auto')
+    expect(html).not.toMatch(/\sstyle="/)
+    expect(listItems(html)).toHaveLength(lanesExample.nodes.length)
+  })
+
+  it('lists the nodes in the drawing order by default', () => {
+    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" />))).toEqual([
+      'First. Leads to Second.',
+      'Second.',
+    ])
+    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" layout="vertical" />))).toEqual([
+      'First. Leads to Second.',
+      'Second.',
+    ])
+  })
+
+  it('lists the nodes in declaration order with readingOrder="spec"', () => {
+    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" readingOrder="spec" />))).toEqual([
+      'Second.',
+      'First. Leads to Second.',
+    ])
+  })
+})
+
+describe('Diagram text list', () => {
+  it('adds no second full stop after text that ends with one', () => {
+    const html = renderToStaticMarkup(
+      <Diagram spec={{ nodes: [{ id: 'a', title: 'A', detail: 'Ends here.' }, { id: 'b', title: 'B?' }], edges: [] }} title="x" />,
+    )
+    expect(listItems(html)).toEqual(['A: Ends here.', 'B?'])
+  })
+})
