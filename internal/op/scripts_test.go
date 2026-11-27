@@ -428,3 +428,96 @@ func TestHookScriptsUnderSh(t *testing.T) {
 		t.Error("the hook is still present")
 	}
 }
+
+// TestLibicuScriptsUnderSh runs the probe's libicu line and libicuScript
+// with stand-ins for ldconfig, sudo and dnf: ldconfig is asked with -NXv
+// over the LD_LIBRARY_PATH entries, as config.sh does; libicu present
+// changes nothing; a missing one is installed with sudo -n dnf and checked
+// again; a missing dnf, a refused sudo or a library still missing fail.
+func TestLibicuScriptsUnderSh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the scripts run on the Linux runner host")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	os.MkdirAll(bin, 0o755)
+	icu := filepath.Join(root, "icu")
+	ldLog, sudoLog := filepath.Join(root, "ldconfig.log"), filepath.Join(root, "sudo.log")
+	// ldconfig lists libicu once the marker file exists.
+	os.WriteFile(filepath.Join(bin, "ldconfig"), []byte("#!/bin/sh\necho \"$*\" >> \"$LD_LOG\"\necho '/usr/lib64:'\n"+
+		"if [ -e \"$ICU\" ]; then echo '\tlibicuuc.so.78 -> libicuuc.so.78.3'; fi\n"), 0o755)
+	// sudo logs its arguments and, unless refused, runs the command.
+	os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\necho \"$*\" >> \"$SUDO_LOG\"\n[ \"${SUDO_EXIT:-0}\" = 0 ] || { echo 'sudo: a password is required' >&2; exit 1; }\nshift\nexec \"$@\"\n"), 0o755)
+	// dnf installs libicu unless DNF_NOOP is set.
+	os.WriteFile(filepath.Join(bin, "dnf"), []byte("#!/bin/sh\necho 'Installed: libicu'\n[ -n \"$DNF_NOOP\" ] || : > \"$ICU\"\n"), 0o755)
+	// nodnf has every tool the script needs but dnf.
+	nodnf := filepath.Join(root, "nodnf")
+	os.MkdirAll(nodnf, 0o755)
+	os.Symlink(filepath.Join(bin, "ldconfig"), filepath.Join(nodnf, "ldconfig"))
+	for _, tool := range []string{"tr", "grep"} {
+		p, err := exec.LookPath(tool)
+		if err != nil {
+			t.Skip("no " + tool)
+		}
+		os.Symlink(p, filepath.Join(nodnf, tool))
+	}
+	base := []string{"ICU=" + icu, "LD_LOG=" + ldLog, "SUDO_LOG=" + sudoLog, "LD_LIBRARY_PATH=/opt/a:/opt/b"}
+	host := func(path string, env ...string) *runnerAdd {
+		return &runnerAdd{host: &localHost{env: append(append([]string{"PATH=" + path}, base...), env...)}}
+	}
+	ctx := context.Background()
+	read := func(p string) string {
+		b, _ := os.ReadFile(p)
+		os.Remove(p)
+		return string(b)
+	}
+	sysPath := bin + ":" + os.Getenv("PATH")
+
+	// The probe reports libicu missing, then present.
+	pr, err := host(sysPath).probe(ctx)
+	if err != nil || pr.icu {
+		t.Fatalf("probe without libicu: %v %v", pr.icu, err)
+	}
+	if got := read(ldLog); got != "-NXv /opt/a /opt/b\n" {
+		t.Errorf("ldconfig args = %q", got)
+	}
+	os.WriteFile(icu, nil, 0o644)
+	if pr, err = host(sysPath).probe(ctx); err != nil || !pr.icu {
+		t.Fatalf("probe with libicu: %v %v", pr.icu, err)
+	}
+
+	run := func(a *runnerAdd) error {
+		_, err := a.script(ctx, "install libicu", libicuScript, nil, "")
+		return err
+	}
+	// Present: no sudo, no dnf.
+	if err := run(host(sysPath)); err != nil || read(sudoLog) != "" {
+		t.Errorf("present: %v", err)
+	}
+	// Missing: installed with sudo -n dnf, then found.
+	os.Remove(icu)
+	if err := run(host(sysPath)); err != nil {
+		t.Fatalf("missing: %v", err)
+	}
+	if got := read(sudoLog); got != "-n dnf install -y libicu\n" {
+		t.Errorf("sudo = %q", got)
+	}
+	if _, err := os.Stat(icu); err != nil {
+		t.Errorf("libicu not installed: %v", err)
+	}
+	// A refused sudo keeps its output.
+	os.Remove(icu)
+	if err := run(host(sysPath, "SUDO_EXIT=1")); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "a password is required") {
+		t.Errorf("refused: %v", err)
+	}
+	// Still missing after dnf.
+	read(sudoLog)
+	if err := run(host(sysPath, "DNF_NOOP=1")); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "still not found") {
+		t.Errorf("still missing: %v", err)
+	}
+	// No dnf: nothing is asked of sudo.
+	read(sudoLog)
+	if err := run(host(nodnf)); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "dnf is not available") || read(sudoLog) != "" {
+		t.Errorf("no dnf: %v", err)
+	}
+}

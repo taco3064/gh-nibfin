@@ -28,9 +28,10 @@ type RunnerAddParams struct {
 func RunnerAdd(p RunnerAddParams) Operation { return &runnerAdd{p: p} }
 
 const (
-	actLinger     = "enable linger"
-	actAddRunner  = "add runner"
-	actAddRunners = "add runners"
+	actLinger        = "enable linger"
+	actInstallLibicu = "install libicu"
+	actAddRunner     = "add runner"
+	actAddRunners    = "add runners"
 
 	toolsVolume = "nibfin-tools"
 	// memoryPerRunnerGB is the NIBFIN_MEMORY default of a stage run.
@@ -42,6 +43,21 @@ const (
 const (
 	// lingerScript keeps the user's systemd manager running after logout.
 	lingerScript = `loginctl enable-linger`
+	// libicuScript makes the libicu the official runner needs available in a
+	// podman machine VM: when config.sh's own check does not find it, it
+	// installs the distribution's libicu package with dnf, through sudo
+	// without a prompt, and checks again.
+	libicuScript = icuCheck + `icu && exit 0
+if ! command -v dnf >/dev/null 2>&1; then
+  echo 'libicu is not found and dnf is not available inside the VM' >&2
+  exit 1
+fi
+sudo -n dnf install -y libicu || exit $?
+if ! icu; then
+  echo 'libicu is still not found after dnf install libicu' >&2
+  exit 1
+fi
+`
 	// extractScript unpacks the runner archive from stdin into the slot $1.
 	// A new slot ($2 = new) must not exist yet.
 	extractScript = `set -e
@@ -197,10 +213,10 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 		if a.entry.Kind != "" {
 			start.Detail = "through " + entryName(a.entry)
 		}
-		linger, tools := lingerStep(where), volumeStep(toolsVolume)
-		linger.AfterStart, tools.AfterStart, tools.Detail = true, true, where
-		plan.Steps = append(plan.Steps, start, linger, tools)
-		Checked(ctx, start, linger, tools)
+		linger, icu, tools := lingerStep(where), libicuStep(where), volumeStep(toolsVolume)
+		linger.AfterStart, icu.AfterStart, tools.AfterStart, tools.Detail = true, true, true, where
+		plan.Steps = append(plan.Steps, start, linger, icu, tools)
+		Checked(ctx, start, linger, icu, tools)
 		logins, err := a.loginSteps(ctx)
 		if err != nil {
 			return plan, err
@@ -254,6 +270,12 @@ func autostartStep(action string, as host.Autostart) Step {
 
 func lingerStep(where string) Step {
 	return Step{ID: "linger", Action: actLinger, Target: where, Next: "enabled"}
+}
+
+// libicuStep is the libicu the official runner needs inside a podman
+// machine VM.
+func libicuStep(where string) Step {
+	return Step{ID: "libicu", Action: actInstallLibicu, Target: where, Next: "present"}
 }
 
 func slotStep(slot string) Step {
@@ -462,9 +484,9 @@ func (a *runnerAdd) slots(inv *runners.Inventory) (slots []string, fresh int) {
 	return slots, fresh
 }
 
-// steps are the items of a running host: linger, the tools volume, the
-// login items and one item per chosen slot. The host advice is returned as
-// notes.
+// steps are the items of a running host: linger, libicu on a podman
+// machine, the tools volume, the login items and one item per chosen slot.
+// The host advice is returned as notes.
 func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, error) {
 	where := a.host.Describe()
 	steps := []Step{}
@@ -475,6 +497,12 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 	}
 	steps = append(steps, linger)
 	Checked(ctx, linger)
+	if !a.host.Local() {
+		icu := libicuStep(where)
+		icu.NoChange, icu.Current = env.probe.icu, presence(env.probe.icu)
+		steps = append(steps, icu)
+		Checked(ctx, icu)
+	}
 	has, err := volumeExists(ctx, a.host, toolsVolume)
 	if err != nil {
 		return nil, nil, err
@@ -682,12 +710,24 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 
-	// The order is fixed: linger, the tools volume, the login, the slots.
+	// The order is fixed: linger, libicu, the tools volume, the login, the
+	// slots, so libicu is there before any config.sh runs.
 	for _, s := range w.pre {
 		if s.Action == actLinger {
 			if err := Track(ctx, s, func() error {
 				if _, err := a.script(ctx, "enable linger", lingerScript, nil, ""); err != nil {
 					return Errorf(CodeRunnerInstallFailed, "%v; enable it with: sudo loginctl enable-linger $USER", err)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+			continue
+		}
+		if s.Action == actInstallLibicu {
+			if err := Track(ctx, s, func() error {
+				if _, err := a.script(ctx, "install libicu", libicuScript, nil, ""); err != nil {
+					return Errorf(CodeRunnerInstallFailed, "%v; install it inside the VM with: podman machine ssh %s sudo dnf install -y libicu", err, strings.TrimPrefix(s.Target, "podman machine "))
 				}
 				return nil
 			}); err != nil {
@@ -758,7 +798,8 @@ func (a *runnerAdd) classify(steps []Step) (work, error) {
 	slotRE := regexp.MustCompile(`^` + a.prov.name + `-[1-9][0-9]{0,5}$`)
 	for _, s := range steps {
 		switch {
-		case s.Action == actLinger, s.Action == actCreateVolume && s.Target == toolsVolume:
+		case s.Action == actInstallLibicu && !a.host.Local() && s.Target == a.host.Describe(),
+			s.Action == actLinger, s.Action == actCreateVolume && s.Target == toolsVolume:
 			w.pre = append(w.pre, s)
 		case s.Action == actCreateVolume && s.Target == a.prov.volume(), s.Action == actLogIn && s.Target == a.prov.name:
 			w.logins = append(w.logins, s)
@@ -1009,7 +1050,8 @@ func (a *runnerAdd) envHasProvider(ctx context.Context, dir string) (bool, error
 }
 
 // ReadBack reads every item back: the host, its .wslconfig key and
-// autostart entry, linger, the tools volume, the login and each slot. The
+// autostart entry, linger, libicu on a podman machine, the tools volume, the
+// login and each slot. The
 // items read so far are returned also with an error.
 func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err := a.validate(); err != nil {
@@ -1028,7 +1070,12 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if a.entry.Kind != "" {
 		checks.Expect(as0)
 	}
-	checks.Expect(hs, ls, tools, volumeStep(a.prov.volume()), loginStep(a.prov))
+	checks.Expect(hs, ls)
+	is := libicuStep(where)
+	if !a.host.Local() {
+		checks.Expect(is)
+	}
+	checks.Expect(tools, volumeStep(a.prov.volume()), loginStep(a.prov))
 
 	// The slots to verify: those Apply acted on, else the plan's, else
 	// (a plan made on a stopped machine) all of the provider's.
@@ -1173,6 +1220,9 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		linger = "enabled"
 	}
 	checks.Set(ls, pr.linger, linger, "linger is not enabled")
+	if !a.host.Local() {
+		checks.Set(is, pr.icu, presence(pr.icu), "libicu is not found inside the VM")
+	}
 	toolsHas, err := volumeExists(ctx, a.host, toolsVolume)
 	if err != nil {
 		return fail(err)

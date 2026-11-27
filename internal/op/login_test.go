@@ -71,10 +71,13 @@ type fakeHost struct {
 
 	// The runner host, for Shell (see runner_add_test.go). A nil slots
 	// map means one complete runner per provider.
-	slots     map[string]*fakeSlot
-	vm, wsl   bool
-	probe     string
-	linger    bool
+	slots   map[string]*fakeSlot
+	vm, wsl bool
+	probe   string
+	linger  bool
+	// icu is true once the libicu script succeeded; the probe then finds
+	// libicu.
+	icu       bool
 	shells    []shellCall
 	shellExit map[string]int
 	shellErr  map[string]string
