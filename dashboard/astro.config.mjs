@@ -55,6 +55,7 @@ export default defineConfig({
       locales: { root: { label: 'English', lang: 'en' } },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/taco3064/gh-nibfin' }],
       customCss: ['./src/app/styles/site.css'],
+      routeMiddleware: './src/app/route-data.ts',
       sidebar: [
         { label: 'Home', link: '/' },
         { label: 'Quick start', slug: 'quick-start' },

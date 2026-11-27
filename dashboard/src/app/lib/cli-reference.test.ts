@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Command } from '@/lib/operation'
 
 import commands from '../data/commands.json'
-import { flagRow, referenceOf, slugOf, usageOf } from './cli-reference'
+import { flagRow, referenceOf, slugOf, tocItemsOf, usageOf } from './cli-reference'
 
 const command = (c: Partial<Command>): Command => ({ path: 'x', short: '', long: '', flags: [], args: [], ...c })
 const flag = { shorthand: '', default: '', usage: '', required: false }
@@ -72,5 +72,24 @@ describe('referenceOf', () => {
     expect(add?.usage).toContain('<claude|codex>')
     expect(add?.usage).toContain('[--count N]')
     expect(add?.flags.map((f) => f.name)).toContain('--count')
+  })
+})
+
+describe('tocItemsOf', () => {
+  it('gives one level-2 entry per reference entry, in the CLI order, with the section ids', () => {
+    const entries = referenceOf(commands as Command[])
+    const items = tocItemsOf(commands as Command[])
+    expect(items).toHaveLength(entries.length)
+    expect(items.map((i) => i.slug)).toEqual(entries.map((e) => e.slug))
+    expect(items.map((i) => i.text)).toEqual(entries.map((e) => `gh nibfin ${e.path}`))
+    for (const i of items) {
+      expect(i.depth).toBe(2)
+      expect(i.children).toEqual([])
+    }
+  })
+
+  it('follows the definition: a command added or removed changes the entries', () => {
+    expect(tocItemsOf([command({ path: 'b' }), command({ path: 'a sub' })]).map((i) => i.slug)).toEqual(['b', 'a-sub'])
+    expect(tocItemsOf([])).toEqual([])
   })
 })
