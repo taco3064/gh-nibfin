@@ -4,7 +4,8 @@
 // is found through the schema's allowed values.
 
 import { fieldsOf, type Command, type Values } from '@/lib/operation'
-import type { ApiError, CurrentJob, HostReport, Period, RunnerState } from '@/lib/status'
+import type { Outcome } from '@/lib/session'
+import type { Activity, ApiError, CurrentJob, HostReport, Period, RunnerState } from '@/lib/status'
 
 export type LabelTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -159,4 +160,78 @@ export function periodLabel(p: Period): string {
   const end = p.end ? clock(Date.parse(p.end)) : 'now'
   const parts = [jobLabel(p), p.stage, `${clock(Date.parse(p.start))}–${end}`, p.failed ? 'failed' : undefined]
   return parts.filter(Boolean).join(' · ')
+}
+
+// ActivityCycle is one status read's activity answers: the current part
+// (GET /api/runner-activity?part=current) and the full read with the
+// history. An answer is absent until it arrives.
+export interface ActivityCycle {
+  current?: Outcome<Activity>
+  history?: Outcome<Activity>
+}
+
+// TimelineState is what the "Last 24 hours" card shows: loading (with the
+// last history shown while a newer one loads), a history, or a failed read.
+export type TimelineState =
+  | { state: 'loading'; activity?: Activity }
+  | { state: 'loaded'; activity: Activity }
+  | { state: 'failed'; error: ApiError }
+
+// ActivityView is the activity the Runner view shows: tiles is the answer
+// the tiles and the host card use, absent while none is in.
+export interface ActivityView {
+  tiles?: Activity
+  timeline: TimelineState
+}
+
+function answered(c: ActivityCycle): boolean {
+  return c.current !== undefined || c.history !== undefined
+}
+
+// tileActivity picks a cycle's answer for the tiles: among the answers
+// whose jobs were read, the one read last, so a joined, older history does
+// not replace a newer current read, and a failed history does not remove a
+// known current Job. With no such answer, the answer read last that failed
+// to read the jobs (the containers and the reason); never one of an
+// earlier cycle, which would show stale Jobs as current.
+export function tileActivity(c: ActivityCycle): Activity | undefined {
+  const got = [c.current, c.history].flatMap((o) => (o?.ok ? [o.value] : []))
+  const read = got.filter((a) => !a.jobsError)
+  const pool = read.length > 0 ? read : got
+  return pool.reduce<Activity | undefined>((best, a) => (!best || Date.parse(a.to) >= Date.parse(best.to) ? a : best), undefined)
+}
+
+// activityView is what the view shows of the cycle of the newest status
+// read, with last, the cycle before, shown until the first answer of this
+// one arrives, and its history until this one's arrives.
+export function activityView(cycle: ActivityCycle, last: ActivityCycle = {}): ActivityView {
+  const tiles = tileActivity(answered(cycle) ? cycle : last)
+  const h = cycle.history ?? last.history
+  if (!h) return { tiles, timeline: { state: 'loading' } }
+  if (!h.ok) return { tiles, timeline: { state: 'failed', error: h.error } }
+  return { tiles, timeline: cycle.history ? { state: 'loaded', activity: h.value } : { state: 'loading', activity: h.value } }
+}
+
+// ActivityCycles are the answers of the cycle of read and of the cycle
+// before it.
+export interface ActivityCycles {
+  read: unknown
+  cycle: ActivityCycle
+  last: ActivityCycle
+}
+
+// rollCycle stores an answer of read's cycle: a newer read starts a new
+// cycle and keeps the one before as last (or the last before it when that
+// one has no answer yet).
+export function rollCycle(g: ActivityCycles | null, read: unknown, part: keyof ActivityCycle, outcome: Outcome<Activity>): ActivityCycles {
+  if (g && g.read === read) return { ...g, cycle: { ...g.cycle, [part]: outcome } }
+  const last = g ? (answered(g.cycle) ? g.cycle : g.last) : {}
+  return { read, cycle: { [part]: outcome }, last }
+}
+
+// cyclesView is the view of the stored cycles for the newest read.
+export function cyclesView(g: ActivityCycles | null, read: unknown): ActivityView {
+  if (!g) return activityView({})
+  if (g.read === read) return activityView(g.cycle, g.last)
+  return activityView({}, answered(g.cycle) ? g.cycle : g.last)
 }

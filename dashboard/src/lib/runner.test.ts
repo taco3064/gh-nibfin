@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Command } from './operation'
-import { clock, elapsed, freeFraction, gib, githubLabel, hourTicks, jobLabel, laneBars, periodLabel, providerPreset, serviceLabel, slotsByProvider, tileState } from './runner'
-import type { HostReport, RunnerState } from './status'
+import type { Outcome } from './session'
+import {
+  activityView,
+  clock,
+  cyclesView,
+  elapsed,
+  freeFraction,
+  gib,
+  githubLabel,
+  hourTicks,
+  jobLabel,
+  laneBars,
+  periodLabel,
+  providerPreset,
+  rollCycle,
+  serviceLabel,
+  slotsByProvider,
+  tileActivity,
+  tileState,
+} from './runner'
+import type { Activity, HostReport, RunnerState } from './status'
 
 function slot(over: Partial<RunnerState> = {}): RunnerState {
   return { slot: 'claude-1', provider: 'claude', configured: true, unit: true, enabled: true, active: true, listed: true, status: 'online', busy: false, ...over }
@@ -167,5 +186,85 @@ describe('periodLabel', () => {
     expect(periodLabel({ start, end, failed: true, repo: 'acme/app', issue: 5, stage: 'shape' })).toBe('acme/app#5 · shape · 08:01–08:30 · failed')
     expect(periodLabel({ start, failed: false })).toBe('an unknown Issue · 08:01–now')
     expect(jobLabel({ repo: 'acme/app' })).toBe('an unknown Issue')
+  })
+})
+
+function act(to: string, over: Partial<Activity> = {}): Outcome<Activity> {
+  return { ok: true, value: { from: '2026-11-26T00:00:00Z', to, runners: [], unattributed: [], history: false, ...over } }
+}
+const jobsError = { code: 'github_api_failed', message: 'HTTP 502' }
+const routeError: Outcome<Activity> = { ok: false, error: { code: 'podman_failed', message: 'boom' } }
+const value = (o: Outcome<Activity>) => (o.ok ? o.value : undefined)
+
+describe('tileActivity', () => {
+  it('is absent before any answer', () => expect(tileActivity({})).toBeUndefined())
+  it('takes the current Jobs while the history loads', () => {
+    const current = act('2026-11-27T10:00:05Z')
+    expect(tileActivity({ current })).toBe(value(current))
+  })
+  it('takes the answer read last', () => {
+    const current = act('2026-11-27T10:00:05Z')
+    const history = act('2026-11-27T10:00:09Z', { history: true })
+    expect(tileActivity({ current, history })).toBe(value(history))
+  })
+  it('keeps a newer current read over a joined, older history', () => {
+    const current = act('2026-11-27T10:00:05Z')
+    const history = act('2026-11-27T10:00:01Z', { history: true })
+    expect(tileActivity({ current, history })).toBe(value(current))
+  })
+  it('keeps the current Jobs when the history fails', () => {
+    const current = act('2026-11-27T10:00:05Z')
+    expect(tileActivity({ current, history: act('2026-11-27T10:00:09Z', { history: true, jobsError }) })).toBe(value(current))
+    expect(tileActivity({ current, history: routeError })).toBe(value(current))
+  })
+  it('shows a failed current read until an answer reads the jobs', () => {
+    const current = act('2026-11-27T10:00:05Z', { jobsError })
+    expect(tileActivity({ current })).toBe(value(current))
+    const history = act('2026-11-27T10:00:09Z', { history: true })
+    expect(tileActivity({ current, history })).toBe(value(history))
+  })
+  it('is absent when only the route failed', () => expect(tileActivity({ current: routeError })).toBeUndefined())
+})
+
+describe('activityView', () => {
+  const lastCurrent = act('2026-11-27T09:59:00Z')
+  const lastHistory = act('2026-11-27T09:59:10Z', { history: true })
+  const last = { current: lastCurrent, history: lastHistory }
+
+  it('loads with nothing before', () => expect(activityView({})).toEqual({ timeline: { state: 'loading' } }))
+  it('shows the last cycle until the new one answers', () =>
+    expect(activityView({}, last)).toEqual({ tiles: value(lastHistory), timeline: { state: 'loading', activity: value(lastHistory) } }))
+  it('shows the new current Jobs with the last history still loading', () => {
+    const current = act('2026-11-27T10:00:05Z')
+    expect(activityView({ current }, last)).toEqual({ tiles: value(current), timeline: { state: 'loading', activity: value(lastHistory) } })
+  })
+  it('does not keep an earlier cycle Job when the new current read fails', () => {
+    const current = act('2026-11-27T10:00:05Z', { jobsError })
+    expect(activityView({ current }, last).tiles).toBe(value(current))
+  })
+  it('shows the new history', () => {
+    const history = act('2026-11-27T10:00:09Z', { history: true, coversFrom: '2026-11-26T20:00:00Z' })
+    expect(activityView({ history }, last).timeline).toEqual({ state: 'loaded', activity: value(history) })
+  })
+  it('shows a failed history read', () =>
+    expect(activityView({ current: lastCurrent, history: routeError }).timeline).toEqual({ state: 'failed', error: { code: 'podman_failed', message: 'boom' } }))
+})
+
+describe('rollCycle', () => {
+  it('starts a new cycle for a newer read and keeps the one before', () => {
+    const a = act('2026-11-27T10:00:00Z')
+    const b = act('2026-11-27T10:00:30Z')
+    let g = rollCycle(null, 1, 'current', a)
+    expect(g).toEqual({ read: 1, cycle: { current: a }, last: {} })
+    g = rollCycle(g, 2, 'history', b)
+    expect(g).toEqual({ read: 2, cycle: { history: b }, last: { current: a } })
+    g = rollCycle(g, 2, 'current', a)
+    expect(g.cycle).toEqual({ history: b, current: a })
+  })
+  it('views the stored cycle as the one before when a newer read has no answer yet', () => {
+    const a = act('2026-11-27T10:00:00Z')
+    const g = rollCycle(null, 1, 'current', a)
+    expect(cyclesView(g, 2)).toEqual({ tiles: value(a), timeline: { state: 'loading' } })
+    expect(cyclesView(null, 1)).toEqual({ timeline: { state: 'loading' } })
   })
 })

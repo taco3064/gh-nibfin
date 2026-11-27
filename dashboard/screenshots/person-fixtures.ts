@@ -223,7 +223,8 @@ export function personView(over: Record<string, unknown> = {}) {
 // runnerActivity is a fictional GET /api/runner-activity body for
 // hosts.mixed, relative to now: claude-1 runs a deliver Job, claude-2 had
 // Jobs and one failed, codex-1 runs a Job only its container shows, and a
-// route container matches no Runner. It follows status.Activity.
+// route container matches no Runner. It is a full read's answer
+// (history); it follows status.Activity.
 export function runnerActivity(now = Date.now(), over: Record<string, unknown> = {}) {
   const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString().replace(/\.\d+Z$/, 'Z')
   const job = (id: number) => `${gh}/acme/app/actions/runs/${id}/job/${id + 1}`
@@ -271,6 +272,7 @@ export function runnerActivity(now = Date.now(), over: Record<string, unknown> =
       { slot: 'codex-2', provider: 'codex', periods: [] },
     ],
     unattributed: [{ repo: 'acme/web', issue: 44, issueUrl: issueURL('acme/web', 44), startedAt: at(2) }],
+    history: true,
     ...over,
   }
 }

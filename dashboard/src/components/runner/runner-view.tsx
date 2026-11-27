@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import { BusyTimeline } from './busy-timeline'
 import { MemoryGauge } from './memory-gauge'
 import { RunnerTile } from './runner-tiles'
-import { useActivity, useNow, type ActivityState } from './use-activity'
+import { useActivity, useNow, type ActivityView } from './use-activity'
 import { useCommands, type CommandsState } from './use-commands'
 
 const code = 'rounded-sm bg-[var(--nf-code-bg)] px-1.5 py-0.5 font-mono text-[0.85em] break-words text-[var(--nf-code)]'
@@ -106,7 +106,7 @@ function RunnerSections({
   open?: Opener
   has: (api: string) => boolean
   runnersError: boolean
-  activity: ActivityState
+  activity: ActivityView
 }) {
   const now = useNow()
   const groups = slotsByProvider(host)
@@ -116,7 +116,7 @@ function RunnerSections({
     if (!providers.some((x) => x.provider === p)) providers.push({ provider: p, loggedIn: false })
   }
   const { error, githubError, githubNeedsAdmin, repo } = host.runners
-  const act = activity.state === 'failed' ? undefined : activity.activity
+  const act = activity.tiles
   const slots = host.runners.runners ?? []
   return (
     <>
@@ -145,7 +145,7 @@ function RunnerSections({
           has={has}
         />
       ))}
-      {slots.length > 0 && <BusyTimeline slots={slots} activity={activity} />}
+      {slots.length > 0 && <BusyTimeline slots={slots} activity={activity.timeline} />}
     </>
   )
 }

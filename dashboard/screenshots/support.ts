@@ -48,10 +48,27 @@ export interface Watch {
   repoStatus: Record<string, StatusAnswer>
   // statusBodies are the request bodies of the status read route, in order.
   statusBodies: Record<string, unknown>[]
-  // activity answers GET /api/runner-activity: a body, or an error with
-  // its HTTP status; activityReads counts the reads.
-  activity: { result: unknown } | { error: { code: string; message: string }; httpStatus: number }
+  // activity answers GET /api/runner-activity, the full read: a body, or
+  // an error with its HTTP status; activityReads counts those reads.
+  // activityCurrent answers ?part=current; without it the current part is
+  // activity's current Jobs (see currentOf). activityCurrentReads counts
+  // those reads. historyGate, when set, holds the full read's answer until
+  // it settles.
+  activity: ActivityAnswer
   activityReads: number
+  activityCurrent?: ActivityAnswer
+  activityCurrentReads: number
+  historyGate?: Promise<void>
+}
+
+type ActivityAnswer = { result: unknown } | { error: { code: string; message: string }; httpStatus: number }
+
+// currentOf is the current part of a full activity body: its current Jobs
+// and the periods still running, without the history.
+function currentOf(a: ActivityAnswer): ActivityAnswer {
+  if ('error' in a) return a
+  const r = a.result as { runners: { periods: { end?: string }[] }[] }
+  return { result: { ...r, history: false, coversFrom: undefined, runners: r.runners.map((s) => ({ ...s, periods: s.periods.filter((p) => !p.end) })) } }
 }
 
 // prepare mocks the API and records CSP violations and console errors. The
@@ -69,6 +86,7 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
     statusBodies: [],
     activity: { result: runnerActivity() },
     activityReads: 0,
+    activityCurrentReads: 0,
   }
   w.live = await mockLive(page, () => {
     w.statusReads++
@@ -93,10 +111,19 @@ export async function prepare(page: Page, status: StatusAnswer = { result: perso
           },
         })
   })
-  await page.route('**/api/runner-activity', (route) => {
+  await page.route('**/api/runner-activity*', async (route) => {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
-    w.activityReads++
-    const a = w.activity
+    const part = new URL(route.request().url()).searchParams.get('part')
+    let a: ActivityAnswer
+    if (part === 'current') {
+      w.activityCurrentReads++
+      a = w.activityCurrent ?? currentOf(w.activity)
+    } else {
+      expect(part).toBeNull()
+      w.activityReads++
+      await w.historyGate
+      a = w.activity
+    }
     return 'error' in a ? route.fulfill({ status: a.httpStatus, json: { error: a.error } }) : route.fulfill({ json: a.result })
   })
   // The command schema the runner view reads; a spec may route it again.
