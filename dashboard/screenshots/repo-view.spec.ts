@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { unevenRoundedBorders } from './border-scan'
 import { edgeCount, outsideCount, platform, repoStatus } from './repo-fixtures'
-import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type Watch } from './support'
+import { expectClean, expectGutter, expectNonce, fulfillPlanStream, outDir, prepare, shot, storageKey, widths, type Watch } from './support'
 
 // Screenshots and checks of the repository view (#353): the picker, the
 // summary, the dependency graph with its search and filters, and init and
@@ -114,6 +114,34 @@ async function pick(page: Page, repo: string) {
   await picker(page).locator(`[data-repo-entry="${repo}"]`).click()
 }
 
+// The Issues without dependencies of the platform fixture, grouped as the
+// list groups them (#496): a paused or pending Issue only under Paused or
+// Pending, any other under its stage from labels, in the stage track's
+// order. Empty groups are left out.
+const blockerKeys = new Set(platform.flatMap((i) => (i.blockedBy ?? []).map((b) => `${b.repo}#${b.number}`)))
+const unlinkedIssues = platform.filter((i) => i.blockedBy !== undefined && i.blockedBy.length === 0 && !blockerKeys.has(`acme/platform#${i.number}`))
+function groupOf(i: (typeof platform)[number]): string {
+  if (i.pause || i.pending) return 'Paused or Pending'
+  const l = i.labels
+  if (!l.includes('scope')) return l.includes('request') ? 'Scope' : 'Not in Nibfin'
+  return l.includes('delivered') ? 'Done' : l.includes('shaped') ? 'Deliver' : 'Shape'
+}
+const unlinkedGroups = ['Scope', 'Shape', 'Deliver', 'Done', 'Not in Nibfin', 'Paused or Pending']
+  .map((label) => ({ label, issues: unlinkedIssues.filter((i) => groupOf(i) === label) }))
+  .filter((g) => g.issues.length > 0)
+const groupName = (g: { label: string; issues: unknown[] }) => `${g.label} · ${g.issues.length} ${g.issues.length === 1 ? 'Issue' : 'Issues'}`
+const groupButtons = (page: Page) => page.locator('[data-slot=unlinked] [data-unlinked-group] > [data-slot=collapsible-trigger]')
+
+// openGroups opens every collapsed group of the Issues without dependencies.
+async function openGroups(page: Page) {
+  const buttons = groupButtons(page)
+  for (let i = 0; i < (await buttons.count()); i++) {
+    const b = buttons.nth(i)
+    if ((await b.getAttribute('aria-expanded')) !== 'true') await b.click()
+    await expect(b).toHaveAttribute('aria-expanded', 'true')
+  }
+}
+
 // fullCount is the graph count line of the whole platform graph: closed
 // blockers collapse into markers and are counted apart from the context.
 const fullCount = `Showing ${platform.length} of ${platform.length} open Issues · ${outsideCount(platform, 'acme/platform')} shown as context · ${outsideCount(platform, 'acme/platform', 'CLOSED')} closed blockers collapsed`
@@ -144,15 +172,30 @@ for (const theme of themes) {
       const nodes = page.locator('[data-slot=graph-region] [data-node]')
       await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
       await edgesDrawn(page, edgeCount(platform, 'acme/platform'))
-      // Every listed Issue appears once, in the graph or below it.
-      await expect(page.locator('[data-view=repo] article[data-issue]')).toHaveCount(platform.length)
+      // Every listed Issue appears once: in the graph, in the unread list or
+      // counted in a collapsed group of Issues without dependencies (#496).
+      const unlinkedTotal = unlinkedGroups.reduce((n, g) => n + g.issues.length, 0)
+      expect(unlinkedTotal).toBe(32)
+      await expect(page.locator('[data-view=repo] article[data-issue]')).toHaveCount(platform.length - unlinkedTotal)
       expect(await nodes.count()).toBeGreaterThan(100)
       await expect(page.locator('[data-note=cycle]')).toHaveText([
         '#120 and #121 block each other in a cycle.',
         '#122, #123 and #124 block each other in a cycle.',
       ])
       await expect(page.locator('[data-note=unread]')).toHaveText('Blockers of #125 could not be read; edges may be missing.')
-      await expect(page.locator('[data-slot=unlinked] article[data-issue]')).toHaveCount(7 + 25)
+      // The Issues without dependencies are grouped by stage, collapsed, with
+      // each count in its button's name; Scope has none and is not shown.
+      await expect(groupButtons(page)).toHaveCount(unlinkedGroups.length)
+      expect(unlinkedGroups.map((g) => g.label)).toEqual(['Shape', 'Deliver', 'Done', 'Not in Nibfin', 'Paused or Pending'])
+      for (const [i, g] of unlinkedGroups.entries()) {
+        await expect(groupButtons(page).nth(i)).toHaveAccessibleName(groupName(g))
+        await expect(groupButtons(page).nth(i)).toHaveAttribute('aria-expanded', 'false')
+      }
+      await expect(page.locator('[data-unlinked-group=scope]')).toHaveCount(0)
+      await expect(page.locator('[data-unlinked-row]')).toHaveCount(0)
+      // Collapsed, the list keeps the page short.
+      if (width === 1280) expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(2000)
+      if (width === 375) expect((await page.locator('[data-slot=unlinked]').boundingBox())!.height).toBeLessThanOrEqual(600)
       // An Issue whose blockers could not be read is never listed as having
       // no dependencies.
       await expect(page.locator('[data-slot=unread] > h3')).toHaveText('Issues whose blockers could not be read')
@@ -170,6 +213,78 @@ for (const theme of themes) {
       await expect(region).toBeFocused()
       await shot(page, `repo-graph-top-${theme}-${width}`, false)
       await shot(page, `repo-graph-${theme}-${width}`)
+
+      // Opened, every group shows its compact rows, not full items.
+      await openGroups(page)
+      for (const g of unlinkedGroups) {
+        const id = { Shape: 'shape', Deliver: 'deliver', Done: 'done', 'Not in Nibfin': 'none', 'Paused or Pending': 'held' }[g.label]
+        await expect(page.locator(`[data-unlinked-group=${id}] [data-unlinked-row]`)).toHaveCount(g.issues.length)
+      }
+      await expect(page.locator('[data-slot=unlinked] [data-unlinked-row]')).toHaveCount(unlinkedTotal)
+      await expect(page.locator('[data-slot=unlinked] article[data-issue]')).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await page.locator('[data-slot=unlinked]').screenshot({ path: `${outDir}repo-unlinked-${theme}-${width}.png`, animations: 'disabled' })
+      await expectClean(w)
+    })
+  }
+}
+
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`Issues without dependencies open rows and preview on focus at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme)
+      await pick(page, 'acme/platform')
+      await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
+      const list = page.locator('[data-slot=unlinked]')
+      const shape = groupButtons(page).first()
+      await shape.click()
+      await expect(shape).toHaveAttribute('aria-expanded', 'true')
+      const rows = list.locator('[data-unlinked-group=shape] [data-unlinked-row]')
+      await expect(rows).toHaveCount(unlinkedGroups[0].issues.length)
+      const [first, second, third] = unlinkedGroups[0].issues
+      const rowButton = (n: number) => list.locator(`[data-unlinked-row="acme/platform#${n}"] [data-slot=popover-anchor] > [data-slot=collapsible-trigger]`)
+      await expect(rowButton(first.number)).toHaveAccessibleName(`#${first.number} ${first.title}, stage Shape, No runs`)
+      // Opening a row shows its full Issue item inline.
+      await rowButton(first.number).click()
+      await expect(rowButton(first.number)).toHaveAttribute('aria-expanded', 'true')
+      await expect(list.locator(`article[data-issue$="/issues/${first.number}"]`)).toBeVisible()
+      await expect(page.locator('[data-unlinked-preview]')).toHaveCount(0)
+      // A paused or pending Issue names its flags in its row.
+      await openGroups(page)
+      const held = unlinkedGroups.at(-1)!.issues[0]
+      await expect(rowButton(held.number)).toContainText(held.pause ? 'Paused' : 'Pending')
+      expect(await unevenRoundedBorders(page, list), 'unlinked: rounded boxes with uneven borders').toEqual([])
+      await list.screenshot({ path: `${outDir}repo-unlinked-open-${theme}-${width}.png`, animations: 'disabled' })
+
+      // Keyboard focus shows the same item as a floating preview; the list
+      // does not move and focus stays on the row.
+      await rowButton(first.number).click()
+      await expect(list.locator(`article[data-issue$="/issues/${first.number}"]`)).toHaveCount(0)
+      const before = await rowButton(third.number).boundingBox()
+      await rowButton(first.number).focus()
+      await page.keyboard.press('Tab')
+      await expect(list.locator(`[data-unlinked-row="acme/platform#${first.number}"] a`).first()).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(rowButton(second.number)).toBeFocused()
+      const preview = page.locator(`[data-unlinked-preview="acme/platform#${second.number}"]`)
+      await expect(preview.locator(`article[data-issue$="/issues/${second.number}"]`)).toBeVisible()
+      expect(await rowButton(third.number).boundingBox()).toEqual(before)
+      expect(await unevenRoundedBorders(page, preview), 'preview: rounded boxes with uneven borders').toEqual([])
+      await expectNoPageScroll(page)
+      await shot(page, `repo-unlinked-preview-${theme}-${width}`, false)
+      // The focus that opened the preview does not dismiss it.
+      await expect(preview).toBeVisible()
+      await expect(rowButton(second.number)).toBeFocused()
+      // Tab moves on and the preview follows; Escape closes it.
+      await page.keyboard.press('Tab')
+      await expect(preview).toHaveCount(0)
+      await page.keyboard.press('Tab')
+      await expect(rowButton(third.number)).toBeFocused()
+      const next = page.locator(`[data-unlinked-preview="acme/platform#${third.number}"]`)
+      await expect(next).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(next).toHaveCount(0)
+      await expect(rowButton(third.number)).toBeFocused()
       await expectClean(w)
     })
   }
@@ -278,7 +393,27 @@ for (const theme of themes) {
       await expectNoPageScroll(page)
       await shot(page, `repo-graph-search-${theme}-${width}`)
 
+      // A search match among the Issues without dependencies opens its group
+      // (#496): one match is a short list with its full item.
+      await search.fill('Standalone improvement 129')
+      await expect(groupButtons(page)).toHaveCount(1)
+      await expect(page.locator('[data-unlinked-group=deliver] > [data-slot=collapsible-trigger]')).toHaveAttribute('aria-expanded', 'true')
+      await expect(page.locator('[data-slot=unlinked] article[data-issue$="/issues/129"]')).toBeVisible()
+      // Many matches stay compact, every group that holds one open; a
+      // closed group reopens once the search text changes.
+      await search.fill('Standalone improvement')
+      const matches = unlinkedIssues.filter((i) => i.title.startsWith('Standalone improvement'))
+      await expect(page.locator('[data-slot=unlinked] [data-unlinked-row]')).toHaveCount(matches.length)
+      for (const b of await groupButtons(page).all()) await expect(b).toHaveAttribute('aria-expanded', 'true')
+      await groupButtons(page).first().click()
+      await expect(groupButtons(page).first()).toHaveAttribute('aria-expanded', 'false')
+      await search.fill('Standalone improvement 1')
+      await expect(groupButtons(page).first()).toHaveAttribute('aria-expanded', 'true')
+      await expectNoPageScroll(page)
+
       await search.fill('')
+      // Without search text the long list is collapsed again.
+      for (const b of await groupButtons(page).all()) await expect(b).toHaveAttribute('aria-expanded', 'false')
       await page.locator('[data-filter=stage-done]').click()
       await page.locator('[data-filter=paused]').click()
       // Done (labels delivered) and paused: numbers ≡ 2 (mod 4) and ≡ 0 (mod 11).
@@ -313,7 +448,13 @@ for (const [width, theme] of [
     // marker and is not listed as having no dependencies.
     const two = region.locator('[data-node="acme/platform#2"]')
     await expect(two).toBeVisible()
+    // Opened groups mount their rows, so the check looks at every listed one.
+    await openGroups(page)
+    await expect(page.locator('[data-slot=unlinked] [data-unlinked-row]')).toHaveCount(32)
+    await expect(page.locator('[data-unlinked-row="acme/platform#2"]')).toHaveCount(0)
     await expect(page.locator('[data-slot=unlinked] article[data-issue$="/issues/2"]')).toHaveCount(0)
+    // Keep the pointer off the graph, where hovering a node would highlight it.
+    await page.mouse.move(0, 0)
     const marker = two.locator('[data-slot=closed-blockers]')
     await expect(marker).toHaveAccessibleName('1 closed · #400 (closed blockers of #2)')
     // Chain steps 3 of chains 1, 4 and 7 carry their own closed blocker.
