@@ -4,12 +4,15 @@ description: The stages an Issue goes through, the labels that steer them, and t
 ---
 
 import { LabelStates } from '../../components/LabelStates'
+import { StageLanes } from '../../components/StageLanes'
 
 Nibfin keeps no state of its own. Every run reads the Issue, its labels, branches,
 pull requests and checks from GitHub, decides what runs next, and writes its result
 back to GitHub. A person steers it with the same labels, Assignees and pull requests.
 
 ## The stages
+
+<StageLanes />
 
 1. **Scope.** Approved requirements are split into ordered Issues, each with its
    outcome, boundaries and `Blocked by` dependencies. The `scope` label marks an

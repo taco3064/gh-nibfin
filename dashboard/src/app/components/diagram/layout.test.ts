@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import { framesExample, lanesExample } from '@/screenshots/diagram-fixtures'
 
+import { stageLanes } from '../../lib/stage-lanes'
+
 import {
   describeDiagram,
   edgeText,
@@ -105,6 +107,78 @@ function overlap([a, b]: readonly [Point, Point], [c, d]: readonly [Point, Point
   return Math.max(0, Math.min(len, hi) - Math.max(0, lo))
 }
 
+// backExample has edges against the flow that span several ranks and lanes,
+// several of them entering or leaving the same box.
+const backExample: DiagramSpec = {
+  groupStyle: 'lanes',
+  groups: [
+    { id: 'one', title: 'First lane' },
+    { id: 'two', title: 'Second lane' },
+    { id: 'three', title: 'Third lane' },
+  ],
+  nodes: [
+    { id: 'a', title: 'Start', group: 'one' },
+    { id: 'b', title: 'Second step', detail: 'with detail', group: 'two' },
+    { id: 'c', title: 'Third', group: 'three' },
+    { id: 'd', title: 'Fourth', badges: ['x'], group: 'two' },
+    { id: 'e', title: 'End', group: 'three' },
+  ],
+  edges: [
+    { from: 'a', to: 'b', label: 'go' },
+    { from: 'b', to: 'c' },
+    { from: 'c', to: 'b', label: 'not yet, try again later' },
+    { from: 'c', to: 'd', label: 'next' },
+    { from: 'd', to: 'a', label: 'restart' },
+    { from: 'd', to: 'b' },
+    { from: 'd', to: 'e' },
+    { from: 'e', to: 'b', label: 'failed' },
+  ],
+}
+
+// crosses: segment ab passes through the inside of box b.
+function crosses([p, q]: readonly [Point, Point], b: Box): boolean {
+  // Sample the segment; routes are orthogonal, so a box it enters is met.
+  const len = Math.hypot(q.x - p.x, q.y - p.y)
+  const steps = Math.max(1, Math.ceil(len / 2))
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps
+    if (inside(b, { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t })) return true
+  }
+  return false
+}
+
+function expectBackRoutes(p: Placement) {
+  const figure = { x: 0, y: 0, width: p.width, height: p.height }
+  for (const e of p.edges) {
+    // Every point lies in the figure, and no segment passes through a box
+    // other than the edge's own ends, nor through its ends' insides.
+    for (const q of e.points) expect(encloses(figure, { ...q, width: 0, height: 0 })).toBe(true)
+    for (const s of segments(e.points)) {
+      for (const n of p.nodes) expect(crosses(s, n), `${e.from} -> ${e.to} crosses ${n.id}`).toBe(false)
+    }
+  }
+  // Every label is clear of every box and of every other label.
+  const placed = p.edges.flatMap((e) => (e.label ? [{ e, box: e.label }] : []))
+  for (const [i, { e, box }] of placed.entries()) {
+    for (const n of p.nodes) expect(intersects(box, n), `label of ${e.from} -> ${e.to} covers ${n.id}`).toBe(false)
+    for (const other of placed.slice(i + 1)) {
+      expect(intersects(box, other.box), `labels of ${e.from} -> ${e.to} and ${other.e.from} -> ${other.e.to}`).toBe(false)
+    }
+  }
+  // A labelled back edge's label sits on one of its own segments.
+  const rank = (id: string) => p.order.indexOf(id)
+  for (const e of p.edges) {
+    if (!e.label || rank(e.to) >= rank(e.from)) continue
+    const c = { x: e.label.x + e.label.width / 2, y: e.label.y + e.label.height / 2 }
+    const on = segments(e.points).some(
+      ([a, b]) =>
+        (Math.abs(a.x - b.x) <= eps && Math.abs(c.x - a.x) <= eps && c.y >= Math.min(a.y, b.y) && c.y <= Math.max(a.y, b.y)) ||
+        (Math.abs(a.y - b.y) <= eps && Math.abs(c.y - a.y) <= eps && c.x >= Math.min(a.x, b.x) && c.x <= Math.max(a.x, b.x)),
+    )
+    expect(on, `label of ${e.from} -> ${e.to} is on its edge`).toBe(true)
+  }
+}
+
 describe('layoutDiagram', () => {
   for (const direction of directions) {
     it(`places an ungrouped diagram ${direction} without overlaps`, () => {
@@ -179,8 +253,29 @@ describe('layoutDiagram', () => {
     })
   }
 
+  for (const direction of directions) {
+    it(`routes back edges around the boxes in lanes (${direction})`, () => {
+      for (const spec of [backExample, stageLanes]) {
+        const p = layoutDiagram(spec, direction)
+        expectCommon(spec, p)
+        expectBackRoutes(p)
+      }
+    })
+  }
+
+  it('routes every lane edge orthogonally, back edges included', () => {
+    for (const direction of directions) {
+      for (const spec of [backExample, stageLanes]) {
+        const p = layoutDiagram(spec, direction)
+        for (const e of p.edges) {
+          for (const [a, b] of segments(e.points)) expect(a.x === b.x || a.y === b.y, `${e.from} -> ${e.to} is orthogonal`).toBe(true)
+        }
+      }
+    }
+  })
+
   it('is deterministic', () => {
-    for (const spec of [framesExample, lanesExample]) {
+    for (const spec of [framesExample, lanesExample, backExample, stageLanes]) {
       for (const d of directions) expect(layoutDiagram(spec, d)).toEqual(layoutDiagram(structuredClone(spec), d))
     }
   })
