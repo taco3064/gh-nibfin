@@ -292,3 +292,131 @@ type hostErr struct{ kind error }
 
 func (e *hostErr) Error() string { return e.kind.Error() + ": details" }
 func (e *hostErr) Unwrap() error { return e.kind }
+
+// lastWSLRunner is a WSL machine whose only runner, codex-1, runner remove
+// takes, with the autostart task present and the codex login volume.
+func lastWSLRunner(t *testing.T, deleteLogin bool) (*fakeHost, *fakeRunnerAPI, Operation, Plan) {
+	t.Helper()
+	f := &fakeHost{vm: true, wsl: true, entry: current(winEntry()), slots: map[string]*fakeSlot{
+		"codex-1": done(hostName("codex-1"), "https://github.com/o/r"),
+	}, volumes: map[string]bool{"codex": true}}
+	fx := useRunnerHost(t, f)
+	fx.gh.regs = []*fakeReg{reg(1, hostName("codex-1"), "github.com/o/r", false)}
+	o := RunnerRemove(RunnerRemoveParams{Provider: "codex", DeleteLogin: deleteLogin})
+	p, err := o.Plan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Apply(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	return f, fx.gh, o, p
+}
+
+// items maps the read-back items of r by id.
+func items(t *testing.T, r Result) map[string]Check {
+	t.Helper()
+	m := map[string]Check{}
+	for _, c := range r[ResultItems].([]Check) {
+		m[c.ID] = c
+	}
+	return m
+}
+
+const volumeFlake = `Error: read cli flags: connection "nibfin" not found`
+
+// A failed volume read marks only the volume item; the autostart task and
+// .wslconfig are still read and confirmed.
+func TestRunnerRemoveReadBackVolumeFails(t *testing.T) {
+	f, _, o, p := lastWSLRunner(t, true)
+	f.existsExit, f.existsErr = 125, volumeFlake
+	r, err := o.ReadBack(context.Background(), p)
+	if Code(err) != CodePodmanFailed || !strings.Contains(err.Error(), volumeFlake) {
+		t.Fatalf("ReadBack: %v", err)
+	}
+	it := items(t, r)
+	if v := it["volume:nibfin-home-codex"]; v.Confirmed || !strings.Contains(v.Reason, "could not be read: podman_failed: podman volume exists nibfin-home-codex exited with status 125: "+volumeFlake) {
+		t.Errorf("volume = %+v", v)
+	}
+	for _, id := range []string{"host", "runner:codex-1", "autostart", "wslconfig"} {
+		if c, ok := it[id]; !ok || !c.Confirmed {
+			t.Errorf("%s = %+v (%v)", id, c, ok)
+		}
+	}
+	if a := it["autostart"]; a.Target != `task "Nibfin podman machine"` || a.State != "absent" {
+		t.Errorf("autostart = %+v", a)
+	}
+	if l, _ := r["login"].(map[string]string); l["volume"] != "unknown" {
+		t.Errorf("login = %v", l)
+	}
+}
+
+// Without --delete-login the volume only fills login: its failed read is
+// reported there and fails nothing.
+func TestRunnerRemoveReadBackVolumeFailsWithoutDeleteLogin(t *testing.T) {
+	f, _, o, p := lastWSLRunner(t, false)
+	f.existsExit, f.existsErr = 125, volumeFlake
+	r, err := o.ReadBack(context.Background(), p)
+	if err != nil {
+		t.Fatalf("ReadBack: %v", err)
+	}
+	it := items(t, r)
+	if _, ok := it["volume:nibfin-home-codex"]; ok || len(it) != 4 {
+		t.Errorf("items = %+v", it)
+	}
+	for id, c := range it {
+		if !c.Confirmed {
+			t.Errorf("%s = %+v", id, c)
+		}
+	}
+	l, _ := r["login"].(map[string]string)
+	if l["volume"] != "unknown" || !strings.HasPrefix(l["reason"], "could not be read: podman_failed: ") || !strings.Contains(l["reason"], volumeFlake) {
+		t.Errorf("login = %v", l)
+	}
+}
+
+// A failed autostart read marks only the autostart item; the volume and
+// .wslconfig are still read and confirmed.
+func TestRunnerRemoveReadBackAutostartFails(t *testing.T) {
+	f, _, o, p := lastWSLRunner(t, true)
+	f.entryErr = &hostErr{host.ErrAutostart}
+	r, err := o.ReadBack(context.Background(), p)
+	if Code(err) != CodeAutostartFailed {
+		t.Fatalf("ReadBack: %v", err)
+	}
+	it := items(t, r)
+	if a := it["autostart"]; a.Confirmed || !strings.HasPrefix(a.Reason, "could not be read: autostart_failed: ") {
+		t.Errorf("autostart = %+v", a)
+	}
+	for _, id := range []string{"host", "runner:codex-1", "volume:nibfin-home-codex", "wslconfig"} {
+		if c, ok := it[id]; !ok || !c.Confirmed {
+			t.Errorf("%s = %+v (%v)", id, c, ok)
+		}
+	}
+	if _, ok := r["autostart"]; ok {
+		t.Errorf("autostart = %v", r["autostart"])
+	}
+	if l, _ := r["login"].(map[string]string); l["volume"] != "deleted" || f.volumes["codex"] {
+		t.Errorf("login = %v", l)
+	}
+}
+
+// A failed GitHub read marks only the slots of that repository; the
+// volume, the autostart task and .wslconfig are still read.
+func TestRunnerRemoveReadBackGitHubFails(t *testing.T) {
+	_, gh, o, p := lastWSLRunner(t, true)
+	gh.listErr = Errorf(CodeGitHubAPIFailed, "list runners: HTTP 502")
+	r, err := o.ReadBack(context.Background(), p)
+	if Code(err) != CodeGitHubAPIFailed {
+		t.Fatalf("ReadBack: %v", err)
+	}
+	it := items(t, r)
+	if s := it["runner:codex-1"]; s.Confirmed || s.Reason != "could not be read: github_api_failed: list runners: HTTP 502" {
+		t.Errorf("slot = %+v", s)
+	}
+	for _, id := range []string{"host", "volume:nibfin-home-codex", "autostart", "wslconfig"} {
+		if c, ok := it[id]; !ok || !c.Confirmed {
+			t.Errorf("%s = %+v (%v)", id, c, ok)
+		}
+	}
+}

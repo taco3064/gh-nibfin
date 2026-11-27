@@ -46,6 +46,8 @@ func TestLoginHelper(t *testing.T) {
 		shellHelper()
 	case "terminal":
 		fmt.Print("tty-ok")
+	case "stderr":
+		fmt.Fprint(os.Stderr, os.Getenv("HELPER_OUT"))
 	case "out":
 		fmt.Print(os.Getenv("HELPER_OUT"))
 		if exit != 0 {
@@ -85,6 +87,10 @@ type fakeHost struct {
 	stopExit  map[string]int
 	purgeNoop bool
 	rmExit    int
+	// existsExit, when non-zero, is podman volume exists's exit status,
+	// with existsErr on its stderr.
+	existsExit int
+	existsErr  string
 	// events records the order of the changing steps.
 	events []string
 	// The deploy key (see runner_request_test.go): deployPub is the
@@ -133,6 +139,11 @@ func (f *fakeHost) Podman(ctx context.Context, args ...string) *exec.Cmd {
 	case args[0] == "volume" && args[1] == "exists":
 		if !f.volumes[strings.TrimPrefix(args[2], "nibfin-home-")] {
 			exit = 1
+		}
+		if f.existsExit != 0 {
+			c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
+			c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=stderr", "HELPER_EXIT="+strconv.Itoa(f.existsExit), "HELPER_OUT="+f.existsErr)
+			return c
 		}
 	case args[0] == "volume" && args[1] == "rm":
 		exit = f.rmExit
