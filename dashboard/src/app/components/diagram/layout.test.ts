@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest'
 
 import { framesExample, lanesExample } from '@/screenshots/diagram-fixtures'
 
-import { describeDiagram, edgeText, layoutDiagram, wrapText, type Box, type DiagramSpec, type Placement, type Point } from './layout'
+import {
+  describeDiagram,
+  edgeText,
+  layoutDiagram,
+  titlePlate,
+  wrapText,
+  type Box,
+  type DiagramSpec,
+  type Placement,
+  type Point,
+} from './layout'
 
 const directions = ['LR', 'TB'] as const
 const eps = 0.5
@@ -52,6 +62,47 @@ function expectCommon(spec: DiagramSpec, p: Placement) {
       expect(encloses(figure, pe.label!)).toBe(true)
     } else expect(pe.label).toBeUndefined()
   })
+  // No group title covers a node or an arrowhead (the last 10 units of an
+  // edge).
+  const plates = p.groups.flatMap((g) => g.titleLines.map((t) => ({ t: t.text, box: titlePlate(t) })))
+  for (const { t, box } of plates) {
+    for (const n of p.nodes) expect(intersects(box, n), `title "${t}" covers ${n.id}`).toBe(false)
+    for (const e of p.edges) {
+      const [a, b] = e.points.slice(-2)
+      const len = Math.hypot(b.x - a.x, b.y - a.y)
+      for (const back of [0, 3, 6, 9]) {
+        const k = Math.min(1, back / len)
+        const q = { x: b.x + (a.x - b.x) * k, y: b.y + (a.y - b.y) * k }
+        expect(inside(box, q), `title "${t}" covers the arrowhead of ${e.from} -> ${e.to}`).toBe(false)
+      }
+    }
+  }
+  // No two edges share a stretch of line.
+  for (const [i, e] of p.edges.entries()) {
+    for (const f of p.edges.slice(i + 1)) {
+      for (const s of segments(e.points)) {
+        for (const t of segments(f.points)) {
+          expect(overlap(s, t), `${e.from} -> ${e.to} runs along ${f.from} -> ${f.to}`).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  }
+}
+
+const inside = (b: Box, p: Point) => p.x > b.x + eps && p.x < b.x + b.width - eps && p.y > b.y + eps && p.y < b.y + b.height - eps
+
+const segments = (points: Point[]) => points.slice(1).map((q, i) => [points[i], q] as const)
+
+// overlap is the length two collinear segments share, 0 for any others.
+function overlap([a, b]: readonly [Point, Point], [c, d]: readonly [Point, Point]): number {
+  const cross = (o: Point, p: Point, q: Point) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x)
+  const len = Math.hypot(b.x - a.x, b.y - a.y)
+  if (len === 0) return 0
+  // Both ends of cd within half a unit of the line through ab.
+  if (Math.abs(cross(a, b, c)) / len > eps || Math.abs(cross(a, b, d)) / len > eps) return 0
+  const along = (p: Point) => ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len
+  const [lo, hi] = [Math.min(along(c), along(d)), Math.max(along(c), along(d))]
+  return Math.max(0, Math.min(len, hi) - Math.max(0, lo))
 }
 
 describe('layoutDiagram', () => {
