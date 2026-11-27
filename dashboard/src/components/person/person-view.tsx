@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { IssueBulkActions, RunLegend, type SelectedIssue } from '@/components/issue'
+import { IssueBulkActions, type SelectedIssue } from '@/components/issue'
 import { Note } from '@/components/shell/note'
 import { Button } from '@/components/ui/button'
 import { SectionLoading } from '@/components/shell/section-loading'
@@ -48,6 +48,9 @@ export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) 
         access: accessOf(r, loading),
       })),
   )
+  // The run legend shows once, above the first run strip: in the first group
+  // that lists Issues, once the runs are read.
+  const legendAt = loading.has('runs') ? -1 : repos.findIndex((r) => (r.issues?.length ?? 0) > 0)
   const onSelect = (url: string, on: boolean) =>
     setSelected((prev) => {
       const next = new Set(prev)
@@ -76,7 +79,6 @@ export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) 
         )}
       </div>
       <SummaryTiles data={data} needsYouOnly={needsYouOnly} onNeedsYouOnly={setNeedsYouOnly} onShowRunners={onShowRunners} />
-      {repos.length > 0 && <RunLegend />}
       {data.issuesError && (
         <Note tone="danger" data-note="issues-error">
           Issue search failed: {data.issuesError.code}: {data.issuesError.message}
@@ -111,9 +113,10 @@ export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) 
       {chosen.length > 0 && (
         <IssueBulkActions selected={chosen} onChanged={onChanged} className="sticky top-2 z-10 shadow-sm" />
       )}
-      {repos.map((r) => (
+      {repos.map((r, i) => (
         <RepoGroup
           key={r.repo}
+          legend={i === legendAt}
           group={r}
           githubHost={data.githubHost}
           latestImage={data.latestImage}

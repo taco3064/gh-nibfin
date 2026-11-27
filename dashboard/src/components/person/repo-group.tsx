@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 
-import { IssueItem } from '@/components/issue'
+import { IssueItem, RunLegend } from '@/components/issue'
 import { tones } from '@/components/issue/tones'
 import { SectionLoading } from '@/components/shell/section-loading'
 import { Badge } from '@/components/ui/badge'
@@ -19,11 +19,14 @@ export interface RepoGroupProps {
   selected: ReadonlySet<string>
   onSelect: (url: string, on: boolean) => void
   onChanged: (changes: Change[]) => void
+  // legend shows the run colors above this group's Issues; the person view
+  // sets it on one group only.
+  legend?: boolean
 }
 
 // RepoGroup is one repository of the person view: its link, Issue count and
 // image state, then its Issues as the shared Issue element.
-export function RepoGroup({ group, githubHost, latestImage, selected, onSelect, onChanged }: RepoGroupProps) {
+export function RepoGroup({ group, githubHost, latestImage, selected, onSelect, onChanged, legend = false }: RepoGroupProps) {
   const loading = useLoading()
   const image = imageState(group.image, latestImage)
   const ImageIcon = imageIcons[image.kind]
@@ -69,20 +72,23 @@ export function RepoGroup({ group, githubHost, latestImage, selected, onSelect, 
         {issues.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Issues listed</p>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {issues.map((issue) => (
-              <li key={issue.url}>
-                <IssueItem
-                  issue={issue}
-                  repo={group.repo}
-                  access={access}
-                  selected={selected.has(issue.url)}
-                  onSelectedChange={(on) => onSelect(issue.url, on)}
-                  onChanged={onChanged}
-                />
-              </li>
-            ))}
-          </ul>
+          <>
+            {legend && <RunLegend className="mb-3 sm:justify-end" />}
+            <ul className="flex flex-col gap-3">
+              {issues.map((issue) => (
+                <li key={issue.url}>
+                  <IssueItem
+                    issue={issue}
+                    repo={group.repo}
+                    access={access}
+                    selected={selected.has(issue.url)}
+                    onSelectedChange={(on) => onSelect(issue.url, on)}
+                    onChanged={onChanged}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </CardContent>
     </Card>

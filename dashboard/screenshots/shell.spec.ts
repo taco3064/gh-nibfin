@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { unevenRoundedBorders } from './border-scan'
 import { commands } from './command-fixtures'
 import { hosts, issueURL, longHost, longMachine, longRepo, personView, runnerActivity, runRepos } from './person-fixtures'
 import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type StatusAnswer, type Watch } from './support'
@@ -96,6 +97,23 @@ for (const theme of themes) {
       await expect(tile(page, 'runners').locator('[data-slot=memory-used]')).toContainText('Memory 10.3 GiB of 15.5 GiB in use')
       const top = async (l: Locator) => (await l.boundingBox())!.y
       expect(await top(page.locator('[data-slot=summary]'))).toBeLessThan(await top(page.locator('[data-repo]').first()))
+      // The run legend shows once, in the first group that lists Issues,
+      // above that group's first run strip (#498).
+      const view = page.locator('[data-view=person]')
+      const legend = view.locator('[data-slot=run-legend]')
+      await expect(legend).toHaveCount(1)
+      await expect(legend.locator('li')).toHaveText(['Succeeded', 'Failed', 'Skipped or cancelled', 'Running'])
+      const firstGroup = view.locator('[data-repo]').filter({ has: page.locator('article[data-issue]') }).first()
+      await expect(firstGroup.locator('[data-slot=run-legend]')).toHaveCount(1)
+      const bottom = async (l: Locator) => {
+        const b = (await l.boundingBox())!
+        return b.y + b.height
+      }
+      expect(await bottom(legend)).toBeLessThanOrEqual(await top(firstGroup.locator('[data-slot=run-strip]').first()))
+      // Nothing legend-like is left between the summary tiles and the list.
+      await expect(view.locator(':scope > [data-slot=run-legend]')).toHaveCount(0)
+      expect(await top(legend)).toBeGreaterThan(await top(view.locator('[data-repo]').first()))
+      expect(await unevenRoundedBorders(page, view), `person view ${width}px ${theme}: rounded boxes with uneven borders`).toEqual([])
       await shot(page, `shell-person-${theme}-${width}`)
 
       await tab(page, 'Repositories').click()
@@ -251,6 +269,8 @@ for (const theme of themes) {
       await expect(tile(page, 'needs-you').getByRole('button', { name: 'Show only these' })).toBeDisabled()
       await expect(tile(page, 'needs-you').locator('[data-slot=disabled-reason]')).toHaveText('No Issue is pending or paused.')
       await expect(tile(page, 'runs').locator('[data-state=no-runs]')).toHaveText('No runs')
+      // No run strips, so no run legend.
+      await expect(view.locator('[data-slot=run-legend]')).toHaveCount(0)
       await expectNoPageScroll(page)
       await shot(page, `shell-person-empty-${theme}-${width}`)
       await expectClean(w)
