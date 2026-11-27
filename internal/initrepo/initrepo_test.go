@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -947,6 +948,43 @@ func TestInitBranchWithoutPR(t *testing.T) {
 	}
 	if slices.Contains(actions(p), "write branch "+Branch) || !slices.Contains(actions(p), "open PR "+Branch+" into main") || f.refs[Branch] != head || r["number"] != 10 {
 		t.Errorf("rerun plan = %q, result %v", actions(p), r)
+	}
+}
+
+func TestInitLeftoverBranchOnAnOlderHead(t *testing.T) {
+	// A branch holding the set is left from an earlier run (here a crash
+	// before the PR); then the default branch moves on. The rerun rewrites
+	// the branch as one commit on the current head, then opens the PR.
+	f := newFake("app")
+	f.fail = map[string]error{"POST repos/o/app/pulls": httpErr(502, "boom")}
+	f.persist = true
+	stub(t, f, execRunners())
+	if _, _, err := run(t); op.Code(err) != op.CodeRepoWriteFailed {
+		t.Fatalf("first: %v", err)
+	}
+	f.fail, f.persist = map[string]error{}, false
+	old := f.refs[Branch]
+	f.commits["c9"] = f.commits["c0"]
+	f.refs["main"] = "c9"
+	f.calls = nil
+	p, r, err := run(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(actions(p), "write branch "+Branch) || !slices.Contains(actions(p), "open PR "+Branch+" into main") {
+		t.Errorf("rerun plan = %q", actions(p))
+	}
+	for _, s := range p.Steps {
+		if s.Action == "write branch" && (s.Current != "differs" || s.Detail != "replaces earlier contents of that branch") {
+			t.Errorf("branch step %+v", s)
+		}
+	}
+	head := f.refs[Branch]
+	if head == old || !slices.Equal(f.parents[head], []string{"c9"}) || !maps.Equal(f.commits[head], f.commits[old]) {
+		t.Errorf("branch %s with parents %v", head, f.parents[head])
+	}
+	if !slices.Contains(f.writes(), "PATCH repos/o/app/git/refs/heads/"+Branch) || len(f.prs) != 1 || r["number"] != 10 || f.prJSON(f.prs[0])["head"].(map[string]string)["sha"] != head {
+		t.Errorf("writes %q, PRs %+v, result %v", f.writes(), f.prs, r)
 	}
 }
 
