@@ -26,6 +26,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   buildGraph,
   closedGroups,
+  compareKeys,
   edgePath,
   emptyFilter,
   filterGraph,
@@ -524,11 +525,15 @@ function GraphRegion({
     // content and has already changed, while React Flow reads it later.
     // A graph that fits only below fitFloor opens at openZoom on its
     // matched Issues, the ones not shown as context: centred when they fit,
-    // else from their top left. Fit and the minimap show all of it.
+    // else on the first of them in reading order (the topmost node of the
+    // leftmost rank, then the lowest number) with its top left at the
+    // padding, so the view opens on a node and not on an empty corner of
+    // their box. Fit and the minimap show all of it.
     const w = region.clientWidth - 2 * pad
     const h = region.clientHeight - pad - band
     const fit = Math.min(1, w / placement.width, h / placement.height)
-    const matched = keys.filter((k) => !context.has(k)).map((k) => placement.boxes.get(k)!)
+    const matchedKeys = keys.filter((k) => !context.has(k))
+    const matched = matchedKeys.map((k) => placement.boxes.get(k)!)
     if (fit >= fitFloor || matched.length === 0) {
       void rf.setViewport({ x: pad + (w - placement.width * fit) / 2, y: pad + (h - placement.height * fit) / 2, zoom: fit })
       return
@@ -538,9 +543,19 @@ function GraphRegion({
     const right = Math.max(...matched.map((b) => b.x + b.width))
     const bottom = Math.max(...matched.map((b) => b.y + b.height))
     const z = openZoom
-    const x = (right - left) * z <= w ? pad + w / 2 - ((left + right) / 2) * z : pad - left * z
-    const y = (bottom - top) * z <= h ? pad + h / 2 - ((top + bottom) / 2) * z : pad - top * z
-    void rf.setViewport({ x, y, zoom: z })
+    if ((right - left) * z <= w && (bottom - top) * z <= h) {
+      void rf.setViewport({ x: pad + w / 2 - ((left + right) / 2) * z, y: pad + h / 2 - ((top + bottom) / 2) * z, zoom: z })
+      return
+    }
+    const first = matchedKeys.reduce((a, b) => {
+      const p = placement.boxes.get(a)!
+      const q = placement.boxes.get(b)!
+      if (p.x !== q.x) return q.x < p.x ? b : a
+      if (p.y !== q.y) return q.y < p.y ? b : a
+      return compareKeys(b, a) < 0 ? b : a
+    })
+    const box = placement.boxes.get(first)!
+    void rf.setViewport({ x: pad - box.x * z, y: pad - box.y * z, zoom: z })
   }, [placement, direction, keys, context, rf, region])
 
   const lr = direction === 'LR'
