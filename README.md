@@ -326,6 +326,16 @@ Windows and macOS.
   ownership of that directory and its `default.target.wants` with
   `sudo -n chown`, without recursing; a refused `sudo` stops the Runner
   (`runner_install_failed`) with the `chown` to run inside the VM.
+- On a `podman machine` (Windows and macOS), before any Runner is configured,
+  the command checks for libicu the way the official Runner's `config.sh`
+  does. When it is missing, as on the default Windows (WSL) machine, it
+  installs the distribution's `libicu` package inside the VM with
+  `sudo -n dnf install -y libicu`; the default macOS machine image already
+  ships it, so nothing changes there. A refused `sudo`, a missing `dnf` or a
+  failed install stops before any Runner is configured
+  (`runner_install_failed`) with the command to run:
+  `podman machine ssh <machine> sudo dnf install -y libicu`. Nothing is
+  installed on the host itself, nor on a Linux host.
 - It creates the `nibfin-tools` Podman volume and runs `login` for the
   provider when it is not logged in.
 - A rerun after an interruption completes the provider's unfinished slots
@@ -966,6 +976,6 @@ machine has no Runner slot of any provider, and the `Nibfin podman machine`
 task does not exist, so it never touches a host with real Runners. A failed run
 removes the slots it added. Afterwards the host keeps what `runner remove`
 keeps: the `[wsl2] vmIdleTimeout=-1` key in `%UserProfile%\.wslconfig`, linger
-in the VM and the `nibfin-tools` volume. A CI job for it (a separate
+and libicu in the VM and the `nibfin-tools` volume. A CI job for it (a separate
 maintenance change) installs WSL 2 and Podman, runs `podman machine init
 --now`, then the two commands above.
