@@ -185,14 +185,15 @@ a[aria-current='page']:hover {
 
 /* Section summary cards: the Starlight Card each hand-written section opens
    with and the generated command sections' summary share one compact frame.
-   No icon, so Starlight's rotating card colors never apply. */
+   No icon, so Starlight's rotating card colors never apply. The frame is one
+   even border on every side: no rounded box gets an accent stripe on one
+   edge (#488). The accent eyebrow title carries the emphasis instead. */
 .sl-markdown-content :is(.card, [data-slot='summary']) {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.875rem 1.125rem;
   border: 1px solid var(--nf-border-subtle);
-  border-inline-start: 3px solid var(--nf-accent);
   border-radius: 0.5rem;
   background-color: var(--nf-surface);
 }
@@ -203,7 +204,7 @@ a[aria-current='page']:hover {
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--nf-secondary);
+  color: var(--nf-accent);
 }
 .sl-markdown-content :is(.card, [data-slot='summary']) .body {
   margin: 0;
