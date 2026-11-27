@@ -48,6 +48,7 @@ export default defineConfig(({ mode }) => {
               index: fileURLToPath(new URL('./index.html', import.meta.url)),
               screenshots: fileURLToPath(new URL('./screenshots.html', import.meta.url)),
               operation: fileURLToPath(new URL('./operation.html', import.meta.url)),
+              diagram: fileURLToPath(new URL('./diagram.html', import.meta.url)),
             },
           },
         }
