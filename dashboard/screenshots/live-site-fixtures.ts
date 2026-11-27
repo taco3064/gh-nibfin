@@ -123,3 +123,19 @@ export function liveData(created = 128, delivered = 57, second = false): LiveDat
 export const runnerNames = [1, 2, 3, 4, 5].map(runnerName)
 
 export const event = (e: LiveEvent) => JSON.stringify(e)
+
+// withoutIssues drops nibfin-core's Issues numbered in gone, and the blocker
+// entries that point at them, as a snapshot does once they are closed and
+// leave the graph (#454).
+export function withoutIssues(data: LiveData, gone: number[]): LiveData {
+  const core = full('nibfin-core')
+  const left = (b: Blocker) => b.repo !== core || !gone.includes(b.number)
+  return {
+    ...data,
+    repos: data.repos.map((r) =>
+      r.repo !== `github.com/${core}` || !r.issues
+        ? r
+        : { ...r, issues: r.issues.filter((i) => !gone.includes(i.number)).map((i) => (i.blockedBy ? { ...i, blockedBy: i.blockedBy.filter(left) } : i)) },
+    ),
+  }
+}
