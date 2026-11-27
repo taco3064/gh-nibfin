@@ -274,14 +274,34 @@ func keepWSLStep() Step {
 
 // load discovers the slots and joins them with GitHub. Besides the
 // repositories of the configured slots, extra repositories are asked too.
+// It stops at the first read that fails.
 func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, error) {
-	inv, err := listRunners(ctx, r.host)
+	env, pr, repos, err := r.loadHost(ctx, extra)
 	if err != nil {
 		return nil, err
 	}
+	if env.hook, err = hookPresent(ctx, r.host, CodeRunnerRemoveFailed, runners.HookDir(env.inv)); err != nil {
+		return nil, err
+	}
+	for _, repo := range repos {
+		if err := env.loadRepo(ctx, repo); err != nil {
+			return nil, err
+		}
+	}
+	env.join(pr, repos, r.prov.name)
+	return env, nil
+}
+
+// loadHost reads the host's slots and probe, and names the repositories to
+// ask, sorted: extra and those of the configured slots.
+func (r *runnerRemove) loadHost(ctx context.Context, extra []string) (*removeEnv, hostProbe, []string, error) {
+	inv, err := listRunners(ctx, r.host)
+	if err != nil {
+		return nil, hostProbe{}, nil, err
+	}
 	pr, err := probeHost(ctx, r.host, CodeRunnerRemoveFailed)
 	if err != nil {
-		return nil, err
+		return nil, hostProbe{}, nil, err
 	}
 	seen := map[string]bool{}
 	var repos []string
@@ -299,42 +319,50 @@ func (r *runnerRemove) load(ctx context.Context, extra []string) (*removeEnv, er
 	}
 	sort.Strings(repos)
 	env := &removeEnv{inv: inv, lists: map[string][]ghRunner{}, local: map[string]bool{}, clients: map[string]github{}}
-	if env.hook, err = hookPresent(ctx, r.host, CodeRunnerRemoveFailed, runners.HookDir(inv)); err != nil {
-		return nil, err
+	return env, pr, repos, nil
+}
+
+// loadRepo reads the gh login's permissions on repo and, when it is admin
+// there, the repository's GitHub runners.
+func (env *removeEnv) loadRepo(ctx context.Context, repo string) error {
+	h := repoHost(repo)
+	gh, ok := env.clients[h]
+	if !ok {
+		var err error
+		if gh, err = newGitHub(h); err != nil {
+			return err
+		}
+		env.clients[h] = gh
 	}
-	for _, repo := range repos {
-		h := repoHost(repo)
-		gh, ok := env.clients[h]
-		if !ok {
-			if gh, err = newGitHub(h); err != nil {
-				return nil, err
-			}
-			env.clients[h] = gh
-		}
-		// GitHub's runner endpoints need admin, as runner add's route
-		// does: a collaborator's runners came through the request route.
-		Checking(ctx, "permissions on "+repo)
-		perms, err := gh.RepoPermissions(ctx, repo)
-		if err != nil {
-			return nil, err
-		}
-		if !perms.Admin {
-			env.local[repo] = true
-			continue
-		}
-		Checking(ctx, "GitHub Runners of "+repo)
-		if env.lists[repo], err = gh.ListRunners(ctx, repo); err != nil {
-			return nil, err
-		}
+	// GitHub's runner endpoints need admin, as runner add's route
+	// does: a collaborator's runners came through the request route.
+	Checking(ctx, "permissions on "+repo)
+	perms, err := gh.RepoPermissions(ctx, repo)
+	if err != nil {
+		return err
 	}
-	for _, s := range inv.Runners {
+	if !perms.Admin {
+		env.local[repo] = true
+		return nil
+	}
+	Checking(ctx, "GitHub Runners of "+repo)
+	list, err := gh.ListRunners(ctx, repo)
+	if err != nil {
+		return err
+	}
+	env.lists[repo] = list
+	return nil
+}
+
+// join matches the host's slots with the GitHub runners read.
+func (env *removeEnv) join(pr hostProbe, repos []string, prov string) {
+	for _, s := range env.inv.Runners {
 		st := env.match(s, pr, repos)
 		env.all = append(env.all, st)
-		if s.Provider == r.prov.name {
+		if s.Provider == prov {
 			env.mine = append(env.mine, st)
 		}
 	}
-	return env, nil
 }
 
 // match finds the slot's registration by name: the name in .runner, or for
@@ -751,9 +779,17 @@ func (r *runnerRemove) removeVolume(ctx context.Context) error {
 	return nil
 }
 
-// ReadBack reads every item back: the host, each removed slot on the host
-// and on GitHub, the login volume, the autostart entry and .wslconfig. The
-// items read so far are returned also with an error.
+// unread is the reason of an item whose read failed with err.
+func unread(err error) string {
+	e := AsError(err)
+	return "could not be read: " + e.Code + ": " + e.Error()
+}
+
+// ReadBack reads every item back on its own: the host, each removed slot on
+// the host and on GitHub, the login volume, the autostart entry, .wslconfig
+// and the job-started hook. A failed read marks only the items that need it
+// not confirmed, with its error; only a stopped host ends the read-back
+// early. The error returned is that of the first item not confirmed.
 func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err := r.validate(); err != nil {
 		return nil, err
@@ -793,12 +829,22 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 	}
 	res := Result{"host": where, "provider": r.prov.name}
 	notes := localNotes(r.removed)
-	fail := func(err error) (Result, error) { return checks.Fill(res, notes, err), err }
 	if r.host.NeedsStart() {
+		// Nothing else can be read from a stopped machine.
 		checks.Set(hs, false, "stopped", where+" is not running")
-		return fail(Errorf(CodePodmanFailed, "%s is not running", where))
+		err := Errorf(CodePodmanFailed, "%s is not running", where)
+		return checks.Fill(res, notes, err), err
 	}
 	checks.Set(hs, true, "running", "")
+	// first is the error of the first item not confirmed, in item order.
+	var first error
+	fail := func(err error) {
+		if first == nil {
+			first = err
+		}
+	}
+
+	// The inventory, then each repository's GitHub runners on its own.
 	var extra []string
 	for _, s := range r.removed {
 		switch {
@@ -808,33 +854,56 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 			extra = append(extra, s.localRepo)
 		}
 	}
-	env, err := r.load(ctx, extra)
-	if err != nil {
-		return fail(err)
-	}
-	routes := map[string]string{}
-	for repo := range env.lists {
-		routes[repo] = routeAdmin
-	}
-	for repo := range env.local {
-		routes[repo] = routeRequest
-	}
-	res["routes"] = routes
-	states := []RunnerState{}
-	for _, s := range env.all {
-		st := RunnerState{Runner: s.Runner}
-		if s.gh != nil {
-			st.Listed, st.Status, st.Busy = true, s.gh.Status, s.gh.Busy
+	env, pr, repos, invErr := r.loadHost(ctx, extra)
+	ghErr := map[string]error{}
+	if invErr == nil {
+		for _, repo := range repos {
+			if err := env.loadRepo(ctx, repo); err != nil {
+				ghErr[repo] = err
+			}
 		}
-		states = append(states, st)
+		env.join(pr, repos, r.prov.name)
+		routes := map[string]string{}
+		for repo := range env.lists {
+			routes[repo] = routeAdmin
+		}
+		for repo := range env.local {
+			routes[repo] = routeRequest
+		}
+		res["routes"] = routes
+		states := []RunnerState{}
+		for _, s := range env.all {
+			st := RunnerState{Runner: s.Runner}
+			if s.gh != nil {
+				st.Listed, st.Status, st.Busy = true, s.gh.Status, s.gh.Busy
+			}
+			states = append(states, st)
+		}
+		res["remaining"], res["runners"] = len(env.mine), states
 	}
+
+	// Each removed slot.
 	removed := []string{}
 	var left []string
+	// mismatch is true when the first slot not confirmed is still there,
+	// rather than unread.
+	var slotErr error
+	mismatch := false
 	for _, s := range r.removed {
 		removed = append(removed, s.Slot)
+		step := removeSlotStep(s.Slot)
+		if invErr != nil {
+			checks.Set(step, false, "", unread(invErr))
+			if slotErr == nil && !mismatch {
+				slotErr = invErr
+			}
+			continue
+		}
 		_, onHost := env.inv.Find(s.Slot)
 		listed := false
+		var repoErr error
 		if s.gh != nil {
+			repoErr = ghErr[s.gh.repo]
 			for _, g := range env.lists[s.gh.repo] {
 				listed = listed || strings.EqualFold(g.Name, s.gh.Name)
 			}
@@ -848,6 +917,12 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 			why, state = "still on the host and on GitHub", "on the host and on GitHub"
 		case onHost:
 			why, state = "still on the host", "on the host"
+		case repoErr != nil:
+			checks.Set(step, false, "absent from the host; GitHub registration not read", unread(repoErr))
+			if slotErr == nil && !mismatch {
+				slotErr = repoErr
+			}
+			continue
 		case listed:
 			why, state = "still registered on GitHub", "registered on GitHub"
 		case s.local:
@@ -855,19 +930,34 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 		}
 		if why != "" {
 			left = append(left, s.Slot+" ("+why+")")
+			if slotErr == nil {
+				mismatch = true
+			}
 		}
-		checks.Set(removeSlotStep(s.Slot), why == "", state, why)
+		checks.Set(step, why == "", state, why)
 	}
-	remaining := len(env.mine)
-	res["removed"], res["remaining"], res["runners"] = removed, remaining, states
-	has, err := volumeExists(ctx, r.host, r.prov.volume())
-	if err != nil {
-		return fail(err)
+	res["removed"] = removed
+	if mismatch {
+		slotErr = Errorf(CodeNotApplied, "runners not removed: %s", strings.Join(left, ", "))
+	}
+	if slotErr != nil {
+		fail(slotErr)
+	}
+
+	// The login volume. Without --delete-login it only fills login.
+	has, volErr := volumeExists(ctx, r.host, r.prov.volume())
+	remaining := 0
+	if invErr == nil {
+		remaining = len(env.mine)
 	}
 	login := map[string]string{"volume": "absent", "reason": "no such volume"}
 	switch {
+	case volErr != nil:
+		login = map[string]string{"volume": "unknown", "reason": unread(volErr)}
 	case has && !r.p.DeleteLogin:
 		login = map[string]string{"volume": "kept", "reason": "--delete-login was not given"}
+	case has && invErr != nil:
+		login = map[string]string{"volume": "kept", "reason": "the remaining " + r.prov.name + " runners " + unread(invErr)}
 	case has && remaining > 0:
 		login = map[string]string{"volume": "kept", "reason": fmt.Sprintf("%d %s runners remain", remaining, r.prov.name)}
 	case has:
@@ -876,62 +966,84 @@ func (r *runnerRemove) ReadBack(ctx context.Context, plan Plan) (Result, error) 
 		login = map[string]string{"volume": "deleted", "reason": "no " + r.prov.name + " runner remains"}
 	}
 	res["login"] = login
-	volumeLeft := r.deleteVolume && has && remaining == 0
 	if r.p.DeleteLogin {
-		checks.Set(vs, !volumeLeft, login["volume"]+": "+login["reason"], login["reason"])
-	}
-	as, err := r.host.Autostart(ctx)
-	if err != nil {
-		return fail(autostartError(ctx, err))
-	}
-	res["autostart"] = map[string]any{"kind": as.Kind, "name": as.Name, "present": as.Present}
-	entryLeft := r.removeEntry && as.Present && len(env.all) == 0
-	if r.removeEntry {
-		state := "absent"
-		if as.Present {
-			state = "present"
-			if len(env.all) > 0 {
-				state = fmt.Sprintf("present: %d runners remain on the host", len(env.all))
-			}
+		switch {
+		case volErr != nil:
+			checks.Set(vs, false, "", login["reason"])
+			fail(volErr)
+		case r.deleteVolume && has && invErr != nil:
+			checks.Set(vs, false, "present", "present, and the remaining "+r.prov.name+" runners "+unread(invErr))
+			fail(invErr)
+		case r.deleteVolume && has && remaining == 0:
+			checks.Set(vs, false, login["volume"]+": "+login["reason"], login["reason"])
+			fail(Errorf(CodeNotApplied, "%s still exists after runner remove", r.prov.volume()))
+		default:
+			checks.Set(vs, true, login["volume"]+": "+login["reason"], "")
 		}
-		if es.Target == "" {
+	}
+
+	// The autostart entry and .wslconfig. Without the entry's removal the
+	// entry only fills autostart.
+	as, asErr := r.host.Autostart(ctx)
+	if asErr != nil {
+		asErr = autostartError(ctx, asErr)
+	} else {
+		res["autostart"] = map[string]any{"kind": as.Kind, "name": as.Name, "present": as.Present}
+	}
+	if r.removeEntry {
+		if es.Target == "" && asErr == nil {
 			es.Target = entryName(as)
 		}
-		checks.Set(es, !entryLeft, state, "still present after runner remove")
+		switch {
+		case asErr != nil:
+			checks.Set(es, false, "", unread(asErr))
+			fail(asErr)
+		case !as.Present:
+			checks.Set(es, true, "absent", "")
+		case invErr != nil:
+			checks.Set(es, false, "present", "present, and the runners on the host "+unread(invErr))
+			fail(invErr)
+		case len(env.all) > 0:
+			checks.Set(es, true, fmt.Sprintf("present: %d runners remain on the host", len(env.all)), "")
+		default:
+			checks.Set(es, false, "present", "still present after runner remove")
+			fail(Errorf(CodeNotApplied, "the autostart %s is still present after runner remove", entryName(as)))
+		}
 		if r.host.WSL() {
+			// Nothing is read: .wslconfig stays as it is.
 			res["wslconfig"] = keepWSLConfig
 			checks.Set(keepWSLStep(), true, keepWSLConfig, "")
 		}
 	}
-	hookLeft := false
+
+	// The job-started hook.
 	if r.removeHook {
-		present, err := hookPresent(ctx, r.host, CodeRunnerRemoveFailed, runners.HookDir(env.inv))
-		if err != nil {
-			return fail(err)
+		dir := r.hookDir
+		if invErr == nil {
+			dir = runners.HookDir(env.inv)
 		}
-		hookLeft = present && len(env.all) == 0
-		state := "absent"
-		if present {
-			state = "present"
-			if len(env.all) > 0 {
-				state = fmt.Sprintf("present: %d runners remain on the host", len(env.all))
-			}
+		present, err := hookPresent(ctx, r.host, CodeRunnerRemoveFailed, dir)
+		switch {
+		case err != nil:
+			checks.Set(hs0, false, "", unread(err))
+			fail(err)
+		case !present:
+			res["hook"] = "absent"
+			checks.Set(hs0, true, "absent", "")
+		case invErr != nil:
+			res["hook"] = "present"
+			checks.Set(hs0, false, "present", "present, and the runners on the host "+unread(invErr))
+			fail(invErr)
+		case len(env.all) > 0:
+			state := fmt.Sprintf("present: %d runners remain on the host", len(env.all))
+			res["hook"] = state
+			checks.Set(hs0, true, state, "")
+		default:
+			res["hook"] = "present"
+			checks.Set(hs0, false, "present", "still present after runner remove")
+			fail(Errorf(CodeNotApplied, "the job-started hook %s is still present after runner remove", r.hookDir))
 		}
-		res["hook"] = state
-		checks.Set(hs0, !hookLeft, state, "still present after runner remove")
 	}
 	checks.Fill(res, notes, nil)
-	if len(left) > 0 {
-		return res, Errorf(CodeNotApplied, "runners not removed: %s", strings.Join(left, ", "))
-	}
-	if volumeLeft {
-		return res, Errorf(CodeNotApplied, "%s still exists after runner remove", r.prov.volume())
-	}
-	if entryLeft {
-		return res, Errorf(CodeNotApplied, "the autostart %s is still present after runner remove", entryName(as))
-	}
-	if hookLeft {
-		return res, Errorf(CodeNotApplied, "the job-started hook %s is still present after runner remove", r.hookDir)
-	}
-	return res, nil
+	return res, first
 }
