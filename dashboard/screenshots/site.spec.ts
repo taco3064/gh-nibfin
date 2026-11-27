@@ -192,11 +192,14 @@ test('keyboard opens a How it works text disclosure', async ({ page }) => {
   }
 })
 
+// "boundaries" appears only in the stages disclosure: no other page text, heading
+// or diagram uses it or a word Pagefind stems the same way, so a hit shows that
+// the closed <details> text is indexed.
 test('search finds text inside a closed How it works disclosure', async ({ page }) => {
   const errors = await open(page, './', 'dark', 1280)
   await page.getByRole('button', { name: 'Search' }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('textbox', { name: 'Search' }).fill('required approvals')
+  await dialog.getByRole('textbox', { name: 'Search' }).fill('boundaries')
   await expect(dialog.getByRole('link', { name: 'How it works' }).first()).toBeVisible()
   expect(errors).toEqual([])
 })
