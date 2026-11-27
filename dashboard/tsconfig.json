@@ -1,6 +1,6 @@
 {
   "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }, { "path": "./src/worker" }, { "path": "./src/app" }],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }, { "path": "./src/worker" }, { "path": "./src/app" }, { "path": "./src/sentry-relay" }],
   "compilerOptions": {
     "paths": { "@/*": ["./src/*"] }
   }

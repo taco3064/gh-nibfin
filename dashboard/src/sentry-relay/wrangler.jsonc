@@ -1,0 +1,15 @@
+// The Sentry relay Worker. sentry-relay.yml deploys it from dashboard/ and
+// sets the SENTRY_CLIENT_SECRET and GITHUB_TOKEN secrets; no secret lives here.
+// Without SENTRY_CLIENT_SECRET it rejects every request.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nibfin-sentry-relay",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "vars": {
+    "SENTRY_PROJECT_SLUG": "nibfin-website",
+    "DISPATCH_REPOSITORY": "taco3064/gh-nibfin"
+  }
+}
