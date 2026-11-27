@@ -628,6 +628,13 @@ func TestRunnerAddMachineLibicu(t *testing.T) {
 		if !reflect.DeepEqual(f.events, []string{"libicu"}) {
 			t.Errorf("events after a failed libicu step = %v", f.events)
 		}
+		// A failed podman machine ssh keeps its own code.
+		f = newHost(noICU)
+		f.shellExit = map[string]int{"libicu": 125}
+		useRunnerHost(t, f)
+		if _, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{}); Code(err) != CodePodmanFailed {
+			t.Errorf("ssh failure: %v", err)
+		}
 	})
 
 	t.Run("local", func(t *testing.T) {

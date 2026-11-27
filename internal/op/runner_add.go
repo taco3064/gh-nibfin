@@ -727,7 +727,7 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		if s.Action == actInstallLibicu {
 			if err := Track(ctx, s, func() error {
 				if _, err := a.script(ctx, "install libicu", libicuScript, nil, ""); err != nil {
-					return Errorf(CodeRunnerInstallFailed, "%v; install it inside the VM with: podman machine ssh %s sudo dnf install -y libicu", err, strings.TrimPrefix(s.Target, "podman machine "))
+					return Errorf(CodeRunnerInstallFailed, "%w; install it inside the VM with: podman machine ssh %s sudo dnf install -y libicu", err, strings.TrimPrefix(s.Target, "podman machine "))
 				}
 				return nil
 			}); err != nil {
