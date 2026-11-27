@@ -354,3 +354,29 @@ test('the runs dialog does not animate when reduced motion is requested', async 
   expect((await animations()).every((n) => n !== 'none')).toBe(true)
   await expectClean(w)
 })
+
+test('a zoomed-out stage track keeps its natural width', async ({ page }) => {
+  // The dependency graph scales its nodes with a transform. A track that
+  // measures itself while scaled keeps the full form's width in CSS pixels,
+  // so the form it shows never overflows its box.
+  const { w } = await open(page, 1280, 'dark')
+  const tracks = page.locator('article[data-issue] ol[data-slot=stage-track]')
+  const widthsOf = () =>
+    tracks.evaluateAll((ols) => ols.map((ol) => ({ box: (ol.parentElement as HTMLElement).clientWidth, track: ol.scrollWidth })))
+  const before = await widthsOf()
+  await page.evaluate(() => {
+    const main = document.querySelector('main') as HTMLElement
+    main.style.transformOrigin = '0 0'
+    main.style.transform = 'scale(0.3)'
+    // A font change makes every track measure again while scaled.
+    main.style.letterSpacing = '1px'
+  })
+  await expect.poll(async () => (await widthsOf()).some((s, i) => s.box !== before[i].box)).toBe(true)
+  await page.evaluate(() => {
+    ;(document.querySelector('main') as HTMLElement).style.letterSpacing = ''
+  })
+  await expect.poll(widthsOf).toEqual(before)
+  for (const t of await tracks.all()) await expect(t).toHaveAttribute('data-form', 'full')
+  for (const s of await widthsOf()) expect(s.track).toBeLessThanOrEqual(s.box)
+  await expectClean(w)
+})

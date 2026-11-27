@@ -80,14 +80,20 @@ function Track({ stage }: { stage: Exclude<Stage, 'none'> }) {
 
   // The wrapper is given the full form's natural width (capped at its line),
   // so its width never depends on the form shown: compact exactly when the
-  // line leaves it less than that width.
+  // line leaves it less than that width. Both widths are layout widths in CSS
+  // pixels (offsetWidth, clientWidth), which a transform such as the
+  // dependency graph's zoom does not scale. offsetWidth rounds to whole
+  // pixels, so the wrapper gets one pixel more to always hold the full form.
   useLayoutEffect(() => {
     const w = wrap.current
     const g = ghost.current
     if (!w || !g) return
     const measure = () => {
-      const width = g.getBoundingClientRect().width
-      const compact = width - w.getBoundingClientRect().width > 0.5
+      const natural = g.offsetWidth
+      // Not laid out (for example a hidden panel): keep the last decision.
+      if (natural === 0) return
+      const width = natural + 1
+      const compact = natural > w.clientWidth
       setFit((prev) => (prev && prev.width === width && prev.compact === compact ? prev : { width, compact }))
     }
     measure()
