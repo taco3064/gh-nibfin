@@ -86,6 +86,32 @@ for (const { name, path } of pages) {
   }
 }
 
+// The label states are a top-to-bottom flowchart at every width (#458).
+test('how it works draws the label states as a flowchart', async ({ page }) => {
+  for (const theme of themes) {
+    for (const width of widths) {
+      const errors = await open(page, 'how-it-works/', theme, width)
+      const figure = page.locator('figure[data-slot=diagram]')
+      await expect(figure).toHaveCount(1)
+      await expect(figure).toBeVisible()
+      await expect(figure.locator('svg')).toHaveCount(1)
+      await expect(figure.locator('svg[data-direction=TB]')).toBeVisible()
+      await expect(figure.locator('ol > li')).toHaveCount(34)
+      await expect(figure.locator('ol > li').first()).toContainText('The Issue is closed. Lane: Checks, in order. Leads to closed (yes)')
+      // The drawing fits its figure, or scrolls inside it only.
+      const fits = await figure.evaluate((f) => {
+        const box = f.getBoundingClientRect()
+        const scroller = f.querySelector('svg')!.parentElement!
+        return { figure: box.right <= window.innerWidth, scroller: scroller.getBoundingClientRect().right <= box.right + 0.5 }
+      })
+      expect(fits).toEqual({ figure: true, scroller: true })
+      await expectNoPageScroll(page)
+      await figure.screenshot({ path: `${outDir}site-how-it-works-labels-${theme}-${width}.png` })
+      expect(errors).toEqual([])
+    }
+  }
+})
+
 test('keyboard reaches the skip link first', async ({ page }) => {
   const errors = await open(page, './', 'dark', 1280)
   await page.keyboard.press('Tab')
