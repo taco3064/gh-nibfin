@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 
+import { borderScanExceptions, unevenRoundedBorders } from './border-scan'
 import { expectDiagramFits, measureDiagram } from './diagram-fit'
 import { event, liveData, liveUrl, runnerNames, trendCounts, withoutDays, withoutIssues } from './live-site-fixtures'
 
@@ -81,6 +82,8 @@ for (const { name, path } of pages) {
         await expect(page.getByRole('img', { name: 'Nibfin', exact: true }).first()).toBeVisible()
         await expectNoPageScroll(page)
         await page.screenshot({ path: `${outDir}site-${name}-${theme}-${width}.png`, fullPage: true })
+        // No rounded box has a one-sided or differently coloured border (#488).
+        expect(await unevenRoundedBorders(page), `${name} ${width}px ${theme}: rounded boxes with uneven borders`).toEqual([])
         expect(errors).toEqual([])
       }
     })
@@ -740,5 +743,41 @@ test('the Setup and CLI pages link to anchors that exist', async ({ page }) => {
   const toCli = await page.locator('.sl-markdown-content a[href*="cli/#"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!.split('#')[1]))
   expect(toCli.length).toBeGreaterThan(0)
   for (const id of toCli) expect(cliIds).toContain(id)
+  expect(errors).toEqual([])
+})
+
+// The rounded-border scan (#488) catches the accent stripe the summary cards
+// once had (a wider inline-start side) and a side that differs only in colour.
+test('the rounded-border scan catches a one-sided card border', async ({ page }) => {
+  const cards = (found: Awaited<ReturnType<typeof unevenRoundedBorders>>) => found.filter((f) => /^article(\.|$)/.test(f.element) && f.element.includes('.card'))
+  for (const path of ['cli/', 'setup/']) {
+    const errors = await open(page, path, 'dark', 1280)
+    expect(await unevenRoundedBorders(page), `${path} before the fixture`).toEqual([])
+    const stripe = await page.addStyleTag({
+      content: `.sl-markdown-content :is(.card, [data-slot='summary']) { border-inline-start: 3px solid var(--nf-accent); }`,
+    })
+    const striped = cards(await unevenRoundedBorders(page))
+    expect(striped.length, `${path}: the stripe is reported`).toBeGreaterThan(0)
+    expect(striped[0].widths).toContain('3px')
+    await stripe.evaluate((s) => (s as Element).remove())
+    expect(await unevenRoundedBorders(page), `${path} after the stripe is removed`).toEqual([])
+
+    await page.locator('.sl-markdown-content article.card').first().evaluate((el) => el.setAttribute('data-border-fixture', ''))
+    await page.addStyleTag({ content: `.sl-markdown-content article.card[data-border-fixture] { border-inline-start-color: var(--nf-accent); }` })
+    const coloured = cards(await unevenRoundedBorders(page))
+    expect(coloured, `${path}: the coloured side is reported`).toHaveLength(1)
+    expect(new Set(coloured[0].widths).size, `${path}: same widths`).toBe(1)
+    expect(new Set(coloured[0].colors).size, `${path}: different colours`).toBe(2)
+    expect(errors).toEqual([])
+  }
+})
+
+// The Expressive Code frame parts the scan exempts exist on Quick start and
+// would be reported without the exception, so the exception list stays exact.
+test('the rounded-border scan exempts only the Expressive Code frame', async ({ page }) => {
+  const errors = await open(page, 'quick-start/', 'dark', 1280)
+  for (const sel of borderScanExceptions) await expect(page.locator(sel).first(), sel).toBeAttached()
+  expect(await unevenRoundedBorders(page)).toEqual([])
+  expect((await unevenRoundedBorders(page, undefined, [])).length, 'frame parts without the exception').toBeGreaterThan(0)
   expect(errors).toEqual([])
 })

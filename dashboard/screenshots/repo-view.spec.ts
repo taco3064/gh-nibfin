@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { unevenRoundedBorders } from './border-scan'
 import { edgeCount, outsideCount, platform, repoStatus } from './repo-fixtures'
 import { expectClean, expectGutter, expectNonce, fulfillPlanStream, prepare, shot, storageKey, widths, type Watch } from './support'
 
@@ -162,6 +163,8 @@ for (const theme of themes) {
       await expectNoPageScroll(page)
       const region = graphRegion(page)
       await expectDirection(page, width)
+      // Every graph node keeps one even border with its radius (#488).
+      expect(await unevenRoundedBorders(page, page.locator('[data-slot=graph-region]')), 'graph: rounded boxes with uneven borders').toEqual([])
       await region.focus()
       await expect(region).toBeFocused()
       await shot(page, `repo-graph-top-${theme}-${width}`, false)
