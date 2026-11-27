@@ -127,3 +127,16 @@ export function referenceOf(commands: readonly Command[]): CommandEntry[] {
       .map((s) => ({ path: s.path, slug: slugOf(s.path), short: s.short })),
   }))
 }
+
+/** A table-of-contents entry, the shape of Starlight's TocItem. */
+export interface CommandTocItem {
+  depth: 2
+  slug: string
+  text: string
+  children: []
+}
+
+/** tocItemsOf is one "On this page" entry per generated command section, in the CLI's order, with the section's own id. */
+export function tocItemsOf(commands: readonly Command[]): CommandTocItem[] {
+  return referenceOf(commands).map((e) => ({ depth: 2, slug: e.slug, text: `${rootCommand} ${e.path}`, children: [] }))
+}
