@@ -30,15 +30,43 @@ describe('LabelStates', () => {
     }
   })
 
-  it('draws one top-to-bottom figure and the stacked layout without inline styles', () => {
+  it('shows one row per state, hidden from assistive technology, without drawings or inline styles', () => {
     expect(html).toMatch(/^<figure[^>]*data-slot="diagram"/)
+    expect(html).toContain('<figcaption')
     expect(html).toContain('Label states, checked in order')
-    // One top-to-bottom drawing where it fits, the stacked layout below.
-    const svgs = html.match(/<svg[^>]*data-direction="[^"]*"[^>]*>/g) ?? []
-    expect(svgs).toHaveLength(1)
-    expect(svgs[0]).toContain('data-direction="TB"')
-    expect(svgs[0]).toContain('aria-hidden="true"')
-    expect(html).toMatch(/<div aria-hidden="true" class="block @min-\[\d+px\]:hidden" data-slot="diagram-stacked">/)
+    expect(html).not.toMatch(/<svg[^>]*data-direction=/)
+    expect(html).not.toContain('data-slot="diagram-stacked"')
+    expect(html.match(/data-slot="diagram-rows"/g)).toHaveLength(1)
+    expect(html).toMatch(/<div aria-hidden="true" class="@container[^"]*" data-slot="diagram-rows">/)
     expect(html).not.toMatch(/\sstyle="/)
+  })
+
+  it('lists every state in order with its check, labels, outcome id, meaning and outcome text', () => {
+    const rows = html
+      .split('<ol class="sr-only">')[0]
+      .split('data-slot="label-state"')
+      .slice(1)
+      .map((r) => unescape(r.split('data-slot="label-no"')[0].replace(/<[^>]*>/g, ' ')))
+    expect(rows).toHaveLength(labelStates.length)
+    const order = [...html.matchAll(/data-state="([^"]*)"/g)].map((m) => m[1])
+    expect(order).toEqual(labelStates.map((s) => s.id))
+    for (const [i, s] of labelStates.entries()) {
+      const row = rows[i]
+      expect(row).toContain(s.when)
+      for (const label of s.labels) expect(row).toContain(` ${label} `)
+      expect(row).toContain(' yes ')
+      expect(row).toContain(` ${s.id} `)
+      expect(row).toContain(s.meaning)
+      expect(row).toContain(outcomeText[s.outcome])
+      expect(html).toContain(`data-block="${s.id}" data-outcome="${s.outcome}"`)
+      expect(html).toContain(`data-block="check-${s.id}"`)
+    }
+  })
+
+  it('leads each check but the last to the next with a no arrow', () => {
+    expect(html.match(/data-slot="label-no"/g)).toHaveLength(labelStates.length - 1)
+    // The last state's row ends the figure's rows: no arrow follows it.
+    const last = html.split('data-slot="label-state"').at(-1)!
+    expect(last).not.toContain('data-slot="label-no"')
   })
 })

@@ -1,13 +1,16 @@
 import { expect, type Locator } from '@playwright/test'
 
 // Shared check of a site diagram figure (#474): of its presentations (a
-// drawing or the stacked layout) exactly one shows, it fits the figure
-// without sideways scroll, and no text leaves its node, pill or block.
+// drawing, the stacked layout, or the rows of the label states, #476) exactly
+// one shows, it fits the figure without sideways scroll, and no text leaves
+// its node, pill or block.
 
-export type Shown = 'LR' | 'TB' | 'stacked'
+export type Shown = 'LR' | 'TB' | 'stacked' | 'rows'
 
 export interface Fit {
   shown: Shown[]
+  // height is the shown presentation's rendered height, in CSS px.
+  height?: number
   // problems lists every overflow found, empty when everything fits.
   problems: string[]
   // scale is the shown drawing's rendered width over its natural width.
@@ -27,10 +30,12 @@ export async function measureDiagram(figure: Locator): Promise<Fit> {
     const showing = (el: Element) => getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0
     const box = fig.getBoundingClientRect()
     if (box.right > window.innerWidth + eps) problems.push(`figure ends at ${box.right} past the viewport ${window.innerWidth}`)
-    const all = [...fig.querySelectorAll<HTMLElement>('[data-slot=diagram-drawing], [data-slot=diagram-stacked]')]
+    const all = [...fig.querySelectorAll<HTMLElement>('[data-slot=diagram-drawing], [data-slot=diagram-stacked], [data-slot=diagram-rows]')]
     const visible = all.filter(showing)
-    const shown = visible.map((el) => (el.dataset.slot === 'diagram-stacked' ? 'stacked' : el.dataset.direction!) as Shown)
+    const slots: Record<string, Shown> = { 'diagram-stacked': 'stacked', 'diagram-rows': 'rows' }
+    const shown = visible.map((el) => (slots[el.dataset.slot!] ?? el.dataset.direction!) as Shown)
     let scale: number | undefined
+    const height = visible.length === 1 ? visible[0].getBoundingClientRect().height : undefined
     for (const el of visible) {
       if (el.scrollWidth > el.clientWidth) problems.push(`${el.dataset.slot} scrolls: ${el.scrollWidth} > ${el.clientWidth}`)
       if (!inside(box, el.getBoundingClientRect())) problems.push(`${el.dataset.slot} leaves the figure`)
@@ -62,7 +67,7 @@ export async function measureDiagram(figure: Locator): Promise<Fit> {
         }
       }
     }
-    return { shown, problems, scale }
+    return { shown, problems, scale, height }
   })
 }
 
