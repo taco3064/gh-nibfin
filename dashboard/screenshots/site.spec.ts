@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 
-import { expectDiagramFits } from './diagram-fit'
+import { expectDiagramFits, measureDiagram } from './diagram-fit'
 import { event, liveData, liveUrl, runnerNames, trendCounts, withoutDays, withoutIssues } from './live-site-fixtures'
 
 // Screenshots and checks of the public site (#362) and its Live page and
@@ -92,7 +92,8 @@ for (const { name, path } of pages) {
 // top-to-bottom one or the stacked layout, whichever comes first among those
 // that fit. Nothing scrolls sideways, and no text leaves its node, pill or
 // block. At the site's widths the stage swimlane and the architecture are too
-// wide for a drawing at 80% and show the stacked layout.
+// wide for a drawing at 80% and show the stacked layout. The label states
+// show their own rows (#476).
 const siteDiagrams = [
   { page: 'how-it-works/', name: 'stages', caption: 'The stages, by role', items: 10, first: 'Split into Issues', shown: ['stacked'] },
   {
@@ -101,7 +102,7 @@ const siteDiagrams = [
     caption: 'Label states, checked in order',
     items: 34,
     first: 'The Issue is closed. Lane: Checks, in order. Leads to closed (yes)',
-    shown: ['TB', 'stacked'],
+    shown: ['rows'],
   },
   { page: 'how-it-works/', name: 'architecture', caption: 'Where Nibfin runs', items: 10, first: 'Login volume: The provider CLI', shown: ['stacked'] },
   { page: './', name: 'home-flow', caption: 'Who acts at each step', items: 8, first: 'Issue: scope or request label', shown: ['LR', 'TB'] },
@@ -128,6 +129,28 @@ for (const theme of themes) {
         expect(errors).toEqual([])
       }
     }
+  })
+}
+
+// The label states read one check per row (#476): at 1280 px the rows are at
+// most about half the 2,533 px the top-to-bottom drawing took, and shorter at
+// 1920 px, in both themes.
+for (const theme of themes) {
+  test(`label states rows are compact ${theme}`, async ({ page }) => {
+    const heights: number[] = []
+    for (const [width, most] of [
+      [1280, 1270],
+      [1920, 1270],
+    ] as const) {
+      const errors = await open(page, 'how-it-works/', theme, width)
+      const figure = page.locator('figure[data-slot=diagram]', { has: page.getByText('Label states, checked in order', { exact: true }) })
+      const fit = await measureDiagram(figure)
+      expect(fit.shown).toEqual(['rows'])
+      expect(fit.height, `label states ${width}px ${theme} height`).toBeLessThanOrEqual(most)
+      heights.push(fit.height!)
+      expect(errors).toEqual([])
+    }
+    expect(heights[1]).toBeLessThanOrEqual(heights[0])
   })
 }
 
