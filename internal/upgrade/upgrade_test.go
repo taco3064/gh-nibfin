@@ -581,6 +581,125 @@ func TestStalePRIsUpdatedNotDuplicated(t *testing.T) {
 	}
 }
 
+// leftover puts a branch on f whose tip holds the rendered execution set
+// but is one commit on "old", an earlier default branch head, as a branch
+// left from a merged upgrade PR is after the default branch moved on.
+func leftover(t *testing.T, f *fakeGitHub) {
+	t.Helper()
+	want := render(t, templates.Execution, imageRef)
+	old := maps.Clone(want)
+	old[issueP] = "older\n"
+	f.commits["old"] = old
+	f.commits["b1"] = maps.Clone(want)
+	f.parents["b1"] = []string{"old"}
+	f.refs[Branch] = "b1"
+}
+
+// checkRewritten checks that the branch is one new commit on the current
+// default branch head holding the rendered execution set, and that the PR
+// head the read-back saw is that commit.
+func checkRewritten(t *testing.T, f *fakeGitHub, p op.Plan, r op.Result) {
+	t.Helper()
+	b := p.Steps[len(p.Steps)-2]
+	if b.ID != "branch:"+Branch || b.NoChange || b.Current != "differs" || b.Detail != "replaces earlier contents of that branch" {
+		t.Errorf("branch step %+v", b)
+	}
+	head := f.refs[Branch]
+	if head == "b1" || !slices.Equal(f.parents[head], []string{f.refs["main"]}) {
+		t.Errorf("branch head %s with parents %v, want one commit on %s", head, f.parents[head], f.refs["main"])
+	}
+	for k, v := range render(t, templates.Execution, imageRef) {
+		if f.commits[head][k] != v {
+			t.Errorf("%s on the branch differs", k)
+		}
+	}
+	if len(f.prs) != 1 || r["number"] != 10 || f.prJSON(f.prs[0])["head"].(map[string]string)["sha"] != head {
+		t.Errorf("PRs %+v, result %v", f.prs, r)
+	}
+}
+
+// TestLeftoverBranchOnAnOlderHeadIsRewritten: a branch whose files equal the
+// set but which is based on an older default head is rewritten on the
+// current head before the PR is opened, so that a rebase merge brings every
+// file of the set (nibfin-job.yml included) to the rendered digest.
+func TestLeftoverBranchOnAnOlderHeadIsRewritten(t *testing.T) {
+	f := newFake(stale(t, templates.Execution))
+	stub(t, f)
+	leftover(t, f)
+	c, p, r, err := run(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.asked || p.ReadOnly {
+		t.Errorf("asked %v, plan %+v", c.asked, p)
+	}
+	want := []string{"POST repos/o/r/git/trees", "POST repos/o/r/git/commits", "PATCH repos/o/r/git/refs/heads/" + Branch, "POST repos/o/r/pulls"}
+	if !slices.Equal(f.writes(), want) {
+		t.Errorf("writes %q", f.writes())
+	}
+	checkRewritten(t, f, p, r)
+
+	// The rewritten branch is current: a rerun is read-only.
+	n := len(f.writes())
+	c, p, _, err = run(t)
+	if err != nil || c.asked || !p.ReadOnly || len(f.writes()) != n {
+		t.Errorf("rerun: asked %v, plan %q, writes %q, err %v", c.asked, actions(p), f.writes()[n:], err)
+	}
+}
+
+// TestOpenPRBehindTheDefaultHeadIsRewritten: an open PR whose branch holds
+// the set but is based behind the default head gets its branch rewritten,
+// and no second PR.
+func TestOpenPRBehindTheDefaultHeadIsRewritten(t *testing.T) {
+	f := newFake(stale(t, templates.Execution))
+	stub(t, f)
+	leftover(t, f)
+	f.prs = append(f.prs, &fakePR{number: 10, head: Branch, base: "main", state: "open"})
+	_, p, r, err := run(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last := p.Steps[len(p.Steps)-1]; last.Action+" "+last.Target != "keep PR #10" || !last.NoChange {
+		t.Errorf("PR step %+v", last)
+	}
+	want := []string{"POST repos/o/r/git/trees", "POST repos/o/r/git/commits", "PATCH repos/o/r/git/refs/heads/" + Branch}
+	if !slices.Equal(f.writes(), want) {
+		t.Errorf("writes %q", f.writes())
+	}
+	checkRewritten(t, f, p, r)
+}
+
+// TestBranchWithTwoCommitsIsRewritten: a branch with equal files on the
+// current head but more than its own commit is rewritten as one commit.
+func TestBranchWithTwoCommitsIsRewritten(t *testing.T) {
+	f := newFake(stale(t, templates.Execution))
+	stub(t, f)
+	leftover(t, f)
+	f.parents["old"] = []string{"c0"}
+	_, p, r, err := run(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRewritten(t, f, p, r)
+}
+
+// TestBranchCommitReadFailureKeepsItsCause: a failed read of the branch tip
+// commit fails the plan with its cause, and nothing is written.
+func TestBranchCommitReadFailureKeepsItsCause(t *testing.T) {
+	f := newFake(stale(t, templates.Execution))
+	stub(t, f)
+	leftover(t, f)
+	f.fail = map[string]error{"GET repos/o/r/git/commits/b1": errors.New("connection reset")}
+	f.persist = true
+	_, _, _, err := run(t)
+	if op.Code(err) != op.CodeRepoUnreadable || !strings.Contains(err.Error(), "connection reset") || !strings.Contains(err.Error(), "b1") {
+		t.Errorf("err %v", err)
+	}
+	if len(f.writes()) != 0 {
+		t.Errorf("writes %q", f.writes())
+	}
+}
+
 func TestWriteFailureNamesTheScope(t *testing.T) {
 	for _, status := range []int{403, 404, 422} {
 		f := newFake(stale(t, templates.Peer))
