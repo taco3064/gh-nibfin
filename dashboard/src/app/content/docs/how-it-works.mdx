@@ -3,6 +3,7 @@ title: How it works
 description: The stages an Issue goes through, the labels that steer them, and the key points of Nibfin's architecture and security.
 ---
 
+import { ArchitectureDiagram } from '../../components/ArchitectureDiagram'
 import { LabelStates } from '../../components/LabelStates'
 import { StageLanes } from '../../components/StageLanes'
 
@@ -58,6 +59,10 @@ Nothing runs, A stage runs or Delivered.
   Removing `pause` is the go-ahead.
 
 ## Architecture
+
+<ArchitectureDiagram />
+
+The figure shows the parts that the points below and under Security describe.
 
 - **Workflows.** `gh nibfin init` and `upgrade` write the Nibfin workflows into the
   repository through a pull request. They call nothing in other repositories and run
