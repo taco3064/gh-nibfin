@@ -13,7 +13,13 @@ back to GitHub. A person steers it with the same labels, Assignees and pull requ
 
 ## The stages
 
+An Issue passes through five stages, from Scope to CD and closing. The swimlane
+shows who acts at each step.
+
 <StageLanes />
+
+<details>
+<summary>Read as text</summary>
 
 1. **Scope.** Approved requirements are split into ordered Issues, each with its
    outcome, boundaries and `Blocked by` dependencies. The `scope` label marks an
@@ -36,14 +42,22 @@ back to GitHub. A person steers it with the same labels, Assignees and pull requ
    `delivered` comment with the pull requests, checks and CD runs, adds `delivered`,
    closes the Issue and wakes the Issues it blocked.
 
+</details>
+
 ## Labels and states
 
-Nibfin checks an Issue's state in this order and stops at the first match. The
-first seven states run nothing; the rest are the stages above. Read the chart from
+Nibfin checks an Issue's state in this order and stops at the first match.
+
+<LabelStates />
+
+<details>
+<summary>Read as text</summary>
+
+The first seven states run nothing; the rest are the stages above. Read the chart from
 the top: the first check that answers yes leads to its outcome, in the lane
 Nothing runs, A stage runs or Delivered.
 
-<LabelStates />
+</details>
 
 ## Pending and pause
 
@@ -60,9 +74,13 @@ Nothing runs, A stage runs or Delivered.
 
 ## Architecture
 
+The figure shows where Nibfin's parts run and where the Secret goes; the points
+below and the Security section describe them.
+
 <ArchitectureDiagram />
 
-The figure shows the parts that the points below and under Security describe.
+<details>
+<summary>Read as text</summary>
 
 - **Workflows.** `gh nibfin init` and `upgrade` write the Nibfin workflows into the
   repository through a pull request. They call nothing in other repositories and run
@@ -85,6 +103,8 @@ The figure shows the parts that the points below and under Security describe.
 - **Execution and peer repositories.** The repository whose Runners run the Jobs
   gets the execution set of workflows; another repository gets the peer set, which
   wakes the execution repository.
+
+</details>
 
 ## Security
 
