@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 
-import { event, liveData, liveUrl, runnerNames } from './live-site-fixtures'
+import { event, liveData, liveUrl, runnerNames, withoutIssues } from './live-site-fixtures'
 
 // Screenshots and checks of the public site (#362) and its Live page and
 // Home summary (#365), served from dist-site/ under its base path by vite
@@ -310,6 +310,42 @@ test('live page updates without a reload, shows errors and reconnects', async ({
   await expectNoRunnerName(page)
   expect(errors).toEqual([])
 })
+
+
+// A snapshot without Issues that stand in the graph used to blank the whole
+// page (#454): the graph redraws, and the rest of the page stays.
+for (const width of [375, 1280]) {
+  test(`live page redraws the graph when Issues leave it and come back ${width}`, async ({ page }) => {
+    const worker = await mockWorker(page)
+    const errors = await open(page, 'live/', 'dark', width, worker)
+    const view = repoView(page)
+    const graph = view.getByRole('region', { name: 'Dependency graph', exact: true })
+    const node = (n: number) => graph.locator(`[data-issue="https://github.com/taco3064/nibfin-core/issues/${n}"]`)
+    await expect(view.locator('[data-slot=dependency-graph]')).toContainText('Showing 54 of 54 open Issues')
+    await expect(node(15)).toHaveCount(1)
+    const edges = await graph.locator('[data-slot=edges] path[data-edge]').count()
+
+    worker.send(event({ event: 'snapshot', at: '2026-11-25T08:05:00Z', result: withoutIssues(liveData(131, 58), [15, 16, 25]) }))
+    await expect(view.locator('[data-slot=dependency-graph]')).toContainText('Showing 51 of 51 open Issues')
+    await expect(graph).toBeVisible()
+    for (const n of [15, 16, 25]) await expect(node(n)).toHaveCount(0)
+    await expect(node(17)).toHaveCount(1)
+    await expect.poll(() => graph.locator('[data-slot=edges] path[data-edge]').count()).toBeLessThan(edges)
+    await expect(page.locator('[data-slot=summary-created] [data-slot=rolling-number]')).toHaveAttribute('data-value', '131')
+    await expect(page.locator('[data-slot=runner-card]')).toHaveCount(5)
+    await expect(view.locator('[data-action=change-repo]')).toBeVisible()
+    await expect(page.locator('[data-note=graph-error]')).toHaveCount(0)
+    await page.screenshot({ path: `${outDir}site-live-removed-dark-${width}.png`, fullPage: true })
+
+    // They come back, linked as before.
+    worker.send(event({ event: 'snapshot', at: '2026-11-25T08:10:00Z', result: liveData(131, 58) }))
+    await expect(view.locator('[data-slot=dependency-graph]')).toContainText('Showing 54 of 54 open Issues')
+    for (const n of [15, 16, 25]) await expect(node(n)).toHaveCount(1)
+    await expect.poll(() => graph.locator('[data-slot=edges] path[data-edge]').count()).toBe(edges)
+    await expect(page.locator('[data-note=graph-error]')).toHaveCount(0)
+    expect(errors).toEqual([])
+  })
+}
 
 test('live page respects reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })

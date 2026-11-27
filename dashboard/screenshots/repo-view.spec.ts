@@ -560,6 +560,41 @@ test('the header freshness and Refresh follow the repository read', async ({ pag
   await expectClean(w, ['Failed to load resource: the server responded with a status of 502'])
 })
 
+// A Refresh that drops Issues from the graph, or brings them back linked
+// again, redraws the graph without an error (#454).
+test('a Refresh that removes and re-links Issues redraws the graph', async ({ page }) => {
+  const { w } = await open(page, 1280, 'dark')
+  await pick(page, 'acme/platform')
+  await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
+  await edgesDrawn(page, edgeCount(platform, 'acme/platform'))
+  const node = (n: number) => graphRegion(page).locator(`[data-node="acme/platform#${n}"]`)
+  await expect(node(12)).toHaveCount(1)
+
+  const gone = [12, 13, 16]
+  const left = platform
+    .filter((i) => !gone.includes(i.number))
+    .map((i) => (i.blockedBy ? { ...i, blockedBy: i.blockedBy.filter((b) => b.repo !== 'acme/platform' || !gone.includes(b.number)) } : i))
+  const view = repoStatus['github.com/acme/platform'].result as Record<string, unknown>
+  w.repoStatus['github.com/acme/platform'] = { result: { ...view, issues: left } }
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect(page.locator('[data-slot=graph-count]')).toContainText(`Showing ${left.length} of ${left.length} open Issues`)
+  await edgesDrawn(page, edgeCount(left, 'acme/platform'))
+  for (const n of gone) await expect(node(n)).toHaveCount(0)
+  await expect(node(14)).toHaveCount(1)
+  await expect(graphRegion(page)).toBeVisible()
+  await expect(page.locator('[data-slot=repo-summary]')).toBeVisible()
+  await expect(page.locator('[data-note=graph-error]')).toHaveCount(0)
+  await shot(page, 'repo-graph-removed-dark-1280', false)
+
+  w.repoStatus['github.com/acme/platform'] = repoStatus['github.com/acme/platform']
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect(page.locator('[data-slot=graph-count]')).toHaveText(fullCount)
+  await edgesDrawn(page, edgeCount(platform, 'acme/platform'))
+  for (const n of gone) await expect(node(n)).toHaveCount(1)
+  await expect(page.locator('[data-note=graph-error]')).toHaveCount(0)
+  await expectClean(w)
+})
+
 test.describe('in a Traditional Chinese browser', () => {
   test.use({ locale: 'zh-TW', timezoneId: 'Asia/Taipei' })
 
