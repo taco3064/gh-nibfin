@@ -307,8 +307,15 @@ for (const theme of themes) {
     worker.greeting = [event({ event: 'snapshot', at: '2026-11-25T08:00:00Z', result: liveData(128, 57, true) }), event({ event: 'checked', at: new Date().toISOString() })]
     for (const width of widths) {
       const errors = await open(page, 'live/', theme, width, worker)
-      const trend = page.locator('[data-slot=summary-delivered] [data-slot=delivered-trend]')
+      const trend = page.locator('[data-slot=summary] [data-slot=delivered-trend]')
       await expect(trend).toBeVisible()
+      // The trend has its own row below both stat cards, not inside either.
+      await expect(page.locator('[data-slot=summary-delivered] [data-slot=delivered-trend], [data-slot=summary-created] [data-slot=delivered-trend]')).toHaveCount(0)
+      const row = await trend.locator('xpath=..').boundingBox()
+      const cards = await page.locator('[data-slot=summary] dl').boundingBox()
+      expect(row && cards && row.y >= cards.y + cards.height).toBe(true)
+      // From 768 px the row spans both columns.
+      if (width >= 768) expect(Math.abs((row?.width ?? 0) - (cards?.width ?? 0))).toBeLessThanOrEqual(1)
       await expect(trend.locator('figcaption')).toHaveText(`Delivered per day, last 7 days (${trendCounts.reduce((a, b) => a + b, 0)} in total)`)
       const days = trend.locator('[data-slot=trend-day]')
       await expect(days).toHaveCount(7)
@@ -341,15 +348,17 @@ test('live page without a trend shows no chart and an unknown stage as text', as
   const [first] = data.runners[0].runners
   first.job = first.job && { ...first.job, title: 'Nibfin · taco3064/nibfin-core#14 · accept', stage: 'accept' }
   worker.greeting = [event({ event: 'snapshot', at: '2026-11-25T08:00:00Z', result: data }), event({ event: 'checked', at: new Date().toISOString() })]
-  for (const width of [375, 1280]) {
-    const errors = await open(page, 'live/', 'dark', width, worker)
-    await expect(page.locator('[data-slot=summary-delivered] [data-slot=rolling-number]')).toHaveAttribute('data-value', '57')
-    await expect(page.locator('[data-slot=delivered-trend]')).toHaveCount(0)
-    await expect(track(page, 1)).toHaveText('accept')
-    await expect(track(page, 1).locator('[data-slot=run-stage-track]')).toHaveCount(0)
-    await expectNoPageScroll(page)
-    await page.locator('[data-slot=summary]').screenshot({ path: `${outDir}site-live-no-trend-dark-${width}.png` })
-    expect(errors).toEqual([])
+  for (const theme of themes) {
+    for (const width of widths) {
+      const errors = await open(page, 'live/', theme, width, worker)
+      await expect(page.locator('[data-slot=summary-delivered] [data-slot=rolling-number]')).toHaveAttribute('data-value', '57')
+      await expect(page.locator('[data-slot=delivered-trend]')).toHaveCount(0)
+      await expect(track(page, 1)).toHaveText('accept')
+      await expect(track(page, 1).locator('[data-slot=run-stage-track]')).toHaveCount(0)
+      await expectNoPageScroll(page)
+      await page.locator('[data-slot=summary]').screenshot({ path: `${outDir}site-live-no-trend-${theme}-${width}.png` })
+      expect(errors).toEqual([])
+    }
   }
 })
 
