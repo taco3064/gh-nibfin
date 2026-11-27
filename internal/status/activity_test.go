@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -112,14 +114,15 @@ func TestReadActivity(t *testing.T) {
 			job("h-claude-2", "completed", "cancelled", "2026-11-25T10:00:00Z", "2026-11-25T13:00:00Z"),
 		}},
 	}
-	fx := setup(t, routes)
+	fx := setupActivity(t, routes)
 	useSlots(t, twoSlots)
 	a := NewActivityReader()
 	act, err := a.ReadActivity(context.Background(), actNow)
 	if err != nil || act.JobsError != nil || act.SlotsError != nil {
 		t.Fatalf("act = %+v, %v", act, err)
 	}
-	if act.From != "2026-11-25T12:00:00Z" || act.To != "2026-11-26T12:00:00Z" || act.Repo != "github.com/o/r" || len(act.Runners) != 2 {
+	if act.From != "2026-11-25T12:00:00Z" || act.To != "2026-11-26T12:00:00Z" || act.Repo != "github.com/o/r" || len(act.Runners) != 2 ||
+		!act.History || act.CoversFrom != "" {
 		t.Fatalf("act = %+v", act)
 	}
 	c1 := act.Runners[0]
@@ -178,10 +181,31 @@ func TestReadActivity(t *testing.T) {
 	if _, ok := a.cache[runKey{12, 2}]; ok {
 		t.Errorf("attempt 2 kept in memory")
 	}
+
+	// A current read lists only the runs in progress and reads only their
+	// jobs: the current Jobs and their periods, no history.
+	fx.gh.gets = nil
+	cur, err := NewActivityReader().ReadCurrent(context.Background(), actNow)
+	if err != nil || cur.JobsError != nil || cur.History || cur.CoversFrom != "" {
+		t.Fatalf("current = %+v, %v", cur, err)
+	}
+	if c := cur.Runners[0].Current; c == nil || *c != want {
+		t.Errorf("current claude-1 = %+v", c)
+	}
+	if len(cur.Runners[1].Periods) != 1 || cur.Runners[1].Periods[0].Start != "2026-11-25T12:00:00Z" {
+		t.Errorf("current claude-2 periods = %+v", cur.Runners[1].Periods)
+	}
+	wantGets := []string{sharedRunsPath("status", "in_progress"), jobsPath(11), jobsPath(9)}
+	sort.Strings(wantGets)
+	gets := append([]string(nil), fx.gh.gets...)
+	sort.Strings(gets)
+	if !reflect.DeepEqual(gets, wantGets) {
+		t.Errorf("current gets = %q", fx.gh.gets)
+	}
 }
 
 func TestReadActivityJobsFail(t *testing.T) {
-	setup(t, map[string]any{
+	setupActivity(t, map[string]any{
 		sharedRunsPath("created", createdQ): &api.HTTPError{StatusCode: http.StatusForbidden, Message: "Resource not accessible"},
 	})
 	hs := twoSlots
@@ -215,7 +239,7 @@ func TestReadActivityJobsFail(t *testing.T) {
 }
 
 func TestReadActivityNoRepo(t *testing.T) {
-	fx := setup(t, map[string]any{})
+	fx := setupActivity(t, map[string]any{})
 	for _, c := range []struct {
 		hs   op.HostSlots
 		code string
@@ -246,4 +270,14 @@ func TestHTTPSURL(t *testing.T) {
 			t.Errorf("%q = %q", in, got)
 		}
 	}
+}
+
+// setupActivity is setup for the activity reads, which read jobs
+// concurrently by design (#495): the serial-request check of status does
+// not apply.
+func setupActivity(t *testing.T, routes map[string]any) *fixture {
+	t.Helper()
+	fx := setup(t, routes)
+	fx.gh.flight = nil
+	return fx
 }

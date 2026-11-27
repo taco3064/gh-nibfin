@@ -482,8 +482,14 @@ func (s syncWriter) Write(p []byte) (int, error) {
 }
 
 // readActivity returns the Runner activity read of one dashboard command:
-// one reader, whose in-memory cache lives as long as the server.
-func readActivity() func(context.Context) (any, error) {
+// one reader, whose in-memory cache and reads in flight live as long as the
+// server. part "current" reads only the Runners' current Jobs.
+func readActivity() func(context.Context, string) (any, error) {
 	a := status.NewActivityReader()
-	return func(ctx context.Context) (any, error) { return a.Read(ctx) }
+	return func(ctx context.Context, part string) (any, error) {
+		if part == "current" {
+			return a.Current(ctx)
+		}
+		return a.Read(ctx)
+	}
 }

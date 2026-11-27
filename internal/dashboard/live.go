@@ -74,13 +74,19 @@ func (f *frames) flush() {
 	_ = f.rc.Flush()
 }
 
-// activity serves the Runner view's activity read. It only reads.
+// activity serves the Runner view's activity read: the full read, or with
+// ?part=current the Runners' current Jobs only. It only reads.
 func (s *server) activity(w http.ResponseWriter, r *http.Request) {
 	if s.o.Activity == nil {
 		writeError(w, http.StatusNotFound, op.Errorf(op.CodeNotFound, "Runner activity is not available"))
 		return
 	}
-	v, err := s.o.Activity(r.Context())
+	part := r.URL.Query().Get("part")
+	if part != "" && part != "current" {
+		writeError(w, http.StatusBadRequest, op.Errorf(op.CodeInvalidArgument, "unknown activity part %q; use current or leave it out", part))
+		return
+	}
+	v, err := s.o.Activity(r.Context(), part)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return

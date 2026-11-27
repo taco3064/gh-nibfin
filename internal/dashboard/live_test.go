@@ -194,32 +194,50 @@ func TestLiveWithoutWatch(t *testing.T) {
 
 func TestRunnerActivity(t *testing.T) {
 	calls := 0
+	parts := []string{}
 	var fail error
 	h := startFull(t, nil, nil, func(o *Options) {
-		o.Activity = func(context.Context) (any, error) {
+		o.Activity = func(_ context.Context, part string) (any, error) {
 			calls++
+			parts = append(parts, part)
 			if fail != nil {
 				return nil, fail
 			}
-			return map[string]any{"from": "a", "to": "b", "runners": []any{}}, nil
+			return map[string]any{"from": "a", "to": "b", "runners": []any{}, "part": part}, nil
 		}
 	})
 	if status, body, _ := h.do("GET", "/api/runner-activity", "", nil); status != http.StatusUnauthorized || errCode(t, body) != op.CodeSessionRequired {
 		t.Errorf("no session: %d %s", status, body)
 	}
+	if status, body, _ := h.do("GET", "/api/runner-activity?part=current", "", nil); status != http.StatusUnauthorized || errCode(t, body) != op.CodeSessionRequired {
+		t.Errorf("no session, current: %d %s", status, body)
+	}
 	h.open()
 	if status, body, _ := h.do("GET", "/api/runner-activity", "", map[string]string{"Origin": "http://evil.example"}); status != http.StatusForbidden {
 		t.Errorf("foreign origin: %d %s", status, body)
+	}
+	if status, body, _ := h.do("GET", "/api/runner-activity?part=current", "", map[string]string{"Origin": "http://evil.example"}); status != http.StatusForbidden {
+		t.Errorf("foreign origin, current: %d %s", status, body)
 	}
 	if calls != 0 {
 		t.Errorf("read for a refused request")
 	}
 	status, body, hdr := h.do("GET", "/api/runner-activity", "", nil)
 	var got map[string]any
-	if status != http.StatusOK || json.Unmarshal([]byte(body), &got) != nil || got["from"] != "a" {
+	if status != http.StatusOK || json.Unmarshal([]byte(body), &got) != nil || got["from"] != "a" || got["part"] != "" {
 		t.Errorf("activity: %d %s", status, body)
 	}
 	checkCommonHeaders(t, "activity", hdr)
+	status, body, _ = h.do("GET", "/api/runner-activity?part=current", "", nil)
+	if status != http.StatusOK || json.Unmarshal([]byte(body), &got) != nil || got["part"] != "current" {
+		t.Errorf("current activity: %d %s", status, body)
+	}
+	if status, body, _ := h.do("GET", "/api/runner-activity?part=history", "", nil); status != http.StatusBadRequest || errCode(t, body) != op.CodeInvalidArgument {
+		t.Errorf("unknown part: %d %s", status, body)
+	}
+	if strings.Join(parts, ",") != ",current" {
+		t.Errorf("parts = %q", parts)
+	}
 	if status, _, _ := h.do("POST", "/api/runner-activity", "", nil); status == http.StatusOK {
 		t.Errorf("POST answered 200")
 	}
