@@ -93,15 +93,70 @@ test('keyboard reaches the skip link first', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+const navLabels = ['Home', 'Quick start', 'How it works', 'Setup and management', 'CLI commands', 'Live']
+
 test('mobile menu', async ({ page }) => {
   for (const theme of themes) {
-    const errors = await open(page, 'how-it-works/', theme, 375)
-    await page.getByRole('button', { name: 'Menu' }).click()
+    for (const { name, path } of [
+      { name: 'how-it-works', path: 'how-it-works/' },
+      { name: 'home', path: './' },
+    ]) {
+      const errors = await open(page, path, theme, 375)
+      await page.getByRole('button', { name: 'Menu' }).click()
+      const nav = page.getByRole('navigation', { name: 'Main' })
+      for (const label of navLabels) {
+        await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible()
+      }
+      await page.screenshot({ path: `${outDir}site-menu-${name}-${theme}-375.png` })
+      expect(errors).toEqual([])
+    }
+  }
+})
+
+test('home shows the site navigation on a wide screen', async ({ page }) => {
+  for (const theme of themes) {
+    const errors = await open(page, './', theme, 1280)
+    await expect(page.getByRole('button', { name: 'Menu' })).toBeHidden()
     const nav = page.getByRole('navigation', { name: 'Main' })
-    for (const label of ['Home', 'Quick start', 'How it works', 'Setup and management', 'CLI commands', 'Live']) {
+    for (const label of navLabels) {
       await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible()
     }
-    await page.screenshot({ path: `${outDir}site-menu-${theme}-375.png` })
+    await expect(page.locator('.hero')).toBeVisible()
+    await expectNoPageScroll(page)
+    await page.screenshot({ path: `${outDir}site-home-nav-${theme}-1280.png` })
+    expect(errors).toEqual([])
+  }
+})
+
+// commandIds are the ids of the generated command sections' headings.
+async function commandIds(page: Page): Promise<string[]> {
+  return page.locator('[data-command] > h2[id]').evaluateAll((hs) => hs.map((h) => h.id))
+}
+
+test('the CLI page lists every command on this page', async ({ page }) => {
+  for (const theme of themes) {
+    let errors = await open(page, 'cli/', theme, 1280)
+    const ids = await commandIds(page)
+    expect(ids.length).toBeGreaterThan(0)
+    const allIds = await page.locator('[id]').evaluateAll((els) => els.map((e) => e.id))
+    const desktop = page.locator('.right-sidebar starlight-toc')
+    await expect(desktop).toBeVisible()
+    let hrefs = await desktop.locator('a[href^="#"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!.slice(1)))
+    // Overview, then each command in the CLI's order, then Troubleshooting.
+    expect(hrefs[0]).toBe('_top')
+    expect(hrefs.slice(1, 1 + ids.length)).toEqual(ids)
+    expect(hrefs[1 + ids.length]).toBe('troubleshooting')
+    for (const id of hrefs.slice(1)) expect(allIds).toContain(id)
+    await desktop.screenshot({ path: `${outDir}site-cli-toc-${theme}-1280.png` })
+    expect(errors).toEqual([])
+
+    errors = await open(page, 'cli/', theme, 375)
+    const mobile = page.locator('mobile-starlight-toc')
+    await mobile.locator('summary').click()
+    hrefs = await mobile.locator('a[href^="#"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!.slice(1)))
+    expect(hrefs.slice(1, 1 + ids.length)).toEqual(ids)
+    await expect(mobile.getByRole('link', { name: `gh nibfin ${(await page.locator('[data-command]').first().getAttribute('data-command'))!}`, exact: true })).toBeVisible()
+    await page.screenshot({ path: `${outDir}site-cli-toc-${theme}-375.png` })
     expect(errors).toEqual([])
   }
 })
@@ -163,6 +218,28 @@ for (const theme of themes) {
     }
   })
 }
+
+test('live page Issue lists have no list markers', async ({ page }) => {
+  for (const theme of themes) {
+    for (const width of [375, 1280]) {
+      const errors = await open(page, 'live/', theme, width)
+      for (const slot of ['unlinked', 'unread']) {
+        const list = repoView(page).locator(`[data-slot=${slot}] > ul`)
+        await expect(list).toBeVisible()
+        expect(await list.evaluate((ul) => getComputedStyle(ul).paddingLeft)).toBe('0px')
+        const markers = await list.locator('li').evaluateAll((lis) => lis.map((li) => getComputedStyle(li).listStyleType))
+        expect(markers.length).toBeGreaterThan(0)
+        for (const m of markers) expect(m).toBe('none')
+      }
+      await page.locator('[data-slot=unlinked]').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${outDir}site-live-lists-${theme}-${width}.png` })
+      expect(errors).toEqual([])
+    }
+  }
+  // The site's Markdown lists keep their bullets.
+  await open(page, 'cli/', 'dark', 1280)
+  expect(await page.locator('.sl-markdown-content > ul > li').first().evaluate((li) => getComputedStyle(li).listStyleType)).not.toBe('none')
+})
 
 test('live page: runs dialog, links and the repository picker', async ({ page }) => {
   for (const theme of themes) {
