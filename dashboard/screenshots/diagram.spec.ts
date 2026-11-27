@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import { expectDiagramFits, type Shown } from './diagram-fit'
 import { expectClean, expectGutter, expectNonce, prepare, shot, storageKey, widths } from './support'
 
 // Screenshots and checks of the shared site diagram (#456) in its harness
@@ -8,7 +9,13 @@ import { expectClean, expectGutter, expectNonce, prepare, shot, storageKey, widt
 
 const themes = ['dark', 'light'] as const
 const idea = { items: 7, first: 'Idea: Someone writes down a wish.', legend: false }
-const examples = [idea, idea, { items: 6, first: 'Cut: Saw the parts to size.', legend: true }]
+// shown is the presentation each example shows at each width in the
+// harness's column (at most 976 px): together they show every one.
+const examples: { items: number; first: string; legend: boolean; shown: Record<number, Shown> }[] = [
+  { ...idea, shown: { 375: 'stacked', 768: 'TB', 1280: 'LR', 1920: 'LR' } },
+  { ...idea, shown: { 375: 'stacked', 768: 'TB', 1280: 'LR', 1920: 'LR' } },
+  { items: 6, first: 'Cut: Saw the parts to size.', legend: true, shown: { 375: 'TB', 768: 'LR', 1280: 'LR', 1920: 'LR' } },
+]
 
 async function open(page: Page, width: number, theme: (typeof themes)[number]) {
   await page.setViewportSize({ width, height: 900 })
@@ -29,23 +36,13 @@ for (const theme of themes) {
       const figures = page.locator('figure[data-slot=diagram]')
       for (const [i, example] of examples.entries()) {
         const figure = figures.nth(i)
-        // The left-to-right drawing from 768 px up, the top-to-bottom one below.
-        const wide = width >= 768
-        await expect(figure.locator('svg[data-direction=LR]')).toBeVisible({ visible: wide })
-        await expect(figure.locator('svg[data-direction=TB]')).toBeVisible({ visible: !wide })
         for (const svg of await figure.locator('svg').all()) await expect(svg).toHaveAttribute('aria-hidden', 'true')
         // The text alternative lists every node.
         await expect(figure.locator('ol > li')).toHaveCount(example.items)
         await expect(figure.locator('ol > li').first()).toContainText(example.first)
         await expect(figure.locator('[data-slot=diagram-legend]')).toBeVisible({ visible: example.legend })
-        // The shown drawing fits its figure, or scrolls inside it only.
-        const fits = await figure.evaluate((f) => {
-          const box = f.getBoundingClientRect()
-          const svg = [...f.querySelectorAll('svg')].find((s) => s.getBoundingClientRect().width > 0)!
-          const scroller = svg.parentElement!
-          return { figure: box.right <= window.innerWidth, scroller: scroller.getBoundingClientRect().right <= box.right + 0.5 }
-        })
-        expect(fits).toEqual({ figure: true, scroller: true })
+        // Exactly one presentation shows; it fits without sideways scroll.
+        expect(await expectDiagramFits(figure, `example ${i} ${width}px ${theme}`)).toBe(example.shown[width])
       }
       await expectGutter(page)
       await expectClean(w)

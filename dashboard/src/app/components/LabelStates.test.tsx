@@ -30,13 +30,15 @@ describe('LabelStates', () => {
     }
   })
 
-  it('draws one top-to-bottom figure without inline styles', () => {
+  it('draws one top-to-bottom figure and the stacked layout without inline styles', () => {
     expect(html).toMatch(/^<figure[^>]*data-slot="diagram"/)
     expect(html).toContain('Label states, checked in order')
-    const svgs = html.match(/<svg[^>]*>/g) ?? []
+    // One top-to-bottom drawing where it fits, the stacked layout below.
+    const svgs = html.match(/<svg[^>]*data-direction="[^"]*"[^>]*>/g) ?? []
     expect(svgs).toHaveLength(1)
     expect(svgs[0]).toContain('data-direction="TB"')
     expect(svgs[0]).toContain('aria-hidden="true"')
+    expect(html).toMatch(/<div aria-hidden="true" class="block @min-\[\d+px\]:hidden" data-slot="diagram-stacked">/)
     expect(html).not.toMatch(/\sstyle="/)
   })
 })

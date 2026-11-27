@@ -12,13 +12,15 @@ const title = (id: string) => stageLanes.nodes.find((n) => n.id === id)!.title
 describe('StageLanes', () => {
   const html = renderToStaticMarkup(<StageLanes />)
 
-  it('renders statically as one top-to-bottom drawing', () => {
+  it('renders statically as one top-to-bottom drawing and the stacked layout', () => {
     expect(html).toMatch(/^<figure/)
     expect(html).toContain('The stages, by role')
-    const svgs = html.match(/<svg[^>]*>/g) ?? []
+    // One top-to-bottom drawing where it fits, the stacked layout below.
+    const svgs = html.match(/<svg[^>]*data-direction="[^"]*"[^>]*>/g) ?? []
     expect(svgs).toHaveLength(1)
     expect(svgs[0]).toContain('data-direction="TB"')
     expect(svgs[0]).toContain('aria-hidden="true"')
+    expect(html).toMatch(/<div aria-hidden="true" class="block @min-\[\d+px\]:hidden" data-slot="diagram-stacked">/)
     expect(html).not.toMatch(/\sstyle="/)
   })
 
