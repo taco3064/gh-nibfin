@@ -63,6 +63,7 @@ type fakeGitHub struct {
 	notAdmin      map[string]bool // repos paths where the login is not admin
 	defaultBranch string
 	commits       map[string]map[string]string
+	parents       map[string][]string // commit SHA -> parent SHAs
 	refs          map[string]string
 	prs           []*fakePR
 	fail          map[string]error
@@ -88,6 +89,7 @@ func newFake(name string) *fakeGitHub {
 		defaultBranch: "main",
 		commits:       map[string]map[string]string{"c0": {"README.md": "hi"}},
 		refs:          map[string]string{"main": "c0"},
+		parents:       map[string][]string{},
 	}
 }
 
@@ -287,7 +289,7 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 		return map[string]any{"object": map[string]string{"sha": sha}}, nil
 	case method == http.MethodGet && strings.HasPrefix(p, base+"/git/commits/"):
 		sha := strings.TrimPrefix(p, base+"/git/commits/")
-		return map[string]any{"sha": sha, "tree": map[string]string{"sha": "tree-" + sha}}, nil
+		return map[string]any{"sha": sha, "tree": map[string]string{"sha": "tree-" + sha}, "parents": parentsJSON(f.parents[sha])}, nil
 	case method == http.MethodPost && p == base+"/git/trees":
 		files := map[string]string{}
 		for k, v := range f.commits[strings.TrimPrefix(in["base_tree"].(string), "tree-")] {
@@ -308,6 +310,7 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 		f.n++
 		sha := fmt.Sprintf("c%d", f.n)
 		f.commits[sha] = f.commits["pending-"+in["tree"].(string)]
+		f.parents[sha] = toStrings(in["parents"])
 		return map[string]string{"sha": sha}, nil
 	case method == http.MethodPost && p == base+"/git/refs":
 		name := strings.TrimPrefix(in["ref"].(string), "refs/heads/")
@@ -945,4 +948,24 @@ func TestInitBranchWithoutPR(t *testing.T) {
 	if slices.Contains(actions(p), "write branch "+Branch) || !slices.Contains(actions(p), "open PR "+Branch+" into main") || f.refs[Branch] != head || r["number"] != 10 {
 		t.Errorf("rerun plan = %q, result %v", actions(p), r)
 	}
+}
+
+// parentsJSON is a commit object's parents as GitHub returns them.
+func parentsJSON(shas []string) []any {
+	out := []any{}
+	for _, s := range shas {
+		out = append(out, map[string]string{"sha": s})
+	}
+	return out
+}
+
+// toStrings converts a decoded JSON array of strings.
+func toStrings(v any) []string {
+	var out []string
+	a, _ := v.([]any)
+	for _, s := range a {
+		str, _ := s.(string)
+		out = append(out, str)
+	}
+	return out
 }

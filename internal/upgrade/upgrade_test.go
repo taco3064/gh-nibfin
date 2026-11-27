@@ -48,6 +48,7 @@ type fakeGitHub struct {
 	defaultBranch string
 	commits       map[string]map[string]string // commit SHA -> files
 	refs          map[string]string            // branch -> commit SHA
+	parents       map[string][]string          // commit SHA -> parent SHAs
 	prs           []*fakePR
 	// fail makes the first call with this "METHOD path" key fail, after the
 	// write took effect when failAfter is set (a crash after the write).
@@ -64,6 +65,7 @@ func newFake(files map[string]string) *fakeGitHub {
 		defaultBranch: "main",
 		commits:       map[string]map[string]string{"c0": files},
 		refs:          map[string]string{"main": "c0"},
+		parents:       map[string][]string{},
 	}
 }
 
@@ -157,7 +159,7 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 		if _, ok := f.commits[sha]; !ok {
 			return nil, notFound()
 		}
-		return map[string]any{"sha": sha, "tree": map[string]string{"sha": "tree-" + sha}}, nil
+		return map[string]any{"sha": sha, "tree": map[string]string{"sha": "tree-" + sha}, "parents": parentsJSON(f.parents[sha])}, nil
 	case method == http.MethodPost && p == base+"/git/trees":
 		baseTree, _ := in["base_tree"].(string)
 		files := map[string]string{}
@@ -188,6 +190,7 @@ func (f *fakeGitHub) serve(method string, u *url.URL, in map[string]any) (any, e
 		}
 		sha := f.next("c")
 		f.commits[sha] = files
+		f.parents[sha] = toStrings(parents)
 		return map[string]string{"sha": sha}, nil
 	case method == http.MethodPost && p == base+"/git/refs":
 		name := strings.TrimPrefix(in["ref"].(string), "refs/heads/")
@@ -656,4 +659,24 @@ func checks(t *testing.T, r op.Result) []op.Check {
 		t.Fatalf("result has no items: %v", r)
 	}
 	return items
+}
+
+// parentsJSON is a commit object's parents as GitHub returns them.
+func parentsJSON(shas []string) []any {
+	out := []any{}
+	for _, s := range shas {
+		out = append(out, map[string]string{"sha": s})
+	}
+	return out
+}
+
+// toStrings converts a decoded JSON array of strings.
+func toStrings(v any) []string {
+	var out []string
+	a, _ := v.([]any)
+	for _, s := range a {
+		str, _ := s.(string)
+		out = append(out, str)
+	}
+	return out
 }
