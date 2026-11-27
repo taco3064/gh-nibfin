@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -29,6 +30,7 @@ const (
 type fakeGH struct {
 	t      *testing.T
 	routes map[string]any
+	mu     sync.Mutex
 	gets   []string
 	// flight counts the requests in flight on both fake clients.
 	flight *inFlight
@@ -57,7 +59,9 @@ func (f *fakeGH) DoWithContext(_ context.Context, method, p string, body io.Read
 		f.t.Errorf("status sent %s %s", method, p)
 		return fmt.Errorf("write")
 	}
+	f.mu.Lock()
 	f.gets = append(f.gets, p)
+	f.mu.Unlock()
 	v, ok := f.routes[p]
 	if !ok {
 		return &api.HTTPError{StatusCode: http.StatusNotFound, Message: "Not Found"}

@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
 )
@@ -49,6 +53,13 @@ type Activity struct {
 	ContainersError *op.Error `json:"containersError,omitempty"`
 	// Unattributed are running Job containers matched to no slot.
 	Unattributed []ContainerJob `json:"unattributed"`
+	// History is set on a full read's answer: the periods cover the
+	// window. A current read's answer has only the runs in progress.
+	History bool `json:"history"`
+	// CoversFrom, RFC 3339, is set when the window held more runs than
+	// GitHub lists: the periods then reach back only to this time, the
+	// earliest listed run's creation.
+	CoversFrom string `json:"coversFrom,omitempty"`
 }
 
 // SlotActivity is one Runner slot's current Job and busy periods.
@@ -94,17 +105,54 @@ type ContainerJob struct {
 	StartedAt string `json:"startedAt,omitempty"`
 }
 
+// The jobs requests a read part makes at once. Only one read of each part
+// runs at a time, so the reader never has more than
+// historyJobsLimit+currentJobsLimit jobs requests in flight, far below
+// GitHub's 100 concurrent requests, and a current read never queues behind
+// a full read's backlog.
+const (
+	historyJobsLimit = 6
+	currentJobsLimit = 4
+)
+
+// The read parts: the keys of the reader's reads in flight.
+const (
+	partHistory = "history"
+	partCurrent = "current"
+)
+
+// flightJoined is called once a caller has started or joined the read of a
+// part in flight; tests use it to order overlapping reads.
+var flightJoined = func(part string) {}
+
 // ActivityReader reads the activity and keeps each completed run's jobs,
-// keyed by run id and attempt, for its own lifetime.
+// keyed by run id and attempt, for its own lifetime. It runs one read of
+// each part at a time: a caller that arrives while a read of the same part
+// is in flight joins it and gets its answer.
 type ActivityReader struct {
 	mu    sync.Mutex
 	cache map[runKey][]jobJSON
+	reads singleflight.Group
 }
 
 type runKey struct {
 	id      int64
 	attempt int
 }
+
+// currentRead is a current read's answer with the in-progress runs it
+// listed and their jobs. jobs is nil when the read failed; a full read
+// reuses them otherwise.
+type currentRead struct {
+	act  Activity
+	runs []runListJSON
+	jobs map[runKey][]jobJSON
+}
+
+// jobsRead reads the jobs of an execution repository into the named slots
+// and returns the earliest time the periods cover when the window listing
+// was cut off.
+type jobsRead func(r *reader, repo string, from time.Time, byName map[string]*SlotActivity) (string, *op.Error)
 
 // NewActivityReader returns a reader with an empty cache.
 func NewActivityReader() *ActivityReader {
@@ -116,9 +164,104 @@ func (a *ActivityReader) Read(ctx context.Context) (Activity, error) {
 	return a.ReadActivity(ctx, time.Now())
 }
 
-// ReadActivity reads the activity of the window that ends at now. It only
-// reads; every failure is reported in the result.
+// Current reads the Runners' current Jobs now.
+func (a *ActivityReader) Current(ctx context.Context) (Activity, error) {
+	return a.ReadCurrent(ctx, time.Now())
+}
+
+// ReadActivity reads the activity of the window that ends at now: the
+// current Jobs and the busy periods, with History set. It only reads; every
+// failure is reported in the result, and the error is ctx's only, when the
+// caller leaves before the answer.
 func (a *ActivityReader) ReadActivity(ctx context.Context, now time.Time) (Activity, error) {
+	v, err := a.flight(ctx, partHistory, func(ctx context.Context) any { return a.readFull(ctx, now) })
+	if err != nil {
+		return Activity{}, err
+	}
+	return v.(Activity), nil
+}
+
+// ReadCurrent reads only the Runners' current Jobs at now, from the runs in
+// progress: it never lists the window, never touches the cache and leaves
+// History unset. Its periods are those of the runs in progress.
+func (a *ActivityReader) ReadCurrent(ctx context.Context, now time.Time) (Activity, error) {
+	cur, err := a.current(ctx, now)
+	if err != nil {
+		return Activity{}, err
+	}
+	return cur.act, nil
+}
+
+func (a *ActivityReader) current(ctx context.Context, now time.Time) (*currentRead, error) {
+	v, err := a.flight(ctx, partCurrent, func(ctx context.Context) any { return a.readCurrent(ctx, now) })
+	if err != nil {
+		return nil, err
+	}
+	return v.(*currentRead), nil
+}
+
+// flight runs read as the one read of part in flight, or joins the one
+// already running. The read runs without the first caller's cancellation,
+// so one caller leaving fails no other; each caller returns its own
+// ctx.Err() when it leaves first. A read nobody waits for still finishes
+// and fills the cache.
+func (a *ActivityReader) flight(ctx context.Context, part string, read func(context.Context) any) (any, error) {
+	shared := context.WithoutCancel(ctx)
+	ch := a.reads.DoChan(part, func() (any, error) { return read(shared), nil })
+	flightJoined(part)
+	select {
+	case r := <-ch:
+		return r.Val, r.Err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// readCurrent is a current read: the in-progress runs and their jobs.
+func (a *ActivityReader) readCurrent(ctx context.Context, now time.Time) *currentRead {
+	cur := &currentRead{}
+	cur.act = a.read(ctx, now, func(r *reader, repo string, from time.Time, byName map[string]*SlotActivity) (string, *op.Error) {
+		running, _, e := r.sharedRuns(ctx, repo, url.Values{"status": {"in_progress"}}, time.Time{})
+		if e != nil {
+			return "", e
+		}
+		running = uniqueRuns(running)
+		got, e := fetchJobs(ctx, r, repo, running, currentJobsLimit)
+		if e != nil {
+			return "", e
+		}
+		jobs := make(map[runKey][]jobJSON, len(running))
+		for i, run := range running {
+			jobs[runKey{run.ID, run.RunAttempt}] = got[i]
+			addJobs(run, got[i], r.host, from, byName)
+		}
+		sortPeriods(byName)
+		cur.runs, cur.jobs = running, jobs
+		return "", nil
+	})
+	return cur
+}
+
+// readFull is a full read. It first takes a current read's answer, joining
+// one in flight or starting one, and reuses its in-progress runs and jobs;
+// when that read failed, it lists and fetches the in-progress runs itself.
+// The two share no request, so neither's failure fails the other.
+func (a *ActivityReader) readFull(ctx context.Context, now time.Time) Activity {
+	cur, err := a.current(ctx, now)
+	if err != nil || cur.jobs == nil {
+		cur = nil
+	}
+	act := a.read(ctx, now, func(r *reader, repo string, from time.Time, byName map[string]*SlotActivity) (string, *op.Error) {
+		return a.readHistory(ctx, r, repo, from, byName, cur)
+	})
+	act.History = true
+	return act
+}
+
+// read reads the host slots and, when they name an execution repository on
+// the gh login's host, calls jobs for the slots' current Jobs and periods.
+// A jobs failure clears both; the Job containers then fill the currents.
+func (a *ActivityReader) read(ctx context.Context, now time.Time, jobs jobsRead) Activity {
 	now = now.UTC()
 	from := now.Add(-activityWindow)
 	act := Activity{From: from.Format(time.RFC3339), To: now.Format(time.RFC3339), Runners: []SlotActivity{}, Unattributed: []ContainerJob{}}
@@ -153,9 +296,12 @@ func (a *ActivityReader) ReadActivity(ctx context.Context, now time.Time) (Activ
 			act.JobsError = op.AsError(op.Errorf(op.CodeAuthUnavailable, "the Runners serve %s, on another host than the gh login's (%s)", hs.Repo, gh))
 			break
 		}
-		if e := a.readJobs(ctx, execHost, parts[1]+"/"+parts[2], from, byName); e != nil {
-			act.JobsError = e
+		c, err := newREST(execHost)
+		if err != nil {
+			act.JobsError = op.AsError(op.Errorf(op.CodeAuthUnavailable, "cannot use the gh login for %s: %v", execHost, err))
+			break
 		}
+		act.CoversFrom, act.JobsError = jobs(&reader{c: c, host: execHost}, parts[1]+"/"+parts[2], from, byName)
 	}
 	if act.JobsError != nil {
 		// Periods read before the failure are not a complete picture.
@@ -163,6 +309,7 @@ func (a *ActivityReader) ReadActivity(ctx context.Context, now time.Time) (Activ
 			act.Runners[i].Periods = []Period{}
 			act.Runners[i].Current = nil
 		}
+		act.CoversFrom = ""
 	}
 	if execHost == "" && hs.Repo != "" {
 		execHost, _, _ = strings.Cut(hs.Repo, "/")
@@ -171,7 +318,7 @@ func (a *ActivityReader) ReadActivity(ctx context.Context, now time.Time) (Activ
 		execHost, _ = defaultHost()
 	}
 	a.attribute(&act, hs, execHost)
-	return act, nil
+	return act
 }
 
 type runListJSON struct {
@@ -192,71 +339,150 @@ type jobJSON struct {
 	HTMLURL     string  `json:"html_url"`
 }
 
-// readJobs lists the shared-runner runs created in the window and those in
-// progress, reads each run's latest jobs and gives each named slot its
-// current Job and periods.
-func (a *ActivityReader) readJobs(ctx context.Context, host, repo string, from time.Time, byName map[string]*SlotActivity) *op.Error {
-	c, err := newREST(host)
-	if err != nil {
-		return op.AsError(op.Errorf(op.CodeAuthUnavailable, "cannot use the gh login for %s: %v", host, err))
-	}
-	r := &reader{c: c, host: host}
+// readHistory lists the shared-runner runs created in the window and those
+// in progress, reads each run's latest jobs and gives each named slot its
+// current Job and periods. The in-progress runs and their jobs come from
+// cur when it is set; completed runs come from the cache when they are in
+// it. It returns the earliest listed run's creation time when the window
+// listing was cut off before reaching the window start.
+func (a *ActivityReader) readHistory(ctx context.Context, r *reader, repo string, from time.Time, byName map[string]*SlotActivity, cur *currentRead) (string, *op.Error) {
 	created := ">=" + from.Format("2006-01-02T15:04:05") + "+00:00"
-	runs, e := r.sharedRuns(ctx, repo, url.Values{"created": {created}}, from)
+	runs, cut, e := r.sharedRuns(ctx, repo, url.Values{"created": {created}}, from)
 	if e != nil {
-		return e
+		return "", e
 	}
-	running, e := r.sharedRuns(ctx, repo, url.Values{"status": {"in_progress"}}, time.Time{})
-	if e != nil {
-		return e
+	coversFrom := ""
+	if cut {
+		coversFrom = earliest(runs)
 	}
-	seen := map[int64]bool{}
-	var all []runListJSON
-	for _, run := range append(runs, running...) {
-		if !seen[run.ID] {
-			seen[run.ID] = true
-			all = append(all, run)
+	var running []runListJSON
+	seenStatus := map[runKey]string{}
+	if cur != nil {
+		running = cur.runs
+		for _, run := range cur.runs {
+			seenStatus[runKey{run.ID, run.RunAttempt}] = run.Status
 		}
+	} else if running, _, e = r.sharedRuns(ctx, repo, url.Values{"status": {"in_progress"}}, time.Time{}); e != nil {
+		return "", e
 	}
+	all := uniqueRuns(append(runs, running...))
 
+	jobs := make([][]jobJSON, len(all))
 	keep := map[runKey]bool{}
-	for _, run := range all {
+	var need []runListJSON
+	var at []int
+	a.mu.Lock()
+	for i, run := range all {
 		k := runKey{run.ID, run.RunAttempt}
 		keep[k] = true
-		a.mu.Lock()
-		jobs, cached := a.cache[k]
-		a.mu.Unlock()
-		if !cached {
-			var e *op.Error
-			if jobs, e = r.runJobs(ctx, repo, run.ID); e != nil {
-				return e
-			}
-			if run.Status == "completed" {
-				a.mu.Lock()
-				a.cache[k] = jobs
-				a.mu.Unlock()
-			}
+		if j, ok := a.cache[k]; ok {
+			jobs[i] = j
+			continue
 		}
-		addJobs(run, jobs, host, from, byName)
+		// A run the current read saw in the same state; one that has
+		// changed state since is new data and read again.
+		if st, ok := seenStatus[k]; ok && st == run.Status {
+			jobs[i] = cur.jobs[k]
+			continue
+		}
+		need = append(need, run)
+		at = append(at, i)
+	}
+	a.mu.Unlock()
+
+	got, e := fetchJobs(ctx, r, repo, need, historyJobsLimit)
+	if e != nil {
+		return "", e
+	}
+	a.mu.Lock()
+	for n, i := range at {
+		jobs[i] = got[n]
+		if run := all[i]; run.Status == "completed" {
+			a.cache[runKey{run.ID, run.RunAttempt}] = got[n]
+		}
 	}
 	// Runs that left the window are no longer needed.
-	a.mu.Lock()
 	for k := range a.cache {
 		if !keep[k] {
 			delete(a.cache, k)
 		}
 	}
 	a.mu.Unlock()
+	for i, run := range all {
+		addJobs(run, jobs[i], r.host, from, byName)
+	}
+	sortPeriods(byName)
+	return coversFrom, nil
+}
+
+// uniqueRuns keeps the first of each run id, in order.
+func uniqueRuns(runs []runListJSON) []runListJSON {
+	seen := map[int64]bool{}
+	var out []runListJSON
+	for _, run := range runs {
+		if !seen[run.ID] {
+			seen[run.ID] = true
+			out = append(out, run)
+		}
+	}
+	return out
+}
+
+// earliest is the earliest creation time among runs, RFC 3339.
+func earliest(runs []runListJSON) string {
+	var first time.Time
+	for _, run := range runs {
+		if t, err := time.Parse(time.RFC3339, run.CreatedAt); err == nil && (first.IsZero() || t.Before(first)) {
+			first = t
+		}
+	}
+	if first.IsZero() {
+		return ""
+	}
+	return first.UTC().Format(time.RFC3339)
+}
+
+// fetchJobs reads the runs' latest jobs, at most limit requests at once,
+// and returns them by the runs' index. The first failure cancels the rest
+// of this call's requests, and only those, and is returned.
+func fetchJobs(ctx context.Context, r *reader, repo string, runs []runListJSON, limit int) ([][]jobJSON, *op.Error) {
+	out := make([][]jobJSON, len(runs))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(limit)
+	for i, run := range runs {
+		g.Go(func() error {
+			if gctx.Err() != nil {
+				return gctx.Err()
+			}
+			jobs, e := r.runJobs(gctx, repo, run.ID)
+			if e != nil {
+				return e
+			}
+			out[i] = jobs
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		var e *op.Error
+		if errors.As(err, &e) {
+			return nil, e
+		}
+		return nil, apiErr(op.CodeGitHubAPIFailed, "list the jobs of the shared-runner runs of "+repo, err)
+	}
+	return out, nil
+}
+
+func sortPeriods(byName map[string]*SlotActivity) {
 	for _, s := range byName {
 		sort.SliceStable(s.Periods, func(i, j int) bool { return s.Periods[i].Start < s.Periods[j].Start })
 	}
-	return nil
 }
 
 // sharedRuns lists the shared-runner workflow's runs with q, newest first,
 // up to GitHub's 1,000 results. With a non-zero from, paging stops at the
-// first run created before it.
-func (r *reader) sharedRuns(ctx context.Context, repo string, q url.Values, from time.Time) ([]runListJSON, *op.Error) {
+// first run created before it, and cut reports that the listing stopped at
+// the result limit before reaching such a run.
+func (r *reader) sharedRuns(ctx context.Context, repo string, q url.Values, from time.Time) (runs []runListJSON, cut bool, e *op.Error) {
 	var out []runListJSON
 	seen := 0
 	for page := 1; ; page++ {
@@ -267,7 +493,7 @@ func (r *reader) sharedRuns(ctx context.Context, repo string, q url.Values, from
 		}
 		p := base(repo) + "/actions/workflows/" + sharedRunner + "/runs?" + q.Encode()
 		if err := r.get(ctx, p, &body); err != nil {
-			return nil, apiErr(op.CodeGitHubAPIFailed, "list the shared-runner runs of "+repo, err)
+			return nil, false, apiErr(op.CodeGitHubAPIFailed, "list the shared-runner runs of "+repo, err)
 		}
 		older := false
 		for _, run := range body.Runs {
@@ -283,8 +509,11 @@ func (r *reader) sharedRuns(ctx context.Context, repo string, q url.Values, from
 			out = append(out, run)
 		}
 		seen += len(body.Runs)
-		if len(body.Runs) < perPage || seen >= maxResults || older {
-			return out, nil
+		if len(body.Runs) < perPage || older {
+			return out, false, nil
+		}
+		if seen >= maxResults {
+			return out, !from.IsZero(), nil
 		}
 	}
 }

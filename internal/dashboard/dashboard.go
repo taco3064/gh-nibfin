@@ -49,8 +49,10 @@ type Options struct {
 	// /api/live streams what it sends. Nil leaves the route unavailable.
 	Watch func(ctx context.Context, send func(any)) error
 	// Activity reads the Runner view's activity; GET /api/runner-activity
-	// serves it. Nil leaves the route unavailable.
-	Activity func(ctx context.Context) (any, error)
+	// serves it. part is "" for the full read or "current" for the
+	// Runners' current Jobs only (?part=current). Nil leaves the route
+	// unavailable.
+	Activity func(ctx context.Context, part string) (any, error)
 }
 
 // Header names of the session proof and the session.
