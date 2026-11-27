@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // probeScript prints what the runner commands and status need to know
@@ -44,6 +45,16 @@ type hostProbe struct {
 // returned; a failure is code with the script's stderr, or podman_failed
 // when podman machine ssh itself failed. secret is scrubbed from the error.
 func hostScript(ctx context.Context, h runnerHost, code, what, script string, stdin io.Reader, secret string, args ...string) (string, int, error) {
+	return runHostScript(ctx, h, code, what, script, stdin, secret, false, args...)
+}
+
+// hostScriptOutput is hostScript whose failure keeps the child's exit status
+// and the masked, bounded end of both its stderr and its stdout.
+func hostScriptOutput(ctx context.Context, h runnerHost, code, what, script string, stdin io.Reader, secret string, args ...string) (string, int, error) {
+	return runHostScript(ctx, h, code, what, script, stdin, secret, true, args...)
+}
+
+func runHostScript(ctx context.Context, h runnerHost, code, what, script string, stdin io.Reader, secret string, keepOutput bool, args ...string) (string, int, error) {
 	var stdout, stderr bytes.Buffer
 	c := h.Shell(ctx, script, args...)
 	c.Stdin = stdin
@@ -57,14 +68,98 @@ func hostScript(ctx context.Context, h runnerHost, code, what, script string, st
 		return "", -1, Errorf(CodeCancelled, "cancelled")
 	}
 	exit := exitCode(err)
-	msg := stderrText(err, &stderr)
-	if secret != "" {
-		msg = strings.ReplaceAll(msg, secret, "[token]")
+	var msg string
+	if keepOutput {
+		what = maskSecret(what, secret)
+		msg = childFailure(err, exit, stderr.String(), stdout.String(), secret)
+	} else {
+		msg = maskSecret(stderrText(err, &stderr), secret)
 	}
 	if !h.Local() && exit == 125 {
 		return "", exit, Errorf(CodePodmanFailed, "podman machine ssh (%s): %s", what, msg)
 	}
 	return "", exit, Errorf(code, "%s on %s: %s", what, h.Describe(), msg)
+}
+
+// The kept end of each child output stream.
+const (
+	childTailLines = 20
+	childTailBytes = 2048
+)
+
+const childCutMark = "[earlier output cut] "
+
+// maskSecret replaces every occurrence of secret in s.
+func maskSecret(s, secret string) string {
+	if secret == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, secret, "[token]")
+}
+
+// childFailure describes a failed child: its exit status, then each
+// non-empty output stream, labelled, masked and cut to its last lines.
+func childFailure(err error, exit int, stderr, stdout, secret string) string {
+	msg := err.Error()
+	if exit >= 0 {
+		msg = "exit status " + strconv.Itoa(exit)
+	}
+	for _, s := range []struct{ name, text string }{{"stderr", stderr}, {"stdout", stdout}} {
+		if t := outputTail(maskSecret(s.text, secret)); t != "" {
+			msg += "; " + s.name + ": " + t
+		}
+	}
+	return msg
+}
+
+// outputTail keeps the last non-empty lines of out, at most childTailLines
+// lines and childTailBytes bytes, joined by " | ". Earlier output that was
+// dropped is marked.
+func outputTail(out string) string {
+	var lines []string
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	cut := len(lines) > childTailLines
+	if cut {
+		lines = lines[len(lines)-childTailLines:]
+	}
+	// Keep whole lines from the end while they fit; a last line longer than
+	// the cap keeps its own end, on a rune boundary.
+	start, size := len(lines), 0
+	for start > 0 {
+		n := len(lines[start-1])
+		if start < len(lines) {
+			n += len(" | ")
+		}
+		if size+n > childTailBytes {
+			break
+		}
+		size += n
+		start--
+	}
+	if start == len(lines) {
+		l := lines[len(lines)-1]
+		l = l[len(l)-childTailBytes:]
+		for len(l) > 0 && !utf8.RuneStart(l[0]) {
+			l = l[1:]
+		}
+		lines[len(lines)-1] = l
+		start, cut = len(lines)-1, true
+	}
+	if start > 0 {
+		cut = true
+	}
+	t := strings.Join(lines[start:], " | ")
+	if cut {
+		t = childCutMark + t
+	}
+	return t
 }
 
 // probeHost runs probeScript; a failure is code.
