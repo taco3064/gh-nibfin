@@ -2,7 +2,16 @@ import { useId } from 'react'
 
 import { cn } from '@/lib/utils'
 
-import { describeDiagram, edgeText, layoutDiagram, sizes, type DiagramSpec, type Placement, type Point } from './layout'
+import {
+  describeDiagram,
+  edgeText,
+  layoutDiagram,
+  sizes,
+  titlePlate,
+  type DiagramSpec,
+  type Placement,
+  type Point,
+} from './layout'
 
 export interface DiagramProps {
   spec: DiagramSpec
@@ -151,16 +160,7 @@ function Drawing({ placement: p, marker }: { placement: Placement; marker: strin
       {p.groups.map((g, i) =>
         g.titleLines.map((t) => (
           <g key={`t${i}-${t.y}`}>
-            {p.groupStyle === 'frames' && (
-              <rect
-                x={t.x - 4}
-                y={t.y - s.groupTitleLine + 3}
-                width={t.text.length * s.groupTitleCharWidth + 8}
-                height={s.groupTitleLine + 2}
-                rx={3}
-                className="fill-background"
-              />
-            )}
+            {p.groupStyle === 'frames' && <rect {...titlePlate(t)} rx={3} className="fill-background" />}
             <text x={t.x} y={t.y} fontSize={s.groupTitleSize} fontWeight={600} className="fill-muted-foreground font-heading">
               {t.text}
             </text>

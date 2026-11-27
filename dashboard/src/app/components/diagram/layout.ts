@@ -225,6 +225,12 @@ function labelSize(text: string): { lines: string[]; width: number; height: numb
   return { lines, width: longest * s.labelCharWidth + 2 * s.labelPad, height: lines.length * s.labelLine + s.labelPad }
 }
 
+// titlePlate is the background plate under one line of a group title.
+export function titlePlate(t: { text: string; x: number; y: number }): Box {
+  const s = sizes
+  return { x: t.x - 4, y: t.y - s.groupTitleLine + 3, width: t.text.length * s.groupTitleCharWidth + 8, height: s.groupTitleLine + 2 }
+}
+
 // groupTitle wraps a group title to the given width.
 function groupTitle(title: string, width: number) {
   const s = sizes
@@ -272,9 +278,16 @@ type Raw = Pick<Placement, 'nodes' | 'edges' | 'groups'>
 
 // dagreGraph lays out the nodes and edges with dagre; with compound set,
 // each group becomes a cluster that keeps its members together.
-function dagreGraph(spec: DiagramSpec, direction: Direction, content: Content, labels: Labels, compound: boolean) {
+function dagreGraph(
+  spec: DiagramSpec,
+  direction: Direction,
+  content: Content,
+  labels: Labels,
+  compound: boolean,
+  sep = { nodesep: 24, ranksep: 40 },
+) {
   const g = new dagre.graphlib.Graph({ compound, multigraph: true })
-  g.setGraph({ rankdir: direction, nodesep: 24, ranksep: 40, edgesep: 12, marginx: 0, marginy: 0 })
+  g.setGraph({ rankdir: direction, ...sep, edgesep: 12, marginx: 0, marginy: 0 })
   for (const n of spec.nodes) {
     const c = content.get(n.id)!
     g.setNode(nodeKey(n.id), { width: c.width, height: c.height })
@@ -292,9 +305,50 @@ function dagreGraph(spec: DiagramSpec, direction: Direction, content: Content, l
   return g
 }
 
+// titleRoom is the space a frame keeps above its members for its title:
+// the title, then a gap that leaves an arrowhead entering a member's top
+// clear of the title's plate.
+const titleRoom = (lines: number) => 10 + lines * sizes.groupTitleLine + 10
+
+function membersOf(spec: DiagramSpec, nodes: PlacedNode[], group: string) {
+  return nodes.filter((n) => spec.nodes.find((m) => m.id === n.id)!.group === group)
+}
+
+const bounds = (boxes: Box[]) => {
+  const x = Math.min(...boxes.map((b) => b.x))
+  const y = Math.min(...boxes.map((b) => b.y))
+  return {
+    x,
+    y,
+    width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
+    height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
+  }
+}
+
 function layoutFrames(spec: DiagramSpec, direction: Direction, content: Content, labels: Labels): Raw {
   const s = sizes
-  const g = dagreGraph(spec, direction, content, labels, (spec.groups ?? []).length > 0)
+  const compound = (spec.groups ?? []).length > 0
+  // dagre keeps every other node out of a cluster's box, but how much room
+  // it leaves above the members depends on the spacing. Widen the spacing
+  // across the top until every cluster has room for its title.
+  const sep = { nodesep: 24, ranksep: 40 }
+  let g = dagreGraph(spec, direction, content, labels, compound, sep)
+  for (let round = 0; compound && round < 4; round++) {
+    let short = 0
+    for (const gr of spec.groups ?? []) {
+      const cl = g.node(groupKey(gr.id)) as { x: number; y: number; width: number; height: number } | undefined
+      if (!cl?.width) continue
+      const members = spec.nodes.filter((n) => n.group === gr.id).map((n) => g.node(nodeKey(n.id)))
+      const top = Math.min(...members.map((m) => m.y - m.height / 2))
+      const width = Math.max(...members.map((m) => m.x + m.width / 2)) - Math.min(...members.map((m) => m.x - m.width / 2))
+      const lines = groupTitle(gr.title, width + 2 * s.groupPad).lines.length
+      short = Math.max(short, titleRoom(lines) - (top - (cl.y - cl.height / 2)))
+    }
+    if (short <= 0) break
+    if (direction === 'TB') sep.ranksep += Math.ceil(short) * 2
+    else sep.nodesep += Math.ceil(short) * 2
+    g = dagreGraph(spec, direction, content, labels, compound, sep)
+  }
   const nodes: PlacedNode[] = spec.nodes.map((n) => {
     const p = g.node(nodeKey(n.id))
     const c = content.get(n.id)!
@@ -318,15 +372,12 @@ function layoutFrames(spec: DiagramSpec, direction: Direction, content: Content,
   })
   const groups: PlacedGroup[] = []
   for (const gr of spec.groups ?? []) {
-    const members = nodes.filter((n) => spec.nodes.find((m) => m.id === n.id)!.group === gr.id)
+    const members = membersOf(spec, nodes, gr.id)
     if (members.length === 0) continue
-    const minX = Math.min(...members.map((m) => m.x))
-    const maxX = Math.max(...members.map((m) => m.x + m.width))
-    const minY = Math.min(...members.map((m) => m.y))
-    const maxY = Math.max(...members.map((m) => m.y + m.height))
-    const title = groupTitle(gr.title, maxX - minX + 2 * s.groupPad)
-    let box: Box = { x: minX - s.groupPad, y: minY - title.height - 6, width: maxX - minX + 2 * s.groupPad, height: 0 }
-    box.height = maxY + s.groupPad - box.y
+    const m = bounds(members)
+    const title = groupTitle(gr.title, m.width + 2 * s.groupPad)
+    const room = titleRoom(title.lines.length)
+    let box: Box = { x: m.x - s.groupPad, y: m.y - room, width: m.width + 2 * s.groupPad, height: m.height + room + s.groupPad }
     // Keep the frame inside dagre's cluster, which no other node enters.
     const cl = g.node(groupKey(gr.id)) as { x: number; y: number; width: number; height: number } | undefined
     if (cl?.width) {
@@ -380,7 +431,15 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   const laneGap = 8
   const pad = s.groupPad
   const maxLabel = Math.max(0, ...labels.map((l) => (l ? (lr ? l.width : l.height) : 0)))
-  const flowGap = Math.max(40, maxLabel + 32)
+  // Forward edges bend in the gap after their source's rank, each on its
+  // own line (slot), so no two edges share a segment there. The gap fits the
+  // slots, then a label clear of them, centred in the gap.
+  const forwardOf = (e: DiagramEdge) => rankOf.get(e.to)! > rankOf.get(e.from)!
+  const slotStart = 10
+  const slotStep = 8
+  const perGap = Array.from({ length: ranks }, (_, r) => spec.edges.filter((e) => forwardOf(e) && rankOf.get(e.from) === r).length)
+  const slots = Math.max(1, ...perGap)
+  const flowGap = Math.max(40, maxLabel + 2 * (slotStart + 4 + (slots - 1) * slotStep))
 
   // cells[lane][rank] lists the lane's nodes of that rank in dagre's order.
   const cells = lanes.map((lane) =>
@@ -400,9 +459,10 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
 
   const nodes = new Map<string, PlacedNode>()
   const groups: PlacedGroup[] = []
+  let rankStart: number[]
   if (lr) {
     const width = rankSize.reduce((a, b) => a + b, 0) + (ranks - 1) * flowGap + 2 * pad
-    const rankStart = rankSize.map((_, r) => pad + rankSize.slice(0, r).reduce((a, b) => a + b, 0) + r * flowGap)
+    rankStart = rankSize.map((_, r) => pad + rankSize.slice(0, r).reduce((a, b) => a + b, 0) + r * flowGap)
     let y = 0
     lanes.forEach((lane, li) => {
       const title = groupTitle(lane.title || ' ', width)
@@ -431,7 +491,7 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
     const laneWidth = laneContent.map((c) => c + 2 * pad)
     const titles = lanes.map((lane, li) => groupTitle(lane.title || ' ', laneWidth[li]))
     const header = Math.max(pad, ...lanes.map((lane, li) => (lane.title ? titles[li].height + 4 : 0)))
-    const rankStart = rankSize.map((_, r) => header + rankSize.slice(0, r).reduce((a, b) => a + b, 0) + r * flowGap)
+    rankStart = rankSize.map((_, r) => header + rankSize.slice(0, r).reduce((a, b) => a + b, 0) + r * flowGap)
     const height = header + rankSize.reduce((a, b) => a + b, 0) + (ranks - 1) * flowGap + pad
     let x = 0
     lanes.forEach((lane, li) => {
@@ -461,7 +521,6 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   // Forward edges leave and enter their boxes at separate ports, spread
   // along the side in the order of the other end, so no two edges share a
   // segment next to a box.
-  const forwardOf = (e: DiagramEdge) => rankOf.get(e.to)! > rankOf.get(e.from)!
   const crossCentre = (id: string) => {
     const n = nodes.get(id)!
     return lr ? n.y + n.height / 2 : n.x + n.width / 2
@@ -482,7 +541,14 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
   }
   const outPort = ports('from')
   const inPort = ports('to')
-  const bend = 12
+  const bendAt = new Map<number, number>()
+  for (let r = 0; r < ranks; r++) {
+    spec.edges
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => forwardOf(e) && rankOf.get(e.from) === r)
+      .sort((p, q) => outPort.get(p.i)! - outPort.get(q.i)! || inPort.get(p.i)! - inPort.get(q.i)! || p.i - q.i)
+      .forEach(({ i }, k) => bendAt.set(i, rankStart[r] + rankSize[r] + slotStart + k * slotStep))
+  }
 
   const edges: PlacedEdge[] = spec.edges.map((e, i) => {
     const a = nodes.get(e.from)!
@@ -490,20 +556,20 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
     let points: Point[]
     let mid: Point
     if (forwardOf(e)) {
-      // Bend just after the source; the label sits on the edge's own last
-      // stretch, in the gap before the target.
+      // Bend on the edge's own slot after the source's rank; the label sits
+      // on the edge's own last stretch, centred in the gap before the target.
       const so = outPort.get(i)!
       const ti = inPort.get(i)!
+      const m = bendAt.get(i)!
+      const gapMid = rankStart[rankOf.get(e.to)!] - flowGap / 2
       if (lr) {
         const sx = a.x + a.width
-        const mx = sx + bend
-        points = so === ti ? [{ x: sx, y: so }, { x: b.x, y: ti }] : [{ x: sx, y: so }, { x: mx, y: so }, { x: mx, y: ti }, { x: b.x, y: ti }]
-        mid = { x: b.x - flowGap / 2, y: ti }
+        points = so === ti ? [{ x: sx, y: so }, { x: b.x, y: ti }] : [{ x: sx, y: so }, { x: m, y: so }, { x: m, y: ti }, { x: b.x, y: ti }]
+        mid = { x: gapMid, y: ti }
       } else {
         const sy = a.y + a.height
-        const my = sy + bend
-        points = so === ti ? [{ x: so, y: sy }, { x: ti, y: b.y }] : [{ x: so, y: sy }, { x: so, y: my }, { x: ti, y: my }, { x: ti, y: b.y }]
-        mid = { x: ti, y: b.y - flowGap / 2 }
+        points = so === ti ? [{ x: so, y: sy }, { x: ti, y: b.y }] : [{ x: so, y: sy }, { x: so, y: m }, { x: ti, y: m }, { x: ti, y: b.y }]
+        mid = { x: ti, y: gapMid }
       }
     } else {
       // Same rank or against the flow (a cycle): a straight line between
