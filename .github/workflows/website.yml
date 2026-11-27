@@ -45,10 +45,35 @@ jobs:
         if: steps.site.outputs.exists == 'true'
         working-directory: dashboard
         run: npm ci
+      # The Sentry DSN is public by design; empty means the site loads no Sentry code (#481).
       - name: Build
         if: steps.site.outputs.exists == 'true'
         working-directory: dashboard
+        env:
+          WEBSITE_SENTRY_DSN: ${{ vars.WEBSITE_SENTRY_DSN }}
         run: npm run build
+      # Uploads Debug-ID source maps for this commit to Sentry (#481). Only this step sees
+      # the token; without the token or the DSN the step is skipped and the run stays green.
+      - name: Upload source maps to Sentry
+        if: steps.site.outputs.exists == 'true'
+        working-directory: dashboard
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          WEBSITE_SENTRY_DSN: ${{ vars.WEBSITE_SENTRY_DSN }}
+          SENTRY_URL: https://de.sentry.io/
+          SENTRY_ORG: na-43k
+          SENTRY_PROJECT: nibfin-website
+        # inject rewrites every JS file, so it runs only when the build includes Sentry.
+        run: |
+          if [[ -z "$SENTRY_AUTH_TOKEN" || -z "$WEBSITE_SENTRY_DSN" ]]; then
+            echo "SENTRY_AUTH_TOKEN or WEBSITE_SENTRY_DSN is not set; source maps were not uploaded." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          npm run sentry-sourcemaps
+      # The published site never serves source maps.
+      - name: Remove source maps
+        if: steps.site.outputs.exists == 'true'
+        run: find dashboard/dist-site -name '*.map' -type f -delete
       # One artifact name per attempt, so a re-run never finds an earlier attempt's.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: steps.site.outputs.exists == 'true'
