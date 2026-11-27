@@ -165,6 +165,7 @@ for (const theme of themes) {
       await expectDirection(page, width)
       // Every graph node keeps one even border with its radius (#488).
       expect(await unevenRoundedBorders(page, page.locator('[data-slot=graph-region]')), 'graph: rounded boxes with uneven borders').toEqual([])
+      if (width >= 700) await expectOpensOnFirstNode(page)
       await region.focus()
       await expect(region).toBeFocused()
       await shot(page, `repo-graph-top-${theme}-${width}`, false)
@@ -184,6 +185,41 @@ async function expectInside(page: Page, el: Locator) {
       return !!r && !!t && t.x >= r.x - 0.5 && t.y >= r.y - 0.5 && t.x + t.width <= r.x + r.width + 0.5 && t.y + t.height <= r.y + r.height + 0.5
     })
     .toBe(true)
+}
+
+// expectOpensOnFirstNode waits until a graph too large to fit opens on its
+// first matched node in reading order (leftmost, then topmost, then lowest
+// number): that node lies wholly inside the region with its top left at the
+// region's padding, another node is in view, and the region's top-left
+// quarter shows a node rather than empty canvas.
+async function expectOpensOnFirstNode(page: Page) {
+  await expect
+    .poll(() =>
+      graphRegion(page).evaluate((el, pad) => {
+        const r = el.getBoundingClientRect()
+        const nodes = [...el.querySelectorAll<HTMLElement>('[data-node]')].map((n) => ({
+          key: n.dataset.node!,
+          context: n.hasAttribute('data-context'),
+          b: n.getBoundingClientRect(),
+        }))
+        const num = (k: string) => Number(k.slice(k.lastIndexOf('#') + 1))
+        const first = nodes
+          .filter((n) => !n.context)
+          .sort((p, q) => Math.round(p.b.left) - Math.round(q.b.left) || Math.round(p.b.top) - Math.round(q.b.top) || num(p.key) - num(q.key))[0]
+        if (!first) return 'no matched node'
+        const inside = first.b.left >= r.left - 0.5 && first.b.top >= r.top - 0.5 && first.b.right <= r.right + 0.5 && first.b.bottom <= r.bottom + 0.5
+        if (!inside) return `${first.key} not wholly inside`
+        const x0 = r.left + el.clientLeft + pad
+        const y0 = r.top + el.clientTop + pad
+        if (Math.abs(first.b.left - x0) > 2 || Math.abs(first.b.top - y0) > 2) return `${first.key} at ${first.b.left - r.left},${first.b.top - r.top}`
+        const meets = (b: DOMRect, left: number, top: number, right: number, bottom: number) => b.right > left && b.left < right && b.bottom > top && b.top < bottom
+        const others = nodes.filter((n) => n !== first && meets(n.b, r.left, r.top, r.right, r.bottom))
+        if (others.length === 0) return 'no other node in view'
+        const quarter = nodes.some((n) => meets(n.b, r.left, r.top, r.left + r.width / 2, r.top + r.height / 2))
+        return quarter ? 'ok' : 'top-left quarter empty'
+      }, 12),
+    )
+    .toBe('ok')
 }
 
 // expectDirection checks the layout of the graph region at a width: top to
