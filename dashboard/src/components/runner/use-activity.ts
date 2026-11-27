@@ -1,32 +1,33 @@
 import { useEffect, useState } from 'react'
 
-import { apiGet, type ApiError, type Outcome } from '@/lib/session'
+import { cyclesView, rollCycle, type ActivityCycle, type ActivityCycles, type ActivityView } from '@/lib/runner'
+import { apiGet, type Outcome } from '@/lib/session'
 import type { Activity } from '@/lib/status'
 
-export type ActivityState =
-  | { state: 'loading'; activity?: Activity }
-  | { state: 'loaded'; activity: Activity }
-  | { state: 'failed'; error: ApiError }
+export type { ActivityView, TimelineState } from '@/lib/runner'
 
 // useActivity reads the Runner activity when the view mounts and again
 // whenever read changes: the view passes its person-view data, so a newer
-// status read reads the activity again. It only reads and never drives
-// anything; a newer read wins over an older one still in flight. While a
-// newer read runs, the last activity stays shown.
-export function useActivity(read: unknown): ActivityState {
-  const [got, setGot] = useState<{ read: unknown; outcome: Outcome<Activity> } | null>(null)
+// status read reads the activity again. Each cycle asks for the Runners'
+// current Jobs first and the full read with the 24-hour history next; the
+// server answers the current part without waiting for the history and
+// joins a read already in flight. It only reads and never drives anything;
+// answers of an older cycle still in flight are dropped. Until the newer
+// cycle answers, the last answers stay shown (see activityView).
+export function useActivity(read: unknown): ActivityView {
+  const [got, setGot] = useState<ActivityCycles | null>(null)
   useEffect(() => {
     let live = true
-    void apiGet<Activity>('/api/runner-activity').then((outcome) => {
-      if (live) setGot({ read, outcome })
-    })
+    const take = (part: keyof ActivityCycle) => (outcome: Outcome<Activity>) => {
+      if (live) setGot((g) => rollCycle(g, read, part, outcome))
+    }
+    void apiGet<Activity>('/api/runner-activity?part=current').then(take('current'))
+    void apiGet<Activity>('/api/runner-activity').then(take('history'))
     return () => {
       live = false
     }
   }, [read])
-  if (!got) return { state: 'loading' }
-  if (!got.outcome.ok) return { state: 'failed', error: got.outcome.error }
-  return got.read === read ? { state: 'loaded', activity: got.outcome.value } : { state: 'loading', activity: got.outcome.value }
+  return cyclesView(got, read)
 }
 
 // useNow is the time in ms, renewed every step ms, for elapsed-time labels.

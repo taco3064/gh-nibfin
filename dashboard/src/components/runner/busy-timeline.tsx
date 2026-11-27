@@ -4,15 +4,17 @@ import { Note } from '@/components/shell/note'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { clock, hourTicks, laneBars, periodLabel, type Bar } from '@/lib/runner'
 import type { Activity, RunnerState } from '@/lib/status'
-import { cn } from '@/lib/utils'
+import { cn, formatTime } from '@/lib/utils'
 
-import type { ActivityState } from './use-activity'
+import type { TimelineState } from './use-activity'
 
 // BusyTimeline is the "Last 24 hours" card: one lane per Runner slot with
 // its busy periods from the execution repository's jobs, failed ones in
-// the danger color. When the jobs could not be read it says why and draws
-// no lanes.
-export function BusyTimeline({ slots, activity }: { slots: RunnerState[]; activity: ActivityState }) {
+// the danger color. It shows only a full read's history: while only the
+// Runners' current Jobs are in, it says it is still reading. When the jobs
+// could not be read it says why and draws no lanes; when the repository
+// had more runs than GitHub lists, it says how far back the lanes reach.
+export function BusyTimeline({ slots, activity }: { slots: RunnerState[]; activity: TimelineState }) {
   const a = activity.state === 'failed' ? undefined : activity.activity
   const error = activity.state === 'failed' ? activity.error : a?.jobsError
   return (
@@ -36,7 +38,15 @@ export function BusyTimeline({ slots, activity }: { slots: RunnerState[]; activi
             Reading the jobs of the last 24 hours…
           </p>
         ) : (
-          <Lanes slots={slots} activity={a} />
+          <>
+            {a.coversFrom && (
+              <Note tone="info" data-note="covers-from">
+                The lanes reach back only to <time dateTime={a.coversFrom}>{formatTime(a.coversFrom)}</time>: the execution repository had more runs in
+                the last 24 hours than GitHub lists.
+              </Note>
+            )}
+            <Lanes slots={slots} activity={a} />
+          </>
         )}
       </CardContent>
     </Card>

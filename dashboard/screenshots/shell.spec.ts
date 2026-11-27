@@ -428,6 +428,7 @@ for (const theme of themes) {
       await expect(timeline.locator('[data-lane=claude-2] [data-period=busy]')).toHaveCount(2)
       await expect(timeline.locator('[data-lane=claude-1] a[data-period]').last()).toHaveAttribute('aria-label', /^acme\/web#42 · deliver · \d\d:\d\d–now$/)
       await expect(timeline.locator('[data-slot=axis] span')).toHaveCount(4)
+      expect(w.activityCurrentReads).toBe(1)
       expect(w.activityReads).toBe(1)
 
       await expect(provider(page, 'claude').locator('[data-badge=login]')).toHaveText('Logged in')
@@ -539,6 +540,61 @@ test('runner view when the activity route fails', async ({ page }) => {
   await shot(page, 'shell-runner-activity-failed-dark-375')
   await expectClean(w, ['Failed to load resource: the server responded with a status of 502'])
 })
+
+// A busy execution repository (#495): the Runners' current Jobs show from
+// the current part while the full read with the history is still held;
+// the lanes follow once it answers.
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`runner view with the current Jobs known, history loading at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme, { result: personView({ host: hosts.mixed }) })
+      let release = () => {}
+      w.historyGate = new Promise((r) => (release = r))
+      await tab(page, 'Runners').click()
+      const busy = slotRow(page, 'claude-1').locator('[data-slot=job]')
+      await expect(busy.getByRole('link', { name: 'acme/web#42' })).toHaveAttribute('href', issueURL('acme/web', 42))
+      await expect(busy.locator('[data-slot=stage]')).toHaveText('deliver')
+      await expect(busy.locator('[data-slot=elapsed]')).toHaveText('for 1h 05m')
+      await expect(slotRow(page, 'codex-1').locator('[data-slot=stage]')).toHaveText('stage unknown')
+      await expect(page.locator('[data-card=host] [data-slot=host-job]')).toHaveText('Job running on this host: acme/web#44 for 2m')
+      const timeline = page.locator('[data-card=timeline]')
+      await expect(timeline.locator('[data-slot=timeline-loading]')).toHaveText('Reading the jobs of the last 24 hours…')
+      await expect(timeline.locator('[data-lane]')).toHaveCount(0)
+      expect(w.activityCurrentReads).toBe(1)
+      await expectNoPageScroll(page)
+      await shot(page, `shell-runner-history-loading-${theme}-${width}`)
+
+      release()
+      await expect(timeline.locator('[data-lane]')).toHaveCount(5)
+      await expect(timeline.locator('[data-slot=timeline-loading]')).toHaveCount(0)
+      await expect(busy.locator('[data-slot=stage]')).toHaveText('deliver')
+      expect(w.activityReads).toBe(1)
+      await expectClean(w)
+    })
+  }
+}
+
+// More runs in the window than GitHub lists: the lanes say how far back
+// they reach instead of claiming 24 hours.
+for (const theme of themes) {
+  for (const width of widths) {
+    test(`runner view with a cut-off history at ${width}px, ${theme}`, async ({ page }) => {
+      const { w } = await open(page, width, theme, { result: personView({ host: hosts.mixed }) })
+      const coversFrom = new Date(Date.now() - 10 * 3_600_000).toISOString().replace(/\.\d+Z$/, 'Z')
+      w.activity = { result: runnerActivity(Date.now(), { coversFrom }) }
+      await tab(page, 'Runners').click()
+      const note = page.locator('[data-card=timeline] [data-note=covers-from]')
+      await expect(note).toContainText('The lanes reach back only to')
+      await expect(note).toContainText('the execution repository had more runs in the last 24 hours than GitHub lists.')
+      await expect(note.locator('time')).toHaveAttribute('datetime', coversFrom)
+      await expect(note.locator('time')).toHaveText(/^\d{1,2} [A-Z][a-z]{2,3} \d{4}, \d\d:\d\d$/)
+      await expect(page.locator('[data-card=timeline] [data-lane]')).toHaveCount(5)
+      await expectNoPageScroll(page)
+      await shot(page, `shell-runner-covers-from-${theme}-${width}`)
+      await expectClean(w)
+    })
+  }
+}
 
 test('the no-Runner guide opens runner add per provider', async ({ page }) => {
   const { w } = await open(page, 375, 'dark', { result: personView({ host: hosts.incomplete }) })

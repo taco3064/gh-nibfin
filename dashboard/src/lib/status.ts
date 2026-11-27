@@ -286,4 +286,10 @@ export interface Activity {
   jobsError?: ApiError
   containersError?: ApiError
   unattributed: ContainerJob[]
+  // history is true on a full read's answer; the current part
+  // (?part=current) has only the runs in progress.
+  history: boolean
+  // coversFrom is set when the window held more runs than GitHub lists:
+  // the periods reach back only to this time.
+  coversFrom?: string
 }

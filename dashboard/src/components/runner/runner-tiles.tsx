@@ -47,7 +47,7 @@ export interface TileProps {
   current?: CurrentJob
   githubError?: ApiError
   needsAdmin: boolean
-  // activityRead is false while the activity is unknown (loading or failed).
+  // activityRead is false until an answer that read the jobs is in.
   activityRead: boolean
   now: number
 }
