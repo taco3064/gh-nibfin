@@ -1,9 +1,11 @@
 // Package repair reads Core's repair contract on a pending Issue: the repair
 // record Nibfin's repair stage writes (Proposal R4.49), the reader rule that
 // says whether it covers the current stop (R9.52), and the decision comment
-// a person writes to answer its options (R4.51). The formats are Core's
-// (nibfin-core src/stages/repair-record.ts and the "Repair stage" section of
-// src/stages/README.md); gh-nibfin only reads records and never writes one.
+// a person writes to answer its options (R4.51), and the choice comment in
+// which Core reports how applying that decision went. The formats are Core's
+// (nibfin-core src/stages/repair-record.ts, src/stages/choice.ts and the
+// "Repair stage" and "Chosen option" sections of src/stages/README.md);
+// gh-nibfin only reads records and choices and never writes one.
 //
 // status and the resume operation both use it, so it imports neither.
 package repair
@@ -176,21 +178,4 @@ func ParseDecision(body string) (int, bool) {
 // line terminators and the byte order mark.
 func jsTrim(s string) string {
 	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || r == 0xFEFF })
-}
-
-// LatestDecision is the newest comment of comments (by creation time, then
-// id) that ParseDecision accepts, whoever wrote it, with its option.
-func LatestDecision(comments []Comment) (Comment, int, bool) {
-	var best Comment
-	option, found := 0, false
-	for _, c := range comments {
-		n, ok := ParseDecision(c.Body)
-		if !ok {
-			continue
-		}
-		if !found || c.newerThan(best) {
-			best, option, found = c, n, true
-		}
-	}
-	return best, option, found
 }

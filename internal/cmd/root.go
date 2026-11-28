@@ -349,18 +349,31 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		return ops.Pause(p), nil
 	})
 	var option int
+	var reply string
 	resume := issuesCmd("resume", "Resume Nibfin work on Issues",
-		"\n\nWith --option N it answers the options of the repair record on one pending Issue\n"+
-			"(gh nibfin status shows them): it writes the decision comment for option N, then\n"+
-			"removes pause and pending, and reads both back.",
+		"\n\nOn one pending Issue whose repair record waits for a choice (gh nibfin status\n"+
+			"shows its options, which are suggestions), it first writes the decision, then\n"+
+			"removes pause and pending, and reads both back:\n"+
+			"  --option N      writes the marked decision comment for option N.\n"+
+			"  --reply TEXT    posts TEXT, trimmed, as one ordinary comment without a marker;\n"+
+			"                  Nibfin's next Shape run takes it as written. For a long reply\n"+
+			"                  use the shell, for example --reply \"$(cat reply.md)\".\n"+
+			"Use one of them, not both.",
 		func(c *cobra.Command, p op.IssuesParams) (op.Operation, error) {
 			if c.Flags().Changed("option") && option < 1 {
 				return nil, op.Errorf(op.CodeInvalidArgument, "--option must be 1 or more, got %d", option)
 			}
-			return ops.Resume(op.ResumeParams{IssuesParams: p, Option: option}), nil
+			// An empty --reply would read as no reply at all, a plain
+			// resume, so it is refused here.
+			if c.Flags().Changed("reply") && strings.TrimSpace(reply) == "" {
+				return nil, op.Errorf(op.CodeInvalidArgument, "--reply is empty; write the decision in your own words")
+			}
+			return ops.Resume(op.ResumeParams{IssuesParams: p, Option: option, Reply: reply}), nil
 		})
 	resume.Flags().IntVar(&option, "option", 0, "answer the repair record's options with option N (one Issue)")
 	declareParam(resume, "option", "option")
+	resume.Flags().StringVar(&reply, "reply", "", "answer the repair record in your own words; posted as written (one Issue)")
+	declareParam(resume, "reply", "reply")
 
 	var port int
 	var noBrowser bool

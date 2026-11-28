@@ -475,6 +475,7 @@ func TestBodyChecks(t *testing.T) {
 		"oversized":     `{"repo":"` + strings.Repeat("a", maxBody) + `"}`,
 		"hidden field":  `{"provider":"claude","Interact":{}}`,
 		"pause option":  `{"issues":["1"],"option":2}`,
+		"pause reply":   `{"issues":["1"],"reply":"x"}`,
 	} {
 		path := "/api/commands/status/plan"
 		if name == "hidden field" {
@@ -515,6 +516,7 @@ func TestEveryCommandReachesItsEntry(t *testing.T) {
 		{"pause", `{"issues":["https://github.com/a/b/issues/7"]}`},
 		{"resume", `{"repo":"x/y","issues":["https://github.com/a/b/issues/8"]}`},
 		{"resume", `{"issues":["9"],"option":2}`},
+		{"resume", `{"issues":["10"],"reply":"Keep it."}`},
 	} {
 		if status, b, _ := h.do("POST", "/api/commands/"+c.command+"/plan", c.body, nil); status != 200 {
 			t.Errorf("%s %s: %d %s", c.command, c.body, status, b)
@@ -536,6 +538,7 @@ func TestEveryCommandReachesItsEntry(t *testing.T) {
 		op.IssuesParams{Issues: []string{"https://github.com/a/b/issues/7"}},
 		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}}},
 		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"9"}}, Option: 2},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"10"}}, Reply: "Keep it."},
 	}
 	if !reflect.DeepEqual(h.params, want) {
 		t.Errorf("params = %#v\nwant %#v", h.params, want)

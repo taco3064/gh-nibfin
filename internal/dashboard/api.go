@@ -77,8 +77,8 @@ func (s *server) build(command string, r *http.Request, ia *interactor) (op.Oper
 		}
 		return ops.Status(p), 0, nil
 	case "pause", "resume":
-		// Only resume takes an option; pause keeps rejecting it as an
-		// unknown field.
+		// Only resume takes an option or a reply; pause keeps rejecting
+		// them as unknown fields.
 		var rp op.ResumeParams
 		var err error
 		if command == "pause" {

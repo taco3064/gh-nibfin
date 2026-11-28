@@ -39,6 +39,9 @@ type Snapshot struct {
 	// the pending and repair markers; nil when there is none.
 	Pending *Comment
 	Record  *Comment
+	// Choice is that account's oldest comment starting with the choice
+	// marker, the one Core keeps updating; nil when there is none.
+	Choice *Comment
 	// Unlabeled is the time of the latest unlabeled event for pending,
 	// zero when there is none.
 	Unlabeled time.Time
@@ -149,6 +152,7 @@ func Read(ctx context.Context, get Getter, issuePath string) (Snapshot, error) {
 	}
 	s.Pending = oldest(all, s.Actor, PendingMarker)
 	s.Record = oldest(all, s.Actor, RecordMarker)
+	s.Choice = oldest(all, s.Actor, ChoiceMarker)
 	if s.Record != nil {
 		for _, c := range all {
 			if c.newerThan(*s.Record) {

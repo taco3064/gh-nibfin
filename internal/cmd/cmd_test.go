@@ -106,7 +106,7 @@ func TestFlagPlacement(t *testing.T) {
 		"upgrade":       {"repo", "yes"},
 		"status":        {"json", "repo"},
 		"pause":         {"repo"},
-		"resume":        {"option", "repo"},
+		"resume":        {"option", "reply", "repo"},
 		"dashboard":     {"no-browser", "port"},
 	}
 	for path, flags := range want {
@@ -182,6 +182,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		{"pause", "https://github.com/a/b/issues/7"},
 		{"resume", "https://github.com/a/b/issues/8", "--repo", "x/y"},
 		{"resume", "9", "--option", "2"},
+		{"resume", "10", "--reply", " Keep it short.\n"},
 	} {
 		if code, _, stderr := execute(t, args...); code == 0 || !strings.HasPrefix(stderr, "stop: ") {
 			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
@@ -203,11 +204,12 @@ func TestHandlersPassArguments(t *testing.T) {
 		op.IssuesParams{Issues: []string{"https://github.com/a/b/issues/7"}},
 		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}}},
 		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"9"}}, Option: 2},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"10"}}, Reply: " Keep it short.\n"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("params = %#v\nwant %#v", got, want)
 	}
-	if !reflect.DeepEqual(*seenRepo, []string{"o/r", "", "x/y", "", "o/r", "x/y", ""}) {
+	if !reflect.DeepEqual(*seenRepo, []string{"o/r", "", "x/y", "", "o/r", "x/y", "", ""}) {
 		// URL-only pause without -R never resolves a repository.
 		t.Errorf("resolver saw %q", *seenRepo)
 	}
@@ -375,5 +377,18 @@ func TestResumeOptionZero(t *testing.T) {
 	code, _, stderr := execute(t, "resume", "3", "--option", "0")
 	if code == 0 || !strings.Contains(stderr, "--option must be 1 or more, got 0") {
 		t.Errorf("exit %d, stderr %q", code, stderr)
+	}
+}
+
+func TestResumeReplyEmpty(t *testing.T) {
+	fakeRepo(t)
+	old := ops
+	t.Cleanup(func() { ops = old })
+	ops.Resume = func(p op.ResumeParams) op.Operation { t.Errorf("resume ran with %+v", p); return resultOp{} }
+	for _, v := range []string{"", " \n\t "} {
+		code, _, stderr := execute(t, "resume", "3", "--reply", v)
+		if code == 0 || !strings.Contains(stderr, "--reply is empty") || !strings.Contains(stderr, "invalid_argument") {
+			t.Errorf("%q: exit %d, stderr %q", v, code, stderr)
+		}
 	}
 }

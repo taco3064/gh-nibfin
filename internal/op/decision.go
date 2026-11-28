@@ -14,8 +14,8 @@ import (
 	"github.com/taco3064/gh-nibfin/internal/repair"
 )
 
-// decisionAPI is the part of the REST API resume --option uses, with the
-// current gh login.
+// decisionAPI is the part of the REST API resume --option and --reply use,
+// with the current gh login.
 type decisionAPI interface {
 	User(ctx context.Context) (ghUser, error)
 	// Get reads one REST path into v.
@@ -43,12 +43,23 @@ func decisionBody(n int) string {
 	return repair.FormatDecision(n) + "\nChose option " + strconv.Itoa(n) + "."
 }
 
-// decisionOp is resume --option N: it answers the options of the repair
-// record that covers the Issue's stop with a marked decision comment
-// (R4.51, R9.54), then removes pause and pending as resume does.
+// replyBody is the comment a reply posts: the text trimmed as JavaScript
+// trims, inner line endings as given.
+func replyBody(reply string) string {
+	return strings.TrimFunc(reply, func(r rune) bool { return unicode.IsSpace(r) || r == 0xFEFF })
+}
+
+// decisionOp is resume --option N or --reply TEXT: it answers the repair
+// record that covers the Issue's stop with a decision comment (R4.51,
+// R9.54), then removes pause and pending as resume does. --option N writes
+// the marked decision for option N, which Core maps to that option;
+// --reply writes the person's own words as one ordinary comment without a
+// marker, which Core hands to Shape as written.
 type decisionOp struct {
 	label  *labelOp
 	option int
+	// reply is --reply as given; "" for --option.
+	reply string
 
 	// Resolved by Plan.
 	planned bool
@@ -57,8 +68,11 @@ type decisionOp struct {
 	api     decisionAPI
 	user    ghUser
 	record  repair.Report
-	// skip is the current user's own decision for option, the newest
-	// decision after the record; 0 when the comment is written.
+	// body is the comment the decision posts.
+	body string
+	// skip is the current user's own comment that already is the planned
+	// decision and the newest decision candidate after the record; 0 when
+	// the comment is written.
 	skip int64
 	// expect is the decision comment the read-back looks for: the one
 	// Apply wrote, or skip.
@@ -71,11 +85,31 @@ func (d *decisionOp) issuePath() string {
 
 func (d *decisionOp) repo() string { return d.ref.Host + "/" + d.ref.Owner + "/" + d.ref.Name }
 
-// ownLatest is the id of the newest decision after the record when the
-// current user wrote it for d.option; 0 otherwise.
+// flag is the flag that gives the decision.
+func (d *decisionOp) flag() string {
+	if d.reply != "" {
+		return "--reply"
+	}
+	return "--option"
+}
+
+// matches reports whether comment c, whose option ParseDecision read as
+// option, is the current user's planned decision: the same option for
+// --option, the same text (line endings aside) for --reply.
+func (d *decisionOp) matches(c repair.Comment, option int) bool {
+	if c.AuthorID != d.user.ID {
+		return false
+	}
+	if d.reply != "" {
+		return repair.Normalize(c.Body) == repair.Normalize(d.body)
+	}
+	return option == d.option
+}
+
+// ownLatest is the id of the newest decision candidate after the record
+// when it is the current user's planned decision; 0 otherwise.
 func (d *decisionOp) ownLatest(s repair.Snapshot) int64 {
-	c, n, ok := repair.LatestDecision(s.After)
-	if ok && n == d.option && c.AuthorID == d.user.ID {
+	if c, n, ok := s.Candidate(); ok && d.matches(c, n) {
 		return c.ID
 	}
 	return 0
@@ -92,30 +126,56 @@ func printable(s string) string {
 	}, s)
 }
 
-// newest describes the newest decision after the record.
+// printableText is printable for a text of several lines: it keeps the
+// line breaks.
+func printableText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.ReplaceAll(s, "\r\n", "\n"))
+}
+
+// newest describes the newest decision candidate after the record, the
+// comment Core takes as the decision when its author can write.
 func newest(s repair.Snapshot) string {
-	c, n, ok := repair.LatestDecision(s.After)
-	if !ok {
+	c, n, ok := s.Candidate()
+	switch {
+	case !ok:
 		return "no decision"
+	case n == 0:
+		return "a reply by " + c.Author
 	}
 	return fmt.Sprintf("option %d by %s", n, c.Author)
 }
 
-// Plan checks there is exactly one Issue, plans the label change as resume
-// does, and reads the repair state: it must be choose with option N. The
-// comment is a no-change item only when the newest decision after the
-// record is the current user's own for N.
+// Plan checks the decision (exactly one of --option N, N ≥ 1, and a reply
+// that is not blank) and that there is exactly one Issue, plans the label
+// change as resume does, and reads the repair state: it must be choose,
+// with option N for --option. The comment is a no-change item only when
+// the newest decision candidate after the record is the current user's own
+// planned decision.
 func (d *decisionOp) Plan(ctx context.Context) (Plan, error) {
 	p := Plan{Operation: d.label.name}
-	if d.option < 1 {
+	switch {
+	case d.option != 0 && d.reply != "":
+		return p, Errorf(CodeInvalidArgument, "--option and --reply cannot be used together; answer with one of them")
+	case d.reply != "":
+		if d.body = replyBody(d.reply); d.body == "" {
+			return p, Errorf(CodeInvalidArgument, "--reply is empty; write the decision in your own words")
+		}
+	case d.option < 1:
 		return p, Errorf(CodeInvalidArgument, "--option must be 1 or more, got %d", d.option)
+	default:
+		d.body = decisionBody(d.option)
 	}
 	refs, err := parseIssueRefs(d.label.params.Repo, d.label.params.Issues)
 	if err != nil {
 		return p, err
 	}
 	if len(refs) != 1 {
-		return p, Errorf(CodeInvalidArgument, "--option answers one Issue; %d were given", len(refs))
+		return p, Errorf(CodeInvalidArgument, "%s answers one Issue; %d were given", d.flag(), len(refs))
 	}
 	p, err = d.label.Plan(ctx)
 	if err != nil {
@@ -140,19 +200,18 @@ func (d *decisionOp) Plan(ctx context.Context) (Plan, error) {
 	}
 	rep, ok := s.Evaluate(pending)
 	if !ok {
-		return p, Errorf(CodeInvalidArgument, "%s has no pending label, so there are no options to answer; use resume without --option", d.url)
+		return p, Errorf(CodeInvalidArgument, "%s has no pending label, so there is no repair record to answer; use resume without %s", d.url, d.flag())
 	}
 	if rep.State != repair.StateChoose {
 		return p, Errorf(CodeInvalidArgument, "%s is in the %s repair state (%s), not choose; only choose has options to answer", d.url, rep.State, printable(rep.Reason))
 	}
-	title, ok := optionTitle(rep, d.option)
-	if !ok {
+	if _, ok := optionTitle(rep, d.option); d.reply == "" && !ok {
 		return p, Errorf(CodeInvalidArgument, "%d is not an option of %s; the options are %s", d.option, d.url, optionList(rep))
 	}
 	d.record = rep
 	d.skip = d.ownLatest(s)
 
-	st := d.commentStep(title)
+	st := d.planStep()
 	st.Current = newest(s)
 	if d.skip != 0 {
 		st.NoChange = true
@@ -196,22 +255,30 @@ func optionList(rep repair.Report) string {
 	return strings.Join(nums, ", ") + " (recommended: " + rec + ")"
 }
 
-// commentStep is the plan item of the decision comment.
-func (d *decisionOp) commentStep(title string) Step {
-	return Step{ID: "decision:" + d.url, Action: "add comment", Target: d.url, Detail: "decision for " + title,
-		Next: "option " + strconv.Itoa(d.option) + " by " + d.user.Login}
-}
-
-// planStep is the plan item of the comment as planned.
+// planStep is the plan item of the decision comment as planned. For
+// --reply its Detail is the exact comment body, with control characters
+// other than line breaks dropped for the terminal.
 func (d *decisionOp) planStep() Step {
+	st := Step{ID: "decision:" + d.url, Action: "add comment", Target: d.url}
+	if d.reply != "" {
+		st.Detail = printableText(d.body)
+		// Core reads a reply that is only a number as that option.
+		st.Next = "a reply by " + d.user.Login
+		if n, ok := repair.ParseDecision(d.body); ok {
+			st.Next = fmt.Sprintf("option %d by %s", n, d.user.Login)
+		}
+		return st
+	}
 	title, _ := optionTitle(d.record, d.option)
-	return d.commentStep(title)
+	st.Detail = "decision for " + title
+	st.Next = "option " + strconv.Itoa(d.option) + " by " + d.user.Login
+	return st
 }
 
 // Apply reads the repair state again and writes nothing when the record
 // changed. Then it writes the decision comment, unless the current user's
-// own decision for N is still the newest, and removes the labels as resume
-// does. A failed comment leaves the labels alone.
+// own planned decision is still the newest candidate, and removes the
+// labels as resume does. A failed comment leaves the labels alone.
 func (d *decisionOp) Apply(ctx context.Context, p Plan) error {
 	if !d.planned {
 		return fmt.Errorf("%s: apply before plan", d.label.name)
@@ -234,13 +301,13 @@ func (d *decisionOp) Apply(ctx context.Context, p Plan) error {
 		rep.RecordState.For != d.record.RecordState.For {
 		return notStarted(Errorf(CodeNotApplied, "the repair record of %s changed; run gh nibfin status again", d.url))
 	}
-	if _, ok := optionTitle(rep, d.option); !ok {
+	if _, ok := optionTitle(rep, d.option); d.reply == "" && !ok {
 		return notStarted(Errorf(CodeNotApplied, "the repair record of %s no longer has option %d; run gh nibfin status again", d.url, d.option))
 	}
 	d.expect = d.ownLatest(s)
 	if d.expect == 0 {
 		err := Track(ctx, st, func() error {
-			id, err := d.api.CreateCommentID(ctx, d.repo(), d.ref.Number, decisionBody(d.option))
+			id, err := d.api.CreateCommentID(ctx, d.repo(), d.ref.Number, d.body)
 			d.expect = id
 			return err
 		})
@@ -255,8 +322,9 @@ func (d *decisionOp) Apply(ctx context.Context, p Plan) error {
 }
 
 // ReadBack reads the labels back as resume does, then the comments: the
-// decision is confirmed only when the newest decision after the record, by
-// anyone, is the expected comment of the current user for N.
+// decision is confirmed only when the newest decision candidate after the
+// record, by anyone, is the expected comment of the current user with the
+// planned option or text.
 func (d *decisionOp) ReadBack(ctx context.Context, p Plan) (Result, error) {
 	if !d.planned {
 		return nil, fmt.Errorf("%s: read back before plan", d.label.name)
@@ -271,13 +339,13 @@ func (d *decisionOp) ReadBack(ctx context.Context, p Plan) (Result, error) {
 	case rerr != nil:
 		err = rerr
 	default:
-		c, n, ok := repair.LatestDecision(s.After)
-		if ok && c.ID == d.expect && n == d.option && c.AuthorID == d.user.ID {
+		c, n, ok := s.Candidate()
+		if ok && c.ID == d.expect && d.matches(c, n) {
 			checks.Set(st, true, newest(s), "")
 		} else {
 			reason := "the newest decision is " + newest(s)
 			checks.Set(st, false, newest(s), reason)
-			err = Errorf(CodeNotApplied, "%s: your decision for option %d on %s is not the newest decision: %s", d.label.name, d.option, d.url, reason)
+			err = Errorf(CodeNotApplied, "%s: your decision on %s is not the newest decision: %s", d.label.name, d.url, reason)
 		}
 	}
 	items := checks.List(err)
