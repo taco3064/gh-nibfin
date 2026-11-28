@@ -70,9 +70,7 @@ function SignInLink({ url }: { url?: string }) {
           </a>
         </Button>
       )}
-      <p className="text-xs text-muted-foreground">
-        {safe ? 'Or open this URL in a browser:' : 'Open this URL in a browser:'}
-      </p>
+      <p className="text-xs text-muted-foreground">{safe ? 'Or open this URL in a browser:' : 'Open this URL in a browser:'}</p>
       <p
         data-slot="login-url"
         className="rounded-md border border-border-subtle bg-[var(--nf-code-bg)] px-2 py-1.5 font-mono text-xs break-all text-[var(--nf-code)] select-all"
@@ -115,17 +113,7 @@ function DeviceCode({ code }: { code: string }) {
   )
 }
 
-function CodeForm({
-  state,
-  planId,
-  fetcher,
-  onSent,
-}: {
-  state: LoginState
-  planId?: string
-  fetcher?: Fetch
-  onSent: () => void
-}) {
+function CodeForm({ state, planId, fetcher, onSent }: { state: LoginState; planId?: string; fetcher?: Fetch; onSent: () => void }) {
   const [code, setCode] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<ApiError>()
@@ -214,9 +202,7 @@ export function LoginPanel({
       </div>
       {state.stage === 'authorizing' && <SignInLink url={state.url} />}
       {state.stage === 'authorizing' && state.deviceCode && !state.codeRequested && <DeviceCode code={state.deviceCode} />}
-      {live && state.codeRequested && (
-        <CodeForm state={state} planId={planId} fetcher={fetcher} onSent={() => onCodeSent(state.provider)} />
-      )}
+      {live && state.codeRequested && <CodeForm state={state} planId={planId} fetcher={fetcher} onSent={() => onCodeSent(state.provider)} />}
       {state.stage === 'authorizing' && (
         <p data-slot="login-timeout" className="text-xs text-muted-foreground">
           Ends at <time dateTime={new Date(endsAt(state)).toISOString()}>{formatClock(endsAt(state))}</time> if not authorized.

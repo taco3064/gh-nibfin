@@ -26,15 +26,7 @@ export function MemoryGauge({ memory }: { memory: MemoryReport }) {
         <svg viewBox="0 0 120 66" aria-hidden="true" className="block w-full overflow-visible">
           <path d={arc} pathLength={100} fill="none" strokeWidth={10} strokeLinecap="round" className="stroke-muted" />
           {pct > 0 && (
-            <path
-              d={arc}
-              pathLength={100}
-              fill="none"
-              strokeWidth={10}
-              strokeLinecap="round"
-              strokeDasharray={`${pct} 100`}
-              className="stroke-primary"
-            />
+            <path d={arc} pathLength={100} fill="none" strokeWidth={10} strokeLinecap="round" strokeDasharray={`${pct} 100`} className="stroke-primary" />
           )}
         </svg>
         <span aria-hidden="true" className="absolute inset-x-0 bottom-0 text-center font-heading text-lg leading-none font-semibold tabular-nums">

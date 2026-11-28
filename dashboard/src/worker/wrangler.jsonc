@@ -6,9 +6,9 @@
   "main": "index.ts",
   "compatibility_date": "2026-11-20",
   "durable_objects": {
-    "bindings": [{ "name": "LIVE", "class_name": "Live" }]
+    "bindings": [{ "name": "LIVE", "class_name": "Live" }],
   },
   "exports": {
-    "Live": { "type": "durable-object", "storage": "sqlite" }
-  }
+    "Live": { "type": "durable-object", "storage": "sqlite" },
+  },
 }

@@ -23,10 +23,7 @@ export function labelStateDiagram(states: LabelState[]): DiagramSpec {
   ])
   const edges = states.flatMap((state, i) => {
     const next = states[i + 1]
-    return [
-      { from: checkId(state), to: state.id, label: 'yes' },
-      ...(next ? [{ from: checkId(state), to: checkId(next), label: 'no' }] : []),
-    ]
+    return [{ from: checkId(state), to: state.id, label: 'yes' }, ...(next ? [{ from: checkId(state), to: checkId(next), label: 'no' }] : [])]
   })
   return {
     nodes,

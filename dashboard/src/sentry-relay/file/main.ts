@@ -52,7 +52,9 @@ export async function main(d: MainDeps): Promise<number> {
     sleep: d.sleep,
     headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'nibfin-sentry-issue' },
   })
-  const sentry = env.SENTRY_API_TOKEN ? createClient({ base: SENTRY_API, token: env.SENTRY_API_TOKEN, fetch: d.fetch, sleep: d.sleep, headers: { 'User-Agent': 'nibfin-sentry-issue' } }) : undefined
+  const sentry = env.SENTRY_API_TOKEN
+    ? createClient({ base: SENTRY_API, token: env.SENTRY_API_TOKEN, fetch: d.fetch, sleep: d.sleep, headers: { 'User-Agent': 'nibfin-sentry-issue' } })
+    : undefined
 
   try {
     const outcome = await fileRequest(issue, { repository, runId, github, sentry, now: d.now })

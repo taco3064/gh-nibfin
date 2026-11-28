@@ -136,7 +136,19 @@ describe('RepairSummary', () => {
   it.each([
     [
       'a run',
-      issue({ runs: [{ repo: 'o/r', name: 'n', workflow: 'w', status: 'completed', conclusion: 'success', createdAt: '2026-11-02T00:00:00Z', url: 'https://github.com/o/r/actions/runs/9' }] }),
+      issue({
+        runs: [
+          {
+            repo: 'o/r',
+            name: 'n',
+            workflow: 'w',
+            status: 'completed',
+            conclusion: 'success',
+            createdAt: '2026-11-02T00:00:00Z',
+            url: 'https://github.com/o/r/actions/runs/9',
+          },
+        ],
+      }),
       'Latest run',
     ],
     ['a read error', issue({ runs: undefined, runsError: { code: 'http_502', message: 'bad gateway' } }), 'Runs could not be read: http_502: bad gateway'],
@@ -251,7 +263,9 @@ describe('RepairAction for an act record', () => {
   })
 
   it('leaves out the sections the record lacks', () => {
-    const html = render(<RepairAction issue={issue()} repair={repair({ state: 'act', options: undefined })} gate={enabled} target={{ ready: true }} onChanged={() => {}} />)
+    const html = render(
+      <RepairAction issue={issue()} repair={repair({ state: 'act', options: undefined })} gate={enabled} target={{ ready: true }} onChanged={() => {}} />,
+    )
     expect(dialogs).toHaveLength(0)
     expect(html).not.toContain('data-slot="repair-advice"')
     expect(html).not.toContain('data-slot="repair-steps"')

@@ -61,7 +61,13 @@ export class FakeGitHub {
   // trend answers any trend search (per_page=100), page by page: its
   // items, total_count (items.length unless set), incomplete_results, an
   // ETag, and a failure of one page.
-  trend: { items: { html_url: string; closed_at: string }[]; total?: number; incomplete?: boolean; etag?: string; failPage?: { page: number; status: number } } = { items: [] }
+  trend: {
+    items: { html_url: string; closed_at: string }[]
+    total?: number
+    incomplete?: boolean
+    etag?: string
+    failPage?: { page: number; status: number }
+  } = { items: [] }
   private n = 0
 
   constructor() {
@@ -131,12 +137,18 @@ export class FakeGitHub {
       if (page === 1 && headers['If-None-Match'] === t.etag) return new Response(null, { status: 304, headers: h })
     }
     const items = t.items.slice((page - 1) * 100, page * 100)
-    return new Response(JSON.stringify({ total_count: t.total ?? t.items.length, incomplete_results: t.incomplete ?? false, items }), { status: 200, headers: h })
+    return new Response(JSON.stringify({ total_count: t.total ?? t.items.length, incomplete_results: t.incomplete ?? false, items }), {
+      status: 200,
+      headers: h,
+    })
   }
 
   private graphql({ query, variables }: { query: string; variables: Record<string, string> }): Response {
     if (this.graphqlStatus !== 200) return new Response(JSON.stringify({ message: 'Bad credentials' }), { status: this.graphqlStatus })
-    const conn = (key: string) => ({ pageInfo: { hasNextPage: false, endCursor: null }, nodes: (this.blockers[key] ?? []).map((b) => ({ ...b, repository: { nameWithOwner: b.repo } })) })
+    const conn = (key: string) => ({
+      pageInfo: { hasNextPage: false, endCursor: null },
+      nodes: (this.blockers[key] ?? []).map((b) => ({ ...b, repository: { nameWithOwner: b.repo } })),
+    })
     const data: Record<string, unknown> = {}
     if ('o' in variables) {
       const num = /issue\(number: (\d+)\)/.exec(query)?.[1]

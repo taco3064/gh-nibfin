@@ -66,7 +66,11 @@ function Fact({ term, children, slot }: { term: string; children: ReactNode; slo
 export function RepairSummary({ issue, repair }: { issue: StatusIssue; repair: Repair }) {
   const run = latestRun(issue)
   return (
-    <section aria-label="Why it stopped" data-slot="repair-summary" className="flex flex-col gap-3 rounded-md border border-border-subtle bg-muted/40 p-3 text-sm">
+    <section
+      aria-label="Why it stopped"
+      data-slot="repair-summary"
+      className="flex flex-col gap-3 rounded-md border border-border-subtle bg-muted/40 p-3 text-sm"
+    >
       <div className="flex flex-wrap items-center gap-2">
         <RepairBadge repair={repair} />
         {repair.category && (
@@ -103,9 +107,7 @@ export function RepairSummary({ issue, repair }: { issue: StatusIssue; repair: R
                 Latest run
               </SafeLink>
             )}
-            {run.kind === 'failed' && (
-              <span className="text-danger">{`Runs could not be read: ${run.error.code}: ${run.error.message}`}</span>
-            )}
+            {run.kind === 'failed' && <span className="text-danger">{`Runs could not be read: ${run.error.code}: ${run.error.message}`}</span>}
             {run.kind === 'notRead' && <span className="text-muted-foreground">Runs not read</span>}
             {run.kind === 'none' && <span className="text-muted-foreground">No runs</span>}
           </span>

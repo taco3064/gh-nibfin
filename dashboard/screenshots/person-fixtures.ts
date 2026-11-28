@@ -264,7 +264,11 @@ export function runnerActivity(now = Date.now(), over: Record<string, unknown> =
         provider: 'claude',
         name: 'nibfin-claude-1',
         current: { repo: 'acme/web', issue: 42, issueUrl: issueURL('acme/web', 42), stage: 'deliver', url: job(900), startedAt: at(65), source: 'github' },
-        periods: [period(20 * 60, 19 * 60 + 10, false, 38, 'shape', 100), period(9 * 60, 8 * 60, false, 40, 'deliver', 200), period(65, null, false, 42, 'deliver', 900)],
+        periods: [
+          period(20 * 60, 19 * 60 + 10, false, 38, 'shape', 100),
+          period(9 * 60, 8 * 60, false, 40, 'deliver', 200),
+          period(65, null, false, 42, 'deliver', 900),
+        ],
       },
       {
         slot: 'claude-2',

@@ -1,16 +1,19 @@
-import { Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
-import { Check, Search, X } from 'lucide-react'
 import {
-  Controls,
-  MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
-  ViewportPortal,
-  useReactFlow,
-  type Node,
-  type NodeChangeset,
-  type NodeProps,
-} from '@xyflow/react'
+  Component,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type ReactNode,
+} from 'react'
+import { Check, Search, X } from 'lucide-react'
+import { Controls, MiniMap, ReactFlow, ReactFlowProvider, ViewportPortal, useReactFlow, type Node, type NodeChangeset, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/base.css'
 
 import { RunLegend } from '@/components/issue'
@@ -82,7 +85,10 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
   // marker instead of being listed as having no dependencies.
   const layout = useMemo(() => {
     const visible = new Set([...filtered.matched, ...filtered.context])
-    return layoutGraph([...graph.nodes.keys()].filter((k) => visible.has(k)), filtered.edges)
+    return layoutGraph(
+      [...graph.nodes.keys()].filter((k) => visible.has(k)),
+      filtered.edges,
+    )
   }, [graph, filtered])
   const closed = useMemo(() => new Set(layout.edges.filter((e) => e.closed).map((e) => e.to)), [layout])
   const groups = useMemo(() => closedGroups(graph, layout.edges), [graph, layout])
@@ -122,9 +128,7 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
   return (
     <div className="flex flex-col gap-4" data-slot="dependency-graph">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold tracking-tight">
-          Dependency graph
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">Dependency graph</h2>
         <p className="text-sm text-muted-foreground">Open Issues and what blocks them. Stages come from labels only.</p>
       </div>
       {loading.has('issues') && <SectionLoading label="Reading open Issues…" data-loading="issues" />}
@@ -176,7 +180,9 @@ export function DependencyGraph({ data, onChanged }: DependencyGraphProps) {
           )}
           {unreadAlone.length > 0 && (
             <div className="flex flex-col gap-3" data-slot="unread">
-              <h3 className="text-base font-semibold">{blockersLoading ? 'Issues whose blockers are being read' : 'Issues whose blockers could not be read'}</h3>
+              <h3 className="text-base font-semibold">
+                {blockersLoading ? 'Issues whose blockers are being read' : 'Issues whose blockers could not be read'}
+              </h3>
               <ul className="flex flex-col gap-3">{unreadAlone.map(listNode)}</ul>
             </div>
           )}
@@ -494,14 +500,14 @@ function GraphRegion({
   // The minimap helps only when the whole graph is not fitted on load, so
   // the view opens on part of it.
   const large =
-    placement !== null &&
-    Math.min((regionWidth - 2 * pad) / placement.width, (0.75 * window.innerHeight - pad - band) / placement.height) < fitFloor
+    placement !== null && Math.min((regionWidth - 2 * pad) / placement.width, (0.75 * window.innerHeight - pad - band) / placement.height) < fitFloor
   const cycle = placement?.edges.some((e) => e.cycle) ?? false
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-muted-foreground" data-slot="legend" data-direction={direction}>
         {lr ? 'Blockers stand left of the Issues they block' : 'Blockers stand above the Issues they block'}; arrows point from an Issue to what blocks it
-        {cycle && '; dashed arrows close a cycle'}. Point at or focus an Issue to bring out its arrows. A grey “closed” marker on an Issue lists its closed blockers.
+        {cycle && '; dashed arrows close a cycle'}. Point at or focus an Issue to bring out its arrows. A grey “closed” marker on an Issue lists its closed
+        blockers.
         {lr && ' Drag to pan; zoom with the buttons or Ctrl or ⌘ and the scroll wheel.'}
       </p>
       <div

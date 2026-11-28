@@ -111,7 +111,8 @@ async function check(issue: SentryIssue, deps: VerifyDeps): Promise<Verification
   const sha = version
   const repo = deps.repository
 
-  const runs = (await deps.github.get(`repos/${repo}/actions/workflows/website.yml/runs?head_sha=${sha}&branch=main&event=push&status=success&per_page=1`))!.body
+  const runs = (await deps.github.get(`repos/${repo}/actions/workflows/website.yml/runs?head_sha=${sha}&branch=main&event=push&status=success&per_page=1`))!
+    .body
   if (!isRecord(runs) || typeof runs.total_count !== 'number' || runs.total_count < 1) return fail('release: no successful Website run on main', sha)
 
   for (const e of list(event.errors)) {
@@ -134,7 +135,9 @@ async function check(issue: SentryIssue, deps: VerifyDeps): Promise<Verification
   const tree = (await deps.github.get(`repos/${repo}/git/trees/${sha}?recursive=1`))!.body
   if (!isRecord(tree) || !Array.isArray(tree.tree)) return fail('frames: unexpected tree answer', sha)
   if (tree.truncated === true) return fail('frames: tree truncated', sha)
-  const blobs = new Set(tree.tree.filter((t): t is Record<string, unknown> => isRecord(t) && t.type === 'blob' && typeof t.path === 'string').map((t) => t.path as string))
+  const blobs = new Set(
+    tree.tree.filter((t): t is Record<string, unknown> => isRecord(t) && t.type === 'blob' && typeof t.path === 'string').map((t) => t.path as string),
+  )
   for (const f of resolved) {
     if (!blobs.has(f.path)) return fail(`frames: ${f.path} not in the repository at ${sha.slice(0, 7)}`, sha)
   }

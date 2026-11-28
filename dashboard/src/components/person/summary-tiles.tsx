@@ -115,7 +115,11 @@ function IssuesTile({ data }: { data: PersonView }) {
               ...(c.other > 0 ? [{ key: 'other', label: 'Other', count: c.other, className: 'bg-muted-foreground', icon: CircleDashed }] : []),
             ]}
           />
-          {data.truncated && <p className="text-xs text-warning" data-note="tile-truncated">The list may be incomplete.</p>}
+          {data.truncated && (
+            <p className="text-xs text-warning" data-note="tile-truncated">
+              The list may be incomplete.
+            </p>
+          )}
         </>
       )}
     </Tile>
@@ -186,7 +190,9 @@ function RunsTile({ data }: { data: PersonView }) {
                 { key: 'succeeded', label: 'Succeeded', count: c.succeeded, className: 'bg-success', icon: CircleCheck },
                 { key: 'failed', label: 'Failed', count: c.failed, className: 'bg-danger', icon: CircleX },
                 { key: 'running', label: 'Running', count: c.running, className: 'bg-info', icon: LoaderCircle },
-                ...(c.skipped > 0 ? [{ key: 'skipped', label: runBucketLabels.skipped, count: c.skipped, className: 'bg-muted-foreground', icon: CircleHelp }] : []),
+                ...(c.skipped > 0
+                  ? [{ key: 'skipped', label: runBucketLabels.skipped, count: c.skipped, className: 'bg-muted-foreground', icon: CircleHelp }]
+                  : []),
               ]}
             />
           )}

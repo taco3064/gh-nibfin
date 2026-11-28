@@ -52,10 +52,7 @@ describe('buildGraph', () => {
   it('adds a node per listed Issue and per distinct outside blocker', () => {
     const g = buildGraph({
       repo,
-      issues: [
-        issue(1, [blocker(2), blocker(7, { repo: 'Acme/Infra' }), blocker(9, { state: 'CLOSED' })]),
-        issue(2, [blocker(7, { repo: 'acme/infra' })]),
-      ],
+      issues: [issue(1, [blocker(2), blocker(7, { repo: 'Acme/Infra' }), blocker(9, { state: 'CLOSED' })]), issue(2, [blocker(7, { repo: 'acme/infra' })])],
     })
     expect(g.repo).toBe('acme/app')
     expect([...g.nodes.keys()]).toEqual([k(1), k(2), k(7, 'acme/infra'), k(9)])
@@ -137,11 +134,7 @@ describe('filterGraph', () => {
   it('filters on the Scope stage: request without scope', () => {
     const s = buildGraph({
       repo,
-      issues: [
-        issue(1, [], { labels: ['request'] }),
-        issue(2, [], { labels: ['request', 'scope'] }),
-        issue(3, [], { labels: ['bug'] }),
-      ],
+      issues: [issue(1, [], { labels: ['request'] }), issue(2, [], { labels: ['request', 'scope'] }), issue(3, [], { labels: ['bug'] })],
     })
     expect(filterGraph(s, { ...emptyFilter, stages: ['scope'] }).matched).toEqual([k(1)])
     expect(filterGraph(s, { ...emptyFilter, stages: ['none'] }).matched).toEqual([k(3)])
@@ -220,7 +213,12 @@ describe('closedGroups', () => {
   })
 
   it('makes no group without closed edges', () => {
-    expect(closedGroups(g, g.edges.filter((e) => !e.closed)).size).toBe(0)
+    expect(
+      closedGroups(
+        g,
+        g.edges.filter((e) => !e.closed),
+      ).size,
+    ).toBe(0)
     expect(closedGroups(g, []).size).toBe(0)
   })
 })
@@ -358,7 +356,12 @@ describe('positionGraph', () => {
 describe('nodeName', () => {
   const g = buildGraph({
     repo,
-    issues: [issue(1, [blocker(7, { repo: 'acme/infra', title: 'Infra prerequisite' }), blocker(9, { state: 'CLOSED' })], { title: 'Add export', labels: ['scope', 'shaped'] })],
+    issues: [
+      issue(1, [blocker(7, { repo: 'acme/infra', title: 'Infra prerequisite' }), blocker(9, { state: 'CLOSED' })], {
+        title: 'Add export',
+        labels: ['scope', 'shaped'],
+      }),
+    ],
   })
 
   it('names an Issue by label, title and stage, then context and closed blockers', () => {
@@ -368,7 +371,9 @@ describe('nodeName', () => {
   })
 
   it('names a blocker outside the list by its state', () => {
-    expect(nodeName(g, g.nodes.get(k(7, 'acme/infra'))!, true, 0)).toBe('acme/infra#7 Infra prerequisite, open blocker not listed here, context: blocks a shown Issue')
+    expect(nodeName(g, g.nodes.get(k(7, 'acme/infra'))!, true, 0)).toBe(
+      'acme/infra#7 Infra prerequisite, open blocker not listed here, context: blocks a shown Issue',
+    )
   })
 })
 

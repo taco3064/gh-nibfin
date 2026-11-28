@@ -30,11 +30,7 @@ export function Stacked({ spec, items, className }: { spec: DiagramSpec; items: 
           return (
             <Card
               key={item.id}
-              className={cn(
-                'min-w-0 gap-2 rounded-lg p-3 shadow-none',
-                marks.length ? 'border-[1.5px]' : '',
-                tone ? tone.border : 'border-border',
-              )}
+              className={cn('min-w-0 gap-2 rounded-lg p-3 shadow-none', marks.length ? 'border-[1.5px]' : '', tone ? tone.border : 'border-border')}
               data-block={item.id}
             >
               <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -43,11 +39,7 @@ export function Stacked({ spec, items, className }: { spec: DiagramSpec; items: 
                   <span className="font-heading text-sm font-semibold">{item.title}</span>
                 </span>
                 {item.group && (
-                  <Badge
-                    variant="outline"
-                    className="border-border-subtle bg-muted/40 font-normal text-muted-foreground"
-                    data-slot="diagram-stacked-group"
-                  >
+                  <Badge variant="outline" className="border-border-subtle bg-muted/40 font-normal text-muted-foreground" data-slot="diagram-stacked-group">
                     {item.group}
                   </Badge>
                 )}

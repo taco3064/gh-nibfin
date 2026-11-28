@@ -79,7 +79,11 @@ export function RunStrip({ issue }: { issue: StatusIssue }) {
 // RunLegend names the colors of the run strip once per list.
 export function RunLegend({ className }: { className?: string }) {
   return (
-    <ul aria-label="Run colors" data-slot="run-legend" className={cn('m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-1 p-0 text-xs text-muted-foreground', className)}>
+    <ul
+      aria-label="Run colors"
+      data-slot="run-legend"
+      className={cn('m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-1 p-0 text-xs text-muted-foreground', className)}
+    >
       {runBuckets.map((b) => (
         <li key={b} className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="flex h-3 items-end">

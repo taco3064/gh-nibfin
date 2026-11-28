@@ -30,7 +30,9 @@ function Dot({ state }: { state: RunnerState }) {
       </span>
     )
   }
-  return <span aria-hidden="true" className={cn('size-3 shrink-0 rounded-full border-2 border-muted-foreground', state === 'offline' && 'bg-muted-foreground')} />
+  return (
+    <span aria-hidden="true" className={cn('size-3 shrink-0 rounded-full border-2 border-muted-foreground', state === 'offline' && 'bg-muted-foreground')} />
+  )
 }
 
 function Card({ card }: { card: RunnerCard }) {

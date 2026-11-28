@@ -42,9 +42,7 @@ async function mockOps(page: Page): Promise<Ops> {
     const plan = ops.plans[Number(id.replace('PLAN', '')) - 1]
     const done = plan.action === 'pause' ? 'paused' : 'resumed'
     const body =
-      ops.mode === 'result'
-        ? JSON.stringify({ event: 'result', result: Object.fromEntries(plan.issues.map((u) => [u, done])) }) + '\n'
-        : '{"event":"res'
+      ops.mode === 'result' ? JSON.stringify({ event: 'result', result: Object.fromEntries(plan.issues.map((u) => [u, done])) }) + '\n' : '{"event":"res'
     await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body })
   })
   return ops
@@ -105,7 +103,10 @@ for (const theme of themes) {
       const legend = view.locator('[data-slot=run-legend]')
       await expect(legend).toHaveCount(1)
       await expect(legend.locator('li')).toHaveText(['Succeeded', 'Failed', 'Skipped or cancelled', 'Running'])
-      const firstGroup = view.locator('[data-repo]').filter({ has: page.locator('article[data-issue]') }).first()
+      const firstGroup = view
+        .locator('[data-repo]')
+        .filter({ has: page.locator('article[data-issue]') })
+        .first()
       await expect(firstGroup.locator('[data-slot=run-legend]')).toHaveCount(1)
       const bottom = async (l: Locator) => {
         const b = (await l.boundingBox())!
@@ -246,9 +247,7 @@ for (const theme of themes) {
       const { w } = await open(page, width, theme, { result: data })
       const view = page.locator('[data-view=person]')
       await expect(view).toContainText('Account could not be read: github_error: reading the current account: HTTP 401')
-      await expect(view.locator('[data-note=issues-error]')).toHaveText(
-        'Issue search failed: github_error: search of Issues: secondary rate limit',
-      )
+      await expect(view.locator('[data-note=issues-error]')).toHaveText('Issue search failed: github_error: search of Issues: secondary rate limit')
       await expect(view.locator('[data-note=truncated]')).toContainText('at most 1,000 Issues')
       await expect(view.locator('[data-repo]')).toHaveCount(2)
       await expect(view.locator('[data-empty]')).toHaveCount(0)
@@ -660,7 +659,10 @@ test('closing a dialog after an apply reads the status again', async ({ page }) 
       status: 200,
       contentType: 'application/x-ndjson',
       body:
-        JSON.stringify({ event: 'result', result: { removed: 1, items: [{ id: 'slot:claude-3', action: 'remove Runner', target: 'claude-3', confirmed: true, state: 'absent' }] } }) + '\n',
+        JSON.stringify({
+          event: 'result',
+          result: { removed: 1, items: [{ id: 'slot:claude-3', action: 'remove Runner', target: 'claude-3', confirmed: true, state: 'absent' }] },
+        }) + '\n',
     }),
   )
   await tab(page, 'Runners').click()
@@ -750,9 +752,7 @@ for (const theme of themes) {
       // Without admin GitHub's Runner list is not read: no measured zero.
       w.status = { result: personView({ host: noAdmin }) }
       await page.getByRole('button', { name: 'Refresh' }).click()
-      await expect(runners.locator('[data-state=github-needs-admin]')).toHaveText(
-        "Online and busy not read: GitHub's Runner list needs admin of acme/app.",
-      )
+      await expect(runners.locator('[data-state=github-needs-admin]')).toHaveText("Online and busy not read: GitHub's Runner list needs admin of acme/app.")
       await expect(runners.locator('[data-slot=runner-counts]')).toHaveCount(0)
       await expectNoPageScroll(page)
       await shot(page, `summary-runner-no-admin-${theme}-${width}`, false)

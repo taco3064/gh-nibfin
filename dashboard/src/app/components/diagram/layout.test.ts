@@ -10,24 +10,12 @@ import { labelStateDiagram } from '../../lib/label-flow'
 import { labelStates } from '../../lib/labels'
 import { stageLanes } from '../../lib/stage-lanes'
 
-import {
-  describeDiagram,
-  edgeText,
-  layoutDiagram,
-  sizes,
-  titlePlate,
-  wrapText,
-  type Box,
-  type DiagramSpec,
-  type Placement,
-  type Point,
-} from './layout'
+import { describeDiagram, edgeText, layoutDiagram, sizes, titlePlate, wrapText, type Box, type DiagramSpec, type Placement, type Point } from './layout'
 
 const directions = ['LR', 'TB'] as const
 const eps = 0.5
 
-const intersects = (a: Box, b: Box) =>
-  a.x < b.x + b.width - eps && b.x < a.x + a.width - eps && a.y < b.y + b.height - eps && b.y < a.y + a.height - eps
+const intersects = (a: Box, b: Box) => a.x < b.x + b.width - eps && b.x < a.x + a.width - eps && a.y < b.y + b.height - eps && b.y < a.y + a.height - eps
 
 const encloses = (outer: Box, inner: Box) =>
   inner.x >= outer.x - eps &&
@@ -299,10 +287,7 @@ describe('layoutDiagram', () => {
 
   it('sizes nodes from their text', () => {
     const short = layoutDiagram({ nodes: [{ id: 'a', title: 'A' }], edges: [] }, 'TB').nodes[0]
-    const long = layoutDiagram(
-      { nodes: [{ id: 'a', title: 'A much longer title', detail: 'and a detail line', badges: ['x'] }], edges: [] },
-      'TB',
-    ).nodes[0]
+    const long = layoutDiagram({ nodes: [{ id: 'a', title: 'A much longer title', detail: 'and a detail line', badges: ['x'] }], edges: [] }, 'TB').nodes[0]
     expect(long.width).toBe(short.width)
     expect(long.height).toBeGreaterThan(short.height)
     expect(long.lines.map((l) => l.kind)).toEqual(['title', 'title', 'detail'])
@@ -314,7 +299,17 @@ describe('layoutDiagram', () => {
     const n = (id: string, group?: string) => ({ id, title: id, group })
     expect(() => layoutDiagram({ nodes: [n('a'), n('a')], edges: [] }, 'LR')).toThrow('duplicate node id "a"')
     expect(() =>
-      layoutDiagram({ nodes: [n('a')], edges: [], groups: [{ id: 'g', title: 'G' }, { id: 'g', title: 'H' }] }, 'LR'),
+      layoutDiagram(
+        {
+          nodes: [n('a')],
+          edges: [],
+          groups: [
+            { id: 'g', title: 'G' },
+            { id: 'g', title: 'H' },
+          ],
+        },
+        'LR',
+      ),
     ).toThrow('duplicate group id "g"')
     expect(() => layoutDiagram({ nodes: [n('a')], edges: [{ from: 'a', to: 'zz' }] }, 'LR')).toThrow('unknown node "zz"')
     expect(() => layoutDiagram({ nodes: [n('a')], edges: [{ from: 'qq', to: 'a' }] }, 'LR')).toThrow('unknown node "qq"')
@@ -374,9 +369,7 @@ describe('wrap', () => {
     for (const n of p.nodes) {
       for (const [q, r] of segments(e.points)) {
         const seg = { x: Math.min(q.x, r.x), y: Math.min(q.y, r.y), width: Math.abs(q.x - r.x), height: Math.abs(q.y - r.y) }
-        expect(intersects(n, { ...seg, x: seg.x - 0.1, y: seg.y - 0.1, width: seg.width + 0.2, height: seg.height + 0.2 }), `crosses ${n.id}`).toBe(
-          false,
-        )
+        expect(intersects(n, { ...seg, x: seg.x - 0.1, y: seg.y - 0.1, width: seg.width + 0.2, height: seg.height + 0.2 }), `crosses ${n.id}`).toBe(false)
       }
     }
     // The label sits on the gutter line, between the rows.
@@ -412,10 +405,7 @@ describe('icons and kinds', () => {
 
   it('indents the title past the icon and adds one marker row per kind', () => {
     const plain = layoutDiagram({ nodes: [{ id: 'n', title: 'Shape', detail: 'Author' }], edges: [] }, 'TB').nodes[0]
-    const marked = layoutDiagram(
-      { nodes: [{ id: 'n', title: 'Shape', detail: 'Author', icon: Bot, kinds: ['a', 'p'] }], edges: [], kinds },
-      'TB',
-    ).nodes[0]
+    const marked = layoutDiagram({ nodes: [{ id: 'n', title: 'Shape', detail: 'Author', icon: Bot, kinds: ['a', 'p'] }], edges: [], kinds }, 'TB').nodes[0]
     expect(plain.icon).toBeUndefined()
     expect(plain.markers).toEqual([])
     expect(marked.icon).toBeDefined()
@@ -431,16 +421,19 @@ describe('icons and kinds', () => {
   })
 
   it('names the offending id of an invalid kind', () => {
-    expect(() => layoutDiagram({ nodes: [{ id: 'n', title: 'N' }], edges: [], kinds: [kinds[0], kinds[0]] }, 'LR')).toThrow(
-      'duplicate kind id "a"',
-    )
-    expect(() => layoutDiagram({ nodes: [{ id: 'n', title: 'N', kinds: ['zz'] }], edges: [], kinds }, 'LR')).toThrow(
-      'node "n" has unknown kind "zz"',
-    )
+    expect(() => layoutDiagram({ nodes: [{ id: 'n', title: 'N' }], edges: [], kinds: [kinds[0], kinds[0]] }, 'LR')).toThrow('duplicate kind id "a"')
+    expect(() => layoutDiagram({ nodes: [{ id: 'n', title: 'N', kinds: ['zz'] }], edges: [], kinds }, 'LR')).toThrow('node "n" has unknown kind "zz"')
   })
 
   it('lists the kind titles in the text alternative', () => {
-    const spec: DiagramSpec = { nodes: [{ id: 'n', title: 'N', kinds: ['p', 'a'] }, { id: 'm', title: 'M' }], edges: [], kinds }
+    const spec: DiagramSpec = {
+      nodes: [
+        { id: 'n', title: 'N', kinds: ['p', 'a'] },
+        { id: 'm', title: 'M' },
+      ],
+      edges: [],
+      kinds,
+    }
     const d = describeDiagram(spec, layoutDiagram(spec, 'LR'))
     expect(d.find((x) => x.id === 'n')!.kinds).toEqual(['A person’s control point', 'Agent work'])
     expect(d.find((x) => x.id === 'm')!.kinds).toBeUndefined()
@@ -484,7 +477,11 @@ describe('text stays whole', () => {
           const src = spec.nodes.find((m) => m.id === n.id)!
           // Joining the lines with one space gives back the source: no line
           // ends or starts inside a word.
-          const text = (kind: 'title' | 'detail') => n.lines.filter((l) => l.kind === kind).map((l) => l.text).join(' ')
+          const text = (kind: 'title' | 'detail') =>
+            n.lines
+              .filter((l) => l.kind === kind)
+              .map((l) => l.text)
+              .join(' ')
           expect(text('title'), n.id).toBe(words(src.title))
           expect(text('detail'), n.id).toBe(src.detail ? words(src.detail) : '')
           for (const m of n.markers) expect(m.lines.map((l) => l.text).join(' ')).toBe(words(kinds.get(m.kind)!))

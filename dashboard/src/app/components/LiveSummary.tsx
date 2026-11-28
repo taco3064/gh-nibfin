@@ -16,7 +16,10 @@ export function LiveSummary() {
       <LiveStatus feed={feed} />
       <SummaryPanel data={feed.data} />
       <p className="m-0">
-        <a href={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}live/`} className="inline-flex items-center gap-1 rounded-sm font-medium text-link underline-offset-4 hover:underline">
+        <a
+          href={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}live/`}
+          className="inline-flex items-center gap-1 rounded-sm font-medium text-link underline-offset-4 hover:underline"
+        >
           See the live view
           <ArrowRight aria-hidden="true" className="size-4" />
         </a>

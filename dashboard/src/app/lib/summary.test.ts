@@ -43,6 +43,11 @@ describe('delivered trend', () => {
 
   it('reads a day and the total as text', () => {
     expect(trendDayText({ date: '2026-11-26', delivered: 3 })).toBe('Thu 26 Nov: 3 delivered')
-    expect(trendTotal([{ date: '2026-11-26', delivered: 3 }, { date: '2026-11-27', delivered: 4 }])).toBe(7)
+    expect(
+      trendTotal([
+        { date: '2026-11-26', delivered: 3 },
+        { date: '2026-11-27', delivered: 4 },
+      ]),
+    ).toBe(7)
   })
 })

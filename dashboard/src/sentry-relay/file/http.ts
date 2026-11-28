@@ -89,7 +89,12 @@ export function createClient(o: ClientOptions): Client {
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     let res: Response
     try {
-      res = await o.fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(o.timeoutMs ?? 20_000) })
+      res = await o.fetch(url, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(o.timeoutMs ?? 20_000),
+      })
     } catch {
       throw new HttpError(method, shown, 0)
     }

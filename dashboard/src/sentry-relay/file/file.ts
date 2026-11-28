@@ -85,7 +85,10 @@ function startOfUTCDay(ms: number): string {
 async function filedToday(deps: FileDeps): Promise<number> {
   const since = startOfUTCDay(deps.now())
   let n = 0
-  for await (const page of deps.github.pages(`repos/${deps.repository}/issues?state=all&labels=request&creator=${ASSIGNEE}&since=${since}&per_page=100`, MAX_PAGES)) {
+  for await (const page of deps.github.pages(
+    `repos/${deps.repository}/issues?state=all&labels=request&creator=${ASSIGNEE}&since=${since}&per_page=100`,
+    MAX_PAGES,
+  )) {
     for (const i of page) {
       if (isIssue(i) && i.pull_request === undefined && i.title.startsWith(TITLE_PREFIX) && typeof i.created_at === 'string' && i.created_at >= since) n++
     }
@@ -153,7 +156,13 @@ export async function fileRequest(issue: SentryIssue, deps: FileDeps): Promise<O
       return (await openRequests(deps, wanted)).find((i) => hasMarker(i.body, deps.runId))
     },
   )
-  return { decision: 'filed', number: created.number, url: created.html_url, verification: v, problems: readBack(await readIssue(deps, created.number), wanted, pause) }
+  return {
+    decision: 'filed',
+    number: created.number,
+    url: created.html_url,
+    verification: v,
+    problems: readBack(await readIssue(deps, created.number), wanted, pause),
+  }
 }
 
 export function summaryLine(issue: SentryIssue, o: Outcome): string {

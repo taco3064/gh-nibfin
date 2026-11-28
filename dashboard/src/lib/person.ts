@@ -169,8 +169,6 @@ export function runnerCounts(host: HostReport): RunnerCounts {
 // filterNeedsYou keeps only the Issues that need a person, and drops the
 // repositories left without one.
 export function filterNeedsYou(view: PersonView): PersonView {
-  const repos = (view.repos ?? [])
-    .map((r) => ({ ...r, issues: (r.issues ?? []).filter(needsYou) }))
-    .filter((r) => r.issues.length > 0)
+  const repos = (view.repos ?? []).map((r) => ({ ...r, issues: (r.issues ?? []).filter(needsYou) })).filter((r) => r.issues.length > 0)
   return { ...view, repos }
 }

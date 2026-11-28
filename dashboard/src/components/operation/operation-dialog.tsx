@@ -3,14 +3,7 @@ import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from
 
 import { tones, type Tone } from '@/components/issue/tones'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   afterPlan,
   applyAtOnce,
@@ -73,16 +66,7 @@ export interface OperationDialogProps {
 export function OperationDialog({ command, open, onOpenChange, onFinished, initial, fetcher, ...look }: OperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {open && (
-        <OperationContent
-          command={command}
-          initial={initial}
-          onClose={() => onOpenChange(false)}
-          onFinished={onFinished}
-          fetcher={fetcher}
-          {...look}
-        />
-      )}
+      {open && <OperationContent command={command} initial={initial} onClose={() => onOpenChange(false)} onFinished={onFinished} fetcher={fetcher} {...look} />}
     </Dialog>
   )
 }
@@ -123,7 +107,19 @@ function Stages({ phase, confirm }: { phase: Phase; confirm: boolean }) {
   )
 }
 
-function Message({ tone, icon: I, slot, children, role }: { tone: Tone; icon: typeof CircleAlert; slot: string; children: ReactNode; role?: 'alert' | 'status' }) {
+function Message({
+  tone,
+  icon: I,
+  slot,
+  children,
+  role,
+}: {
+  tone: Tone
+  icon: typeof CircleAlert
+  slot: string
+  children: ReactNode
+  role?: 'alert' | 'status'
+}) {
   return (
     <div role={role} data-slot={slot} className={cn('flex items-start gap-2 rounded-md px-3 py-2 text-sm', tones[tone])}>
       <I aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
@@ -304,9 +300,7 @@ function OperationContent({
   const phaseNow = state.phase
   useEffect(() => {
     if (phaseNow !== 'applying') return
-    const timers = logins
-      .filter(running)
-      .map((s) => setTimeout(() => endRef.current(timeoutReason), Math.max(0, endsAt(s) - Date.now())))
+    const timers = logins.filter(running).map((s) => setTimeout(() => endRef.current(timeoutReason), Math.max(0, endsAt(s) - Date.now())))
     return () => {
       for (const t of timers) clearTimeout(t)
     }
@@ -340,13 +334,7 @@ function OperationContent({
     logins.length > 0 && (phase === 'applying' || phase === 'finished') ? (
       <div className="flex flex-col gap-3" data-slot="logins">
         {logins.map((s) => (
-          <LoginPanel
-            key={s.provider}
-            state={s}
-            planId={state.planId}
-            fetcher={fetcher}
-            onCodeSent={(p) => loginDispatch({ type: 'codeSent', provider: p })}
-          />
+          <LoginPanel key={s.provider} state={s} planId={state.planId} fetcher={fetcher} onCodeSent={(p) => loginDispatch({ type: 'codeSent', provider: p })} />
         ))}
       </div>
     ) : null
@@ -377,12 +365,7 @@ function OperationContent({
         <Stages phase={phase} confirm={confirm} />
       </DialogHeader>
 
-      <div
-        ref={body}
-        tabIndex={-1}
-        aria-busy={busy}
-        className="-mx-6 flex min-h-0 flex-col gap-4 overflow-y-auto px-6 py-1 outline-none"
-      >
+      <div ref={body} tabIndex={-1} aria-busy={busy} className="-mx-6 flex min-h-0 flex-col gap-4 overflow-y-auto px-6 py-1 outline-none">
         {intro}
         {(phase === 'inputs' || phase === 'planning' || phase === 'planFailed') && (
           <form
@@ -399,14 +382,7 @@ function OperationContent({
                 <ErrorLine error={state.error} />
               </Message>
             )}
-            <OperationFields
-              fields={fields}
-              values={values}
-              errors={errors}
-              disabled={phase === 'planning'}
-              onChange={onChange}
-              inputs={inputs}
-            />
+            <OperationFields fields={fields} values={values} errors={errors} disabled={phase === 'planning'} onChange={onChange} inputs={inputs} />
           </form>
         )}
 
@@ -447,9 +423,7 @@ function OperationContent({
         {phase === 'applying' && (
           <>
             <Message tone="info" icon={LoaderCircle} slot="applying" role="status">
-              {loginWait
-                ? 'Applying. Sign in below to continue.'
-                : 'Applying. The dialog stays open until the result is read back.'}
+              {loginWait ? 'Applying. Sign in below to continue.' : 'Applying. The dialog stays open until the result is read back.'}
             </Message>
             {panels}
             {loginWait && (

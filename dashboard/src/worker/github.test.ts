@@ -92,7 +92,10 @@ describe('createGitHub', () => {
     const fake = new FakeGitHub()
     fake.graphqlErrors = [{ message: 'Could not resolve', path: ['r0', 'i1'] }]
     const gh = createGitHub({ token, fetch: fake.fetch, ...quick })
-    const ans = await gh.graphql('query($r0o: String!, $r0n: String!) { r0: repository(owner: $r0o, name: $r0n) { i0: issue(number: 3) { x } } }', { r0o: 'a', r0n: 'b' })
+    const ans = await gh.graphql('query($r0o: String!, $r0n: String!) { r0: repository(owner: $r0o, name: $r0n) { i0: issue(number: 3) { x } } }', {
+      r0o: 'a',
+      r0n: 'b',
+    })
     expect(ans.errors).toEqual([{ message: 'Could not resolve', path: ['r0', 'i1'], type: null }])
     expect(ans.data).toHaveProperty('r0')
     expect(fake.requests[0].method).toBe('POST')
@@ -170,10 +173,14 @@ describe('createGitHub', () => {
   })
 
   it('encodes a search query', () => {
-    expect(searchPath('repo:a/b is:issue created:>=2026-11-21T00:00:00+08:00')).toBe('search/issues?per_page=1&q=repo%3Aa%2Fb+is%3Aissue+created%3A%3E%3D2026-11-21T00%3A00%3A00%2B08%3A00')
+    expect(searchPath('repo:a/b is:issue created:>=2026-11-21T00:00:00+08:00')).toBe(
+      'search/issues?per_page=1&q=repo%3Aa%2Fb+is%3Aissue+created%3A%3E%3D2026-11-21T00%3A00%3A00%2B08%3A00',
+    )
   })
 
   it('adds a page size, page and sort to a search path', () => {
-    expect(searchPath('is:issue', { perPage: 100, page: 2, sort: 'created', order: 'asc' })).toBe('search/issues?per_page=100&page=2&sort=created&order=asc&q=is%3Aissue')
+    expect(searchPath('is:issue', { perPage: 100, page: 2, sort: 'created', order: 'asc' })).toBe(
+      'search/issues?per_page=100&page=2&sort=created&order=asc&q=is%3Aissue',
+    )
   })
 })

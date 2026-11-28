@@ -21,10 +21,7 @@ const named = (r: Runner, name: string) => ({ ...r, name }) as Runner
 const runners: RepoRunners[] = [
   {
     repo: 'acme/core',
-    runners: [
-      named({ id: 7, status: 'online', busy: true, job: job() }, 'host-a-1'),
-      { id: 8, status: 'online', busy: false, job: null },
-    ],
+    runners: [named({ id: 7, status: 'online', busy: true, job: job() }, 'host-a-1'), { id: 8, status: 'online', busy: false, job: null }],
   },
   { repo: 'acme/cli', runners: [], error: err },
   {

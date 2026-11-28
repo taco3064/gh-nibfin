@@ -71,7 +71,10 @@ function untrusted(issue: SentryIssue): string[] {
 
 function forgeryNote(v: Verification): string[] {
   if (v.verified) return []
-  return ['', 'This error could not be verified against a deployed build. Event text can be forged through the public DSN, so this request waits for the Owner to remove `pause`.']
+  return [
+    '',
+    'This error could not be verified against a deployed build. Event text can be forged through the public DSN, so this request waits for the Owner to remove `pause`.',
+  ]
 }
 
 function capBody(s: string): string {

@@ -265,7 +265,11 @@ export function closedGroups(graph: Pick<Graph, 'nodes'>, edges: readonly GraphE
     keys.set(e.from, list)
   }
   const out = new Map<string, GraphNode[]>()
-  for (const [from, list] of keys) out.set(from, list.sort(compareKeys).map((k) => graph.nodes.get(k)!))
+  for (const [from, list] of keys)
+    out.set(
+      from,
+      list.sort(compareKeys).map((k) => graph.nodes.get(k)!),
+    )
   return out
 }
 
@@ -521,7 +525,5 @@ export function unlinkedGroups(graph: Pick<Graph, 'nodes'>, keys: readonly strin
     const id: UnlinkedGroupId = node.kind !== 'issue' ? 'none' : node.issue.pause || node.issue.pending ? 'held' : stageOf(node.issue.labels)
     by.set(id, [...(by.get(id) ?? []), k])
   }
-  return unlinkedOrder
-    .filter((id) => by.has(id))
-    .map((id) => ({ id, label: id === 'held' ? heldLabel : stageLabels[id], keys: by.get(id)! }))
+  return unlinkedOrder.filter((id) => by.has(id)).map((id) => ({ id, label: id === 'held' ? heldLabel : stageLabels[id], keys: by.get(id)! }))
 }

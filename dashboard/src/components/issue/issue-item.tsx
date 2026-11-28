@@ -5,15 +5,7 @@ import { SectionLoading } from '@/components/shell/section-loading'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  answerable,
-  blockersView,
-  changeAccess,
-  pendingView,
-  safeLink,
-  stageOf,
-  type Change,
-} from '@/lib/issue'
+import { answerable, blockersView, changeAccess, pendingView, safeLink, stageOf, type Change } from '@/lib/issue'
 import { useLoading } from '@/lib/loading-context'
 import { useReadOnly } from '@/lib/repo-source'
 import type { RepoPermission, StatusIssue } from '@/lib/status'
@@ -74,9 +66,7 @@ function StageMarkers({ issue }: { issue: StatusIssue }) {
               </a>
             )}
             {pending.kind === 'failed' && (
-              <span className="text-sm break-words text-danger">
-                {`Reason comment could not be read: ${pending.error.code}: ${pending.error.message}`}
-              </span>
+              <span className="text-sm break-words text-danger">{`Reason comment could not be read: ${pending.error.code}: ${pending.error.message}`}</span>
             )}
             {pending.kind === 'notFound' && loading.has('pendingComment') && <SectionLoading label="Reading the reason…" data-loading="pendingComment" />}
             {pending.kind === 'notFound' && !loading.has('pendingComment') && <span className="text-sm text-muted-foreground">Reason comment not found</span>}
@@ -165,13 +155,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
   const running = change.running !== null
   const selectable = !readOnly && selected !== undefined && onSelectedChange !== undefined
   const ActionIcon = running ? LoaderCircle : action === 'pause' ? CirclePause : CirclePlay
-  const label = running
-    ? change.running === 'pause'
-      ? 'Pausing…'
-      : 'Resuming…'
-    : action === 'pause'
-      ? 'Pause'
-      : 'Resume'
+  const label = running ? (change.running === 'pause' ? 'Pausing…' : 'Resuming…') : action === 'pause' ? 'Pause' : 'Resume'
 
   return (
     <article
@@ -180,12 +164,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
       className={cn('flex gap-3 rounded-lg border border-border-subtle bg-card p-4 text-card-foreground', className)}
     >
       {selectable && (
-        <Checkbox
-          className="mt-1"
-          checked={selected}
-          onCheckedChange={(v) => onSelectedChange(v === true)}
-          aria-label={`Select #${issue.number}`}
-        />
+        <Checkbox className="mt-1" checked={selected} onCheckedChange={(v) => onSelectedChange(v === true)} aria-label={`Select #${issue.number}`} />
       )}
       <div className={cn('flex min-w-0 flex-1 flex-col gap-3', !stacked && 'sm:flex-row sm:items-start sm:justify-between')}>
         <div className="flex min-w-0 flex-col gap-2">

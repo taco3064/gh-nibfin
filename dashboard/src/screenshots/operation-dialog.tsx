@@ -121,15 +121,7 @@ function Harness() {
               </Button>
             ))}
         </div>
-        {open && (
-          <OperationDialog
-            command={open}
-            open
-            onOpenChange={(o) => !o && setOpen(null)}
-            onFinished={() => setFinished((n) => n + 1)}
-            fetcher={paced}
-          />
-        )}
+        {open && <OperationDialog command={open} open onOpenChange={(o) => !o && setOpen(null)} onFinished={() => setFinished((n) => n + 1)} fetcher={paced} />}
       </main>
     </div>
   )

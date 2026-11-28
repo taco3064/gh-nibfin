@@ -49,7 +49,17 @@ async function mockOps(page: Page): Promise<Ops> {
       plan: {
         operation: api,
         repo: body.repo,
-        steps: [{ id: 'workflows', action: 'write workflows', target: `${String(body.repo)} .github/workflows`, current: 'absent', next: 'present', noChange: false, afterStart: false }],
+        steps: [
+          {
+            id: 'workflows',
+            action: 'write workflows',
+            target: `${String(body.repo)} .github/workflows`,
+            current: 'absent',
+            next: 'present',
+            noChange: false,
+            afterStart: false,
+          },
+        ],
         confirm: false,
         readOnly: false,
       },
@@ -336,7 +346,8 @@ async function expectOpensOnFirstNode(page: Page) {
         const x0 = r.left + el.clientLeft + pad
         const y0 = r.top + el.clientTop + pad
         if (Math.abs(first.b.left - x0) > 2 || Math.abs(first.b.top - y0) > 2) return `${first.key} at ${first.b.left - r.left},${first.b.top - r.top}`
-        const meets = (b: DOMRect, left: number, top: number, right: number, bottom: number) => b.right > left && b.left < right && b.bottom > top && b.top < bottom
+        const meets = (b: DOMRect, left: number, top: number, right: number, bottom: number) =>
+          b.right > left && b.left < right && b.bottom > top && b.top < bottom
         const others = nodes.filter((n) => n !== first && meets(n.b, r.left, r.top, r.right, r.bottom))
         if (others.length === 0) return 'no other node in view'
         const quarter = nodes.some((n) => meets(n.b, r.left, r.top, r.left + r.width / 2, r.top + r.height / 2))
@@ -513,7 +524,9 @@ for (const [width, theme] of [
 
     // Searching for #2 fits it in the view; its closed blocker stays a marker.
     await page.getByRole('searchbox', { name: 'Search Issues' }).fill('#2')
-    await expect(page.locator('[data-slot=graph-count]')).toHaveText(`Showing 1 of ${platform.length} open Issues · 0 shown as context · 1 closed blocker collapsed`)
+    await expect(page.locator('[data-slot=graph-count]')).toHaveText(
+      `Showing 1 of ${platform.length} open Issues · 0 shown as context · 1 closed blocker collapsed`,
+    )
     await expect(region.locator('[data-node]')).toHaveCount(1)
     await edgesDrawn(page, 0)
     await expectInside(page, region.locator('[data-node="acme/platform#2"]'))
@@ -640,7 +653,9 @@ for (const theme of themes) {
       await change(page)
       await openManual(page, 'github.com/acme/infra')
       await expect(summary.locator('[data-image]')).toContainText('Image could not be read')
-      await expect(run.locator('[data-state=error]')).toContainText('github_api_failed: list the commits of .github/workflows/nibfin-issue.yml of acme/infra: HTTP 502')
+      await expect(run.locator('[data-state=error]')).toContainText(
+        'github_api_failed: list the commits of .github/workflows/nibfin-issue.yml of acme/infra: HTTP 502',
+      )
       await expect(workflows).toHaveAttribute('data-workflows', 'error')
       await expect(workflows).toContainText('github_error: reading .github/workflows of acme/infra: HTTP 502')
       await expect(workflows).toHaveAttribute('data-tone', 'danger')
@@ -854,4 +869,3 @@ test('a stale repository answer is dropped', async ({ page }) => {
   await expect(page.locator('[data-slot=repo-link]')).toHaveAttribute('href', 'https://github.com/acme/app')
   await expectClean(w)
 })
-

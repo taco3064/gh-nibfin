@@ -26,7 +26,14 @@ export function StackedBar({ label, segments, className }: { label: string; segm
         {total > 0 &&
           segments
             .filter((s) => s.count > 0)
-            .map((s) => <div key={s.key} data-segment={s.key} className={cn('h-full first:rounded-s-full last:rounded-e-full', s.className)} style={{ flexGrow: s.count, flexBasis: 0 }} />)}
+            .map((s) => (
+              <div
+                key={s.key}
+                data-segment={s.key}
+                className={cn('h-full first:rounded-s-full last:rounded-e-full', s.className)}
+                style={{ flexGrow: s.count, flexBasis: 0 }}
+              />
+            ))}
       </div>
       <ul aria-hidden="true" className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {segments.map((s) => {

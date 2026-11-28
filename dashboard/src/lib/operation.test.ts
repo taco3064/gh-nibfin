@@ -269,18 +269,22 @@ describe('runReducer', () => {
   })
 
   it('maps the read-back onto rows and adds checks without a row', () => {
-    const s = run(planned, { type: 'apply' }, {
-      type: 'applied',
-      outcome: {
-        ok: true,
-        value: {
-          items: [
-            { id: 'login', action: 'log in', target: 'alpha', confirmed: true, state: 'logged in' },
-            { id: 'slot-1', action: 'start', target: 'slot 1', confirmed: false, state: 'stopped', reason: 'not running' },
-          ],
+    const s = run(
+      planned,
+      { type: 'apply' },
+      {
+        type: 'applied',
+        outcome: {
+          ok: true,
+          value: {
+            items: [
+              { id: 'login', action: 'log in', target: 'alpha', confirmed: true, state: 'logged in' },
+              { id: 'slot-1', action: 'start', target: 'slot 1', confirmed: false, state: 'stopped', reason: 'not running' },
+            ],
+          },
         },
       },
-    })
+    )
     expect(s.phase).toBe('finished')
     expect(s.ending).toBe('result')
     expect(s.rows.find((r) => r.id === 'login')?.check?.confirmed).toBe(true)
@@ -289,12 +293,19 @@ describe('runReducer', () => {
   })
 
   it('returns a refused apply to the preview', () => {
-    const s = run(planned, { type: 'apply' }, {
-      type: 'applied',
-      outcome: { ok: false, status: 409, error: { code: 'operation_running', message: 'busy' } },
-    })
+    const s = run(
+      planned,
+      { type: 'apply' },
+      {
+        type: 'applied',
+        outcome: { ok: false, status: 409, error: { code: 'operation_running', message: 'busy' } },
+      },
+    )
     expect(s).toMatchObject({ phase: 'preview', planId: 'P1', refused: { status: 409, error: { code: 'operation_running' } } })
-    expect(run(planned, { type: 'apply' }, { type: 'applied', outcome: { ok: false, status: 404, error: { code: 'not_found', message: '' } } }, { type: 'apply' }).refused).toBeUndefined()
+    expect(
+      run(planned, { type: 'apply' }, { type: 'applied', outcome: { ok: false, status: 404, error: { code: 'not_found', message: '' } } }, { type: 'apply' })
+        .refused,
+    ).toBeUndefined()
   })
 
   it('reads back a read-only plan at once', () => {
@@ -327,10 +338,14 @@ describe('summary', () => {
   })
 
   it('is not confirmed when an error came with a fully confirmed result', () => {
-    const s = run(planned, { type: 'apply' }, {
-      type: 'applied',
-      outcome: { ok: false, error: { code: 'x', message: 'm' }, result: { items: [check('a', true)] } },
-    })
+    const s = run(
+      planned,
+      { type: 'apply' },
+      {
+        type: 'applied',
+        outcome: { ok: false, error: { code: 'x', message: 'm' }, result: { items: [check('a', true)] } },
+      },
+    )
     expect(summary(s)?.kind).toBe('notConfirmed')
     expect(s.error?.code).toBe('x')
   })
@@ -381,7 +396,12 @@ describe('aborted', () => {
   const plannedAction: RunAction = {
     type: 'planned',
     id: 'P9',
-    plan: { operation: 'login', steps: [{ id: 'login:alpha', action: 'log in', target: 'alpha', noChange: false, afterStart: false }], confirm: false, readOnly: false },
+    plan: {
+      operation: 'login',
+      steps: [{ id: 'login:alpha', action: 'log in', target: 'alpha', noChange: false, afterStart: false }],
+      confirm: false,
+      readOnly: false,
+    },
   }
   it('ends an applying dialog and is never confirmed', () => {
     const started: RunAction = { type: 'progress', event: { id: 'login:alpha', action: 'log in', target: 'alpha', phase: 'started' } }
@@ -396,7 +416,10 @@ describe('aborted', () => {
     expect(summary(s)).toEqual({ kind: 'ended', text: endedSummary('timed out after 15 minutes') })
     expect(summary(s)?.text).toContain('The login was ended (timed out after 15 minutes).')
     // The stream's later unknown outcome does not replace it.
-    const after = runReducer(s, { type: 'applied', outcome: { ok: true, value: { items: [{ id: 'login:alpha', action: 'log in', target: 'alpha', confirmed: true }] } } })
+    const after = runReducer(s, {
+      type: 'applied',
+      outcome: { ok: true, value: { items: [{ id: 'login:alpha', action: 'log in', target: 'alpha', confirmed: true }] } },
+    })
     expect(after).toBe(s)
   })
   it('is ignored outside an apply', () => {

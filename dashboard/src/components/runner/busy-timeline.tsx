@@ -41,8 +41,8 @@ export function BusyTimeline({ slots, activity }: { slots: RunnerState[]; activi
           <>
             {a.coversFrom && (
               <Note tone="info" data-note="covers-from">
-                The lanes reach back only to <time dateTime={a.coversFrom}>{formatTime(a.coversFrom)}</time>: the execution repository had more runs in
-                the last 24 hours than GitHub lists.
+                The lanes reach back only to <time dateTime={a.coversFrom}>{formatTime(a.coversFrom)}</time>: the execution repository had more runs in the last
+                24 hours than GitHub lists.
               </Note>
             )}
             <Lanes slots={slots} activity={a} />
@@ -103,10 +103,7 @@ function Lane({ bars, ticks }: { bars: Bar[]; ticks: number[] }) {
       {bars.length === 0 && <span className="sr-only">No Jobs</span>}
       {bars.map((b, i) => {
         const label = periodLabel(b.period)
-        const cls = cn(
-          'absolute inset-y-1 rounded-sm',
-          b.period.failed ? 'bg-danger' : 'bg-primary',
-        )
+        const cls = cn('absolute inset-y-1 rounded-sm', b.period.failed ? 'bg-danger' : 'bg-primary')
         const style = { left: `${b.x * 100}%`, width: `${b.width * 100}%`, minWidth: '3px' }
         return b.period.url ? (
           <a

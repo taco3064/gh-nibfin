@@ -242,7 +242,13 @@ function RunState({ run, look }: { run: NibfinRun; look: RunLook }) {
       {look.state === 'succeeded' && run.run && (
         <span>
           <a href={run.run} target="_blank" rel="noreferrer" className={linkClass}>
-            Successful run{run.at && <> at <time dateTime={run.at}>{formatTime(run.at)}</time></>}
+            Successful run
+            {run.at && (
+              <>
+                {' '}
+                at <time dateTime={run.at}>{formatTime(run.at)}</time>
+              </>
+            )}
             <ExternalMark label="(opens on GitHub in a new tab)" />
           </a>
         </span>

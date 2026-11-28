@@ -80,12 +80,12 @@ export const fixtures: FixtureIssue[] = [
   {
     repo: 'acme/app',
     issue: {
-      ...base(
-        'acme/app',
-        104,
-        'Replace the legacy authentication middleware with the shared session library across every service endpoint',
-        ['scope', 'shaped', 'delivered', 'pending'],
-      ),
+      ...base('acme/app', 104, 'Replace the legacy authentication middleware with the shared session library across every service endpoint', [
+        'scope',
+        'shaped',
+        'delivered',
+        'pending',
+      ]),
       pendingCommentError: error('github_error', 'comments of acme/app#104: HTTP 500'),
     },
   },
@@ -130,7 +130,8 @@ export const fixtures: FixtureIssue[] = [
           {
             number: 2,
             title: 'Move new uploads and migrate every existing attachment in the same change',
-            consequence: 'The Shape runs again with a migration step, and Deliver starts over from the new Shape; this takes longer but leaves no attachment behind.',
+            consequence:
+              'The Shape runs again with a migration step, and Deliver starts over from the new Shape; this takes longer but leaves no attachment behind.',
             issueChange: 'adds a clause: existing attachments are migrated to object storage',
             recommended: true,
           },

@@ -133,7 +133,10 @@ function Entry({ entry }: { entry: CommandEntry }) {
           {entry.more.length > 0 ? (
             <details data-slot="details">
               <summary>
-                More about <code>{rootCommand} {entry.path}</code>
+                More about{' '}
+                <code>
+                  {rootCommand} {entry.path}
+                </code>
               </summary>
               {entry.more.map((p, i) => (
                 <p key={i}>{p}</p>

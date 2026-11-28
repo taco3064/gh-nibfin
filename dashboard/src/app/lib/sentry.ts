@@ -12,13 +12,7 @@ export interface SentryConfig {
 }
 
 // Schemes of browser extensions; their scripts are not the site's errors.
-const extensionSchemes = new Set([
-  'chrome-extension:',
-  'moz-extension:',
-  'safari-extension:',
-  'safari-web-extension:',
-  'ms-browser-extension:',
-])
+const extensionSchemes = new Set(['chrome-extension:', 'moz-extension:', 'safari-extension:', 'safari-web-extension:', 'ms-browser-extension:'])
 const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 // isIgnoredUrl reports a URL on localhost, a file: URL or a browser extension.

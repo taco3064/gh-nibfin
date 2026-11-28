@@ -66,8 +66,16 @@ for (const theme of themes) {
       // A failed check and an unwatched podman show their notes.
       await push(
         page,
-        { event: 'error', source: 'github', error: { code: 'github_api_failed', message: 'check the open scope Issues assigned to you: HTTP 403: API rate limit exceeded' } },
-        { event: 'podman', watching: false, error: { code: 'machine_stopped', message: 'podman machine podman-machine-default is stopped; the Dashboard does not start it' } },
+        {
+          event: 'error',
+          source: 'github',
+          error: { code: 'github_api_failed', message: 'check the open scope Issues assigned to you: HTTP 403: API rate limit exceeded' },
+        },
+        {
+          event: 'podman',
+          watching: false,
+          error: { code: 'machine_stopped', message: 'podman machine podman-machine-default is stopped; the Dashboard does not start it' },
+        },
       )
       await expect(page.locator('[data-note=check-error]')).toHaveText(
         'GitHub check failed: github_api_failed: check the open scope Issues assigned to you: HTTP 403: API rate limit exceeded',
@@ -86,9 +94,7 @@ for (const theme of themes) {
       await endStream(page)
       await expect(live(page)).toHaveAttribute('data-state', 'off')
       await expect(live(page)).toHaveText('Live updates off')
-      await expect(page.locator('[data-note=live-off]')).toHaveText(
-        'Live updates stopped: stream_closed: the live stream ended. Use Refresh to reconnect.',
-      )
+      await expect(page.locator('[data-note=live-off]')).toHaveText('Live updates stopped: stream_closed: the live stream ended. Use Refresh to reconnect.')
       await expect(page.locator('[data-note=podman]')).toHaveCount(0)
       await expectNoPageScroll(page)
       await shot(page, `live-off-${theme}-${width}`, false)
@@ -111,9 +117,7 @@ for (const theme of themes) {
     })
     await expect(page.locator('[data-repo]')).toHaveCount(7)
     await expect(live(page)).toHaveAttribute('data-state', 'off')
-    await expect(page.locator('[data-note=live-off]')).toHaveText(
-      'Live updates stopped: not_found: live updates are not available. Use Refresh to reconnect.',
-    )
+    await expect(page.locator('[data-note=live-off]')).toHaveText('Live updates stopped: not_found: live updates are not available. Use Refresh to reconnect.')
     expect(w.statusReads).toBe(1)
     for (const width of widths) {
       await page.setViewportSize({ width, height: 900 })

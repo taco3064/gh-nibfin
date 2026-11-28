@@ -24,7 +24,18 @@ import {
 import type { Activity, HostReport, RunnerState } from './status'
 
 function slot(over: Partial<RunnerState> = {}): RunnerState {
-  return { slot: 'claude-1', provider: 'claude', configured: true, unit: true, enabled: true, active: true, listed: true, status: 'online', busy: false, ...over }
+  return {
+    slot: 'claude-1',
+    provider: 'claude',
+    configured: true,
+    unit: true,
+    enabled: true,
+    active: true,
+    listed: true,
+    status: 'online',
+    busy: false,
+    ...over,
+  }
 }
 
 describe('gib', () => {
@@ -247,7 +258,10 @@ describe('activityView', () => {
     expect(activityView({ history }, last).timeline).toEqual({ state: 'loaded', activity: value(history) })
   })
   it('shows a failed history read', () =>
-    expect(activityView({ current: lastCurrent, history: routeError }).timeline).toEqual({ state: 'failed', error: { code: 'podman_failed', message: 'boom' } }))
+    expect(activityView({ current: lastCurrent, history: routeError }).timeline).toEqual({
+      state: 'failed',
+      error: { code: 'podman_failed', message: 'boom' },
+    }))
 })
 
 describe('rollCycle', () => {

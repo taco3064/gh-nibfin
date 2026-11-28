@@ -21,9 +21,7 @@ export const unauthorized = 'Failed to load resource: the server responded with 
 // error with its HTTP status.
 // partials, when given, come first: the status read route's partial lines,
 // or the live stream's partial frames before its snapshot.
-export type StatusAnswer =
-  | { result: unknown; partials?: PartialRead[] }
-  | { error: { code: string; message: string }; httpStatus: number }
+export type StatusAnswer = { result: unknown; partials?: PartialRead[] } | { error: { code: string; message: string }; httpStatus: number }
 
 // PartialRead is one partial read: the sections read so far and those still
 // loading.

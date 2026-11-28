@@ -2,16 +2,7 @@ import { useId } from 'react'
 
 import { cn } from '@/lib/utils'
 
-import {
-  describeDiagram,
-  layoutDiagram,
-  sizes,
-  titlePlate,
-  type DiagramKind,
-  type DiagramSpec,
-  type Placement,
-  type Point,
-} from './layout'
+import { describeDiagram, layoutDiagram, sizes, titlePlate, type DiagramKind, type DiagramSpec, type Placement, type Point } from './layout'
 import { DiagramText } from './DiagramText'
 import { Stacked } from './Stacked'
 import { toneOf } from './tones'
@@ -109,15 +100,7 @@ function choose(placements: Placement[]): { drawings: Candidate[]; stacked?: str
  * are hidden from assistive technology; a visually hidden ordered list
  * carries the same information at every width.
  */
-export function Diagram({
-  spec,
-  title,
-  description,
-  flow = false,
-  className,
-  layout = 'responsive',
-  readingOrder = 'placement',
-}: DiagramProps) {
+export function Diagram({ spec, title, description, flow = false, className, layout = 'responsive', readingOrder = 'placement' }: DiagramProps) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '')
   const narrow = layoutDiagram(spec, 'TB')
   const wide = layout === 'vertical' ? undefined : layoutDiagram(spec, 'LR')
@@ -156,10 +139,7 @@ function Legend({ kinds, title }: { kinds: DiagramKind[]; title: string }) {
           const Icon = k.icon
           return (
             <li key={k.id} className="flex items-start gap-3" data-kind={k.id}>
-              <span
-                aria-hidden="true"
-                className={cn('flex size-8 shrink-0 items-center justify-center rounded-md border-2 bg-card', tone.border)}
-              >
+              <span aria-hidden="true" className={cn('flex size-8 shrink-0 items-center justify-center rounded-md border-2 bg-card', tone.border)}>
                 {Icon && <Icon className={cn('size-4', tone.text)} />}
               </span>
               <span className="flex min-w-0 flex-col gap-0.5">
@@ -209,15 +189,7 @@ function Drawing({ spec, flow, placement: p, marker }: { spec: DiagramSpec; flow
       data-direction={p.direction}
     >
       <defs>
-        <marker
-          id={marker}
-          viewBox="0 0 10 10"
-          refX="10"
-          refY="5"
-          markerWidth="6"
-          markerHeight="6"
-          orient="auto-start-reverse"
-        >
+        <marker id={marker} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" className="fill-muted-foreground" />
         </marker>
       </defs>
@@ -226,28 +198,12 @@ function Drawing({ spec, flow, placement: p, marker }: { spec: DiagramSpec; flow
           {p.groupStyle === 'lanes' ? (
             <rect x={g.x} y={g.y} width={g.width} height={g.height} rx={10} className="fill-muted/40 stroke-border-subtle" />
           ) : (
-            <rect
-              x={g.x}
-              y={g.y}
-              width={g.width}
-              height={g.height}
-              rx={12}
-              strokeWidth={1.5}
-              strokeDasharray="6 4"
-              className="fill-none stroke-border"
-            />
+            <rect x={g.x} y={g.y} width={g.width} height={g.height} rx={12} strokeWidth={1.5} strokeDasharray="6 4" className="fill-none stroke-border" />
           )}
         </g>
       ))}
       {p.edges.map((e, i) => (
-        <path
-          key={`e${i}`}
-          d={path(e.points)}
-          fill="none"
-          strokeWidth={1.5}
-          markerEnd={`url(#${marker})`}
-          className="stroke-muted-foreground"
-        />
+        <path key={`e${i}`} d={path(e.points)} fill="none" strokeWidth={1.5} markerEnd={`url(#${marker})`} className="stroke-muted-foreground" />
       ))}
       {/* The flow: a slow dash over each edge, shown and moving only without
           reduced motion, so a reduced-motion figure is the static one. */}
@@ -280,14 +236,7 @@ function Drawing({ spec, flow, placement: p, marker }: { spec: DiagramSpec; flow
         (e, i) =>
           e.label && (
             <g key={`l${i}`}>
-              <rect
-                x={e.label.x}
-                y={e.label.y}
-                width={e.label.width}
-                height={e.label.height}
-                rx={4}
-                className="fill-background stroke-border-subtle"
-              />
+              <rect x={e.label.x} y={e.label.y} width={e.label.width} height={e.label.height} rx={4} className="fill-background stroke-border-subtle" />
               {e.label.lines.map((line, j) => (
                 <text
                   key={j}

@@ -20,7 +20,11 @@ function event(action = 'created', issue: Record<string, unknown> = webhookIssue
 }
 
 async function request(body: string, opts: { resource?: string; signature?: string | null; method?: string } = {}): Promise<Request> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Sentry-Hook-Resource': opts.resource ?? 'issue', 'Sentry-Hook-Timestamp': '1764205200' }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Sentry-Hook-Resource': opts.resource ?? 'issue',
+    'Sentry-Hook-Timestamp': '1764205200',
+  }
   const sig = opts.signature === undefined ? await sign(body) : opts.signature
   if (sig !== null) headers['Sentry-Hook-Signature'] = sig
   const method = opts.method ?? 'POST'
@@ -68,7 +72,19 @@ describe('handle', () => {
     const out = JSON.parse(sent[0].init.body as string)
     expect(out.event_type).toBe('sentry-issue')
     expect(Object.keys(out.client_payload)).toEqual(['issue'])
-    expect(Object.keys(out.client_payload.issue).sort()).toEqual(['action', 'count', 'culprit', 'firstSeen', 'id', 'lastSeen', 'level', 'permalink', 'shortId', 'title', 'userCount'])
+    expect(Object.keys(out.client_payload.issue).sort()).toEqual([
+      'action',
+      'count',
+      'culprit',
+      'firstSeen',
+      'id',
+      'lastSeen',
+      'level',
+      'permalink',
+      'shortId',
+      'title',
+      'userCount',
+    ])
     expect(sent[0].init.body).not.toContain('secret-looking')
     expect(logs).toEqual([])
   })
@@ -97,7 +113,14 @@ describe('handle', () => {
 
   it('rejects a wrong, malformed or missing signature with 401', async () => {
     const body = event()
-    for (const signature of [await sign(body, 'other-secret'), await sign(body + ' '), 'sha256=' + (await sign(body)), (await sign(body)).toUpperCase(), 'zz', null]) {
+    for (const signature of [
+      await sign(body, 'other-secret'),
+      await sign(body + ' '),
+      'sha256=' + (await sign(body)),
+      (await sign(body)).toUpperCase(),
+      'zz',
+      null,
+    ]) {
       const { d, sent, logs } = deps()
       const res = await handle(await request(body, { signature }), env, d)
       expect(res.status).toBe(401)
@@ -108,7 +131,10 @@ describe('handle', () => {
   })
 
   it('rejects every request without a client secret and logs only that', async () => {
-    for (const e of [{ ...env, SENTRY_CLIENT_SECRET: undefined }, { ...env, SENTRY_CLIENT_SECRET: '' }]) {
+    for (const e of [
+      { ...env, SENTRY_CLIENT_SECRET: undefined },
+      { ...env, SENTRY_CLIENT_SECRET: '' },
+    ]) {
       const { d, sent, logs } = deps()
       const body = event()
       expect((await handle(await request(body), e, d)).status).toBe(401)

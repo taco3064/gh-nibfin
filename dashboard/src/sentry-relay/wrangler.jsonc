@@ -10,6 +10,6 @@
   "observability": { "enabled": false },
   "vars": {
     "SENTRY_PROJECT_SLUG": "nibfin-website",
-    "DISPATCH_REPOSITORY": "taco3064/gh-nibfin"
-  }
+    "DISPATCH_REPOSITORY": "taco3064/gh-nibfin",
+  },
 }

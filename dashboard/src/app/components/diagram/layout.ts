@@ -205,7 +205,13 @@ export function wrapText(text: string, maxChars: number): string[] {
 
 // longestWord is the length of text's longest unbreakable word.
 export function longestWord(text: string): number {
-  return Math.max(0, ...text.trim().split(/\s+/).map((w) => w.length))
+  return Math.max(
+    0,
+    ...text
+      .trim()
+      .split(/\s+/)
+      .map((w) => w.length),
+  )
 }
 
 // badgeWidth is the width of a badge's pill, which always holds its text.
@@ -365,10 +371,7 @@ export function layoutDiagram(spec: DiagramSpec, direction: Direction): Placemen
   const kinds = new Map((spec.kinds ?? []).map((k) => [k.id, k]))
   const content = new Map(spec.nodes.map((n) => [n.id, nodeContent(n, kinds)]))
   const labels = spec.edges.map((e) => (e.label ? labelSize(e.label) : undefined))
-  let raw =
-    groupStyle === 'lanes'
-      ? layoutLanes(spec, direction, content, labels)
-      : layoutFrames(spec, direction, content, labels)
+  let raw = groupStyle === 'lanes' ? layoutLanes(spec, direction, content, labels) : layoutFrames(spec, direction, content, labels)
   if (direction === 'LR' && spec.wrap !== undefined) raw = wrapRows(raw, spec, spec.wrap)
   return normalize(raw, spec, direction, groupStyle)
 }
@@ -380,14 +383,7 @@ type Raw = Pick<Placement, 'nodes' | 'edges' | 'groups'> & { rowOf?: Map<string,
 
 // dagreGraph lays out the nodes and edges with dagre; with compound set,
 // each group becomes a cluster that keeps its members together.
-function dagreGraph(
-  spec: DiagramSpec,
-  direction: Direction,
-  content: Content,
-  labels: Labels,
-  compound: boolean,
-  sep = { nodesep: 24, ranksep: 40 },
-) {
+function dagreGraph(spec: DiagramSpec, direction: Direction, content: Content, labels: Labels, compound: boolean, sep = { nodesep: 24, ranksep: 40 }) {
   const g = new dagre.graphlib.Graph({ compound, multigraph: true })
   g.setGraph({ rankdir: direction, ...sep, edgesep: 12, marginx: 0, marginy: 0 })
   for (const n of spec.nodes) {
@@ -589,24 +585,17 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
 
   // cells[lane][rank] lists the lane's nodes of that rank in dagre's order.
   const cells = lanes.map((lane) =>
-    Array.from({ length: ranks }, (_, r) =>
-      lane.members.filter((n) => rankOf.get(n.id) === r).sort((a, b) => crossOf(a.id) - crossOf(b.id)),
-    ),
+    Array.from({ length: ranks }, (_, r) => lane.members.filter((n) => rankOf.get(n.id) === r).sort((a, b) => crossOf(a.id) - crossOf(b.id))),
   )
   const crossSize = (id: string) => (lr ? content.get(id)!.height : content.get(id)!.width)
   const flowSize = (id: string) => (lr ? content.get(id)!.width : content.get(id)!.height)
-  const cellCross = (cell: DiagramNode[]) =>
-    cell.reduce((sum, n) => sum + crossSize(n.id), 0) + Math.max(0, cell.length - 1) * cellGap
+  const cellCross = (cell: DiagramNode[]) => cell.reduce((sum, n) => sum + crossSize(n.id), 0) + Math.max(0, cell.length - 1) * cellGap
   // A TB lane is also wide enough for its title's longest word, which never
   // breaks: the title starts 10 units in, and its plate reaches 4 past it.
   const titleNeed = (title: string) => (lr ? 0 : longestWord(title) * s.groupTitleCharWidth + 14 - 2 * pad)
-  const laneContent = cells.map((row, li) =>
-    Math.max(sizes.nodeWidth / 2, titleNeed(lanes[li].title), ...row.map(cellCross)),
-  )
+  const laneContent = cells.map((row, li) => Math.max(sizes.nodeWidth / 2, titleNeed(lanes[li].title), ...row.map(cellCross)))
   // Size of each rank along the flow.
-  const rankSize = Array.from({ length: ranks }, (_, r) =>
-    Math.max(0, ...spec.nodes.filter((n) => rankOf.get(n.id) === r).map((n) => flowSize(n.id))),
-  )
+  const rankSize = Array.from({ length: ranks }, (_, r) => Math.max(0, ...spec.nodes.filter((n) => rankOf.get(n.id) === r).map((n) => flowSize(n.id))))
   const starts = (first: number) => {
     const out: number[] = []
     let at = first
@@ -673,9 +662,7 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
         y: 0,
         width: laneWidth[li],
         height,
-        titleLines: lane.title
-          ? titles[li].lines.map((text, j) => ({ text, x: x + 10, y: 4 + (j + 1) * s.groupTitleLine }))
-          : [],
+        titleLines: lane.title ? titles[li].lines.map((text, j) => ({ text, x: x + 10, y: 4 + (j + 1) * s.groupTitleLine })) : [],
       })
       laneEnd = x + laneWidth[li]
       x += laneWidth[li] + laneGap
@@ -702,9 +689,7 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
     const [start, size] = lr ? [box.y, box.height] : [box.x, box.width]
     const forward = (end: 'from' | 'to') => {
       const other = end === 'from' ? 'to' : 'from'
-      return indexed
-        .filter(({ e }) => e[end] === n.id && forwardOf(e))
-        .sort((p, q) => crossCentre(p.e[other]) - crossCentre(q.e[other]) || p.i - q.i)
+      return indexed.filter(({ e }) => e[end] === n.id && forwardOf(e)).sort((p, q) => crossCentre(p.e[other]) - crossCentre(q.e[other]) || p.i - q.i)
     }
     const spread = (side: { i: number; port: Map<number, number> }[]) =>
       side.forEach(({ i, port }, k) => port.set(i, start + (size * (k + 1)) / (side.length + 1)))
@@ -768,11 +753,33 @@ function layoutLanes(spec: DiagramSpec, direction: Direction, content: Content, 
       const gapMid = gapStart(before) + gaps[before].labelAt
       if (lr) {
         const sx = a.x + a.width
-        points = so === ti ? [{ x: sx, y: so }, { x: b.x, y: ti }] : [{ x: sx, y: so }, { x: m, y: so }, { x: m, y: ti }, { x: b.x, y: ti }]
+        points =
+          so === ti
+            ? [
+                { x: sx, y: so },
+                { x: b.x, y: ti },
+              ]
+            : [
+                { x: sx, y: so },
+                { x: m, y: so },
+                { x: m, y: ti },
+                { x: b.x, y: ti },
+              ]
         mid = { x: gapMid, y: ti }
       } else {
         const sy = a.y + a.height
-        points = so === ti ? [{ x: so, y: sy }, { x: ti, y: b.y }] : [{ x: so, y: sy }, { x: so, y: m }, { x: ti, y: m }, { x: ti, y: b.y }]
+        points =
+          so === ti
+            ? [
+                { x: so, y: sy },
+                { x: ti, y: b.y },
+              ]
+            : [
+                { x: so, y: sy },
+                { x: so, y: m },
+                { x: ti, y: m },
+                { x: ti, y: b.y },
+              ]
         mid = { x: ti, y: gapMid }
       }
     } else if (backOf(e)) {
@@ -839,9 +846,7 @@ function wrapRows(raw: Raw, spec: DiagramSpec, wrap: number): Raw {
   // The edges of each gutter (after row r), each with its own line.
   const crossing = raw.edges.map((e, i) => ({ e, i })).filter(({ e }) => !sameRow(e))
   const gutters = Array.from({ length: rows - 1 }, (_, r) => crossing.filter(({ e }) => rowOf.get(e.from) === r))
-  const gutterSize = gutters.map(
-    (g) => s.rowGap + Math.max(0, g.length - 1) * s.rowSlot + Math.max(0, ...g.map(({ e }) => e.label?.height ?? 0)),
-  )
+  const gutterSize = gutters.map((g) => s.rowGap + Math.max(0, g.length - 1) * s.rowSlot + Math.max(0, ...g.map(({ e }) => e.label?.height ?? 0)))
   const shift: Point[] = []
   let top = extent[0].top
   for (let r = 0; r < rows; r++) {
@@ -898,8 +903,16 @@ function wrapRows(raw: Raw, spec: DiagramSpec, wrap: number): Raw {
     }
     const points =
       Math.abs(ox - ix) < 0.5
-        ? [{ x: ox, y: a.y + a.height }, { x: ox, y: b.y }]
-        : [{ x: ox, y: a.y + a.height }, { x: ox, y }, { x: ix, y }, { x: ix, y: b.y }]
+        ? [
+            { x: ox, y: a.y + a.height },
+            { x: ox, y: b.y },
+          ]
+        : [
+            { x: ox, y: a.y + a.height },
+            { x: ox, y },
+            { x: ix, y },
+            { x: ix, y: b.y },
+          ]
     const l = e.label
     return { ...e, points, label: l && { ...l, x: (ox + ix) / 2 - l.width / 2, y: y - l.height / 2 } }
   })
@@ -985,9 +998,7 @@ export function describeDiagram(spec: DiagramSpec, placement: Pick<Placement, 'o
       badges: n.badges ?? [],
       group: n.group === undefined ? undefined : groups.get(n.group),
       ...(n.kinds?.length ? { kinds: n.kinds.map((k) => kinds.get(k)!) } : {}),
-      edges: spec.edges
-        .filter((e) => e.from === id)
-        .map((e) => ({ to: nodes.get(e.to)!.title, label: e.label })),
+      edges: spec.edges.filter((e) => e.from === id).map((e) => ({ to: nodes.get(e.to)!.title, label: e.label })),
     }
   })
 }

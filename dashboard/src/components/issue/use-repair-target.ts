@@ -13,9 +13,7 @@ export const optionKey = 'option'
 // RepairTarget is what the Repair button opens: for a choose record the
 // resume command that answers options and the option to preselect, or why
 // it cannot be answered here.
-export type RepairTarget =
-  | { ready: true; command?: Command; recommended?: number }
-  | { ready: false; reason: string }
+export type RepairTarget = { ready: true; command?: Command; recommended?: number } | { ready: false; reason: string }
 
 export type Load = { state: 'loading' } | { state: 'loaded'; commands: Command[] } | { state: 'failed'; error: ApiError }
 

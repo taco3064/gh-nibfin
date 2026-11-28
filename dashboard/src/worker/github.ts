@@ -143,13 +143,7 @@ export function waitSeconds(attempt: number, retryAfter: number | null): number 
   return retryAfter === null ? 2 ** (attempt - 1) : Math.min(retryAfter, maxWait)
 }
 
-export function createGitHub({
-  token,
-  fetch: fetcher,
-  budget = requestBudget,
-  sleep = realSleep,
-  log = (line) => console.log(line),
-}: GitHubOptions): GitHub {
+export function createGitHub({ token, fetch: fetcher, budget = requestBudget, sleep = realSleep, log = (line) => console.log(line) }: GitHubOptions): GitHub {
   const hasToken = typeof token === 'string' && token !== ''
   let used = 0
 
@@ -157,12 +151,7 @@ export function createGitHub({
   // retried unless it is final or an absent answer; an answer is retried
   // while again() names a failure. The retry line names the call and the
   // attempt, never a query string, body or header.
-  async function retrying<T>(
-    what: string,
-    once: () => Promise<T>,
-    absent: (e: GitHubError) => boolean,
-    again: (t: T) => string | null,
-  ): Promise<T> {
+  async function retrying<T>(what: string, once: () => Promise<T>, absent: (e: GitHubError) => boolean, again: (t: T) => string | null): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       let reason: string | null
       let retryAfter: number | null = null
@@ -207,13 +196,23 @@ export function createGitHub({
 
     async get(path, etag) {
       const absent = (e: GitHubError) => e.status === 404 || e.status === 410
-      return retrying(`GET /${path.split('?')[0]}`, () => getOnce(path, etag), absent, () => null)
+      return retrying(
+        `GET /${path.split('?')[0]}`,
+        () => getOnce(path, etag),
+        absent,
+        () => null,
+      )
     },
 
     async graphql(query, variables) {
       // NOT_FOUND alone is an answer ("absent"), like a GET 404.
       const again = (a: GraphQLAnswer) => (a.errors.some((e) => e.type !== 'NOT_FOUND') ? 'GraphQL error' : null)
-      return retrying('POST /graphql', () => graphqlOnce(query, variables), () => false, again)
+      return retrying(
+        'POST /graphql',
+        () => graphqlOnce(query, variables),
+        () => false,
+        again,
+      )
     },
   }
 

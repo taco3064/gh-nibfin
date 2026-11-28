@@ -36,7 +36,10 @@ export function sentryIssue(overrides: Partial<SentryIssue> = {}): SentryIssue {
 }
 
 export function frame(filename: string, lineNo = 10, raw = 'https://taco3064.github.io/gh-nibfin/_astro/index.abc123.js') {
-  return { frame: { filename, absPath: filename, inApp: true, lineNo, colNo: 5, function: 'render' }, raw: { filename: raw, absPath: raw, inApp: true, lineNo: 1, colNo: 9999 } }
+  return {
+    frame: { filename, absPath: filename, inApp: true, lineNo, colNo: 5, function: 'render' },
+    raw: { filename: raw, absPath: raw, inApp: true, lineNo: 1, colNo: 9999 },
+  }
 }
 
 export function sentryEvent(frames: ReturnType<typeof frame>[], opts: { release?: unknown; errors?: unknown[] } = {}) {
@@ -66,7 +69,9 @@ export class Fake {
   issues: FakeIssue[] = []
   comments = new Map<number, FakeComment[]>()
   greenRuns = new Set<string>([SHA])
-  trees = new Map<string, { paths: string[]; truncated?: boolean }>([[SHA, { paths: ['dashboard/src/app/pages/index.astro', 'dashboard/src/components/diagram.tsx', 'dashboard/src/lib/format.ts'] }]])
+  trees = new Map<string, { paths: string[]; truncated?: boolean }>([
+    [SHA, { paths: ['dashboard/src/app/pages/index.astro', 'dashboard/src/components/diagram.tsx', 'dashboard/src/lib/format.ts'] }],
+  ])
   event: unknown = sentryEvent([frame('../../src/components/diagram.tsx', 42)])
   sentryStatus = 200
   faults = new Map<string, Fault[]>()
@@ -77,7 +82,17 @@ export class Fake {
   private nextComment = 1
 
   open(title: string, opts: Partial<FakeIssue> = {}): FakeIssue {
-    const i: FakeIssue = { number: this.nextNumber++, title, state: 'open', body: 'opened by hand', labels: ['request'], assignees: ['taco3064'], created_at: '2026-11-20T00:00:00Z', user: 'taco3064', ...opts }
+    const i: FakeIssue = {
+      number: this.nextNumber++,
+      title,
+      state: 'open',
+      body: 'opened by hand',
+      labels: ['request'],
+      assignees: ['taco3064'],
+      created_at: '2026-11-20T00:00:00Z',
+      user: 'taco3064',
+      ...opts,
+    }
     this.issues.push(i)
     return i
   }
@@ -154,7 +169,13 @@ export class Fake {
       const creator = url.searchParams.get('creator')
       const since = url.searchParams.get('since')
       const list = this.issues
-        .filter((i) => (state === 'all' || i.state === state) && (!label || i.labels.includes(label)) && (!creator || i.user === creator) && (!since || i.created_at >= since))
+        .filter(
+          (i) =>
+            (state === 'all' || i.state === state) &&
+            (!label || i.labels.includes(label)) &&
+            (!creator || i.user === creator) &&
+            (!since || i.created_at >= since),
+        )
         .sort((a, b) => b.number - a.number)
         .map((i) => this.ghIssue(i))
       return this.page(url, list)
@@ -178,13 +199,21 @@ export class Fake {
     }
     if (path === 'actions/workflows/website.yml/runs') {
       const sha = url.searchParams.get('head_sha') ?? ''
-      const ok = url.searchParams.get('branch') === 'main' && url.searchParams.get('event') === 'push' && url.searchParams.get('status') === 'success' && this.greenRuns.has(sha)
+      const ok =
+        url.searchParams.get('branch') === 'main' &&
+        url.searchParams.get('event') === 'push' &&
+        url.searchParams.get('status') === 'success' &&
+        this.greenRuns.has(sha)
       return json({ total_count: ok ? 1 : 0, workflow_runs: [] })
     }
     if ((m = /^git\/trees\/([0-9a-f]{40})$/.exec(path))) {
       const t = this.trees.get(m[1])
       if (!t) return json({ message: 'Not Found' }, 404)
-      return json({ sha: m[1], truncated: t.truncated ?? false, tree: [{ path: 'dashboard/src', type: 'tree' }, ...t.paths.map((p) => ({ path: p, type: 'blob' }))] })
+      return json({
+        sha: m[1],
+        truncated: t.truncated ?? false,
+        tree: [{ path: 'dashboard/src', type: 'tree' }, ...t.paths.map((p) => ({ path: p, type: 'blob' }))],
+      })
     }
     return json({ message: 'Not Found' }, 404)
   }

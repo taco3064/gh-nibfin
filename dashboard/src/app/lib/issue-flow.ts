@@ -1,17 +1,4 @@
-import {
-  Bot,
-  CircleCheckBig,
-  CircleDot,
-  GitMerge,
-  ListChecks,
-  PencilRuler,
-  Rocket,
-  Search,
-  Settings2,
-  UserRound,
-  Workflow,
-  Wrench,
-} from 'lucide-react'
+import { Bot, CircleCheckBig, CircleDot, GitMerge, ListChecks, PencilRuler, Rocket, Search, Settings2, UserRound, Workflow, Wrench } from 'lucide-react'
 
 import type { DiagramSpec } from '../components/diagram'
 
@@ -45,8 +32,7 @@ const kinds: NonNullable<DiagramSpec['kinds']> = [
   {
     id: 'person',
     title: 'A person’s control point',
-    description:
-      'Adds scope or request and an Assignee, can stop any step with pause, is asked when Nibfin adds pending, and gives the required reviews.',
+    description: 'Adds scope or request and an Assignee, can stop any step with pause, is asked when Nibfin adds pending, and gives the required reviews.',
     icon: UserRound,
     tone: 'warning',
   },

@@ -291,10 +291,16 @@ describe('applyStream abort', () => {
       return new Response(body, { status: 200 })
     })
     const seen: string[] = []
-    const p = applyStream('ID', true, (l) => {
-      seen.push(l.event ?? '')
-      ac.abort()
-    }, f, ac.signal)
+    const p = applyStream(
+      'ID',
+      true,
+      (l) => {
+        seen.push(l.event ?? '')
+        ac.abort()
+      },
+      f,
+      ac.signal,
+    )
     const r = await p
     expect((f.mock.calls[0] as unknown as [string, RequestInit])[1].signal).toBe(ac.signal)
     expect(seen).toEqual(['login_step'])
@@ -328,7 +334,11 @@ describe('readStatus', () => {
     await openSession('P', reply(200, { session: 'S1' }))
     const text = '{"event":"partial","loading":["host"]}\n{"event":"error","error":{"code":"auth_unavailable","message":"no login"}}\n'
     const seen: unknown[] = []
-    const r = await readStatus('', (result) => seen.push(result), vi.fn(async () => new Response(text, { status: 200 })))
+    const r = await readStatus(
+      '',
+      (result) => seen.push(result),
+      vi.fn(async () => new Response(text, { status: 200 })),
+    )
     expect(r).toEqual({ ok: false, error: { code: 'auth_unavailable', message: 'no login' } })
     expect(seen).toEqual([])
   })
@@ -359,17 +369,34 @@ describe('planStream', () => {
   it('returns a read-only plan with its result', async () => {
     await openSession('P', reply(200, { session: 'S1' }))
     const text = `{"event":"checking","check":"read back"}\n${JSON.stringify({ event: 'result', plan, result: { items: [] } })}\n`
-    const r = await planStream('upgrade', {}, () => {}, vi.fn(async () => new Response(text, { status: 200 })))
+    const r = await planStream(
+      'upgrade',
+      {},
+      () => {},
+      vi.fn(async () => new Response(text, { status: 200 })),
+    )
     expect(r).toEqual({ ok: true, value: { plan, result: { items: [] } } })
   })
 
   it('keeps the plan and result of an error line', async () => {
     await openSession('P', reply(200, { session: 'S1' }))
     const text = `${JSON.stringify({ event: 'error', error: { code: 'repo_unreadable', message: 'offline' }, plan, result: { items: [] } })}\n`
-    const r = await planStream('upgrade', {}, () => {}, vi.fn(async () => new Response(text, { status: 200 })))
+    const r = await planStream(
+      'upgrade',
+      {},
+      () => {},
+      vi.fn(async () => new Response(text, { status: 200 })),
+    )
     expect(r).toEqual({ ok: false, error: { code: 'repo_unreadable', message: 'offline' }, plan, result: { items: [] } })
     const bare = '{"event":"error","error":{"code":"auth_unavailable","message":"no login"}}\n'
-    expect(await planStream('upgrade', {}, () => {}, vi.fn(async () => new Response(bare, { status: 200 })))).toEqual({
+    expect(
+      await planStream(
+        'upgrade',
+        {},
+        () => {},
+        vi.fn(async () => new Response(bare, { status: 200 })),
+      ),
+    ).toEqual({
       ok: false,
       error: { code: 'auth_unavailable', message: 'no login' },
     })
@@ -379,7 +406,12 @@ describe('planStream', () => {
     await openSession('P', reply(200, { session: 'S1' }))
     const r = await planStream('init', {}, () => {}, reply(422, { error: { code: 'invalid_repo', message: 'bad' } }))
     expect(r).toEqual({ ok: false, status: 422, error: { code: 'invalid_repo', message: 'bad' } })
-    const cut = await planStream('init', {}, () => {}, vi.fn(async () => new Response('{"event":"checking","check":"x"}\n', { status: 200 })))
+    const cut = await planStream(
+      'init',
+      {},
+      () => {},
+      vi.fn(async () => new Response('{"event":"checking","check":"x"}\n', { status: 200 })),
+    )
     expect(cut).toMatchObject({ ok: false, error: { code: 'stream_incomplete' } })
   })
 
