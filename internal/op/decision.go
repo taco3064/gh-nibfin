@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 
@@ -80,6 +81,17 @@ func (d *decisionOp) ownLatest(s repair.Snapshot) int64 {
 	return 0
 }
 
+// printable drops control characters from record text, which is partly
+// agent-written, before it reaches a terminal.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // newest describes the newest decision after the record.
 func newest(s repair.Snapshot) string {
 	c, n, ok := repair.LatestDecision(s.After)
@@ -131,7 +143,7 @@ func (d *decisionOp) Plan(ctx context.Context) (Plan, error) {
 		return p, Errorf(CodeInvalidArgument, "%s has no pending label, so there are no options to answer; use resume without --option", d.url)
 	}
 	if rep.State != repair.StateChoose {
-		return p, Errorf(CodeInvalidArgument, "%s is in the %s repair state (%s), not choose; only choose has options to answer", d.url, rep.State, rep.Reason)
+		return p, Errorf(CodeInvalidArgument, "%s is in the %s repair state (%s), not choose; only choose has options to answer", d.url, rep.State, printable(rep.Reason))
 	}
 	title, ok := optionTitle(rep, d.option)
 	if !ok {
