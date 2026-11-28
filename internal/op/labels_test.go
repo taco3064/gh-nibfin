@@ -308,7 +308,7 @@ func TestResume(t *testing.T) {
 	r.issue("o/r", 2, "pending")
 	r.issue("o/r", 3, "bug")
 
-	p, res, err := Run(context.Background(), Resume(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1", "2", "3"}}), noConfirm())
+	p, res, err := Run(context.Background(), Resume(ResumeParams{IssuesParams: IssuesParams{Repo: "github.com/o/r", Issues: []string{"1", "2", "3"}}}), noConfirm())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestResume(t *testing.T) {
 func TestResumeWithoutLabelsInRepo(t *testing.T) {
 	f := newFake(t)
 	f.repo("o/r", "bug").issue("o/r", 1, "bug")
-	_, res, err := Run(context.Background(), Resume(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}), noConfirm())
+	_, res, err := Run(context.Background(), Resume(ResumeParams{IssuesParams: IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}}), noConfirm())
 	if err != nil || res["https://github.com/o/r/issues/1"] != "resumed" {
 		t.Fatalf("res %v, err %v", res, err)
 	}
@@ -374,7 +374,7 @@ func TestPlanFailuresWriteNothing(t *testing.T) {
 		msg    []string
 	}{
 		{"missing issue", Pause, []string{"1", "9"}, CodeNotFound, []string{`9`}},
-		{"pull request", Resume, []string{"#2", "1"}, CodeNotFound, []string{"#2"}},
+		{"pull request", func(p IssuesParams) Operation { return Resume(ResumeParams{IssuesParams: p}) }, []string{"#2", "1"}, CodeNotFound, []string{"#2"}},
 		{"missing repo", Pause, []string{"https://github.com/x/y/issues/1", "9"}, CodeNotFound, []string{"x/y/issues/1", "9"}},
 		{"no pause label", Pause, []string{"https://github.com/n/l/issues/1"}, CodeLabelMissing, []string{"pause"}},
 	} {
@@ -425,7 +425,7 @@ func TestReadBackMismatch(t *testing.T) {
 	r := f.repo("o/r", "pause", "pending")
 	i := r.issue("o/r", 1, "pause")
 	f.afterMut = func() { i.labels = append(i.labels, "pending") } // Core re-adds pending
-	_, _, err := Run(context.Background(), Resume(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}), noConfirm())
+	_, _, err := Run(context.Background(), Resume(ResumeParams{IssuesParams: IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}}), noConfirm())
 	if Code(err) != CodeNotApplied || !strings.Contains(err.Error(), "[pending]") {
 		t.Fatalf("code %q, err %v", Code(err), err)
 	}
@@ -448,7 +448,7 @@ func TestTransportAndAuthErrors(t *testing.T) {
 	newGraphQL = func(string) (graphQL, error) {
 		return nil, fmt.Errorf("authentication token not found for host github.com")
 	}
-	_, _, err = Run(context.Background(), Resume(IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}), noConfirm())
+	_, _, err = Run(context.Background(), Resume(ResumeParams{IssuesParams: IssuesParams{Repo: "github.com/o/r", Issues: []string{"1"}}}), noConfirm())
 	if Code(err) != CodeAuthUnavailable || !strings.Contains(err.Error(), "token not found") {
 		t.Errorf("auth: code %q, err %v", Code(err), err)
 	}

@@ -45,6 +45,7 @@ type ghIssue struct {
 
 // ghComment is an Issue comment with its author.
 type ghComment struct {
+	ID   int64    `json:"id"`
 	Body string   `json:"body"`
 	User ghAuthor `json:"user"`
 }
@@ -156,15 +157,25 @@ func (g restGitHub) IssueComments(ctx context.Context, repo string, number int) 
 // updated since just before the first send and sends again only when none
 // has this body (R4.38).
 func (g restGitHub) CreateComment(ctx context.Context, repo string, number int, body string) error {
+	_, err := g.CreateCommentID(ctx, repo, number, body)
+	return err
+}
+
+// CreateCommentID is CreateComment that also returns the id of the comment:
+// the one created, or the one the re-read found.
+func (g restGitHub) CreateCommentID(ctx context.Context, repo string, number int, body string) (int64, error) {
 	in, err := json.Marshal(map[string]string{"body": body})
 	if err != nil {
-		return Errorf(CodeGitHubAPIFailed, "encode the request: %v", err)
+		return 0, Errorf(CodeGitHubAPIFailed, "encode the request: %v", err)
 	}
+	var id int64
 	path := fmt.Sprintf("%s/issues/%d/comments", repoPath(repo), number)
 	since := sinceParam(now())
 	err = ghretry.Do(ctx, http.MethodPost, path, func(ctx context.Context) error {
-		var out json.RawMessage
-		return g.c.DoWithContext(ctx, http.MethodPost, path, bytes.NewReader(in), &out)
+		var out ghComment
+		err := g.c.DoWithContext(ctx, http.MethodPost, path, bytes.NewReader(in), &out)
+		id = out.ID
+		return err
 	}, func(ctx context.Context) (bool, error) {
 		var found []ghComment
 		if err := g.c.DoWithContext(ctx, http.MethodGet, path+"?per_page=100&since="+since, nil, &found); err != nil {
@@ -172,12 +183,13 @@ func (g restGitHub) CreateComment(ctx context.Context, repo string, number int, 
 		}
 		for _, f := range found {
 			if sameText(f.Body, body) {
+				id = f.ID
 				return true, nil
 			}
 		}
 		return false, nil
 	})
-	return apiError(fmt.Sprintf("comment on %s#%d", repo, number), err)
+	return id, apiError(fmt.Sprintf("comment on %s#%d", repo, number), err)
 }
 
 // sameText compares two bodies as GitHub stores them, with CRLF as LF.

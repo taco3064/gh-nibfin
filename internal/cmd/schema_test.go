@@ -228,7 +228,7 @@ func TestSchemaNamesMatchThePlanRoute(t *testing.T) {
 		Upgrade:      func(p op.RepoParams) op.Operation { return rec("Upgrade", p) },
 		Status:       func(p op.RepoParams) op.Operation { return rec("Status", p) },
 		Pause:        func(p op.IssuesParams) op.Operation { return rec("Pause", p) },
-		Resume:       func(p op.IssuesParams) op.Operation { return rec("Resume", p) },
+		Resume:       func(p op.ResumeParams) op.Operation { return rec("Resume", p) },
 	}
 	schema := commandSchema(testRoot())
 

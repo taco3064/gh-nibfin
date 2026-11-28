@@ -97,8 +97,17 @@
     "path": "resume",
     "api": "resume",
     "short": "Resume Nibfin work on Issues",
-    "long": "Resume Nibfin work on Issues.\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\nSeveral issues can be given at once; there is no confirmation step.",
+    "long": "Resume Nibfin work on Issues.\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\nSeveral issues can be given at once; there is no confirmation step.\n\nWith --option N it answers the options of the repair record on one pending Issue\n(gh nibfin status shows them): it writes the decision comment for option N, then\nremoves pause and pending, and reads both back.",
     "flags": [
+      {
+        "name": "option",
+        "shorthand": "",
+        "type": "int",
+        "default": "0",
+        "usage": "answer the repair record's options with option N (one Issue)",
+        "required": false,
+        "param": "option"
+      },
       {
         "name": "repo",
         "shorthand": "R",

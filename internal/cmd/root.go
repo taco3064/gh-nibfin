@@ -310,13 +310,13 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 	declareParam(statusCmd, "repo", "repo")
 	addJSONFlag(statusCmd, jsonOut)
 
-	issuesCmd := func(use, short string, entry func(op.IssuesParams) op.Operation) *cobra.Command {
+	issuesCmd := func(use, short, long string, entry func(*cobra.Command, op.IssuesParams) (op.Operation, error)) *cobra.Command {
 		var repo string
 		c := &cobra.Command{
 			Use:   use + " <issue>...",
 			Short: short,
 			Long: short + ".\n\nAn issue is a number (N or #N) in the -R repository, or an Issue URL.\n" +
-				"Several issues can be given at once; there is no confirmation step.",
+				"Several issues can be given at once; there is no confirmation step." + long,
 			RunE: func(c *cobra.Command, args []string) error {
 				// Only numbers need a repository, so URL-only calls work
 				// outside a checkout.
@@ -327,7 +327,11 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 						return err
 					}
 				}
-				return run(c, entry(op.IssuesParams{Repo: r, Issues: args}), false)
+				o, err := entry(c, op.IssuesParams{Repo: r, Issues: args})
+				if err != nil {
+					return err
+				}
+				return run(c, o, false)
 			},
 		}
 		declareArgs(c, dashboard.Arg{Name: "issue", Required: true, Repeatable: true, Param: "issues"})
@@ -335,8 +339,22 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		addRepoFlag(c, &repo)
 		return c
 	}
-	pause := issuesCmd("pause", "Pause Nibfin work on Issues", func(p op.IssuesParams) op.Operation { return ops.Pause(p) })
-	resume := issuesCmd("resume", "Resume Nibfin work on Issues", func(p op.IssuesParams) op.Operation { return ops.Resume(p) })
+	pause := issuesCmd("pause", "Pause Nibfin work on Issues", "", func(_ *cobra.Command, p op.IssuesParams) (op.Operation, error) {
+		return ops.Pause(p), nil
+	})
+	var option int
+	resume := issuesCmd("resume", "Resume Nibfin work on Issues",
+		"\n\nWith --option N it answers the options of the repair record on one pending Issue\n"+
+			"(gh nibfin status shows them): it writes the decision comment for option N, then\n"+
+			"removes pause and pending, and reads both back.",
+		func(c *cobra.Command, p op.IssuesParams) (op.Operation, error) {
+			if c.Flags().Changed("option") && option < 1 {
+				return nil, op.Errorf(op.CodeInvalidArgument, "--option must be 1 or more, got %d", option)
+			}
+			return ops.Resume(op.ResumeParams{IssuesParams: p, Option: option}), nil
+		})
+	resume.Flags().IntVar(&option, "option", 0, "answer the repair record's options with option N (one Issue)")
+	declareParam(resume, "option", "option")
 
 	var port int
 	var noBrowser bool

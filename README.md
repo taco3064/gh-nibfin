@@ -15,7 +15,7 @@ gh nibfin init [-R OWNER/REPO] [--yes]
 gh nibfin upgrade [-R OWNER/REPO] [--yes]
 gh nibfin status [-R OWNER/REPO] [--json]
 gh nibfin pause <issue>... [-R OWNER/REPO]
-gh nibfin resume <issue>... [-R OWNER/REPO]
+gh nibfin resume <issue>... [-R OWNER/REPO] [--option N]
 gh nibfin dashboard [--port N] [--no-browser]
 ```
 
@@ -23,6 +23,21 @@ gh nibfin dashboard [--port N] [--no-browser]
 `pending`. An `<issue>` is a number (`N` or `#N`, in the `-R` repository) or
 an Issue URL, and several can be given at once. Both commands write all
 changes in one GraphQL mutation, read them back, and ask no confirmation.
+
+`resume <issue> --option N` answers the options of the repair record on one
+`pending` Issue in the `choose` state (`status` lists them; Proposal R4.51,
+R9.54). It reads the repair state first and fails with `invalid_argument`,
+writing nothing, for several Issues, another state or a number that is not an
+option. It writes the decision comment `<!-- nibfin:decision option=N -->`
+with the line `Chose option N.`, then removes `pause` and `pending` as
+`resume` does, and reads both back. The comment is confirmed only when it is
+the newest decision comment after the record, by anyone, since Core decides by
+the newest one; when someone else answers meanwhile it is reported not
+confirmed, naming their option. If your own decision for N is already the
+newest, it is not written again, so a rerun after a failed label change only
+removes the labels. Just before writing it reads the repair state again and
+writes nothing when the record changed. Without `--option`, `resume` removing
+`pending` makes Core run the Issue once more (R4.52).
 
 `login`, `init`, `upgrade`, `runner add`, `runner remove`, `status` and
 `dashboard` are also implemented (see [Dashboard](#dashboard)). The behaviour
@@ -713,7 +728,7 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   - `login` `{"provider"}` (empty: every provider that needs it);
   - `init`, `upgrade` `{"repo"}` (empty: the directory the server started in);
   - `status` `{"repo"}` (empty: the person view; set: the repository view);
-  - `pause`, `resume` `{"repo", "issues"}`.
+  - `pause` `{"repo", "issues"}`, `resume` `{"repo", "issues", "option"}`.
 
   A plan is `{"operation", "repo", "steps", "notes", "confirm",
   "readOnly"}`. Every changing command lists each item it considers in
