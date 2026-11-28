@@ -23,9 +23,22 @@ const icuCheck = `icu() {
 }
 `
 
+// sslCheck defines ssl, which succeeds when a libssl the official runner's
+// .NET 8 runtime loads is found by the same ldconfig search as icu. The
+// sonames follow OpenLibraryOnce in .NET 8's opensslshim.c, which dlopens
+// these and no other (libssl.so.4 of OpenSSL 4 is not one of them); each
+// is matched as a whole name.
+const sslCheck = `ssl() {
+  l=ldconfig
+  command -v ldconfig >/dev/null 2>&1 || l=/sbin/ldconfig
+  "$l" -NXv $(printf '%s' "${LD_LIBRARY_PATH:-}" | tr ':' ' ') 2>&1 |
+    grep -Eq '(^|[^A-Za-z0-9_.])libssl\.so\.(3|1\.1|1\.0\.2|1\.0\.0|10|11|111)($|[^A-Za-z0-9_.])'
+}
+`
+
 // probeScript prints what the runner commands and status need to know
 // about the host.
-const probeScript = icuCheck + `u=$(id -u)
+const probeScript = icuCheck + sslCheck + `u=$(id -u)
 n=$(id -un)
 printf 'arch %s\n' "$(uname -m | tr -cd 'A-Za-z0-9_')"
 printf 'node %s\n' "$(uname -n | tr -cd 'A-Za-z0-9.-')"
@@ -38,6 +51,7 @@ printf 'memavailkb %s\n' "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/d
 t() { if command -v "$1" >/dev/null 2>&1; then echo 1; else echo 0; fi; }
 printf 'tools %s %s\n' "$(t git)" "$(t ssh)"
 if icu; then echo 'icu 1'; else echo 'icu 0'; fi
+if ssl; then echo 'ssl 1'; else echo 'ssl 0'; fi
 `
 
 type hostProbe struct {
@@ -52,6 +66,9 @@ type hostProbe struct {
 	git, ssh bool
 	// icu is true when the official runner's config.sh finds libicu.
 	icu bool
+	// ssl is true when the official runner's .NET runtime finds a libssl it
+	// loads.
+	ssl bool
 }
 
 // hostScript runs a fixed runner-host script. Its stdout and exit status are
@@ -208,6 +225,8 @@ func probeHost(ctx context.Context, h runnerHost, code string) (hostProbe, error
 			pr.memAvailKB, _ = strconv.ParseInt(val, 10, 64)
 		case "icu":
 			pr.icu = val == "1"
+		case "ssl":
+			pr.ssl = val == "1"
 		case "tools":
 			f := strings.Fields(val)
 			if len(f) == 2 {
