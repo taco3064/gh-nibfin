@@ -198,7 +198,7 @@ func (g *smokeGitHub) DeleteRunner(_ context.Context, _ string, id int64) error 
 func smokeArchive(t *testing.T) []byte {
 	t.Helper()
 	files := map[string]string{}
-	for _, name := range []string{"config.sh", "bin/runsvc.sh"} {
+	for _, name := range []string{"config.sh", "bin/runsvc.sh", "bin/installdependencies.sh"} {
 		b, err := os.ReadFile(filepath.Join("testdata", "hostsmoke", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)

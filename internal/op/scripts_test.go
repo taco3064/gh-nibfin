@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -27,12 +28,17 @@ func (l *localHost) Shell(ctx context.Context, script string, args ...string) *e
 
 func tarGz(t *testing.T, files map[string]string) []byte {
 	t.Helper()
+	return buildTarGz(files)
+}
+
+// buildTarGz is tarGz without a test, for package-level fixtures.
+func buildTarGz(files map[string]string) []byte {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 	for name, body := range files {
 		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
-			t.Fatal(err)
+			panic(err)
 		}
 		tw.Write([]byte(body))
 	}
@@ -429,12 +435,10 @@ func TestHookScriptsUnderSh(t *testing.T) {
 	}
 }
 
-// TestLibicuScriptsUnderSh runs the probe's libicu line and libicuScript
-// with stand-ins for ldconfig, sudo and dnf: ldconfig is asked with -NXv
-// over the LD_LIBRARY_PATH entries, as config.sh does; libicu present
-// changes nothing; a missing one is installed with sudo -n dnf and checked
-// again; a missing dnf, a refused sudo or a library still missing fail.
-func TestLibicuScriptsUnderSh(t *testing.T) {
+// TestIcuCheckUnderSh runs the probe's libicu line with a stand-in for
+// ldconfig: ldconfig is asked with -NXv over the LD_LIBRARY_PATH entries, as
+// config.sh does, and libicu is reported missing, then present.
+func TestIcuCheckUnderSh(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the scripts run on the Linux runner host")
 	}
@@ -442,95 +446,31 @@ func TestLibicuScriptsUnderSh(t *testing.T) {
 	bin := filepath.Join(root, "bin")
 	os.MkdirAll(bin, 0o755)
 	icu := filepath.Join(root, "icu")
-	ldLog, sudoLog := filepath.Join(root, "ldconfig.log"), filepath.Join(root, "sudo.log")
+	ldLog := filepath.Join(root, "ldconfig.log")
 	// ldconfig lists libicu once the marker file exists.
 	os.WriteFile(filepath.Join(bin, "ldconfig"), []byte("#!/bin/sh\necho \"$*\" >> \"$LD_LOG\"\necho '/usr/lib64:'\n"+
 		"if [ -e \"$ICU\" ]; then echo '\tlibicuuc.so.78 -> libicuuc.so.78.3'; fi\n"), 0o755)
-	// sudo logs its arguments and, unless refused, runs the command.
-	os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\necho \"$*\" >> \"$SUDO_LOG\"\n[ \"${SUDO_EXIT:-0}\" = 0 ] || { echo 'sudo: a password is required' >&2; exit 1; }\nshift\nexec \"$@\"\n"), 0o755)
-	// dnf installs libicu unless DNF_NOOP is set.
-	os.WriteFile(filepath.Join(bin, "dnf"), []byte("#!/bin/sh\necho 'Installed: libicu'\n[ -n \"$DNF_NOOP\" ] || : > \"$ICU\"\n"), 0o755)
-	// nodnf has every tool the script needs but dnf.
-	nodnf := filepath.Join(root, "nodnf")
-	os.MkdirAll(nodnf, 0o755)
-	os.Symlink(filepath.Join(bin, "ldconfig"), filepath.Join(nodnf, "ldconfig"))
-	for _, tool := range []string{"tr", "grep"} {
-		p, err := exec.LookPath(tool)
-		if err != nil {
-			t.Skip("no " + tool)
-		}
-		os.Symlink(p, filepath.Join(nodnf, tool))
-	}
-	base := []string{"ICU=" + icu, "LD_LOG=" + ldLog, "SUDO_LOG=" + sudoLog, "LD_LIBRARY_PATH=/opt/a:/opt/b"}
-	host := func(path string, env ...string) *runnerAdd {
-		return &runnerAdd{host: &localHost{env: append(append([]string{"PATH=" + path}, base...), env...)}}
-	}
+	a := &runnerAdd{host: &localHost{env: []string{"PATH=" + bin + ":" + os.Getenv("PATH"), "ICU=" + icu, "LD_LOG=" + ldLog, "LD_LIBRARY_PATH=/opt/a:/opt/b"}}}
 	ctx := context.Background()
-	read := func(p string) string {
-		b, _ := os.ReadFile(p)
-		os.Remove(p)
-		return string(b)
-	}
-	sysPath := bin + ":" + os.Getenv("PATH")
-
-	// The probe reports libicu missing, then present.
-	pr, err := host(sysPath).probe(ctx)
+	pr, err := a.probe(ctx)
 	if err != nil || pr.icu {
 		t.Fatalf("probe without libicu: %v %v", pr.icu, err)
 	}
 	// The icu and the ssl check each run ldconfig.
-	if got := read(ldLog); got != "-NXv /opt/a /opt/b\n-NXv /opt/a /opt/b\n" {
+	if got, _ := os.ReadFile(ldLog); string(got) != "-NXv /opt/a /opt/b\n-NXv /opt/a /opt/b\n" {
 		t.Errorf("ldconfig args = %q", got)
 	}
 	os.WriteFile(icu, nil, 0o644)
-	if pr, err = host(sysPath).probe(ctx); err != nil || !pr.icu {
+	if pr, err = a.probe(ctx); err != nil || !pr.icu {
 		t.Fatalf("probe with libicu: %v %v", pr.icu, err)
-	}
-
-	run := func(a *runnerAdd) error {
-		_, err := a.script(ctx, "install libicu", libicuScript, nil, "")
-		return err
-	}
-	// Present: no sudo, no dnf.
-	if err := run(host(sysPath)); err != nil || read(sudoLog) != "" {
-		t.Errorf("present: %v", err)
-	}
-	// Missing: installed with sudo -n dnf, then found.
-	os.Remove(icu)
-	if err := run(host(sysPath)); err != nil {
-		t.Fatalf("missing: %v", err)
-	}
-	if got := read(sudoLog); got != "-n dnf install -y libicu\n" {
-		t.Errorf("sudo = %q", got)
-	}
-	if _, err := os.Stat(icu); err != nil {
-		t.Errorf("libicu not installed: %v", err)
-	}
-	// A refused sudo keeps its output.
-	os.Remove(icu)
-	if err := run(host(sysPath, "SUDO_EXIT=1")); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "a password is required") {
-		t.Errorf("refused: %v", err)
-	}
-	// Still missing after dnf.
-	read(sudoLog)
-	if err := run(host(sysPath, "DNF_NOOP=1")); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "still not found") {
-		t.Errorf("still missing: %v", err)
-	}
-	// No dnf: nothing is asked of sudo.
-	read(sudoLog)
-	if err := run(host(nodnf)); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "dnf is not available") || read(sudoLog) != "" {
-		t.Errorf("no dnf: %v", err)
 	}
 }
 
-// TestLibsslScriptsUnderSh runs the probe's libssl line and libsslScript
-// under sh with a fake ldconfig, dnf and sudo. ldconfig always lists
-// libssl.so.4 (OpenSSL 4) and libssl.so.30, which .NET 8 does not load, and
-// lists a loadable libssl once the marker file exists. libssl present
-// changes nothing; missing installs openssl3-libs, or openssl-libs where the
-// distribution has no openssl3-libs, with sudo -n dnf; a refused sudo, a
-// library still missing and a VM without dnf fail with their cause.
-func TestLibsslScriptsUnderSh(t *testing.T) {
+// TestSslCheckUnderSh runs the probe's libssl line with a stand-in for
+// ldconfig that always lists libssl.so.4 (OpenSSL 4) and libssl.so.30, which
+// .NET 8 does not load, and lists the soname SSL_NAME once the marker file
+// exists: only the sonames .NET 8 loads count, each as a whole name.
+func TestSslCheckUnderSh(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the scripts run on the Linux runner host")
 	}
@@ -538,10 +478,54 @@ func TestLibsslScriptsUnderSh(t *testing.T) {
 	bin := filepath.Join(root, "bin")
 	os.MkdirAll(bin, 0o755)
 	ssl := filepath.Join(root, "ssl")
-	sudoLog := filepath.Join(root, "sudo.log")
 	os.WriteFile(filepath.Join(bin, "ldconfig"), []byte("#!/bin/sh\necho '/usr/lib64:'\n"+
 		"echo '\tlibssl.so.4 -> libssl.so.4.0.3'\necho '\tlibssl.so.30 -> libssl.so.30.0.0'\n"+
 		"if [ -e \"$SSL\" ]; then printf '\\t%s -> %s.9\\n' \"${SSL_NAME:-libssl.so.3}\" \"${SSL_NAME:-libssl.so.3}\"; fi\n"), 0o755)
+	host := func(env ...string) *runnerAdd {
+		return &runnerAdd{host: &localHost{env: append([]string{"PATH=" + bin + ":" + os.Getenv("PATH"), "SSL=" + ssl}, env...)}}
+	}
+	ctx := context.Background()
+	pr, err := host().probe(ctx)
+	if err != nil || pr.ssl {
+		t.Fatalf("probe with libssl.so.4 only: %v %v", pr.ssl, err)
+	}
+	os.WriteFile(ssl, nil, 0o644)
+	for _, name := range []string{"libssl.so.3", "libssl.so.1.1", "libssl.so.1.0.2", "libssl.so.1.0.0", "libssl.so.10", "libssl.so.11", "libssl.so.111"} {
+		if pr, err = host("SSL_NAME=" + name).probe(ctx); err != nil || !pr.ssl {
+			t.Errorf("probe with %s: %v %v", name, pr.ssl, err)
+		}
+	}
+	for _, name := range []string{"libssl.so.4", "libssl.so.3x", "xlibssl.so.3", "libssl.so.12"} {
+		if pr, err = host("SSL_NAME=" + name).probe(ctx); err != nil || pr.ssl {
+			t.Errorf("probe with %s: %v %v", name, pr.ssl, err)
+		}
+	}
+}
+
+// TestDepsScriptUnderSh runs depsScript and depsCheckScript under sh with
+// stand-ins for ldconfig, sudo and dnf, and a stand-in installer on stdin
+// in place of the runner's bin/installdependencies.sh. ldconfig lists libicu
+// and libssl.so.3 once their marker files exist and always lists
+// libssl.so.4. The installer installs what INST_ICU and INST_SSL name and
+// exits with INST_EXIT. Both present changes nothing; missing runs the
+// installer with sudo -n bash; libssl.so.3 still missing after it installs
+// openssl3-libs (or openssl-libs) with sudo -n dnf; a failed installer, a
+// refused sudo, libicu still missing, a failed fallback and a VM without
+// dnf fail with their cause; the temporary file never stays.
+func TestDepsScriptUnderSh(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the scripts run on the Linux runner host")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	tmp := filepath.Join(root, "tmp")
+	os.MkdirAll(bin, 0o755)
+	os.MkdirAll(tmp, 0o755)
+	icu, ssl := filepath.Join(root, "icu"), filepath.Join(root, "ssl")
+	sudoLog := filepath.Join(root, "sudo.log")
+	os.WriteFile(filepath.Join(bin, "ldconfig"), []byte("#!/bin/sh\necho '/usr/lib64:'\necho '\tlibssl.so.4 -> libssl.so.4.0.3'\n"+
+		"if [ -e \"$ICU\" ]; then echo '\tlibicuuc.so.78 -> libicuuc.so.78.3'; fi\n"+
+		"if [ -e \"$SSL\" ]; then echo '\tlibssl.so.3 -> libssl.so.3.5.8'; fi\n"), 0o755)
 	// sudo logs its arguments and, unless refused, runs the command.
 	os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\necho \"$*\" >> \"$SUDO_LOG\"\n[ \"${SUDO_EXIT:-0}\" = 0 ] || { echo 'sudo: a password is required' >&2; exit 1; }\nshift\nexec \"$@\"\n"), 0o755)
 	// dnf knows openssl3-libs unless NO_OPENSSL3 is set, and installs the
@@ -553,91 +537,157 @@ case "$*" in
 *) echo "unexpected dnf $*" >&2; exit 2 ;;
 esac
 `), 0o755)
+	installer := `echo "installer as $0"
+[ -z "$INST_ICU" ] || : > "$ICU"
+[ -z "$INST_SSL" ] || : > "$SSL"
+exit "${INST_EXIT:-0}"
+`
 	// nodnf has every tool the script needs but dnf.
 	nodnf := filepath.Join(root, "nodnf")
 	os.MkdirAll(nodnf, 0o755)
-	os.Symlink(filepath.Join(bin, "ldconfig"), filepath.Join(nodnf, "ldconfig"))
-	for _, tool := range []string{"tr", "grep"} {
+	for _, tool := range []string{"ldconfig", "sudo"} {
+		os.Symlink(filepath.Join(bin, tool), filepath.Join(nodnf, tool))
+	}
+	for _, tool := range []string{"tr", "grep", "bash", "mktemp", "cat", "rm"} {
 		p, err := exec.LookPath(tool)
 		if err != nil {
 			t.Skip("no " + tool)
 		}
 		os.Symlink(p, filepath.Join(nodnf, tool))
 	}
-	base := []string{"SSL=" + ssl, "SUDO_LOG=" + sudoLog}
-	host := func(path string, env ...string) *runnerAdd {
-		return &runnerAdd{host: &localHost{env: append(append([]string{"PATH=" + path}, base...), env...)}}
-	}
+	base := []string{"ICU=" + icu, "SSL=" + ssl, "SUDO_LOG=" + sudoLog, "TMPDIR=" + tmp}
+	sysPath := bin + ":" + os.Getenv("PATH")
 	ctx := context.Background()
 	read := func(p string) string {
 		b, _ := os.ReadFile(p)
 		os.Remove(p)
 		return string(b)
 	}
-	sysPath := bin + ":" + os.Getenv("PATH")
-
-	// The probe reports libssl missing with only libssl.so.4 and .so.30,
-	// then present with each soname .NET 8 loads.
-	pr, err := host(sysPath).probe(ctx)
-	if err != nil || pr.ssl {
-		t.Fatalf("probe with libssl.so.4 only: %v %v", pr.ssl, err)
-	}
-	os.WriteFile(ssl, nil, 0o644)
-	for _, name := range []string{"libssl.so.3", "libssl.so.1.1", "libssl.so.1.0.2", "libssl.so.1.0.0", "libssl.so.10", "libssl.so.11", "libssl.so.111"} {
-		if pr, err = host(sysPath, "SSL_NAME="+name).probe(ctx); err != nil || !pr.ssl {
-			t.Errorf("probe with %s: %v %v", name, pr.ssl, err)
+	// set leaves exactly the named libraries present.
+	set := func(hasICU, hasSSL bool) {
+		os.Remove(icu)
+		os.Remove(ssl)
+		if hasICU {
+			os.WriteFile(icu, nil, 0o644)
 		}
-	}
-	for _, name := range []string{"libssl.so.4", "libssl.so.3x", "xlibssl.so.3", "libssl.so.12"} {
-		if pr, err = host(sysPath, "SSL_NAME="+name).probe(ctx); err != nil || pr.ssl {
-			t.Errorf("probe with %s: %v %v", name, pr.ssl, err)
+		if hasSSL {
+			os.WriteFile(ssl, nil, 0o644)
 		}
+		read(sudoLog)
+	}
+	run := func(path string, env ...string) (string, error) {
+		t.Helper()
+		a := &runnerAdd{host: &localHost{env: append(append([]string{"PATH=" + path}, base...), env...)}}
+		out, err := a.script(ctx, "install runner dependencies", depsScript, strings.NewReader(installer), "")
+		if left, _ := os.ReadDir(tmp); len(left) != 0 {
+			t.Errorf("temporary file left behind: %v", left)
+		}
+		return out, err
+	}
+	sudoed := func() []string {
+		var out []string
+		for _, l := range strings.Split(strings.TrimSpace(read(sudoLog)), "\n") {
+			if strings.HasPrefix(l, "-n bash "+tmp+"/") {
+				l = "-n bash TMP"
+			}
+			if l != "" {
+				out = append(out, l)
+			}
+		}
+		return out
 	}
 
-	run := func(a *runnerAdd) (string, error) {
-		return a.script(ctx, "install libssl", libsslScript, nil, "")
+	// Present: no sudo, no installer.
+	set(true, true)
+	if out, err := run(sysPath); err != nil || out != "" || len(sudoed()) != 0 {
+		t.Errorf("present: %q %v", out, err)
 	}
-	// Present: no sudo, no dnf.
-	if _, err := run(host(sysPath)); err != nil || read(sudoLog) != "" {
-		t.Errorf("present: %v", err)
+	// Missing: the installer runs with sudo -n bash and its output is kept;
+	// no fallback is needed.
+	set(false, true)
+	out, err := run(sysPath, "INST_ICU=1")
+	if err != nil || !strings.Contains(out, "installer as "+tmp+"/") {
+		t.Fatalf("installer: %q %v", out, err)
 	}
-	// Missing: openssl3-libs is installed with sudo -n dnf, then found;
-	// dnf's output is kept.
-	os.Remove(ssl)
-	out, err := run(host(sysPath))
+	if got := sudoed(); !reflect.DeepEqual(got, []string{"-n bash TMP"}) {
+		t.Errorf("sudo = %q", got)
+	}
+	// The installer leaves libssl.so.3 missing (OpenSSL 4): openssl3-libs is
+	// installed with sudo -n dnf, then found.
+	set(false, false)
+	out, err = run(sysPath, "INST_ICU=1")
 	if err != nil || !strings.Contains(out, "Installed: openssl3-libs") {
-		t.Fatalf("missing: %q %v", out, err)
+		t.Fatalf("fallback: %q %v", out, err)
 	}
-	if got := read(sudoLog); got != "-n dnf install -y openssl3-libs\n" {
+	if got := sudoed(); !reflect.DeepEqual(got, []string{"-n bash TMP", "-n dnf install -y openssl3-libs"}) {
 		t.Errorf("sudo = %q", got)
 	}
 	if _, err := os.Stat(ssl); err != nil {
 		t.Errorf("libssl not installed: %v", err)
 	}
-	// Missing where the distribution has no openssl3-libs: openssl-libs.
-	os.Remove(ssl)
-	if _, err := run(host(sysPath, "NO_OPENSSL3=1")); err != nil {
-		t.Fatalf("missing, no openssl3-libs: %v", err)
+	// Where the distribution has no openssl3-libs: openssl-libs.
+	set(true, false)
+	if _, err := run(sysPath, "NO_OPENSSL3=1"); err != nil {
+		t.Fatalf("fallback, no openssl3-libs: %v", err)
 	}
-	if got := read(sudoLog); got != "-n dnf install -y openssl-libs\n" {
+	if got := sudoed(); !reflect.DeepEqual(got, []string{"-n bash TMP", "-n dnf install -y openssl-libs"}) {
+		t.Errorf("sudo = %q", got)
+	}
+	// The installer fails: its status and output are kept, nothing else runs.
+	set(false, true)
+	if _, err := run(sysPath, "INST_EXIT=3"); Code(err) != CodeRunnerInstallFailed ||
+		!strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "bin/installdependencies.sh failed inside the VM") ||
+		!strings.Contains(err.Error(), "installer as") {
+		t.Errorf("installer failed: %v", err)
+	}
+	if got := sudoed(); !reflect.DeepEqual(got, []string{"-n bash TMP"}) {
 		t.Errorf("sudo = %q", got)
 	}
 	// A refused sudo keeps its output.
-	os.Remove(ssl)
-	if _, err := run(host(sysPath, "SUDO_EXIT=1")); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "a password is required") {
+	set(false, true)
+	if _, err := run(sysPath, "SUDO_EXIT=1"); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "a password is required") {
 		t.Errorf("refused: %v", err)
 	}
-	// Still missing after dnf: the error names the package and keeps dnf's
-	// output.
-	read(sudoLog)
-	if _, err := run(host(sysPath, "DNF_NOOP=1")); Code(err) != CodeRunnerInstallFailed ||
+	// libicu still missing after the installer.
+	set(false, true)
+	if _, err := run(sysPath); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "libicu is still not found after bin/installdependencies.sh") {
+		t.Errorf("libicu still missing: %v", err)
+	}
+	// The fallback does not help: the error names the package and keeps
+	// dnf's output.
+	set(true, false)
+	if _, err := run(sysPath, "DNF_NOOP=1"); Code(err) != CodeRunnerInstallFailed ||
 		!strings.Contains(err.Error(), "libssl.so.3 is still not found after dnf install openssl3-libs") ||
 		!strings.Contains(err.Error(), "Installed: openssl3-libs") {
-		t.Errorf("still missing: %v", err)
+		t.Errorf("fallback failed: %v", err)
 	}
-	// No dnf: nothing is asked of sudo.
-	read(sudoLog)
-	if _, err := run(host(nodnf)); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "libssl (libssl.so.3) is not found and dnf is not available") || read(sudoLog) != "" {
+	// No dnf for the fallback: nothing more is asked of sudo.
+	set(true, false)
+	if _, err := run(nodnf); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "dnf is not available") {
 		t.Errorf("no dnf: %v", err)
+	}
+	if got := sudoed(); !reflect.DeepEqual(got, []string{"-n bash TMP"}) {
+		t.Errorf("sudo = %q", got)
+	}
+
+	// The Linux host's check names each missing library and installs
+	// nothing.
+	check := func() error {
+		a := &runnerAdd{host: &localHost{env: append([]string{"PATH=" + sysPath}, base...)}}
+		_, err := a.script(ctx, "check", depsCheckScript, nil, "")
+		return err
+	}
+	for _, c := range []struct {
+		icu, ssl bool
+		missing  string
+	}{{false, true, "missing: libicu"}, {true, false, "missing: libssl.so.3"}, {false, false, "missing: libicu, libssl.so.3"}} {
+		set(c.icu, c.ssl)
+		if err := check(); Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), c.missing) {
+			t.Errorf("check %+v: %v", c, err)
+		}
+	}
+	set(true, true)
+	if err := check(); err != nil || len(sudoed()) != 0 {
+		t.Errorf("check present: %v", err)
 	}
 }
