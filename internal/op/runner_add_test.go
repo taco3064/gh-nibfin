@@ -45,7 +45,7 @@ const (
 	slotDir = "/home/u/.local/share/nibfin/runners"
 	unitDir = "/home/u/.config/systemd/user"
 	// defaultProbe is a Linux host with every controller delegated.
-	defaultProbe = "arch x86_64\nnode my.host_01\nmachine 0123abcd\nlinger 0\ncgroup cpuset cpu io memory pids\nmemkb 16000000\ntools 1 1\nicu 1\n"
+	defaultProbe = "arch x86_64\nnode my.host_01\nmachine 0123abcd\nlinger 0\ncgroup cpuset cpu io memory pids\nmemkb 16000000\ntools 1 1\nicu 1\nssl 1\n"
 )
 
 var scriptNames = map[string]string{
@@ -53,6 +53,7 @@ var scriptNames = map[string]string{
 	probeScript:          "probe",
 	lingerScript:         "linger",
 	libicuScript:         "libicu",
+	libsslScript:         "libssl",
 	extractScript:        "extract",
 	configureScript:      "configure",
 	unitScript:           "unit",
@@ -163,10 +164,18 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 		if f.icu {
 			stdout = strings.Replace(stdout, "icu 0", "icu 1", 1)
 		}
+		if f.ssl {
+			stdout = strings.Replace(stdout, "ssl 0", "ssl 1", 1)
+		}
 	case "libicu":
 		f.events = append(f.events, "libicu")
 		if exit == 0 {
 			f.icu = true
+		}
+	case "libssl":
+		f.events = append(f.events, "libssl")
+		if exit == 0 {
+			f.ssl = true
 		}
 	case "linger":
 		f.events = append(f.events, "linger")
@@ -530,7 +539,7 @@ func TestRunnerAddStoppedMachine(t *testing.T) {
 	fx := useRunnerHost(t, f)
 	o := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2, Interact: &recInteract{}})
 	p, err := o.Plan(context.Background())
-	want := []string{"start fake", "enable linger fake", "install libicu fake", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "add runners claude ×2"}
+	want := []string{"start fake", "enable linger fake", "install libicu fake", "install libssl fake", "create volume nibfin-tools", "create volume nibfin-home-claude", "log in claude", "add runners claude ×2"}
 	if err != nil || !reflect.DeepEqual(steps(p), want) {
 		t.Fatalf("plan = %v, %v", steps(p), err)
 	}
@@ -1015,4 +1024,118 @@ func TestRepoPath(t *testing.T) {
 	if repoPath("ghe.example/o/r") != "repos/o/r" || repoHost("ghe.example/o/r") != "ghe.example" {
 		t.Error("repo path")
 	}
+}
+
+// TestRunnerAddMachineLibssl covers the libssl the official runner's .NET
+// runtime needs in a podman machine VM (#514): a VM without one it loads
+// gets the install before any configure, one with it gets no change, a
+// failed install fails the item with its cause and configures nothing, and a
+// local Linux host never gets the item.
+func TestRunnerAddMachineLibssl(t *testing.T) {
+	noSSL := strings.Replace(strings.Replace(defaultProbe, "linger 0", "linger 1", 1), "ssl 1", "ssl 0", 1)
+	newHost := func(probe string) *fakeHost {
+		return &fakeHost{vm: true, probe: probe, slots: map[string]*fakeSlot{},
+			volumes: map[string]bool{"nibfin-tools": true, "claude": true}, loggedIn: map[string]bool{"claude": true}}
+	}
+
+	t.Run("missing", func(t *testing.T) {
+		f := newHost(noSSL)
+		useRunnerHost(t, f)
+		o := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2})
+		p, err := o.Plan(context.Background())
+		want := []string{"install libssl fake", "add runner claude-1", "add runner claude-2"}
+		if err != nil || !reflect.DeepEqual(steps(p), want) {
+			t.Fatalf("plan = %v, %v", steps(p), err)
+		}
+		for _, s := range p.Steps {
+			if s.Action == actInstallLibssl && (s.Current != "absent" || s.Next != "present") {
+				t.Errorf("libssl step = %+v", s)
+			}
+		}
+		_, r, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 2}), &yes{})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		wantEvents := []string{"libssl", "token",
+			"extract claude-1", "configure claude-1", "env claude-1 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-1.service",
+			"extract claude-2", "configure claude-2", "env claude-2 claude", "unitdir " + unitDir, "unit nibfin-runner-claude-2.service"}
+		if !reflect.DeepEqual(f.events, wantEvents) {
+			t.Errorf("events = %v", f.events)
+		}
+		if b, _ := json.Marshal(r); !strings.Contains(string(b), "install libssl") {
+			t.Errorf("read-back has no libssl item: %s", b)
+		}
+	})
+
+	t.Run("present", func(t *testing.T) {
+		f := newHost(strings.Replace(defaultProbe, "linger 0", "linger 1", 1))
+		useRunnerHost(t, f)
+		p, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background())
+		if err != nil || !reflect.DeepEqual(steps(p), []string{"add runner claude-1"}) {
+			t.Fatalf("plan = %v, %v", steps(p), err)
+		}
+		found := false
+		for _, s := range p.Steps {
+			if s.Action == actInstallLibssl {
+				found = s.NoChange && s.Current == "present"
+			}
+		}
+		if !found {
+			t.Errorf("no no-change libssl item: %v", allSteps(p))
+		}
+		if _, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{}); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		for _, c := range f.shells {
+			if c.script == "libssl" {
+				t.Errorf("libssl script ran on a VM with a usable libssl")
+			}
+		}
+	})
+
+	t.Run("failed", func(t *testing.T) {
+		f := newHost(noSSL)
+		f.shellExit = map[string]int{"libssl": 1}
+		f.shellErr = map[string]string{"libssl": "Error: Failed to download metadata for repo fedora"}
+		f.shellOut = map[string]string{"libssl": "Last metadata expiration check\n"}
+		useRunnerHost(t, f)
+		_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+		msg := fmt.Sprint(err)
+		if Code(err) != CodeRunnerInstallFailed || !strings.Contains(msg, "install libssl on fake") ||
+			!strings.Contains(msg, "exit status 1") || !strings.Contains(msg, "stderr: Error: Failed to download metadata for repo fedora") ||
+			!strings.Contains(msg, "stdout: Last metadata expiration check") ||
+			!strings.Contains(msg, "sudo dnf install -y openssl3-libs") {
+			t.Fatalf("err = %v", err)
+		}
+		if !reflect.DeepEqual(f.events, []string{"libssl"}) {
+			t.Errorf("events after a failed libssl step = %v", f.events)
+		}
+		// A failed podman machine ssh keeps its own code.
+		f = newHost(noSSL)
+		f.shellExit = map[string]int{"libssl": 125}
+		useRunnerHost(t, f)
+		if _, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{}); Code(err) != CodePodmanFailed {
+			t.Errorf("ssh failure: %v", err)
+		}
+	})
+
+	t.Run("local", func(t *testing.T) {
+		f := &fakeHost{probe: strings.Replace(defaultProbe, "ssl 1", "ssl 0", 1), slots: map[string]*fakeSlot{},
+			volumes: map[string]bool{"nibfin-tools": true, "claude": true}, loggedIn: map[string]bool{"claude": true}}
+		useRunnerHost(t, f)
+		p, err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Plan(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range p.Steps {
+			if s.Action == actInstallLibssl {
+				t.Errorf("libssl item on a local host: %v", allSteps(p))
+			}
+		}
+		// Apply refuses the item on a local host.
+		bad := Plan{Repo: "github.com/cur/repo", Steps: []Step{libsslStep("local podman")}}
+		if err := RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}).Apply(context.Background(), bad); Code(err) != CodeInvalidArgument || !strings.Contains(fmt.Sprint(err), `unknown runner add step "install libssl"`) {
+			t.Errorf("local libssl step: %v", err)
+		}
+	})
 }
