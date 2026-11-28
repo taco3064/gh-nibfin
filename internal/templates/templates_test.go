@@ -234,7 +234,7 @@ func TestRenderSharedRunner(t *testing.T) {
 		"  queue: max\n",
 		"    uses: ./.github/workflows/nibfin-job.yml\n",
 		"      token: ${{ secrets.NIBFIN_GITHUB_TOKEN }}\n",
-		"        options: [route, scope, shape, deliver, review, finish]\n",
+		"        options: [route, scope, shape, deliver, review, finish, repair]\n",
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("nibfin-shared-runner.yml has no %q", want)

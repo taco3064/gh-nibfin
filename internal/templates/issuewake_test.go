@@ -90,6 +90,27 @@ func TestIssueWakeScript(t *testing.T) {
 			calls: []string{permission, dispatch + " -f issue=7"},
 		},
 		{
+			name:  "pending added by a writer",
+			env:   []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=pending", "ISSUE=7", `ISSUE_LABELS=["scope","pending"]`},
+			calls: []string{permission, dispatch + " -f issue=7"},
+		},
+		{
+			name:    "pending added by a reader",
+			env:     []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=pending", "ISSUE=7", `ISSUE_LABELS=["scope","pending"]`, "FAKE_PERMISSION=read"},
+			calls:   []string{permission},
+			message: "alice has read permission; not routed",
+		},
+		{
+			name:    "shaped added",
+			env:     []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=shaped", "ISSUE=7", `ISSUE_LABELS=["scope","shaped"]`},
+			message: "Nibfin's own label change (labeled shaped); not routed",
+		},
+		{
+			name:    "delivered added",
+			env:     []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=delivered", "ISSUE=7", `ISSUE_LABELS=["scope","delivered"]`},
+			message: "Nibfin's own label change (labeled delivered); not routed",
+		},
+		{
 			name:    "issue event by a reader",
 			env:     []string{"EVENT_NAME=issues", "ACTION=labeled", "LABEL=bug", "ISSUE=7", `ISSUE_LABELS=["scope"]`, "FAKE_PERMISSION=read"},
 			calls:   []string{permission},
