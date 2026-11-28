@@ -647,13 +647,20 @@ label last, or shows `pending (no marked comment)`. It also shows the
 repair state Core's repair stage records for the stop (`"repair"` in `--json`):
 `repairing` (the stage is retrying, waiting, running the repair agent,
 rerunning CI or amending the Issue), `choose` (numbered options wait for your
-choice; answer with `gh nibfin resume <issue> --option N` or `--reply TEXT`) or `act` (follow the
-record's advice and steps, then `resume`), with its one-line reason. The
+choice; answer with `gh nibfin resume <issue> --option N` or `--reply TEXT`)
+or `act` (follow the record's advice and steps, then `resume`), with its
+one-line reason. The
 record counts only when the account that added `pending` last wrote it for the
 current `pending` comment; otherwise the state is `act` with the reason "No
 repair record covers this stop yet; see the pending comment". `--json` also
 gives the record's link, category, what was done, advice, options (with the
-recommended one), steps and bug report. Each repository shows
+recommended one), steps and bug report. After a decision, while Core's
+`<!-- nibfin:choice -->` comment (by the account that added `pending` last)
+is applying or applied and lists `Not applied:` parts, `--json` gives them
+as `"needsPerson"` with that comment's link, for pending and other open
+Issues alike: Nibfin did not do them, a person does. An open Issue without
+comments is not read for it, and a failed read of an Issue without `pending`
+shows nothing. Each repository shows
 whether its workflows pin the latest attested image (`execution` set), or
 that it has the `peer` set or none.
 

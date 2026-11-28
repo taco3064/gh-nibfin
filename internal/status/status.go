@@ -99,6 +99,10 @@ type Issue struct {
 	// Repair is the repair state of a pending Issue whose events and
 	// comments were read: what Core's repair stage says about the stop.
 	Repair *Repair `json:"repair,omitempty"`
+	// NeedsPerson are the parts of a repair decision Core applied without
+	// them, left for a person (R4.51), while Core's choice comment lists
+	// them.
+	NeedsPerson *NeedsPerson `json:"needsPerson,omitempty"`
 	// CreatedAt is GitHub's creation time of the Issue (RFC 3339).
 	CreatedAt string `json:"createdAt"`
 	// BlockedBy is every Issue GitHub lists as blocking this one, open and
@@ -111,6 +115,21 @@ type Issue struct {
 	Runs          []Run     `json:"runs"`
 	RunsError     *op.Error `json:"runsError,omitempty"`
 	RunsTruncated bool      `json:"runsTruncated,omitempty"`
+
+	// comments is GitHub's comment count, which says whether a choice
+	// comment can exist; it is not printed.
+	comments int
+}
+
+// NeedsPerson is what Core's choice comment lists under "Not applied":
+// the parts of a decision on a repair record that Core did not apply
+// itself (such as a label, CI or closing the Issue) and leaves for a
+// person.
+type NeedsPerson struct {
+	// Comment links Core's choice comment.
+	Comment string `json:"comment"`
+	// Items are the parts, one line each, as Core wrote them.
+	Items []string `json:"items"`
 }
 
 // Blocker is an Issue that blocks another, as GitHub lists it.
@@ -364,11 +383,12 @@ type issueJSON struct {
 	Labels        []labelJSON `json:"labels"`
 	PullRequest   *struct{}   `json:"pull_request"`
 	CreatedAt     string      `json:"created_at"`
+	Comments      int         `json:"comments"`
 }
 
 func toIssue(j issueJSON) Issue {
 	is := Issue{Number: j.Number, Title: j.Title, URL: j.HTMLURL, Labels: []string{},
-		CreatedAt: j.CreatedAt, BlockedBy: []Blocker{}, Runs: []Run{}}
+		CreatedAt: j.CreatedAt, BlockedBy: []Blocker{}, Runs: []Run{}, comments: j.Comments}
 	for _, l := range j.Labels {
 		is.Labels = append(is.Labels, l.Name)
 		is.Pause = is.Pause || strings.EqualFold(l.Name, "pause")
@@ -510,19 +530,30 @@ func (r *reader) repoIssues(ctx context.Context, repo string) ([]Issue, error) {
 	}
 }
 
-// withPending reads the repair state of a pending Issue (repair.Read): it
-// links the pending comment, the oldest comment starting with the pending
-// marker by the account that added the pending label last (Core's own
-// rule, with Core's account taken from the label event), and reports the
-// repair record that covers the stop. Nothing found is no link and the act
-// state; a failed read is PendingCommentError and no Repair.
+// withPending reads the repair state of an Issue (repair.Read). For a
+// pending Issue it links the pending comment, the oldest comment starting
+// with the pending marker by the account that added the pending label last
+// (Core's own rule, with Core's account taken from the label event), and
+// reports the repair record that covers the stop. Nothing found is no link
+// and the act state; a failed read is PendingCommentError and no Repair.
+//
+// For every Issue it read, pending or not, it reports the parts Core's
+// choice comment leaves for a person (NeedsPerson). An Issue without
+// pending is read only when it has comments, and a failed read of one
+// shows nothing.
 func (r *reader) withPending(ctx context.Context, repo string, is Issue) Issue {
-	if !is.Pending {
+	if !is.Pending && is.comments == 0 {
 		return is
 	}
 	issue := fmt.Sprintf("%s/issues/%d", base(repo), is.Number)
 	what := fmt.Sprintf("read %s#%d", repo, is.Number)
 	s, err := repair.Read(ctx, r.get, issue)
+	if err == nil {
+		is.NeedsPerson = needsPerson(s)
+	}
+	if !is.Pending {
+		return is
+	}
 	if err != nil {
 		var re *repair.ReadError
 		if errors.As(err, &re) {
@@ -539,6 +570,20 @@ func (r *reader) withPending(ctx context.Context, repo string, is Issue) Issue {
 		is.Repair = toRepair(rep)
 	}
 	return is
+}
+
+// needsPerson is what Core's choice comment in s leaves for a person: its
+// Not applied parts while it is applying or applied; nil without such
+// parts.
+func needsPerson(s repair.Snapshot) *NeedsPerson {
+	if s.Choice == nil {
+		return nil
+	}
+	ch, ok := repair.ParseChoice(s.Choice.Body)
+	if !ok || (ch.Status != repair.ChoiceApplying && ch.Status != repair.ChoiceApplied) || len(ch.NotApplied) == 0 {
+		return nil
+	}
+	return &NeedsPerson{Comment: s.Choice.URL, Items: ch.NotApplied}
 }
 
 // image reads the image repo's workflows pin on the default branch.
