@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import commands from '@/app/data/commands.json'
+
 import {
   afterPlan,
+  applyAtOnce,
   elapsedSeconds,
   endedSummary,
   fieldsOf,
@@ -425,6 +428,33 @@ describe('afterPlan', () => {
     expect(afterPlan({ ok: false, error }, true)).toEqual({})
     expect(afterPlan({ ok: true, value: body }, true)).toEqual({ drop: 'P1' })
     expect(afterPlan({ ok: true, value: { plan, result: {} } }, true)).toEqual({})
+  })
+})
+
+describe('applyAtOnce', () => {
+  const plan = (confirm: boolean): Plan => ({ operation: 'resume', steps: [], confirm, readOnly: false })
+  const planned = (confirm: boolean) => afterPlan({ ok: true, value: { id: 'P1', plan: plan(confirm) } }, false)
+  it('applies a stored plan that asks no confirmation only without the preview stop', () => {
+    expect(applyAtOnce(false, planned(false))).toBe('P1')
+    // The default stops at the preview.
+    expect(applyAtOnce(true, planned(false))).toBeUndefined()
+    // A plan that asks for confirmation always stops.
+    expect(applyAtOnce(false, planned(true))).toBeUndefined()
+  })
+  it('never applies a read-only, failed or aborted plan', () => {
+    expect(applyAtOnce(false, afterPlan({ ok: true, value: { plan: { ...plan(false), readOnly: true } } }, false))).toBeUndefined()
+    expect(applyAtOnce(false, afterPlan({ ok: false, error: { code: 'invalid_argument', message: 'x' } }, false))).toBeUndefined()
+    expect(applyAtOnce(false, afterPlan({ ok: true, value: { id: 'P1', plan: plan(false) } }, true))).toBeUndefined()
+  })
+})
+
+describe('resume --option body', () => {
+  it('sends the Issue as a list and the option as an integer, without the repository', () => {
+    const resume = (commands as Command[]).find((c) => c.api === 'resume')!
+    const f = fieldsOf(resume)
+    expect(f.map((x) => x.key).sort()).toEqual(['issues', 'option', 'repo'])
+    const values = initialValues(f, { issues: 'https://github.com/o/r/issues/7', option: '2' })
+    expect(requestBody(f, values)).toEqual({ ok: true, body: { issues: ['https://github.com/o/r/issues/7'], option: 2 } })
   })
 })
 

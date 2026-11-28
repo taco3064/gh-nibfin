@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   afterPlan,
+  applyAtOnce,
   changingCount,
   elapsedSeconds,
   fieldsOf,
@@ -37,7 +38,7 @@ import { applyStream, deletePlan, planStream, type ApiError } from '@/lib/sessio
 import { cn } from '@/lib/utils'
 
 import { LoginPanel } from './login-panel'
-import { OperationFields } from './operation-fields'
+import { OperationFields, type FieldInputs } from './operation-fields'
 import { Notes, OperationItems } from './operation-items'
 
 type Fetch = typeof fetch
@@ -52,13 +53,24 @@ export interface OperationDialogProps {
   // initial replaces the defaults of the fields with its keys; keys no field
   // has are ignored. Openers find the keys through the schema.
   initial?: Values
+  // title replaces the command path as the dialog title.
+  title?: string
+  // intro is shown above the inputs and stays above progress and read-back.
+  intro?: ReactNode
+  // inputs renders some fields in place of their default input.
+  inputs?: FieldInputs
+  // confirm false applies a stored plan that asks no confirmation right
+  // after it is planned, with no preview stop (Proposal R9.21: resume is not
+  // confirmed). A plan that asks for confirmation still stops at the
+  // preview. The default is true: every plan stops at the preview.
+  confirm?: boolean
   fetcher?: Fetch
 }
 
 // OperationDialog runs one changing command: inputs from its schema, the
 // plan's preview, confirm or cancel, the apply's progress and the read-back.
 // While a login waits for the person, closing it ends the login.
-export function OperationDialog({ command, open, onOpenChange, onFinished, initial, fetcher }: OperationDialogProps) {
+export function OperationDialog({ command, open, onOpenChange, onFinished, initial, fetcher, ...look }: OperationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open && (
@@ -68,6 +80,7 @@ export function OperationDialog({ command, open, onOpenChange, onFinished, initi
           onClose={() => onOpenChange(false)}
           onFinished={onFinished}
           fetcher={fetcher}
+          {...look}
         />
       )}
     </Dialog>
@@ -81,11 +94,14 @@ const stages: { label: string; phases: Phase[] }[] = [
   { label: 'Read-back', phases: ['finished'] },
 ]
 
-function Stages({ phase }: { phase: Phase }) {
-  const at = stages.findIndex((s) => s.phases.includes(phase))
+function Stages({ phase, confirm }: { phase: Phase; confirm: boolean }) {
+  // Without the preview stop, the preview step shows only when an apply was
+  // refused and waits there.
+  const shown = confirm || phase === 'preview' ? stages : stages.filter((s) => s.label !== 'Preview')
+  const at = shown.findIndex((s) => s.phases.includes(phase))
   return (
     <ol aria-label="Steps" className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
-      {stages.map((s, i) => (
+      {shown.map((s, i) => (
         <li key={s.label} className="flex items-center gap-1.5">
           <span
             aria-current={i === at ? 'step' : undefined}
@@ -96,7 +112,7 @@ function Stages({ phase }: { phase: Phase }) {
           >
             <span className="tabular-nums">{i + 1}.</span> {s.label}
           </span>
-          {i < stages.length - 1 && (
+          {i < shown.length - 1 && (
             <span aria-hidden="true" className="text-muted-foreground">
               ›
             </span>
@@ -140,12 +156,20 @@ function OperationContent({
   onClose,
   onFinished,
   fetcher,
+  title,
+  intro,
+  inputs,
+  confirm = true,
 }: {
   command: Command
   initial?: Values
   onClose: () => void
   onFinished?: () => void
   fetcher?: Fetch
+  title?: string
+  intro?: ReactNode
+  inputs?: FieldInputs
+  confirm?: boolean
 }) {
   const fields = useMemo(() => fieldsOf(command), [command])
   const [values, setValues] = useState(() => initialValues(fields, initial))
@@ -227,10 +251,14 @@ function OperationContent({
     if (next.drop) void deletePlan(next.drop, fetchRef.current)
     if (next.store) stored.current = next.store
     if (next.action) dispatch(next.action)
+    // Without the preview stop, a stored plan that asks no confirmation is
+    // applied at once.
+    const atOnce = applyAtOnce(confirm, next)
+    if (atOnce) void apply(atOnce)
   }
 
-  const apply = async () => {
-    const id = state.planId
+  const apply = async (planId?: string) => {
+    const id = planId ?? state.planId
     if (!id) return
     stored.current = null
     applied.current = true
@@ -336,7 +364,7 @@ function OperationContent({
       className="flex max-h-[calc(100svh-2rem)] flex-col bg-card sm:max-w-2xl"
     >
       <DialogHeader className="gap-3 pr-8 text-left">
-        <DialogTitle className="break-words">{command.path}</DialogTitle>
+        <DialogTitle className="break-words">{title ?? command.path}</DialogTitle>
         <DialogDescription className="break-words">{command.short}</DialogDescription>
         {command.long && command.long !== command.short && (
           <details className="text-sm text-muted-foreground">
@@ -346,7 +374,7 @@ function OperationContent({
             <p className="mt-2 break-words whitespace-pre-line">{command.long}</p>
           </details>
         )}
-        <Stages phase={phase} />
+        <Stages phase={phase} confirm={confirm} />
       </DialogHeader>
 
       <div
@@ -355,6 +383,7 @@ function OperationContent({
         aria-busy={busy}
         className="-mx-6 flex min-h-0 flex-col gap-4 overflow-y-auto px-6 py-1 outline-none"
       >
+        {intro}
         {(phase === 'inputs' || phase === 'planning' || phase === 'planFailed') && (
           <form
             id="operation-form"
@@ -370,7 +399,14 @@ function OperationContent({
                 <ErrorLine error={state.error} />
               </Message>
             )}
-            <OperationFields fields={fields} values={values} errors={errors} disabled={phase === 'planning'} onChange={onChange} />
+            <OperationFields
+              fields={fields}
+              values={values}
+              errors={errors}
+              disabled={phase === 'planning'}
+              onChange={onChange}
+              inputs={inputs}
+            />
           </form>
         )}
 
@@ -457,7 +493,7 @@ function OperationContent({
             </Button>
             <Button type="submit" form="operation-form" disabled={phase === 'planning'}>
               {phase === 'planning' && <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />}
-              {phase === 'planning' ? 'Planning…' : 'Preview'}
+              {phase === 'planning' ? 'Planning…' : confirm ? 'Preview' : 'Submit'}
             </Button>
           </>
         )}
