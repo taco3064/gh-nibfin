@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck, CircleHelp, CircleMinus, ExternalLink, GitPullRequest, Rocket, TriangleAlert, Wrench, type LucideIcon } from 'lucide-react'
 
-import { ExternalMark } from '@/components/issue/issue-item'
+import { ExternalMark } from '@/components/issue/external-mark'
 import { tones, type Tone } from '@/components/issue/tones'
 import { OperationDialog } from '@/components/operation'
 import { imageIcons } from '@/components/person/image-icons'

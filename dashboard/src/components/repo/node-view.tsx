@@ -1,7 +1,7 @@
 import { CircleCheck } from 'lucide-react'
 
 import { BlockerItem, IssueItem } from '@/components/issue'
-import { ExternalMark } from '@/components/issue/issue-item'
+import { ExternalMark } from '@/components/issue/external-mark'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { groupLabel, nodeLabel, type Graph, type GraphNode } from '@/lib/graph'

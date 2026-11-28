@@ -57,8 +57,10 @@ function Harness() {
         </p>
         <RunLegend />
         <IssueBulkActions selected={chosen} onChanged={onChanged} />
+        {/* The Issues render once the session is open, as in the
+            product, whose views read data only with a session. */}
         <ul className="flex flex-col gap-3">
-          {items.map((f) => (
+          {ready !== 'opening' && items.map((f) => (
             <li key={f.issue.url}>
               <IssueItem
                 issue={f.issue}

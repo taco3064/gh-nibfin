@@ -22,7 +22,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Toggle } from '@/components/ui/toggle'
 import { runBucketLabels } from '@/lib/issue'
 import { useLoading } from '@/lib/loading-context'
-import { needsYouCount, runCounts, runnerCounts, stageCounts } from '@/lib/person'
+import { needsYouCount, repairingCount, runCounts, runnerCounts, stageCounts } from '@/lib/person'
 import { gib } from '@/lib/runner'
 import { hasNoRunner } from '@/lib/shell'
 import type { ApiError, PersonView } from '@/lib/status'
@@ -125,6 +125,7 @@ function IssuesTile({ data }: { data: PersonView }) {
 function NeedsYouTile({ data, on, onChange }: { data: PersonView; on: boolean; onChange: (on: boolean) => void }) {
   const loading = useLoading()
   const n = needsYouCount(data)
+  const fixing = repairingCount(data)
   const idle = n === 0 && !on
   return (
     <Tile title="Needs you" icon={Hand} tile="needs-you">
@@ -135,6 +136,11 @@ function NeedsYouTile({ data, on, onChange }: { data: PersonView; on: boolean; o
       ) : (
         <>
           <Count value={n}>pending or paused</Count>
+          {fixing > 0 && (
+            <p className="text-xs text-muted-foreground" data-note="repairing">
+              {`${fixing} repairing not counted: Nibfin is repairing ${fixing === 1 ? 'it' : 'them'} itself.`}
+            </p>
+          )}
           <Toggle
             variant="outline"
             size="sm"
@@ -148,7 +154,7 @@ function NeedsYouTile({ data, on, onChange }: { data: PersonView; on: boolean; o
           </Toggle>
           {idle && (
             <p className="text-xs text-muted-foreground" data-slot="disabled-reason">
-              No Issue is pending or paused.
+              No Issue waits on you.
             </p>
           )}
         </>

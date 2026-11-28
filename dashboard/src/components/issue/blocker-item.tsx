@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import type { Blocker } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
-import { ExternalMark } from './issue-item'
+import { ExternalMark } from './external-mark'
 import { tones } from './tones'
 
 export interface BlockerItemProps {

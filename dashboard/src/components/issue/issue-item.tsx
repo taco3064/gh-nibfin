@@ -1,14 +1,16 @@
 import { useId } from 'react'
-import { CircleAlert, CircleHelp, CirclePause, CirclePlay, ExternalLink, LoaderCircle, MessageSquareWarning } from 'lucide-react'
+import { CircleAlert, CircleHelp, CirclePause, CirclePlay, LoaderCircle, MessageSquareWarning } from 'lucide-react'
 
 import { SectionLoading } from '@/components/shell/section-loading'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  answerable,
   blockersView,
   changeAccess,
   pendingView,
+  safeLink,
   stageOf,
   type Change,
 } from '@/lib/issue'
@@ -18,6 +20,9 @@ import type { RepoPermission, StatusIssue } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { ChangeMessage, DisabledReason } from './change-message'
+import { ExternalMark } from './external-mark'
+import { RepairAction, RepairBadge } from './repair-dialog'
+import { useRepairTarget } from './use-repair-target'
 import { RunStrip } from './run-strip'
 import { StageTrack } from './stage-track'
 import { tones } from './tones'
@@ -42,46 +47,56 @@ export interface IssueItemProps {
 
 const linkClass = 'rounded-sm text-link underline-offset-4 hover:underline'
 
-export function ExternalMark({ label }: { label: string }) {
-  return (
-    <>
-      <ExternalLink aria-hidden="true" className="inline size-3.5 shrink-0 align-[-0.125em]" />
-      <span className="sr-only">{label}</span>
-    </>
-  )
-}
-
 function StageMarkers({ issue }: { issue: StatusIssue }) {
   const loading = useLoading()
-  const pending = issue.pending ? pendingView(issue) : null
+  const repair = issue.pending ? issue.repair : undefined
+  const pending = issue.pending && !repair ? pendingView(issue) : null
+  const comment = safeLink(issue.pendingComment)
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <StageTrack stage={stageOf(issue.labels)} />
-      {issue.pause && (
-        <Badge variant="outline" data-badge="paused" className={tones.warning}>
-          <CirclePause aria-hidden="true" />
-          Paused
-        </Badge>
-      )}
-      {pending && (
-        <span data-badge="pending" className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <Badge variant="outline" className={tones.warning}>
-            <MessageSquareWarning aria-hidden="true" />
-            Pending
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <StageTrack stage={stageOf(issue.labels)} />
+        {issue.pause && (
+          <Badge variant="outline" data-badge="paused" className={tones.warning}>
+            <CirclePause aria-hidden="true" />
+            Paused
           </Badge>
-          {pending.kind === 'link' && (
-            <a href={pending.url} target="_blank" rel="noreferrer" className={cn(linkClass, 'text-sm')}>
-              Reason <ExternalMark label={`comment of #${issue.number} (opens in a new tab)`} />
-            </a>
-          )}
-          {pending.kind === 'failed' && (
-            <span className="text-sm break-words text-danger">
-              {`Reason comment could not be read: ${pending.error.code}: ${pending.error.message}`}
-            </span>
-          )}
-          {pending.kind === 'notFound' && loading.has('pendingComment') && <SectionLoading label="Reading the reason…" data-loading="pendingComment" />}
-          {pending.kind === 'notFound' && !loading.has('pendingComment') && <span className="text-sm text-muted-foreground">Reason comment not found</span>}
-        </span>
+        )}
+        {pending && (
+          <span data-badge="pending" className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <Badge variant="outline" className={tones.warning}>
+              <MessageSquareWarning aria-hidden="true" />
+              Pending
+            </Badge>
+            {pending.kind === 'link' && (
+              <a href={pending.url} target="_blank" rel="noreferrer" className={cn(linkClass, 'text-sm')}>
+                Reason <ExternalMark label={`comment of #${issue.number} (opens in a new tab)`} />
+              </a>
+            )}
+            {pending.kind === 'failed' && (
+              <span className="text-sm break-words text-danger">
+                {`Reason comment could not be read: ${pending.error.code}: ${pending.error.message}`}
+              </span>
+            )}
+            {pending.kind === 'notFound' && loading.has('pendingComment') && <SectionLoading label="Reading the reason…" data-loading="pendingComment" />}
+            {pending.kind === 'notFound' && !loading.has('pendingComment') && <span className="text-sm text-muted-foreground">Reason comment not found</span>}
+          </span>
+        )}
+        {repair && (
+          <span data-badge="pending" className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <RepairBadge repair={repair} />
+            {comment && (
+              <a href={comment} target="_blank" rel="noreferrer" className={cn(linkClass, 'text-sm')}>
+                Comment <ExternalMark label={`pending comment of #${issue.number} (opens in a new tab)`} />
+              </a>
+            )}
+          </span>
+        )}
+      </div>
+      {repair && (
+        <p data-slot="repair-line" className="text-sm break-words text-muted-foreground">
+          {repair.reason}
+        </p>
       )}
     </div>
   )
@@ -132,9 +147,10 @@ function Blockers({ issue }: { issue: StatusIssue }) {
 }
 
 // IssueItem is the shared Dashboard element of one Issue: its stage from
-// labels, its GitHub link, its runs, its open blockers and pause/resume.
+// labels, its GitHub link, its runs, its open blockers, pause/resume and,
+// for a pending Issue that waits on a person, the Repair dialog.
 // It renders only from its props; the placing view applies onChanged.
-// Read-only, it offers no selection, pause or resume; its runs dialog and
+// Read-only, it offers no selection, pause, resume or Repair; its runs dialog and
 // links stay.
 export function IssueItem({ issue, repo, access, selected, onSelectedChange, onChanged, stacked = false, className }: IssueItemProps) {
   const id = useId()
@@ -142,6 +158,8 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
   const readOnly = useReadOnly()
   const change = useChange(onChanged)
   const gate = changeAccess(access, repo)
+  const repairOn = !readOnly && answerable(issue) && issue.repair !== undefined
+  const target = useRepairTarget(issue.repair, repairOn)
   // resume clears both pause and pending.
   const action = issue.pause || issue.pending ? 'resume' : 'pause'
   const running = change.running !== null
@@ -197,6 +215,16 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
                 {label}
               </Button>
             )}
+            {repairOn && issue.repair && (
+              <RepairAction
+                issue={issue}
+                repair={issue.repair}
+                gate={gate}
+                target={target}
+                describedBy={gate.enabled ? `${id}-repair` : `${id}-reason`}
+                onChanged={() => onChanged([])}
+              />
+            )}
           </div>
           {!readOnly && (
             <div className={cn('flex max-w-full flex-col gap-2', !stacked && 'sm:max-w-xs')}>
@@ -208,6 +236,11 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
                 </span>
               ) : (
                 <DisabledReason id={`${id}-reason`} access={gate} />
+              )}
+              {repairOn && gate.enabled && !target.ready && (
+                <p id={`${id}-repair`} data-slot="repair-unavailable" className="text-sm break-words text-muted-foreground">
+                  {target.reason}
+                </p>
               )}
               <ChangeMessage outcome={change.outcome} />
             </div>

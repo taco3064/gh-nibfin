@@ -21,8 +21,8 @@ export interface PersonViewProps {
 
 // PersonView lists the open Issues with scope or request assigned to the
 // current gh account, grouped by repository in the order of the data, under
-// summary tiles. The Needs you tile limits the list to the Issues with pending
-// or pause; the tiles always count the whole read.
+// summary tiles. The Needs you tile limits the list to the Issues that wait on
+// a person (needsYou); the tiles always count the whole read.
 export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) {
   const loading = useLoading()
   const listing = loading.has('repos')
@@ -102,7 +102,7 @@ export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) 
       )}
       {needsYouOnly && !listing && repos.length === 0 && !data.issuesError && (
         <p className="rounded-md border border-dashed border-border-subtle px-4 py-8 text-center text-sm text-muted-foreground" data-empty="needs-you">
-          No listed Issue is pending or paused.
+          No listed Issue waits on you.
         </p>
       )}
       {!needsYouOnly && !listing && repos.length === 0 && !data.issuesError && (
