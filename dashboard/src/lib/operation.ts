@@ -169,6 +169,13 @@ export function fieldsOf(command: Command): Field[] {
   return out
 }
 
+// fieldIds are the element ids of one field's input, label, help and
+// error in the dialog form.
+export function fieldIds(key: string) {
+  const base = `op-field-${key}`
+  return { input: base, label: `${base}-label`, help: `${base}-help`, error: `${base}-error` }
+}
+
 // initialValues are the fields' defaults; a value of initial replaces the
 // default of the field with its key, and keys no field has are ignored.
 export function initialValues(fields: readonly Field[], initial?: Values): Values {
@@ -408,6 +415,13 @@ export function afterPlan(p: PlanOutcome<PlanBody>, aborted: boolean): AfterPlan
   }
   if (p.plan && p.result) return { action: { type: 'readBack', plan: p.plan as Plan, result: p.result as OpResult, error: p.error } }
   return { action: { type: 'planFailed', error: p.error } }
+}
+
+// applyAtOnce is the stored plan to apply without a preview stop: only when
+// the opener asks for none and the plan itself asks no confirmation.
+export function applyAtOnce(confirm: boolean, next: AfterPlan): string | undefined {
+  if (confirm || next.action?.type !== 'planned') return undefined
+  return next.action.plan.confirm === false ? next.action.id : undefined
 }
 
 // elapsedSeconds is the whole seconds from start to now, never negative.

@@ -1,21 +1,18 @@
+import { Fragment, type ReactNode } from 'react'
+
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { Field, FieldValue, Values } from '@/lib/operation'
+import { fieldIds, type Field, type FieldValue, type Values } from '@/lib/operation'
 
-interface FieldProps {
+export interface FieldProps {
   field: Field
   value: FieldValue
   error?: string
   disabled: boolean
   onChange: (v: FieldValue) => void
-}
-
-function ids(key: string) {
-  const base = `op-field-${key}`
-  return { input: base, label: `${base}-label`, help: `${base}-help`, error: `${base}-error` }
 }
 
 function Heading({ field, htmlFor, id }: { field: Field; htmlFor?: string; id: string }) {
@@ -48,7 +45,7 @@ function Help({ id, text }: { id: string; text: string }) {
   )
 }
 
-function ErrorText({ id, text }: { id: string; text?: string }) {
+export function ErrorText({ id, text }: { id: string; text?: string }) {
   if (!text) return null
   return (
     <p id={id} data-slot="field-error" className="text-sm font-medium break-words text-danger">
@@ -57,14 +54,14 @@ function ErrorText({ id, text }: { id: string; text?: string }) {
   )
 }
 
-function describedBy(field: Field, error: string | undefined, i: ReturnType<typeof ids>): string | undefined {
+function describedBy(field: Field, error: string | undefined, i: ReturnType<typeof fieldIds>): string | undefined {
   const parts = [field.help ? i.help : '', error ? i.error : ''].filter(Boolean)
   return parts.length > 0 ? parts.join(' ') : undefined
 }
 
 // OperationField is one input of the form, built from its schema field.
 function OperationField({ field, value, error, disabled, onChange }: FieldProps) {
-  const i = ids(field.key)
+  const i = fieldIds(field.key)
   const invalid = error ? true : undefined
   const desc = describedBy(field, error, i)
 
@@ -160,6 +157,11 @@ function OperationField({ field, value, error, disabled, onChange }: FieldProps)
   )
 }
 
+// FieldInputs lets an opener render some fields itself: it returns the
+// input of a field, null to show none, or undefined for the default input.
+// The value still goes through the same field and request body.
+export type FieldInputs = (props: FieldProps) => ReactNode | undefined
+
 // OperationFields is the input form of one command.
 export function OperationFields({
   fields,
@@ -167,28 +169,32 @@ export function OperationFields({
   errors,
   disabled,
   onChange,
+  inputs,
 }: {
   fields: readonly Field[]
   values: Values
   errors: Record<string, string>
   disabled: boolean
   onChange: (key: string, v: FieldValue) => void
+  inputs?: FieldInputs
 }) {
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">This command takes no input.</p>
   }
   return (
     <div className="flex flex-col gap-5">
-      {fields.map((f) => (
-        <OperationField
-          key={f.key}
-          field={f}
-          value={values[f.key] ?? f.initial}
-          error={errors[f.key]}
-          disabled={disabled}
-          onChange={(v) => onChange(f.key, v)}
-        />
-      ))}
+      {fields.map((f) => {
+        const props: FieldProps = {
+          field: f,
+          value: values[f.key] ?? f.initial,
+          error: errors[f.key],
+          disabled,
+          onChange: (v) => onChange(f.key, v),
+        }
+        const custom = inputs?.(props)
+        if (custom === undefined) return <OperationField key={f.key} {...props} />
+        return <Fragment key={f.key}>{custom}</Fragment>
+      })}
     </div>
   )
 }
