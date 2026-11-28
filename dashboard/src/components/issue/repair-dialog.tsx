@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Check, CircleHelp, Copy, Hand, ListChecks, Wrench } from 'lucide-react'
+import { Check, CircleHelp, Copy, Hand, Info, ListChecks, Wrench } from 'lucide-react'
 
 import { OperationDialog } from '@/components/operation'
 import { ErrorText, type FieldInputs } from '@/components/operation/operation-fields'
@@ -7,14 +7,17 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Textarea } from '@/components/ui/textarea'
 import { latestRun, repairLook, safeLink, type Access, type RepairLook } from '@/lib/issue'
 import { fieldIds } from '@/lib/operation'
 import type { Repair, StatusIssue } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 import { ExternalMark } from './external-mark'
+import { NeedsPerson } from './needs-person'
+import { pickOption, repairLabels, replying, typeReply } from './repair-reply'
 import { tones } from './tones'
-import { issuesKey, optionKey, type RepairTarget } from './use-repair-target'
+import { issuesKey, optionKey, replyKey, type RepairTarget } from './use-repair-target'
 
 const linkClass = 'rounded-sm text-link underline-offset-4 hover:underline'
 
@@ -61,8 +64,9 @@ function Fact({ term, children, slot }: { term: string; children: ReactNode; slo
 
 // RepairSummary is the head of the Repair dialog (Proposal R9.53): the
 // state, the category, the reason, what Nibfin did, and links to the
-// repair record, the pending comment and the latest run. All of it is the
-// record's text, shown only as text.
+// repair record, the pending comment and the latest run, then what an
+// earlier decision left for a person, when Core reports any. All of it is
+// the record's and Core's text, shown only as text.
 export function RepairSummary({ issue, repair }: { issue: StatusIssue; repair: Repair }) {
   const run = latestRun(issue)
   return (
@@ -111,15 +115,25 @@ export function RepairSummary({ issue, repair }: { issue: StatusIssue; repair: R
           </span>
         </Fact>
       </dl>
+      {issue.needsPerson && <NeedsPerson data={issue.needsPerson} className="bg-card" />}
     </section>
   )
 }
 
-// optionInputs shows the Issue as fixed text, the option as a list of the
-// record's options, and no repository field: the Issue URL carries it.
-function optionInputs(issue: StatusIssue, repair: Repair): FieldInputs {
+// boundaryNote is on every option card: choosing an option lets Nibfin
+// change only the Issue text and Blocked by (Proposal R4.51); whatever else
+// the option needs is the person's to do.
+export const boundaryNote =
+  'Choosing this lets Nibfin change only the Issue text and Blocked by. Any step beyond that, such as adding a label, running CI, closing the Issue or opening a PR, is yours to do.'
+
+// optionInputs shows the Issue as fixed text, the record's options as
+// suggestion cards, a reply in the person's own words beside them, and no
+// repository field: the Issue URL carries it. Exactly one of the option and
+// the reply is sent (repair-reply.ts); last is the option picked last,
+// which a blank reply brings back.
+function optionInputs(issue: StatusIssue, repair: Repair, last: string, setLast: (v: string) => void): FieldInputs {
   const options = repair.options ?? []
-  return ({ field, value, error, disabled, onChange }) => {
+  return ({ field, value, error, disabled, onChange, values, set }) => {
     if (field.key === issuesKey) {
       return (
         <p data-field={field.key} className="text-sm break-words">
@@ -130,14 +144,19 @@ function optionInputs(issue: StatusIssue, repair: Repair): FieldInputs {
     }
     if (field.key === optionKey) {
       const i = fieldIds(field.key)
+      const pick = (v: string) => {
+        setLast(v)
+        for (const [k, nv] of Object.entries(pickOption(v))) set(k, nv)
+      }
       return (
         <fieldset data-field={field.key} className="flex min-w-0 flex-col gap-2" aria-describedby={error ? i.error : undefined}>
-          <legend id={i.label} className="mb-2 text-sm font-medium">
-            Choose one option
+          <legend id={i.label} className="mb-1 text-sm font-medium">
+            Suggested options
           </legend>
+          <p className="mb-1 text-sm break-words text-muted-foreground">Pick one, or reply in your own words below.</p>
           <RadioGroup
             value={String(value)}
-            onValueChange={(v) => onChange(v)}
+            onValueChange={pick}
             disabled={disabled}
             aria-labelledby={i.label}
             aria-invalid={error ? true : undefined}
@@ -153,7 +172,7 @@ function optionInputs(issue: StatusIssue, repair: Repair): FieldInputs {
                   className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 text-sm has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-accent has-[:disabled]:cursor-not-allowed"
                 >
                   <RadioGroupItem id={id} value={String(o.number)} className="mt-0.5" aria-describedby={`${id}-more`} />
-                  <span className="flex min-w-0 flex-col gap-1">
+                  <span className="flex min-w-0 flex-col gap-2">
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium break-words">
                       <span className="tabular-nums">{`${o.number}.`}</span>
                       <span className="min-w-0 break-words">{o.title}</span>
@@ -163,9 +182,23 @@ function optionInputs(issue: StatusIssue, repair: Repair): FieldInputs {
                         </Badge>
                       )}
                     </span>
-                    <span id={`${id}-more`} className="flex flex-col gap-1 text-muted-foreground">
-                      <span className="break-words whitespace-pre-line">{o.consequence}</span>
-                      {o.issueChange && <span className="break-words whitespace-pre-line">{`Issue change: ${o.issueChange}`}</span>}
+                    <span id={`${id}-more`} className="flex flex-col gap-2">
+                      {o.issueChange && (
+                        <span data-slot="issue-change" className="break-words whitespace-pre-line">
+                          <span className="text-muted-foreground">Nibfin changes the Issue: </span>
+                          {o.issueChange}
+                        </span>
+                      )}
+                      {o.consequence && (
+                        <span data-slot="consequence" className="flex flex-col gap-0.5">
+                          <span className="text-xs font-medium text-muted-foreground">What happens next</span>
+                          <span className="break-words whitespace-pre-line">{o.consequence}</span>
+                        </span>
+                      )}
+                      <span data-slot="boundary" className="flex items-start gap-1.5 text-xs break-words text-muted-foreground">
+                        <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+                        <span>{boundaryNote}</span>
+                      </span>
                     </span>
                   </span>
                 </label>
@@ -174,6 +207,45 @@ function optionInputs(issue: StatusIssue, repair: Repair): FieldInputs {
           </RadioGroup>
           <ErrorText id={i.error} text={error} />
         </fieldset>
+      )
+    }
+    if (field.key === replyKey) {
+      const i = fieldIds(field.key)
+      const text = String(value)
+      const on = replying(values)
+      return (
+        <div data-field={field.key} data-replying={on ? 'true' : 'false'} className="flex min-w-0 flex-col gap-2">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <label id={i.label} htmlFor={i.input} className="text-sm font-medium">
+            Reply in your own words
+          </label>
+          <Textarea
+            id={i.input}
+            value={text}
+            disabled={disabled}
+            rows={3}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={[i.help, error ? i.error : ''].filter(Boolean).join(' ')}
+            placeholder="For example: keep option 2, but leave the old attachments for a later Issue."
+            className="max-h-64"
+            onChange={(e) => {
+              const r = typeReply(e.target.value, values, last)
+              setLast(r.last)
+              onChange(e.target.value)
+              for (const [k, nv] of Object.entries(r.changes)) if (k !== replyKey) set(k, nv)
+            }}
+          />
+          <p id={i.help} className="text-sm break-words text-muted-foreground">
+            {on
+              ? 'Your reply is sent instead of an option, as one comment posted exactly as written. You see the comment before it is sent.'
+              : 'Posted as written, as one comment on the Issue; Nibfin’s next Shape run reads it. Leave it empty to send the picked option.'}
+          </p>
+          <ErrorText id={i.error} text={error} />
+        </div>
       )
     }
     // The Issue URL carries the repository.
@@ -292,11 +364,15 @@ export interface RepairActionProps {
 
 // RepairAction is the Repair button of a pending Issue that waits on a
 // person, and its dialog (Proposal R9.53–R9.56). Waiting for your choice
-// answers the record's options with resume --option; Needs your action only
-// shows the advice.
+// answers the record with resume --option, sent at once as resume is, or
+// with resume --reply in the person's own words, which stops at the preview
+// of the exact comment first. Needs your action only shows the advice.
 export function RepairAction({ issue, repair, gate, target, describedBy, onChanged }: RepairActionProps) {
   const [open, setOpen] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
+  // last is the option picked last in the open dialog, the recommended one
+  // when it opens.
+  const [last, setLast] = useState('')
   const choose = repair.state === 'choose'
   // The dialogs have no trigger element, so closing one moves focus back to
   // the button that opened it.
@@ -313,7 +389,10 @@ export function RepairAction({ issue, repair, gate, target, describedBy, onChang
         data-action="repair"
         disabled={!gate.enabled || !target.ready}
         aria-describedby={!gate.enabled || !target.ready ? describedBy : undefined}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setLast(target.ready && target.recommended !== undefined ? String(target.recommended) : '')
+          setOpen(true)
+        }}
       >
         <Wrench aria-hidden="true" />
         Repair
@@ -325,10 +404,11 @@ export function RepairAction({ issue, repair, gate, target, describedBy, onChang
           onOpenChange={onOpenChange}
           onFinished={onChanged}
           title={`Repair #${issue.number}`}
-          initial={{ [issuesKey]: issue.url, [optionKey]: String(target.recommended) }}
+          initial={{ [issuesKey]: issue.url, [optionKey]: String(target.recommended), [replyKey]: '' }}
           intro={<RepairSummary issue={issue} repair={repair} />}
-          inputs={optionInputs(issue, repair)}
-          confirm={false}
+          inputs={optionInputs(issue, repair, last, setLast)}
+          confirm={replying}
+          labels={repairLabels}
         />
       )}
       {!choose && <AdviceDialog issue={issue} repair={repair} open={open} onOpenChange={onOpenChange} />}

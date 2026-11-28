@@ -13,6 +13,11 @@ export interface FieldProps {
   error?: string
   disabled: boolean
   onChange: (v: FieldValue) => void
+  // values are every field's current values, and set changes another
+  // field's, for an opener whose inputs depend on each other. The default
+  // inputs use neither.
+  values: Values
+  set: (key: string, v: FieldValue) => void
 }
 
 function Heading({ field, htmlFor, id }: { field: Field; htmlFor?: string; id: string }) {
@@ -190,6 +195,8 @@ export function OperationFields({
           error: errors[f.key],
           disabled,
           onChange: (v) => onChange(f.key, v),
+          values,
+          set: onChange,
         }
         const custom = inputs?.(props)
         if (custom === undefined) return <OperationField key={f.key} {...props} />

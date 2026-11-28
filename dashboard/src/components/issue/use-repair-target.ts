@@ -9,10 +9,11 @@ import type { Repair } from '@/lib/status'
 // The resume command's request fields the Repair dialog fills.
 export const issuesKey = 'issues'
 export const optionKey = 'option'
+export const replyKey = 'reply'
 
 // RepairTarget is what the Repair button opens: for a choose record the
-// resume command that answers options and the option to preselect, or why
-// it cannot be answered here.
+// resume command that answers it with an option or in the person's own
+// words, and the option to preselect, or why it cannot be answered here.
 export type RepairTarget =
   | { ready: true; command?: Command; recommended?: number }
   | { ready: false; reason: string }
@@ -49,5 +50,6 @@ export function resolveRepairTarget(repair: Repair | undefined, enabled: boolean
   if (!command) return { ready: false, reason: 'The server offers no resume command.' }
   const keys = fieldsOf(command).map((f) => f.key)
   if (!keys.includes(optionKey) || !keys.includes(issuesKey)) return { ready: false, reason: 'The server’s resume command takes no option.' }
+  if (!keys.includes(replyKey)) return { ready: false, reason: 'The server’s resume command takes no reply; upgrade gh-nibfin.' }
   return { ready: true, command, recommended }
 }

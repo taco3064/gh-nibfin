@@ -87,6 +87,16 @@ export interface Repair {
   record?: string
 }
 
+// NeedsPerson is what Core's choice comment lists as not applied after a
+// decision on a repair record (status.NeedsPerson): parts such as a label,
+// CI or closing the Issue, which Nibfin did not do. The items are written
+// by an agent: they are shown only as text.
+export interface NeedsPerson {
+  // comment links Core's choice comment.
+  comment: string
+  items: string[]
+}
+
 // StatusIssue is one Issue of the status data (status.Issue). runs and
 // blockedBy are optional here: a value missing from the data, with no error,
 // was not read, which is never the same as none.
@@ -101,6 +111,9 @@ export interface StatusIssue {
   pendingCommentError?: ApiError
   // repair is set only for a pending Issue whose comments were read.
   repair?: Repair
+  // needsPerson are the parts of a repair decision Core did not apply and
+  // left for a person, while its choice comment lists them.
+  needsPerson?: NeedsPerson
   createdAt: string
   blockedBy?: Blocker[] | null
   blockedByError?: ApiError

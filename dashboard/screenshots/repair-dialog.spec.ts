@@ -22,14 +22,25 @@ const step = (id: string, action: string, target: string, extra: Record<string, 
   ...extra,
 })
 
-function plan(option: number): PlanAnswer {
+interface PlanBody {
+  issues: string[]
+  option?: number
+  reply?: string
+}
+
+// plan answers like resume: a reply's comment item shows its exact body.
+function plan(body: PlanBody): PlanAnswer {
+  const comment =
+    body.reply !== undefined
+      ? step(`decision:${choose}`, 'add comment', choose, { detail: body.reply, current: 'no decision', next: 'a reply by octo-dev' })
+      : step(`decision:${choose}`, 'add comment', choose, { detail: `decision for option ${body.option}`, next: `option ${body.option} by octo-dev` })
   return {
     id: 'PLANREPAIR',
     plan: {
       operation: 'resume',
       repo: 'github.com/acme/app',
       steps: [
-        step(`decision:${choose}`, 'add comment', choose, { detail: `decision for option ${option}`, next: `option ${option} by octo-dev` }),
+        comment,
         step(`label:${choose}:pending`, 'remove label', `${choose} pending`, { current: 'present', next: 'absent' }),
       ],
       confirm: false,
@@ -51,13 +62,14 @@ interface Api {
   planError?: { code: string; message: string }
 }
 
-function applyLines(mode: ApplyMode, option: number): string[] {
+function applyLines(mode: ApplyMode, body: PlanBody): string[] {
+  const mine = body.reply !== undefined ? 'a reply by octo-dev' : `option ${body.option} by octo-dev`
   const comment = {
     id: `decision:${choose}`,
     action: 'add comment',
     target: choose,
     confirmed: mode === 'confirmed',
-    state: mode === 'confirmed' ? `option ${option} by octo-dev` : 'option 1 by other-dev',
+    state: mode === 'confirmed' ? mine : 'option 1 by other-dev',
     ...(mode === 'newer' ? { reason: 'the newest decision is option 1 by other-dev' } : {}),
   }
   const label = { id: `label:${choose}:pending`, action: 'remove label', target: `${choose} pending`, confirmed: true, state: 'absent' }
@@ -74,7 +86,7 @@ function applyLines(mode: ApplyMode, option: number): string[] {
       event: 'error',
       error: {
         code: 'not_applied',
-        message: `resume: your decision for option ${option} on ${choose} is not the newest decision: the newest decision is option 1 by other-dev`,
+        message: `resume: your decision on ${choose} is not the newest decision: the newest decision is option 1 by other-dev`,
       },
       result: { items: [comment, label], notes: [] },
     }),
@@ -86,10 +98,10 @@ async function mock(page: Page): Promise<Api> {
   await page.route('**/api/commands', (route) => route.fulfill({ json: { commands: [...commands, resumeCommand] } }))
   await page.route('**/api/commands/resume/plan/stream', async (route: Route) => {
     expect(route.request().headers()['x-nibfin-session']).toBe('SCREENSHOTSESSION')
-    const body = route.request().postDataJSON() as { option: number }
+    const body = route.request().postDataJSON() as PlanBody
     api.plans.push(body)
     if (api.planError) return fulfillPlanStream(route, { error: api.planError })
-    return fulfillPlanStream(route, plan(body.option))
+    return fulfillPlanStream(route, plan(body))
   })
   await page.route('**/api/plans/**', async (route) => {
     const req = route.request()
@@ -99,8 +111,7 @@ async function mock(page: Page): Promise<Api> {
       return route.fulfill({ status: 204 })
     }
     api.applies.push({ id, body: req.postDataJSON() })
-    const option = (api.plans.at(-1) as { option: number }).option
-    await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: applyLines(api.apply, option).join('\n') + '\n' })
+    await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: applyLines(api.apply, api.plans.at(-1) as PlanBody).join('\n') + '\n' })
   })
   return api
 }
@@ -161,11 +172,22 @@ for (const width of widths) {
       await expect(docs.getByRole('button', { name: 'Repair' })).toBeDisabled()
       await expect(docs.getByRole('button', { name: 'Repair' })).toHaveAccessibleDescription(reason)
       await expect(docs.locator('[data-slot=disabled-reason]')).toHaveText(reason)
+      // What a decision left for a person shows on the Issue item, as text,
+      // with a link to Core's comment.
+      const infra = item(page, 'acme/infra', 12).locator('[data-slot=needs-person]')
+      await expect(infra).toContainText('Needs a person: Nibfin did not do these')
+      await expect(infra.locator('[data-slot=needs-person-item]')).toHaveText([
+        'Add the `pause` label until the bucket policy is reviewed.',
+        'Rerun the failed CI job on the default branch.',
+      ])
+      await expect(infra.getByRole('link')).toHaveAttribute('href', `${gh}/acme/infra/issues/12#issuecomment-6101`)
+      await expect(item(page, 'acme/app', 108).locator('[data-slot=needs-person-item]')).toHaveText('Close the duplicate Issue acme/app#97.')
+      await expect(item(page, 'acme/app', 107).locator('[data-slot=needs-person]')).toHaveCount(0)
       await item(page, 'acme/app', 108).scrollIntoViewIfNeeded()
       await shot(page, `repair-states-${theme}-${width}`)
 
-      // Waiting for your choice: the options, the recommended one chosen,
-      // no free text.
+      // Waiting for your choice: the options as suggestions, the
+      // recommended one chosen, and a reply in your own words.
       let { button, dialog } = await openRepair(page, 'acme/app', 108)
       await expect(dialog.getByRole('heading', { level: 2 })).toHaveText('Repair #108')
       const head = dialog.locator('[data-slot=repair-summary]')
@@ -180,16 +202,55 @@ for (const width of widths) {
       await expect(dialog.getByRole('radio', { checked: true })).toHaveCount(1)
       await expect(radios.nth(1)).toBeChecked()
       await expect(dialog.locator('[data-option="2"] [data-slot=recommended]')).toHaveText('Recommended')
-      await expect(dialog.locator('[data-option="2"]')).toContainText('Issue change: adds a clause')
-      await expect(dialog.getByRole('textbox')).toHaveCount(0)
+      await expect(dialog.locator('[data-option="2"]')).toContainText('Nibfin changes the Issue: adds a clause')
+      await expect(dialog.locator('[data-option="2"] [data-slot=consequence]')).toContainText('What happens next')
+      // Every card says Nibfin changes only the Issue text and Blocked by,
+      // and that any other step is the person's.
+      const boundary = dialog.locator('[data-slot=boundary]')
+      await expect(boundary).toHaveCount(3)
+      for (let n = 0; n < 3; n++) {
+        await expect(boundary.nth(n)).toBeVisible()
+        await expect(boundary.nth(n)).toContainText('lets Nibfin change only the Issue text and Blocked by')
+        await expect(boundary.nth(n)).toContainText('adding a label, running CI, closing the Issue or opening a PR, is yours to do')
+      }
+      await expect(head.locator('[data-slot=needs-person-item]')).toHaveText('Close the duplicate Issue acme/app#97.')
+      const reply = dialog.getByRole('textbox', { name: 'Reply in your own words' })
+      await expect(reply).toHaveCount(1)
+      await expect(reply).toHaveValue('')
       await expect(dialog.getByText('--repo')).toHaveCount(0)
       await expect(dialog.getByRole('button', { name: 'Submit' })).toBeEnabled()
       await expectNoPageScroll(page)
       await shot(page, `repair-choose-${theme}-${width}`, false)
+
+      // Typing a reply unchecks the cards and turns the send action into
+      // the reply, which stops at the preview of the exact comment.
+      const text = 'Keep option 2, but migrate the old attachments in a later Issue.\nLeave the bucket policy as it is.'
+      await reply.fill(text)
+      await expect(dialog.getByRole('radio', { checked: true })).toHaveCount(0)
+      await expect(dialog.locator('[data-field=reply]')).toHaveAttribute('data-replying', 'true')
+      await expect(dialog.getByRole('button', { name: 'Submit' })).toHaveCount(0)
+      await expect(dialog.getByRole('button', { name: 'Preview reply' })).toBeEnabled()
+      await expectNoPageScroll(page)
+      await shot(page, `repair-reply-${theme}-${width}`, false)
+      await dialog.getByRole('button', { name: 'Preview reply' }).click()
+      await expect(dialog).toHaveAttribute('data-phase', 'preview')
+      expect(api.plans).toEqual([{ issues: [choose], reply: text }])
+      const comment = dialog.locator(`[data-item="decision:${choose}"]`)
+      await expect(comment).toContainText('add comment')
+      await expect(comment).toContainText('a reply by octo-dev')
+      await expect(comment.locator('[data-slot=item-detail]')).toBeVisible()
+      // The preview shows the exact comment, its line breaks kept.
+      expect(await comment.locator('[data-slot=item-detail]').innerText()).toBe(text)
+      await expect(dialog.getByRole('button', { name: 'Send reply' })).toBeEnabled()
+      expect(api.applies).toEqual([])
+      await expectNoPageScroll(page)
+      await shot(page, `repair-reply-preview-${theme}-${width}`, false)
       await dialog.getByRole('button', { name: 'Cancel' }).click()
       await expect(dialog).toBeHidden()
       await expect(button).toBeFocused()
-      expect(api.plans).toEqual([])
+      expect(api.deletes).toEqual(['PLANREPAIR'])
+      api.plans.length = 0
+      api.deletes.length = 0
 
       // Needs your action: the advice only, nothing runs.
       ;({ button, dialog } = await openRepair(page, 'acme/app', 109))
@@ -267,5 +328,44 @@ test('a refused plan shows its code and message and applies nothing', async ({ p
   await expect(dialog.getByRole('radio')).toHaveCount(3)
   expect(api.applies).toEqual([])
   await shot(page, 'repair-plan-refused-768', false)
+  await expectClean(w)
+})
+
+test('a reply in your own words is previewed, sent with resume --reply and read back', async ({ page }) => {
+  const { w, api } = await open(page, 1280, 'light')
+  const { dialog } = await openRepair(page, 'acme/app', 108)
+  const reply = dialog.getByRole('textbox', { name: 'Reply in your own words' })
+  await reply.fill('  Migrate only the attachments of the last 90 days.  ')
+  await dialog.getByRole('button', { name: 'Preview reply' }).click()
+  await expect(dialog).toHaveAttribute('data-phase', 'preview')
+  // The request carries the trimmed reply and no option.
+  expect(api.plans).toEqual([{ issues: [choose], reply: 'Migrate only the attachments of the last 90 days.' }])
+  await dialog.getByRole('button', { name: 'Send reply' }).click()
+  await expect(dialog.locator('[data-summary]')).toHaveAttribute('data-summary', 'confirmed')
+  expect(api.applies).toEqual([{ id: 'PLANREPAIR', body: { confirm: true } }])
+  await expect(dialog.locator(`[data-item="decision:${choose}"] [data-slot=check]`)).toContainText('a reply by octo-dev')
+  await shot(page, 'repair-reply-confirmed-light-1280', false)
+  await dialog.getByRole('button', { name: 'Close' }).first().click()
+  await expect(page.locator('[data-rereads="1"]')).toHaveCount(1)
+  await expectClean(w)
+})
+
+test('emptying the reply brings back the last picked option', async ({ page }) => {
+  const { w, api } = await open(page, 375)
+  const { dialog } = await openRepair(page, 'acme/app', 108)
+  await dialog.getByRole('radio', { name: /Stop and split the Issue/ }).check()
+  const reply = dialog.getByRole('textbox', { name: 'Reply in your own words' })
+  await reply.fill('Split it.')
+  await expect(dialog.getByRole('radio', { checked: true })).toHaveCount(0)
+  await reply.fill('   ')
+  await expect(dialog.getByRole('radio', { name: /Stop and split the Issue/ })).toBeChecked()
+  await expect(dialog.getByRole('button', { name: 'Submit' })).toBeEnabled()
+  // Picking a card after typing clears the reply.
+  await reply.fill('Split it.')
+  await dialog.getByRole('radio', { name: /Move new uploads only/ }).check()
+  await expect(reply).toHaveValue('')
+  await dialog.getByRole('button', { name: 'Submit' }).click()
+  await expect(dialog.locator('[data-summary]')).toHaveAttribute('data-summary', 'confirmed')
+  expect(api.plans).toEqual([{ issues: [choose], option: 1 }])
   await expectClean(w)
 })

@@ -69,8 +69,8 @@ function field(key: string): Field {
   return { key, name: key, cli: `--${key}`, kind: 'text', help: '', required: true, allowed: [], multiple: false, initial: '' }
 }
 
-function props(key: string, value = ''): FieldProps {
-  return { field: field(key), value, disabled: false, onChange: () => {} }
+function props(key: string, value = '', values: Record<string, string> = {}): FieldProps {
+  return { field: field(key), value, disabled: false, onChange: () => {}, values, set: () => {} }
 }
 
 function lastDialog(): OperationDialogProps {
@@ -118,6 +118,18 @@ describe('RepairSummary', () => {
     expect(text(html)).toContain('Pending comment')
   })
 
+  it('shows what an earlier decision left for a person', () => {
+    const needsPerson = { comment: 'https://github.com/o/r/issues/7#c9', items: ['Add the <i>pause</i> label', 'Close the Issue'] }
+    const html = render(<RepairSummary issue={issue({ needsPerson })} repair={repair()} />)
+    expect(html).toContain('data-slot="needs-person"')
+    expect(html.match(/data-slot="needs-person-item"/g)).toHaveLength(2)
+    expect(text(html)).toContain('Needs a person: Nibfin did not do these')
+    expect(html).not.toContain('<i>')
+    expect(html).toContain('href="https://github.com/o/r/issues/7#c9"')
+    expect(render(<RepairSummary issue={issue({ needsPerson: { comment: 'javascript:x', items: ['x'] } })} repair={repair()} />)).not.toContain('href="javascript:')
+    expect(render(<RepairSummary issue={issue({ needsPerson: { comment: '', items: [] } })} repair={repair()} />)).not.toContain('needs-person')
+  })
+
   it('leaves out what the record lacks', () => {
     const html = render(<RepairSummary issue={issue()} repair={repair()} />)
     expect(html).not.toContain('data-slot="repair-category"')
@@ -161,8 +173,13 @@ describe('RepairAction for a choose record', () => {
     const d = lastDialog()
     expect(d.command).toBe(command)
     expect(d.title).toBe('Repair #7')
-    expect(d.initial).toEqual({ issues: url, option: '2' })
-    expect(d.confirm).toBe(false)
+    expect(d.initial).toEqual({ issues: url, option: '2', reply: '' })
+    // An option is sent at once; a reply stops at the preview.
+    const confirm = d.confirm as (v: Record<string, string>) => boolean
+    expect(confirm({ issues: url, option: '2', reply: '' })).toBe(false)
+    expect(confirm({ issues: url, option: '', reply: 'Keep it' })).toBe(true)
+    expect(d.labels?.({ option: '2', reply: '' })).toEqual({})
+    expect(d.labels?.({ option: '', reply: 'Keep it' })).toEqual({ submit: 'Preview reply', apply: 'Send reply' })
     expect(isValidElement(d.intro)).toBe(true)
     expect(render(d.intro)).toContain('data-slot="repair-summary"')
   })
@@ -185,9 +202,15 @@ describe('RepairAction for a choose record', () => {
     expect(radios[1]).toContain('aria-checked="true"')
     expect(text(options)).toContain('1.Title 1')
     expect(text(options)).toContain('Consequence 1')
-    expect(text(options)).toContain('Issue change: Adds a label')
-    expect(text(options)).toContain('Consequence 2')
-    expect(text(options).match(/Issue change/g)).toHaveLength(1)
+    expect(text(options)).toContain('Suggested options')
+    expect(text(options)).toContain('Nibfin changes the Issue: Adds a label')
+    expect(text(options)).toContain('What happens nextConsequence 2')
+    expect(text(options).match(/Nibfin changes the Issue/g)).toHaveLength(1)
+    // Every card names what Nibfin may change and leaves the rest to the
+    // person.
+    expect(options.match(/data-slot="boundary"/g)).toHaveLength(2)
+    expect(text(options).match(/Choosing this lets Nibfin change only the Issue text and Blocked by\./g)).toHaveLength(2)
+    expect(text(options)).toContain('is yours to do')
     expect(options.match(/data-slot="recommended"/g)).toHaveLength(1)
     expect(options).toMatch(/data-option="2".*data-slot="recommended"/)
     expect(options).not.toMatch(/data-option="1"((?!data-option).)*data-slot="recommended"/)
@@ -195,6 +218,27 @@ describe('RepairAction for a choose record', () => {
 
     expect(inputs(props('repo'))).toBeNull()
     expect(inputs(props('other'))).toBeUndefined()
+  })
+
+  it('offers a reply in your own words beside the options', () => {
+    render(<RepairAction issue={issue()} repair={repair()} gate={enabled} target={ready} onChanged={() => {}} />)
+    const inputs = lastDialog().inputs as FieldInputs
+
+    const empty = render(inputs(props('reply', '', { option: '2', reply: '' })))
+    expect(empty).toContain('<textarea')
+    expect(empty).toContain('data-replying="false"')
+    expect(text(empty)).toContain('Reply in your own words')
+    expect(text(empty)).toContain('Posted as written')
+
+    const typed = render(inputs(props('reply', 'Keep <b>it</b>', { option: '', reply: 'Keep <b>it</b>' })))
+    expect(typed).toContain('data-replying="true"')
+    expect(text(typed)).toContain('sent instead of an option')
+    // The reply is text, never markup.
+    expect(typed).not.toContain('<b>')
+
+    // While a reply is typed no card is checked.
+    const options = render(inputs(props('option', '', { option: '', reply: 'Keep it' })))
+    expect(options).not.toContain('aria-checked="true"')
   })
 
   it.each([

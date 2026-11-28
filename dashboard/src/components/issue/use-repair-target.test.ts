@@ -17,12 +17,12 @@ function arg(param: string): Arg {
   return { name: param, required: true, repeatable: true, param }
 }
 
-function flag(param: string): Flag {
-  return { name: param, shorthand: '', type: 'int', default: '0', usage: '', required: false, param }
+function flag(param: string, type = 'int'): Flag {
+  return { name: param, shorthand: '', type, default: type === 'int' ? '0' : '', usage: '', required: false, param }
 }
 
 function command(over: Partial<Command> = {}): Command {
-  return { path: 'nibfin resume', api: 'resume', short: '', long: '', args: [arg('issues')], flags: [flag('option')], ...over }
+  return { path: 'nibfin resume', api: 'resume', short: '', long: '', args: [arg('issues')], flags: [flag('option'), flag('reply', 'string')], ...over }
 }
 
 const loaded = (...commands: Command[]): Load => ({ state: 'loaded', commands })
@@ -70,6 +70,13 @@ describe('resolveRepairTarget', () => {
     ['neither', command({ args: [], flags: null })],
   ])('is not ready when the resume command takes %s', (_, c) => {
     expect(resolveRepairTarget(repair(), true, loaded(c))).toEqual({ ready: false, reason: 'The server’s resume command takes no option.' })
+  })
+
+  it('is not ready when the resume command takes no reply', () => {
+    expect(resolveRepairTarget(repair(), true, loaded(command({ flags: [flag('option')] })))).toEqual({
+      ready: false,
+      reason: 'The server’s resume command takes no reply; upgrade gh-nibfin.',
+    })
   })
 
   it('opens the resume command with the recommended option', () => {
