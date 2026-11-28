@@ -6,3 +6,4 @@ playwright-report/
 .wrangler/
 dist-site/
 .astro/
+coverage/
