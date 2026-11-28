@@ -11,7 +11,8 @@ import (
 )
 
 func TestUpgradeItemsAndProgress(t *testing.T) {
-	// The shared runner file is current; the issue and job files differ.
+	// The shared runner file is current; the issue, job and runner request
+	// files differ.
 	f := newFake(stale(t, templates.Execution))
 	stub(t, f)
 	var events []string
@@ -42,14 +43,15 @@ func TestUpgradeItemsAndProgress(t *testing.T) {
 			}
 		}
 	}
-	if !reflect.DeepEqual(changing, []string{file, job, branch, workflowpr.PRItem}) || len(p.Steps) != len(changing)+2 {
+	if !reflect.DeepEqual(changing, []string{file, job, workflowpr.FileItem(requestP), branch, workflowpr.PRItem}) || len(p.Steps) != len(changing)+1 {
 		t.Fatalf("changing %q of %+v", changing, p.Steps)
 	}
 	if err := o.Apply(ctx, p); err != nil {
 		t.Fatal(err)
 	}
 	// The files and the branch are one commit; the PR is its own write.
-	want := []string{"started " + file, "started " + job, "started " + branch, "done " + file, "done " + job, "done " + branch, "started pr", "done pr"}
+	request := workflowpr.FileItem(requestP)
+	want := []string{"started " + file, "started " + job, "started " + request, "started " + branch, "done " + file, "done " + job, "done " + request, "done " + branch, "started pr", "done pr"}
 	if !reflect.DeepEqual(events, want) {
 		t.Errorf("events = %q", events)
 	}

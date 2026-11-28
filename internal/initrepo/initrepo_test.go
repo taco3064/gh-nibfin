@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -22,11 +23,13 @@ import (
 
 const (
 	imageRef = "ghcr.io/taco3064/nibfin@sha256:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	token    = "gho_SECRETTOKEN123"
-	issueP   = ".github/workflows/nibfin-issue.yml"
-	sharedP  = ".github/workflows/nibfin-shared-runner.yml"
-	jobP     = ".github/workflows/nibfin-job.yml"
-	requestP = ".github/workflows/nibfin-runner-request.yml"
+	// imageCommit is the nibfin-core commit imageRef was built from.
+	imageCommit = "4ed4c16bff8600000000000000000000000000ab"
+	token       = "gho_SECRETTOKEN123"
+	issueP      = ".github/workflows/nibfin-issue.yml"
+	sharedP     = ".github/workflows/nibfin-shared-runner.yml"
+	jobP        = ".github/workflows/nibfin-job.yml"
+	requestP    = ".github/workflows/nibfin-runner-request.yml"
 	// oldProvider is the variable init no longer writes or reads.
 	oldProvider = "NIBFIN_PROVIDER"
 )
@@ -383,8 +386,10 @@ type fixture struct {
 func stub(t *testing.T, f *fakeGitHub, r *fakeRunners) fixture {
 	t.Helper()
 	oldClient, oldRunners, oldLatest, oldCI, oldToken, oldGH := newClient, hostRunners, latestImage, ciWorkflows, tokenForHost, runGH
+	oldPodman, oldRender := renderPodman, renderFiles
 	t.Cleanup(func() {
 		newClient, hostRunners, latestImage, ciWorkflows, tokenForHost, runGH = oldClient, oldRunners, oldLatest, oldCI, oldToken, oldGH
+		renderPodman, renderFiles = oldPodman, oldRender
 	})
 	newClient = func(host string) (Client, error) {
 		if host != "github.com" {
@@ -409,7 +414,17 @@ func stub(t *testing.T, f *fakeGitHub, r *fakeRunners) fixture {
 		info.Repo, info.Providers = r.repo, r.providers
 		return info, nil
 	}
-	latestImage = func(context.Context) (string, error) { return imageRef, nil }
+	latestImage = func(context.Context) (string, string, error) { return imageRef, imageCommit, nil }
+	renderPodman = func(_ context.Context, command string) (func(context.Context, ...string) *exec.Cmd, error) {
+		if command != "init" {
+			return nil, fmt.Errorf("render host for %q", command)
+		}
+		if r.stopped {
+			return nil, op.Errorf(op.CodeMachineStopped, "the render host is stopped")
+		}
+		return fakePodman, nil
+	}
+	renderFiles = fakeRender
 	ciWorkflows = func(context.Context, templates.RESTClient, string) ([]string, error) { return []string{"CI"}, nil }
 	tokenForHost = func(host string) (string, string) {
 		if host != "github.com" {
@@ -430,6 +445,22 @@ func stub(t *testing.T, f *fakeGitHub, r *fakeRunners) fixture {
 		return "", nil
 	}
 	return fixture{f, r, calls, ghErr}
+}
+
+// fakePodman stands for the render host's podman; fakeRender never runs it.
+func fakePodman(ctx context.Context, _ ...string) *exec.Cmd { return exec.CommandContext(ctx, "false") }
+
+// fakeRender stands for render-workflows: a made-up file for each path of
+// set naming its inputs. It is not a copy of Core's templates.
+func fakeRender(_ context.Context, podman templates.Podman, set templates.Set, p templates.Params) (map[string][]byte, error) {
+	if podman == nil || p.Image != imageRef || p.Commit != imageCommit || p.Run != "" {
+		return nil, fmt.Errorf("render with %+v", p)
+	}
+	out := map[string][]byte{}
+	for _, f := range templates.Files(set) {
+		out[f] = []byte(fmt.Sprintf("%s\n# %s\n# image %s\n# action %s\n# branch %s\n# workflows %q\n", templates.GeneratedPrefix, f, p.Image, p.Commit, p.DefaultBranch, p.Workflows))
+	}
+	return out, nil
 }
 
 type yes struct{}
@@ -1006,4 +1037,64 @@ func toStrings(v any) []string {
 		out = append(out, str)
 	}
 	return out
+}
+
+// TestInitRenderFailuresWriteNothing: the render host or the render failing,
+// in Plan or after the start in Apply, stops init before any repository
+// write and keeps the cause.
+func TestInitRenderFailuresWriteNothing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stopped bool
+		podman  error
+		render  error
+		code    string
+	}{
+		"podman missing":        {podman: op.Errorf(op.CodePodmanMissing, "podman is not installed"), code: op.CodePodmanMissing},
+		"pull fails":            {render: op.Errorf(op.CodePodmanFailed, "unauthorized"), code: op.CodePodmanFailed},
+		"Core rejects":          {render: op.Errorf(op.CodeInvalidTemplateInput, "rejected the input"), code: op.CodeInvalidTemplateInput},
+		"after the start":       {stopped: true, render: op.Errorf(op.CodePodmanFailed, "unauthorized"), code: op.CodePodmanFailed},
+		"malformed after start": {stopped: true, render: op.Errorf(op.CodeInvalidTemplateInput, "it lacks nibfin-job.yml"), code: op.CodeInvalidTemplateInput},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFake("app")
+			stub(t, f, &fakeRunners{stopped: tc.stopped, repo: "github.com/o/app", providers: []string{"claude"}})
+			if tc.podman != nil {
+				renderPodman = func(context.Context, string) (func(context.Context, ...string) *exec.Cmd, error) {
+					return nil, tc.podman
+				}
+			}
+			if tc.render != nil {
+				renderFiles = func(context.Context, templates.Podman, templates.Set, templates.Params) (map[string][]byte, error) {
+					return nil, tc.render
+				}
+			}
+			_, _, err := run(t)
+			if op.Code(err) != tc.code {
+				t.Errorf("err = %v, want %s", err, tc.code)
+			}
+			want := []string(nil)
+			if tc.stopped {
+				want = []string{"HOST start=true"}
+			}
+			if !slices.Equal(f.writes(), want) {
+				t.Errorf("writes %q", f.writes())
+			}
+		})
+	}
+}
+
+func TestInitPRNamesTheActionCommit(t *testing.T) {
+	f := newFake("app")
+	stub(t, f, execRunners())
+	o := New(op.RepoParams{Repo: "github.com/o/app"})
+	if _, err := o.Plan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	i := o.(*initRepo)
+	if body := i.prBody(templates.Files(templates.Execution)); !strings.Contains(body, imageCommit) || !strings.Contains(body, imageRef) {
+		t.Errorf("PR body:\n%s", body)
+	}
+	if string(i.files[jobP]) == "" || !strings.Contains(string(i.files[jobP]), "action "+imageCommit) {
+		t.Errorf("the job file was not rendered with the commit: %q", i.files[jobP])
+	}
 }

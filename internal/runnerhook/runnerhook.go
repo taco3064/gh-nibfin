@@ -1,13 +1,15 @@
 // Package runnerhook builds the job-started hook of a collaborator's Runner:
 // the files runner add writes to the host's hook directory. job-started.sh
-// and check.mjs are constant; the official workflow files are this
-// gh-nibfin's templates rendered with a placeholder image digest; the
+// and check.mjs are constant; the official workflow files are the user
+// execution set as Core's `nibfin render-workflows` renders it in the latest
+// attested image, with a placeholder image digest and Action commit; the
 // trusted root is the Sigstore Public Good root as gh obtains it. The
 // repository's own values (the config) and GitHub's SSH host keys are added
 // by internal/op, which receives these files through op.SetRunnerHookFiles.
 //
-// The package imports nothing of gh nibfin but the template files, so op
-// (which templates and image import) can use it without an import cycle.
+// The package imports nothing of gh nibfin, so internal/image's tests can
+// compare its image policy with theirs without an import cycle; the caller
+// renders the official files and passes them in.
 package runnerhook
 
 import (
@@ -21,8 +23,6 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2"
-
-	"github.com/taco3064/gh-nibfin/internal/templates/workflowfiles"
 )
 
 //go:embed files/job-started.sh files/check.mjs
@@ -52,8 +52,17 @@ const (
 // hook replaces a repository's digest with it before comparing.
 const PlaceholderImage = ImageRepository + "@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
+// PlaceholderCommit is the nibfin-core Action commit the official files are
+// rendered with. The hook replaces a repository's Action commit with it
+// before comparing, and requires that commit to be the attested image's
+// source commit.
+const PlaceholderCommit = "0000000000000000000000000000000000000000"
+
 // Workflows are the files the hook compares, by name.
 var Workflows = []string{"nibfin-shared-runner.yml", "nibfin-job.yml"}
+
+// workflowsDir is where Workflows lie in a rendered set.
+const workflowsDir = ".github/workflows"
 
 // The Sigstore Public Good instance, the one nibfin-core's attestations use.
 const (
@@ -64,8 +73,7 @@ const (
 // execGH runs gh; tests replace it.
 var execGH = gh.ExecContext
 
-// Static returns the constant files: the scripts and the official workflow
-// files, keyed by their path in the hook directory.
+// Static returns the scripts, keyed by their path in the hook directory.
 func Static() (map[string][]byte, error) {
 	out := map[string][]byte{}
 	for _, name := range []string{Script, Check} {
@@ -75,22 +83,38 @@ func Static() (map[string][]byte, error) {
 		}
 		out[name] = b
 	}
+	return out, nil
+}
+
+// Official picks the files the hook compares from rendered, the user
+// execution set keyed by repository path and rendered with PlaceholderImage
+// and PlaceholderCommit, and keys them by their path in the hook directory.
+func Official(rendered map[string][]byte) (map[string][]byte, error) {
+	out := map[string][]byte{}
 	for _, name := range Workflows {
-		b, err := workflowfiles.Render(name, map[string]string{"Image": PlaceholderImage})
-		if err != nil {
-			return nil, err
+		b := rendered[workflowsDir+"/"+name]
+		if len(b) == 0 {
+			return nil, errors.New("the rendered workflow files lack " + workflowsDir + "/" + name)
 		}
 		out[OfficialDir+"/"+name] = b
 	}
 	return out, nil
 }
 
-// Files returns Static's files and the trusted root: the Sigstore Public
-// Good line of gh attestation trusted-root, which needs no login.
-func Files(ctx context.Context) (map[string][]byte, error) {
+// Files returns Static's files, the official files Official picks from
+// rendered, and the trusted root: the Sigstore Public Good line of gh
+// attestation trusted-root, which needs no login.
+func Files(ctx context.Context, rendered map[string][]byte) (map[string][]byte, error) {
 	out, err := Static()
 	if err != nil {
 		return nil, err
+	}
+	official, err := Official(rendered)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range official {
+		out[k] = v
 	}
 	stdout, stderr, err := execGH(ctx, "attestation", "trusted-root")
 	if err != nil {

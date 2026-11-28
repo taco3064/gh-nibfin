@@ -47,7 +47,9 @@ var (
 		return api.NewRESTClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 	}
 	hostRunners  = op.HostRunners
-	latestImage  = image.Latest
+	latestImage  = image.LatestRelease
+	renderPodman = op.RenderPodman
+	renderFiles  = templates.Render
 	ciWorkflows  = templates.CIWorkflows
 	tokenForHost = auth.TokenForHost
 	// runGH runs the user's gh with args and stdin; it returns gh's stderr.
@@ -166,6 +168,7 @@ type initRepo struct {
 	secretExists bool
 	initialized  bool
 	image        string
+	commit       string // the nibfin-core commit the image was built from
 	files        map[string][]byte
 	onDefault    map[string][]byte
 	pr           *workflowpr.PR
@@ -665,7 +668,7 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 	}
 	i.initialized = false
 	op.Checking(ctx, "latest image")
-	if i.image, err = latestImage(ctx); err != nil {
+	if i.image, i.commit, err = latestImage(ctx); err != nil {
 		return err
 	}
 	op.Checking(ctx, "CI workflows")
@@ -673,7 +676,12 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if i.files, err = templates.Render(i.set, templates.Params{Image: i.image, DefaultBranch: i.info.DefaultBranch, Workflows: workflows}); err != nil {
+	podman, err := renderPodman(ctx, "init")
+	if err != nil {
+		return err
+	}
+	op.Checking(ctx, "workflow files from "+i.image)
+	if i.files, err = renderFiles(ctx, podman, i.set, templates.Params{Image: i.image, Commit: i.commit, DefaultBranch: i.info.DefaultBranch, Workflows: workflows}); err != nil {
 		return err
 	}
 	var paths []string
@@ -705,7 +713,7 @@ func (i *initRepo) planWorkflows(ctx context.Context) error {
 func (i *initRepo) prBody(paths []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Imports Nibfin's workflows (the %s set) into this repository, pinned to the latest attested image:\n\n", setName(i.set))
-	fmt.Fprintf(&b, "`%s`\n\nFiles:\n\n", i.image)
+	fmt.Fprintf(&b, "`%s`\n\nThe image's `nibfin render-workflows` rendered them; they call nibfin-core's Action at that image's commit `%s`.\n\nFiles:\n\n", i.image, i.commit)
 	for _, p := range paths {
 		fmt.Fprintf(&b, "- `%s`\n", p)
 	}

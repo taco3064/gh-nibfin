@@ -1,6 +1,3 @@
 # Packages the Go coverage gate (coverage_test.go) leaves out, one import path
 # per line. List only packages without real logic; an entry that matches no
 # package with code fails the gate.
-
-# Only embeds the workflow files; its few statements are the embed helper.
-github.com/taco3064/gh-nibfin/internal/templates/workflowfiles
