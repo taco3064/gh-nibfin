@@ -56,6 +56,16 @@ export default defineConfig(({ mode }) => {
     test: {
       include: ['src/**/*.test.{ts,tsx}'],
       environment: 'node',
+      coverage: {
+        enabled: true,
+        provider: 'v8',
+        include: ['src/**/*.{ts,tsx}'],
+        exclude: ['src/components/ui/**', 'src/**/*.test.{ts,tsx}', 'src/**/*.d.ts'],
+        reporter: ['text', 'text-summary'],
+        // Proposal R8.25, Issue #518: 80%, or the first measurement (lines 65.2%,
+        // functions 58.59%, branches 54.94%) rounded down to 5% when lower.
+        thresholds: { lines: 65, functions: 55, branches: 50 },
+      },
     },
   }
 })
