@@ -7,6 +7,12 @@ permissions:
   contents: read
 jobs:
   verify:
+    # TEMPORARY: the Windows job turns off the Green Tea GC. On GitHub's Windows
+    # runners Go 1.27 corrupts its heap and crashes about 4% of runs (golang/go#81238).
+    # Remove this env when go.mod moves to the Go release with the fix (expected 1.27.5,
+    # backport golang/go#82978). Tracked in gh-nibfin #523.
+    env:
+      GOEXPERIMENT: ${{ matrix.os == 'windows-latest' && 'nogreenteagc' || '' }}
     name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
