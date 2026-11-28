@@ -325,9 +325,13 @@ key.
 
 A collaborator's Runners get a job-started hook. It lets a Job run only when it
 comes from the execution repository's `nibfin-shared-runner.yml`, is assigned to
-the Runner's owner, matches gh nibfin's official workflow templates, and uses a
-signed official Nibfin image. Any other Job fails before its first step. On a
-private repository the hook reads the workflow with the deploy key.
+the Runner's owner, matches the official workflow files, uses a signed official
+Nibfin image, and calls nibfin-core's Action at the commit that image was built
+from. Any other Job fails before its first step. On a private repository the hook
+reads the workflow with the deploy key.
+
+`runner add` renders the official files from the latest image. After the Owner
+upgrades the repository's workflows, run `runner add` again.
 
 The hook keeps other workflows off the collaborator's host. It does not
 protect against the code an official Job runs inside its container.

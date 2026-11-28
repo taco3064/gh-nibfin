@@ -83,9 +83,11 @@ below and the Security section describe them.
 <summary>Read as text</summary>
 
 - **Workflows.** `gh nibfin init` and `upgrade` write the Nibfin workflows into the
-  repository through a pull request. They call nothing in other repositories and run
-  the Nibfin image `ghcr.io/taco3064/nibfin`, pinned to the digest of its latest
-  attested build.
+  repository through a pull request. The latest attested build of the Nibfin image
+  `ghcr.io/taco3064/nibfin` renders them on your machine with Podman, so they always
+  match that image. They run the image pinned to its digest and call nibfin-core's
+  Action pinned to the commit the image was built from, and no other repository. An
+  Actions policy that limits which actions may run must allow `taco3064/nibfin-core`.
 - **Events only wake.** Issue, review, check and push events wake the Issue they
   belong to. A route run derives what runs next from GitHub state and dispatches it.
 - **Route runs start no agent.** A route run only reads GitHub and dispatches. When the
