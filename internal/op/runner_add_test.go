@@ -59,6 +59,7 @@ var scriptNames = map[string]string{
 	unitDirScript:        "unitdir",
 	envScript:            "env",
 	envCheckScript:       "envcheck",
+	drainScript:          "drain",
 	stopScript:           "stop",
 	purgeScript:          "purge",
 	slotSpecScript:       "spec",
@@ -204,11 +205,16 @@ func (f *fakeHost) Shell(ctx context.Context, script string, args ...string) *ex
 			s := f.slots[strings.TrimSuffix(strings.TrimPrefix(args[1], "nibfin-runner-"), ".service")]
 			s.unit, s.enabled, s.active = true, true, true
 		}
+	case "drain":
+		f.events = append(f.events, "drain "+slot)
+		if exit == 0 && f.onDrain != nil {
+			f.onDrain(slot)
+		}
 	case "stop":
 		if e, ok := f.stopExit[slot]; ok {
 			exit = e
 		}
-		f.events = append(f.events, "stop "+slot+" "+args[3])
+		f.events = append(f.events, "stop "+slot)
 		if s := f.slots[slot]; exit == 0 && s != nil {
 			s.enabled, s.active = false, false
 		}
@@ -261,6 +267,8 @@ type fakeRunnerAPI struct {
 	keepRegs  bool
 	onStrip   func()
 	deleteErr error
+	// labelErr fails RemoveCustomLabels per runner id.
+	labelErr map[int64]error
 	// setErr fails SetCustomLabels (see runner_upgrade_test.go).
 	setErr error
 

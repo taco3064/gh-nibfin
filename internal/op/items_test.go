@@ -237,8 +237,8 @@ func TestRunnerRemoveFailedItems(t *testing.T) {
 	if len(slots) != 2 {
 		t.Fatalf("slots = %q", slots)
 	}
-	// The slot whose stop failed fails with that error; the other one was
-	// started and is aborted with the same code; none is done.
+	// Each slot whose stop failed fails with its own error: one failed item
+	// does not stop the next one. None is done or aborted.
 	var failed, aborted int
 	for _, id := range slots {
 		if _, ok := rec.find(PhaseStarted, id); !ok {
@@ -257,7 +257,7 @@ func TestRunnerRemoveFailedItems(t *testing.T) {
 			failed++
 		}
 	}
-	if failed != 1 || aborted != 1 {
+	if failed != 2 || aborted != 0 {
 		t.Errorf("failed %d, aborted %d: %+v", failed, aborted, rec.events)
 	}
 }

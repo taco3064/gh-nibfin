@@ -248,12 +248,20 @@ func TestRunnerRemoveFinishesEntryRemoval(t *testing.T) {
 func TestRunnerRemoveBusyKeepsEntry(t *testing.T) {
 	f := &fakeHost{vm: true, entry: current(winEntry()), slots: map[string]*fakeSlot{
 		"claude-1": done(hostName("claude-1"), "https://github.com/o/r"),
-	}, stopExit: map[string]int{"claude-1": busyExit}}
+	}}
 	fx := useRunnerHost(t, f)
-	fx.gh.regs = []*fakeReg{reg(1, hostName("claude-1"), "github.com/o/r", true)}
-	_, _, err := Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "claude"}), &yes{})
-	if Code(err) != CodeRunnerBusy || !f.entry.Present {
+	// GitHub refuses the delete of a runner it reports offline with a Job.
+	r := reg(1, hostName("claude-1"), "github.com/o/r", true)
+	r.Status = "offline"
+	fx.gh.regs = []*fakeReg{r}
+	_, res, err := Run(context.Background(), RunnerRemove(RunnerRemoveParams{Provider: "claude"}), &yes{})
+	if Code(err) != CodeGitHubAPIFailed || !strings.Contains(err.Error(), "offline") || !f.entry.Present || res == nil {
 		t.Errorf("busy: %v, entry %+v", err, f.entry)
+	}
+	for _, e := range f.events {
+		if e == "stop claude-1" || e == "purge claude-1" {
+			t.Errorf("went on: %q", f.events)
+		}
 	}
 }
 

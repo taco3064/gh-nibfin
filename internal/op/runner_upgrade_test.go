@@ -477,7 +477,8 @@ func TestHostUpgradeReadBack(t *testing.T) {
 }
 
 func TestSharedRunnerDefinitions(t *testing.T) {
-	// stopScript is the text it had before workersFn was extracted.
+	// stopScript is the text it had before workersFn and waitWorkers were
+	// extracted, without the busy guard runner remove no longer uses.
 	const before = `r=$(cd -P -- "$1" 2>/dev/null && pwd -P) || r=$1
 workers() {
   for p in /proc/[0-9]*; do
@@ -488,10 +489,6 @@ workers() {
   done
 }
 w=$(workers)
-if [ -z "$w" ] && [ "$4" = 1 ]; then
-  echo "GitHub reports the runner busy, but no Runner.Worker of it runs here" >&2
-  exit 75
-fi
 while [ -n "$w" ]; do
   for p in $w; do
     tail --pid="$p" -f /dev/null || exit 1
@@ -504,6 +501,10 @@ fi
 `
 	if stopScript != before {
 		t.Errorf("stopScript changed:\n%s", stopScript)
+	}
+	// drainScript is stopScript without the stop.
+	if want := strings.TrimSuffix(before, "if [ -e \"$2/$3\" ]; then\n  systemctl --user disable --now \"$3\"\nfi\n"); drainScript != want || drainScript == before {
+		t.Errorf("drainScript:\n%s", drainScript)
 	}
 	a := &runnerAdd{}
 	if got := a.labels(&addEnv{admin: true, user: ghUser{ID: 42}}); got != "nibfin,nibfin-42" {

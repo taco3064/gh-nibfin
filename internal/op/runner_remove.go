@@ -2,10 +2,12 @@ package op
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/taco3064/gh-nibfin/internal/host"
 	"github.com/taco3064/gh-nibfin/internal/runners"
@@ -31,9 +33,6 @@ const (
 	// nibfinLabel is the custom label every nibfin Job is routed by, besides
 	// its own nibfin-<user>-<provider> label.
 	nibfinLabel = "nibfin"
-	// busyExit is stopScript's exit status when GitHub reports the runner
-	// busy but no worker of it runs.
-	busyExit = 75
 )
 
 // workersFn sets r to the resolved slot directory $1 and defines the shell
@@ -51,27 +50,29 @@ workers() {
 }
 `
 
-// The runner-host scripts of runner remove. They are constants; only data
-// travels as their arguments.
-const (
-	// stopScript stops the runner in the slot $1 (unit $3 in the unit
-	// directory $2) once no Job runs on it. A Job runs as the slot's
-	// Runner.Worker process; each one found is waited for until it exits,
-	// then the slot is scanned again, and the service is stopped right after
-	// a scan finds none. With $4 = 1 (GitHub reports the runner busy) a
-	// first scan that finds no worker stops nothing and exits busyExit.
-	stopScript = workersFn + `w=$(workers)
-if [ -z "$w" ] && [ "$4" = 1 ]; then
-  echo "GitHub reports the runner busy, but no Runner.Worker of it runs here" >&2
-  exit 75
-fi
+// waitWorkers waits for every Runner.Worker of the slot (see workersFn):
+// each one found is waited for until it exits, then the slot is scanned
+// again, until a scan finds none.
+const waitWorkers = `w=$(workers)
 while [ -n "$w" ]; do
   for p in $w; do
     tail --pid="$p" -f /dev/null || exit 1
   done
   w=$(workers)
 done
-if [ -e "$2/$3" ]; then
+`
+
+// The runner-host scripts of runner remove. They are constants; only data
+// travels as their arguments.
+const (
+	// drainScript returns once no Job runs on the runner in the slot $1. It
+	// stops nothing: the runner can still finish a Job GitHub gives it
+	// before its registration is deleted.
+	drainScript = workersFn + waitWorkers
+	// stopScript stops the runner in the slot $1 (unit $3 in the unit
+	// directory $2) once no Job runs on it: the service is stopped right
+	// after a scan finds no Runner.Worker.
+	stopScript = workersFn + waitWorkers + `if [ -e "$2/$3" ]; then
   systemctl --user disable --now "$3"
 fi
 `
@@ -625,16 +626,34 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 	}
 
 	// Each slot is one item, from the removal of its labels to the
-	// removal of its files.
+	// removal of its files. A failed item fails alone: the others go on,
+	// and Apply returns the first item's error. Only a cancelled command
+	// stops the items not finished yet.
 	b := &Batch{ctx: ctx}
+	var first error
+	failed := map[string]bool{}
+	fail := func(s slotState, err error) bool {
+		b.Fail(items[s.Slot].ID, err)
+		if ctx.Err() != nil {
+			b.Abort(err)
+			return true
+		}
+		failed[s.Slot] = true
+		if first == nil {
+			first = err
+		}
+		return false
+	}
 	// Without its custom labels a runner takes no new nibfin Job.
 	for _, s := range chosen {
 		b.Start(items[s.Slot])
 		if s.gh != nil && s.gh.customLabels() {
 			if err := s.gh.client.RemoveCustomLabels(ctx, s.gh.repo, s.gh.ID); err != nil {
-				b.Fail(items[s.Slot].ID, err)
-				b.Abort(err)
-				return err
+				// It is read back as still on the host.
+				r.removed = append(r.removed, s)
+				if fail(s, err) {
+					return err
+				}
 			}
 		}
 	}
@@ -648,6 +667,9 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 	var now []slotState
 	for _, busy := range []bool{false, true} {
 		for _, c := range chosen {
+			if failed[c.Slot] {
+				continue
+			}
 			s, ok := find(env.mine, c.Slot)
 			if !ok {
 				s = c
@@ -657,21 +679,19 @@ func (r *runnerRemove) Apply(ctx context.Context, plan Plan) error {
 			}
 		}
 	}
-	var stuck []string
 	for _, s := range now {
-		if err := r.removeSlot(ctx, env.inv, s); err != nil {
-			b.Fail(items[s.Slot].ID, err)
-			if Code(err) != CodeRunnerBusy {
-				b.Abort(err)
+		if err := r.removeSlot(ctx, env.inv, s, items[s.Slot]); err != nil {
+			if fail(s, err) {
 				return err
 			}
-			stuck = append(stuck, s.Slot)
 			continue
 		}
 		b.Done(items[s.Slot].ID)
 	}
-	if len(stuck) > 0 {
-		return Errorf(CodeRunnerBusy, "GitHub reports %s busy, but no Job of it runs on %s; it takes no new nibfin Job now: run gh nibfin runner remove again to finish it", strings.Join(stuck, ", "), r.host.Describe())
+	// The volume, the autostart entry and the hook go only when no runner
+	// remains, which a failed item rules out.
+	if first != nil {
+		return first
 	}
 	if r.deleteVolume {
 		if err := Track(ctx, volume, func() error { return r.removeVolume(ctx) }); err != nil {
@@ -728,32 +748,103 @@ func find(slots []slotState, slot string) (slotState, bool) {
 	return slotState{}, false
 }
 
-// removeSlot stops the slot's runner once no Job runs on it, deletes its
-// registration, then its files. The registration goes before the files, so
-// an interrupted run leaves a slot the next run finds.
-func (r *runnerRemove) removeSlot(ctx context.Context, inv *runners.Inventory, s slotState) error {
+// removeWaitInterval paces the re-reads of a runner whose delete GitHub
+// refuses because it runs a Job no worker on the host shows yet.
+const removeWaitInterval = 15 * time.Second
+
+// removeWaitSleep waits d or until ctx ends; tests replace it.
+var removeWaitSleep = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// removeSlot removes one slot, its item being step. A registered slot is
+// drained, deleted on GitHub, then stopped and purged: its service keeps
+// running until GitHub accepts the delete, so a Job GitHub gives it in the
+// meantime runs to its end. A slot without a registration, or a local one,
+// is stopped once no Job runs on it, then purged. The registration goes
+// before the files, so an interrupted run leaves a slot the next run finds.
+func (r *runnerRemove) removeSlot(ctx context.Context, inv *runners.Inventory, s slotState, step Step) error {
 	r.removed = append(r.removed, s)
-	require := "0"
-	if s.busy() {
-		require = "1"
-	}
-	_, exit, err := hostScript(ctx, r.host, CodeRunnerRemoveFailed, "stop "+s.Slot, stopScript, nil, "",
-		inv.SlotDir(s.Slot), inv.UnitDir, runners.UnitName(s.Slot), require)
-	if exit == busyExit {
-		return Errorf(CodeRunnerBusy, "%s is busy on GitHub, but no Job of it runs", s.Slot)
-	}
-	if err != nil {
-		return err
-	}
 	if s.gh != nil {
-		if err := s.gh.client.DeleteRunner(ctx, s.gh.repo, s.gh.ID); err != nil {
+		if err := r.deleteRegistration(ctx, inv, s, step); err != nil {
 			return err
 		}
 	}
-	_, _, err = hostScript(ctx, r.host, CodeRunnerRemoveFailed, "remove the files of "+s.Slot, purgeScript, nil, "",
+	if _, _, err := hostScript(ctx, r.host, CodeRunnerRemoveFailed, "stop "+s.Slot, stopScript, nil, "",
+		inv.SlotDir(s.Slot), inv.UnitDir, runners.UnitName(s.Slot)); err != nil {
+		return err
+	}
+	_, _, err := hostScript(ctx, r.host, CodeRunnerRemoveFailed, "remove the files of "+s.Slot, purgeScript, nil, "",
 		inv.Dir, s.Slot, inv.UnitDir)
 	return err
 }
+
+// deleteRegistration deletes the slot's GitHub registration once its Job
+// ends. Each round waits for the slot's workers on the host, then asks
+// GitHub to delete it. While GitHub refuses because the runner runs a Job,
+// the runner is read again: it is done when GitHub lists it no more, fails
+// when GitHub reports it offline, and otherwise is asked again after
+// removeWaitInterval. The wait ends on what is read, never on elapsed time.
+func (r *runnerRemove) deleteRegistration(ctx context.Context, inv *runners.Inventory, s slotState, step Step) error {
+	g := s.gh
+	waiting := false
+	wait := func() {
+		if !waiting {
+			waiting = true
+			Waiting(ctx, step, "waiting for its Job to end: "+g.Name+" in "+g.repo)
+		}
+	}
+	if s.busy() {
+		wait()
+	}
+	for {
+		if _, _, err := hostScript(ctx, r.host, CodeRunnerRemoveFailed, "wait for the Jobs of "+s.Slot, drainScript, nil, "",
+			inv.SlotDir(s.Slot)); err != nil {
+			return err
+		}
+		err := g.client.DeleteRunner(ctx, g.repo, g.ID)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errRunningJob) {
+			return err
+		}
+		wait()
+		list, lerr := g.client.ListRunners(ctx, g.repo)
+		if lerr != nil {
+			return Errorf(CodeGitHubAPIFailed, "wait for the Job of %s: %w", g.Name, lerr)
+		}
+		var now *ghRunner
+		for i := range list {
+			if list[i].ID == g.ID {
+				now = &list[i]
+				break
+			}
+		}
+		if now == nil {
+			// Gone from GitHub: nothing is left to delete.
+			return nil
+		}
+		if now.Status == "offline" {
+			return Errorf(CodeGitHubAPIFailed, "GitHub reports %s offline while its Job still runs; run gh nibfin runner remove again once it is back or its Job is resolved: %w", g.Name, err)
+		}
+		if serr := removeWaitSleep(ctx, removeWaitInterval); serr != nil {
+			return Errorf(CodeCancelled, "wait for the Job of %s: %w", g.Name, serr)
+		}
+	}
+}
+
+// ReadBackAfterApplyError reports whether a failed Apply acted on any slot:
+// the read-back then shows the slots removed, those left and the remaining
+// count.
+func (r *runnerRemove) ReadBackAfterApplyError() bool { return len(r.removed) > 0 }
 
 // removeVolume deletes the login volume when no runner of the provider
 // remains. A volume still in use is kept: podman refuses it.

@@ -168,3 +168,43 @@ func TestFinish(t *testing.T) {
 		})
 	}
 }
+
+// partialOp is a fakeOp whose read-back is asked for after a failed Apply.
+type partialOp struct {
+	fakeOp
+	ask bool
+}
+
+func (p *partialOp) ReadBackAfterApplyError() bool { return p.ask }
+
+func TestFinishReadsBackAfterApplyError(t *testing.T) {
+	cause := fmt.Errorf("delete runner: %w", Errorf(CodeGitHubAPIFailed, "HTTP 422: busy"))
+	ctx := context.Background()
+
+	// Without the interface a failed Apply reads nothing back.
+	plain := &fakeOp{applyErr: cause}
+	if r, err := Finish(ctx, plain, Plan{}, true); r != nil || err != cause || !reflect.DeepEqual(plain.calls, []string{"apply"}) {
+		t.Errorf("plain: %v %v %q", r, err, plain.calls)
+	}
+
+	// An operation that opts in is read back, and the Apply error is kept.
+	o := &partialOp{fakeOp: fakeOp{applyErr: cause}, ask: true}
+	r, err := Finish(ctx, o, Plan{}, true)
+	if err != cause || Code(err) != CodeGitHubAPIFailed || r["ok"] != true || !reflect.DeepEqual(o.calls, []string{"apply", "readback"}) {
+		t.Errorf("opted in: %v %v %q", r, err, o.calls)
+	}
+
+	// It may decline, as when Apply acted on nothing.
+	o = &partialOp{fakeOp: fakeOp{applyErr: cause}}
+	if r, err := Finish(ctx, o, Plan{}, true); r != nil || err != cause || !reflect.DeepEqual(o.calls, []string{"apply"}) {
+		t.Errorf("declined: %v %v %q", r, err, o.calls)
+	}
+
+	// A cancelled command reads nothing back.
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	o = &partialOp{fakeOp: fakeOp{applyErr: cause}, ask: true}
+	if r, err := Finish(cctx, o, Plan{}, true); r != nil || err != cause || !reflect.DeepEqual(o.calls, []string{"apply"}) {
+		t.Errorf("cancelled: %v %v %q", r, err, o.calls)
+	}
+}
