@@ -76,7 +76,6 @@ offline Runner, leaves none; see [An offline Runner](#an-offline-runner).
 - `runner_request_refused`: The runner request was refused, for example without write access. Ask the repository's Owner to add you as a collaborator with write access.
 - `runner_request_timeout`: The runner request got no answer within 10 minutes. Run `runner add` again.
 - `runner_request_failed`: The request Issue was closed, or its answer could not be read. Run `runner add` again.
-- `runner_busy`: GitHub reports a Runner busy but no Job of it runs on this host. Run `runner remove` again later to finish it.
 - `listen_failed`: The Dashboard's port is taken. Use another `--port`, or leave it out for any free port.
 - `proof_invalid`: The Dashboard's session URL was wrong or already used. Restart `gh nibfin dashboard` for a new URL.
 
@@ -111,6 +110,12 @@ Runner's service, and GitHub's online, offline and busy state for it.
 - **A collaborator's Runners.** Reading GitHub's online state needs admin of the
   execution repository, so `status` shows only the local service, with GitHub
   as `needs admin`.
+
+`gh nibfin runner remove` deletes a busy Runner's GitHub registration once its
+Job ends; it waits and never cancels the Job. One Runner's failure does not stop
+the others, and the remaining Runners are read back even after a failure. A
+Runner that GitHub reports offline while its Job still runs fails alone: run
+`runner remove` again once it is back or its Job is resolved.
 
 A Job assigned while every Runner of its Assignee is offline waits in GitHub's
 queue for one of them to come online. It is not moved to someone else.

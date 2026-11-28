@@ -173,9 +173,13 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		Short: "Remove Runners for a provider on this host",
 		Long: "Remove Runners for a provider on this host (the Linux host, or the podman machine VM).\n\n" +
 			"Without --count every Runner of the provider is removed. Idle Runners go first. A busy\n" +
-			"Runner loses its nibfin labels, so it takes no new nibfin Job, and is removed after its\n" +
-			"Job ends; the command waits for it. Each removal deletes the GitHub registration, the\n" +
-			"service and the Runner's directory. A count above the number of Runners is refused.\n\n" +
+			"Runner loses its nibfin labels, so it takes no new nibfin Job, and its GitHub registration\n" +
+			"is deleted once its Job ends; the command waits for it and never cancels the Job. Each\n" +
+			"removal deletes the GitHub registration, then the service and the Runner's directory. A\n" +
+			"count above the number of Runners is refused.\n\n" +
+			"One Runner's failure does not stop the others, and the remaining Runners are read back\n" +
+			"even after a failure. A Runner that GitHub reports offline while its Job still runs fails\n" +
+			"alone: run runner remove again once it is back or its Job is resolved.\n\n" +
 			"When you are not admin of the Runners' repository (a collaborator's Runners), the removal\n" +
 			"is local: it waits for a running Job, then deletes the service and the directory only.\n" +
 			"The GitHub registration stays; the repository's owner deletes it under Settings → Actions →\n" +
