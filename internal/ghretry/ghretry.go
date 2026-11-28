@@ -32,10 +32,12 @@ const Retries = 3
 // maxWait bounds one wait taken from Retry-After or x-ratelimit-reset.
 const maxWait = time.Minute
 
-// Log receives one line per retry. Tests replace it.
+// Log receives one line per retry, of the GitHub API calls and of the image
+// pulls (op.PullImage). Tests replace it.
 var Log io.Writer = os.Stderr
 
-// Sleep waits d or until ctx ends. Tests replace it.
+// Sleep waits d or until ctx ends, between the retries of the GitHub API
+// calls and of the image pulls (op.PullImage). Tests replace it.
 var Sleep = func(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()

@@ -133,6 +133,14 @@ type fakeHost struct {
 	// print (see host_slots_test.go); psExit is podman ps's exit status.
 	psOut, inspectOut string
 	psExit            int
+
+	// The image pull (see pull_test.go): the n-th podman pull exits with
+	// pullExits[n] (0 past its end) and pullErr on its stderr; podman image
+	// exists exits with imageExit.
+	pullExits []int
+	pullErr   string
+	pulls     int
+	imageExit int
 }
 
 func (f *fakeHost) NeedsStart() bool { return f.stopped }
@@ -147,6 +155,17 @@ func (f *fakeHost) Podman(ctx context.Context, args ...string) *exec.Cmd {
 	f.calls = append(f.calls, args)
 	mode, exit := "plain", 0
 	switch {
+	case args[0] == "pull":
+		exit = 0
+		if f.pulls < len(f.pullExits) {
+			exit = f.pullExits[f.pulls]
+		}
+		f.pulls++
+		c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLoginHelper$")
+		c.Env = append(os.Environ(), "GO_WANT_LOGIN_HELPER=1", "HELPER_MODE=stderr", "HELPER_EXIT="+strconv.Itoa(exit), "HELPER_OUT="+f.pullErr)
+		return c
+	case args[0] == "image" && args[1] == "exists":
+		exit = f.imageExit
 	case args[0] == "volume" && args[1] == "exists":
 		if !f.volumes[strings.TrimPrefix(args[2], "nibfin-home-")] {
 			exit = 1
@@ -251,7 +270,7 @@ func TestRunArgs(t *testing.T) {
 	claude, _ := lookupProvider("claude")
 	codex, _ := lookupProvider("codex")
 	base := func(p, name, env string) []string {
-		return []string{"run", "--rm", "--pull=newer", "--userns=keep-id:uid=1000,gid=1000", "--name", name, "--replace",
+		return []string{"run", "--rm", "--pull=never", "--userns=keep-id:uid=1000,gid=1000", "--name", name, "--replace",
 			"--volume", "nibfin-home-" + p + ":/nibfin/home", "--env", env + "=/nibfin/home"}
 	}
 	for _, tc := range []struct {
