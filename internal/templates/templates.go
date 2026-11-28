@@ -100,6 +100,12 @@ func Render(ctx context.Context, podman Podman, set Set, p Params) (map[string][
 	if run == "" {
 		run = p.Image
 	}
+	// The image is pulled first, with retries, only when it is not in local
+	// storage, and the run uses --pull=never, so a failed render is never run
+	// a second time.
+	if err := op.PullImage(ctx, podman, run, "to render the workflow files", op.PullMissing); err != nil {
+		return nil, err
+	}
 	var stdout, stderr bytes.Buffer
 	c := podman(ctx, renderArgs(run, setName, p)...)
 	c.Stdout = &stdout
@@ -131,7 +137,7 @@ func Render(ctx context.Context, podman Podman, set Set, p Params) (map[string][
 // renderArgs is the podman command line. Every value is one argument in
 // --name=value form, so a value that starts with "-" stays a value.
 func renderArgs(run, setName string, p Params) []string {
-	args := []string{"run", "--rm", "--network=none", run,
+	args := []string{"run", "--rm", "--pull=never", "--network=none", run,
 		"nibfin", "render-workflows",
 		"--set=" + setName,
 		"--channel=user",

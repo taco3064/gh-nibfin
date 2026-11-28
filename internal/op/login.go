@@ -482,12 +482,10 @@ func providerOfVolume(v string) (provider, bool) {
 	return provider{}, false
 }
 
-// Pull policies of runArgs: login and its check refresh the image; status
-// never pulls.
-const (
-	pullNewer = "newer"
-	pullNever = "never"
-)
+// pullNever is the pull policy of every container login and check runs:
+// login and its check pull the image first with PullImage, which retries a
+// failed pull, and status never pulls.
+const pullNever = "never"
 
 // runArgs is the one argv builder for every container login and check runs.
 func runArgs(p provider, pull, name string, interactive, tty bool, argv []string) []string {
@@ -512,7 +510,7 @@ func runArgs(p provider, pull, name string, interactive, tty bool, argv []string
 func loginName(p provider) string { return "nibfin-login-" + p.name }
 
 func loginArgs(p provider, tty bool) []string {
-	return runArgs(p, pullNewer, loginName(p), true, tty, p.login)
+	return runArgs(p, pullNever, loginName(p), true, tty, p.login)
 }
 
 // removeTimeout bounds the removal of a cancelled login's container, so a
@@ -531,7 +529,7 @@ func removeLogin(parent context.Context, h runnerHost, p provider) {
 }
 
 func checkArgs(p provider) []string {
-	return runArgs(p, pullNewer, "nibfin-check-"+p.name, false, false, p.check)
+	return runArgs(p, pullNever, "nibfin-check-"+p.name, false, false, p.check)
 }
 
 // statusCheckArgs is status's login check: it never pulls the image and has
@@ -606,6 +604,9 @@ func createVolume(ctx context.Context, h runnerHost, volume string) error {
 // check runs the provider CLI's own login check. Only its exit status is
 // used; its output can carry account fields and is discarded.
 func (l *login) check(ctx context.Context, p provider) (bool, error) {
+	if err := PullImage(ctx, l.host.Podman, LoginImage, "for the "+p.name+" login check", PullNewer); err != nil {
+		return false, err
+	}
 	return runCheck(ctx, l.host, p, checkArgs(p))
 }
 
@@ -627,6 +628,17 @@ func runCheck(ctx context.Context, h runnerHost, p provider, argv []string) (boo
 }
 
 func (l *login) runLogin(ctx context.Context, p provider) error {
+	if l.p.Terminal == nil && l.p.Interact == nil {
+		return Errorf(CodeInvalidArgument, "login needs a terminal or an interactor")
+	}
+	// The image is pulled, with retries, before the login container starts
+	// with --pull=never, so a failed login is never run a second time.
+	if err := PullImage(ctx, l.host.Podman, LoginImage, "for the "+p.name+" login", PullNewer); err != nil {
+		if l.p.Terminal == nil {
+			l.p.Interact.Step(LoginStep{Provider: p.name, Kind: StepFailed, Message: err.Error()})
+		}
+		return err
+	}
 	switch {
 	case l.p.Terminal != nil:
 		t := l.p.Terminal

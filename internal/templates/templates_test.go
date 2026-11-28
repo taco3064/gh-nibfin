@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/op"
 )
 
@@ -21,17 +23,37 @@ const (
 
 // fakePodman records the podman arguments and answers with this test binary
 // run as TestRenderHelper, which prints stdout and stderr and exits with
-// exit. The files it prints are made up, not Core's.
+// exit. The files it prints are made up, not Core's. args is the last run;
+// calls are every command. podman image exists exits with existsExit, and
+// the n-th podman pull with pullExits[n] (0 past its end) and pullStderr.
 type fakePodman struct {
 	args           []string
+	calls          [][]string
 	stdout, stderr string
 	exit           int
+	existsExit     int
+	pullExits      []int
+	pullStderr     string
+	pulls          int
 }
 
 func (f *fakePodman) run(ctx context.Context, args ...string) *exec.Cmd {
-	f.args = args
+	f.calls = append(f.calls, args)
+	stdout, stderr, exit := f.stdout, f.stderr, f.exit
+	switch args[0] {
+	case "image":
+		stdout, stderr, exit = "", "", f.existsExit
+	case "pull":
+		stdout, stderr, exit = "", f.pullStderr, 0
+		if f.pulls < len(f.pullExits) {
+			exit = f.pullExits[f.pulls]
+		}
+		f.pulls++
+	default:
+		f.args = args
+	}
 	c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRenderHelper$")
-	c.Env = append(os.Environ(), "NIBFIN_RENDER_HELPER=1", "HELPER_STDOUT="+f.stdout, "HELPER_STDERR="+f.stderr, "HELPER_EXIT="+strconv.Itoa(f.exit))
+	c.Env = append(os.Environ(), "NIBFIN_RENDER_HELPER=1", "HELPER_STDOUT="+stdout, "HELPER_STDERR="+stderr, "HELPER_EXIT="+strconv.Itoa(exit))
 	return c
 }
 
@@ -75,7 +97,7 @@ func TestRenderRunsCore(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
-			want := []string{"run", "--rm", "--network=none", testImage, "nibfin", "render-workflows",
+			want := []string{"run", "--rm", "--pull=never", "--network=none", testImage, "nibfin", "render-workflows",
 				"--set=" + tc.name, "--channel=user", "--image=" + testImage, "--commit=" + testCommit,
 				"--default-branch=main", "--workflow=CI", "--workflow=-x", "--workflow=Deploy"}
 			if !slices.Equal(f.args, want) {
@@ -101,7 +123,7 @@ func TestRenderRunsInAnotherImage(t *testing.T) {
 	if _, err := Render(context.Background(), f.run, Execution, p); err != nil {
 		t.Fatal(err)
 	}
-	if f.args[3] != run || !slices.Contains(f.args, "--image="+testImage) || slices.ContainsFunc(f.args, func(a string) bool { return strings.HasPrefix(a, "--workflow") }) {
+	if f.args[4] != run || !slices.Contains(f.args, "--image="+testImage) || slices.ContainsFunc(f.args, func(a string) bool { return strings.HasPrefix(a, "--workflow") }) {
 		t.Errorf("podman args %q", f.args)
 	}
 }
@@ -170,5 +192,78 @@ func TestFiles(t *testing.T) {
 	}
 	if Files(Set(9)) != nil {
 		t.Error("Files of an unknown set")
+	}
+}
+
+// stubRetry makes pull retries record their waits instead of sleeping and
+// collects their lines.
+func stubRetry(t *testing.T) (*strings.Builder, *[]time.Duration) {
+	t.Helper()
+	oldSleep, oldLog := ghretry.Sleep, ghretry.Log
+	var log strings.Builder
+	var waits []time.Duration
+	ghretry.Sleep = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+	ghretry.Log = &log
+	t.Cleanup(func() { ghretry.Sleep, ghretry.Log = oldSleep, oldLog })
+	return &log, &waits
+}
+
+func verbs(calls [][]string) []string {
+	out := []string{}
+	for _, c := range calls {
+		out = append(out, strings.Join(c[:2], " "))
+	}
+	return out
+}
+
+func TestRenderPullsOnlyAMissingImage(t *testing.T) {
+	log, _ := stubRetry(t)
+	f := &fakePodman{stdout: output(t, Files(Peer)...)}
+	if _, err := Render(context.Background(), f.run, Peer, params()); err != nil {
+		t.Fatal(err)
+	}
+	if got := verbs(f.calls); !slices.Equal(got, []string{"image exists", "run --rm"}) || !slices.Equal(f.calls[0], []string{"image", "exists", testImage}) {
+		t.Errorf("present image: calls %q", f.calls)
+	}
+
+	f = &fakePodman{stdout: output(t, Files(Peer)...), existsExit: 1, pullExits: []int{125}, pullStderr: "Copying blob\nError: failed to decode message from stream: unexpected EOF\n"}
+	if _, err := Render(context.Background(), f.run, Peer, params()); err != nil {
+		t.Fatal(err)
+	}
+	if got := verbs(f.calls); !slices.Equal(got, []string{"image exists", "pull " + testImage, "pull " + testImage, "run --rm"}) {
+		t.Errorf("missing image: calls %q", got)
+	}
+	want := "nibfin: podman pull " + testImage + " failed (Error: failed to decode message from stream: unexpected EOF); retry 1 of 3\n"
+	if log.String() != want {
+		t.Errorf("log = %q\nwant %q", log.String(), want)
+	}
+}
+
+func TestRenderFailsAfterFourPulls(t *testing.T) {
+	_, waits := stubRetry(t)
+	f := &fakePodman{existsExit: 1, pullExits: []int{125, 125, 125, 125}, pullStderr: "Error: unexpected EOF\n"}
+	_, err := Render(context.Background(), f.run, Peer, params())
+	if op.Code(err) != op.CodePodmanFailed || !strings.Contains(err.Error(), "after 4 tries: Error: unexpected EOF") || !strings.Contains(err.Error(), testImage) {
+		t.Errorf("err = %v", err)
+	}
+	if f.pulls != 4 || f.args != nil {
+		t.Errorf("%d pulls, run %q", f.pulls, f.args)
+	}
+	if !slices.Equal(*waits, []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}) {
+		t.Errorf("waits = %v", *waits)
+	}
+}
+
+func TestRenderRunFailureIsNotRetried(t *testing.T) {
+	log, _ := stubRetry(t)
+	for _, exit := range []int{1, 125} {
+		f := &fakePodman{stderr: "Error: boom\n", exit: exit, existsExit: 1}
+		_, err := Render(context.Background(), f.run, Peer, params())
+		if op.Code(err) != op.CodePodmanFailed || !slices.Equal(verbs(f.calls), []string{"image exists", "pull " + testImage, "run --rm"}) {
+			t.Errorf("exit %d: err %v, calls %q", exit, err, f.calls)
+		}
+	}
+	if log.Len() != 0 {
+		t.Errorf("log = %q", log.String())
 	}
 }
