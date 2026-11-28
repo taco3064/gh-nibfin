@@ -17,7 +17,7 @@ export type RepairTarget =
   | { ready: true; command?: Command; recommended?: number }
   | { ready: false; reason: string }
 
-type Load = { state: 'loading' } | { state: 'loaded'; commands: Command[] } | { state: 'failed'; error: ApiError }
+export type Load = { state: 'loading' } | { state: 'loaded'; commands: Command[] } | { state: 'failed'; error: ApiError }
 
 // useRepairTarget reads the command schema, once per page, only for an
 // answerable choose record; the advice of an act record needs no command.
@@ -34,7 +34,13 @@ export function useRepairTarget(repair: Repair | undefined, enabled: boolean): R
       live = false
     }
   }, [choose])
-  if (!choose || !repair) return { ready: true }
+  return resolveRepairTarget(repair, enabled, load)
+}
+
+// resolveRepairTarget is the target for a repair record, given whether the
+// Repair button is enabled and the state of the command schema read.
+export function resolveRepairTarget(repair: Repair | undefined, enabled: boolean, load: Load): RepairTarget {
+  if (!enabled || repair?.state !== 'choose') return { ready: true }
   const recommended = recommendedOption(repair)
   if (recommended === undefined) return { ready: false, reason: 'The repair record lists no options.' }
   if (load.state === 'loading') return { ready: false, reason: 'Reading the commands…' }
