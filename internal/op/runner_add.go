@@ -28,11 +28,10 @@ type RunnerAddParams struct {
 func RunnerAdd(p RunnerAddParams) Operation { return &runnerAdd{p: p} }
 
 const (
-	actLinger        = "enable linger"
-	actInstallLibicu = "install libicu"
-	actInstallLibssl = "install libssl"
-	actAddRunner     = "add runner"
-	actAddRunners    = "add runners"
+	actLinger      = "enable linger"
+	actInstallDeps = "install runner dependencies"
+	actAddRunner   = "add runner"
+	actAddRunners  = "add runners"
 
 	toolsVolume = "nibfin-tools"
 	// memoryPerRunnerGB is the NIBFIN_MEMORY default of a stage run.
@@ -44,31 +43,31 @@ const (
 const (
 	// lingerScript keeps the user's systemd manager running after logout.
 	lingerScript = `loginctl enable-linger`
-	// libicuScript makes the libicu the official runner needs available in a
-	// podman machine VM: when config.sh's own check does not find it, it
-	// installs the distribution's libicu package with dnf, through sudo
-	// without a prompt, and checks again.
-	libicuScript = icuCheck + `icu && exit 0
-if ! command -v dnf >/dev/null 2>&1; then
-  echo 'libicu is not found and dnf is not available inside the VM' >&2
-  exit 1
-fi
-sudo -n dnf install -y libicu || exit $?
+	// depsScript makes the official runner's system dependencies available
+	// in a podman machine VM. When the .NET load checks (libicu and a
+	// libssl.so.3) do not both pass, it runs the runner's own
+	// bin/installdependencies.sh, which arrives on stdin, through sudo
+	// without a prompt, and checks again. Where libssl.so.3 is still missing
+	// (Fedora 45 and later, whose openssl-libs is OpenSSL 4 with only
+	// libssl.so.4), it installs openssl3-libs where the distribution has it,
+	// else openssl-libs, with dnf, and checks once more. The output of the
+	// script and of dnf is kept.
+	depsScript = icuCheck + sslCheck + `icu && ssl && exit 0
+t=$(mktemp) || exit 1
+trap 'rm -f "$t"' EXIT
+cat > "$t" || exit 1
+sudo -n bash "$t" || {
+  s=$?
+  echo 'bin/installdependencies.sh failed inside the VM' >&2
+  exit $s
+}
 if ! icu; then
-  echo 'libicu is still not found after dnf install libicu' >&2
+  echo 'libicu is still not found after bin/installdependencies.sh' >&2
   exit 1
 fi
-`
-	// libsslScript makes a libssl the official runner's .NET runtime loads
-	// (libssl.so.3) available in a podman machine VM. When the .NET check
-	// does not find one, it installs the package that provides libssl.so.3
-	// with dnf, through sudo without a prompt, and checks again: openssl3-libs
-	// where the distribution has it (Fedora 45 and later, whose openssl-libs
-	// is OpenSSL 4 with only libssl.so.4), else openssl-libs. dnf's own output
-	// is kept.
-	libsslScript = sslCheck + `ssl && exit 0
+ssl && exit 0
 if ! command -v dnf >/dev/null 2>&1; then
-  echo 'libssl (libssl.so.3) is not found and dnf is not available inside the VM' >&2
+  echo 'libssl.so.3 is still not found after bin/installdependencies.sh and dnf is not available inside the VM' >&2
   exit 1
 fi
 p=openssl3-libs
@@ -78,6 +77,16 @@ if ! ssl; then
   echo "libssl.so.3 is still not found after dnf install $p" >&2
   exit 1
 fi
+`
+	// depsCheckScript only checks the .NET load checks on a Linux host,
+	// where runner add installs nothing; it fails naming each missing
+	// library.
+	depsCheckScript = icuCheck + sslCheck + `m=''
+icu || m='libicu'
+ssl || m="${m:+$m, }libssl.so.3"
+[ -z "$m" ] && exit 0
+printf 'missing: %s\n' "$m" >&2
+exit 1
 `
 	// extractScript unpacks the runner archive from stdin into the slot $1.
 	// A new slot ($2 = new) must not exist yet.
@@ -234,10 +243,10 @@ func (a *runnerAdd) Plan(ctx context.Context) (Plan, error) {
 		if a.entry.Kind != "" {
 			start.Detail = "through " + entryName(a.entry)
 		}
-		linger, icu, ssl, tools := lingerStep(where), libicuStep(where), libsslStep(where), volumeStep(toolsVolume)
-		linger.AfterStart, icu.AfterStart, ssl.AfterStart, tools.AfterStart, tools.Detail = true, true, true, true, where
-		plan.Steps = append(plan.Steps, start, linger, icu, ssl, tools)
-		Checked(ctx, start, linger, icu, ssl, tools)
+		linger, deps, tools := lingerStep(where), depsStep(where), volumeStep(toolsVolume)
+		linger.AfterStart, deps.AfterStart, tools.AfterStart, tools.Detail = true, true, true, where
+		plan.Steps = append(plan.Steps, start, linger, deps, tools)
+		Checked(ctx, start, linger, deps, tools)
 		logins, err := a.loginSteps(ctx)
 		if err != nil {
 			return plan, err
@@ -293,16 +302,27 @@ func lingerStep(where string) Step {
 	return Step{ID: "linger", Action: actLinger, Target: where, Next: "enabled"}
 }
 
-// libicuStep is the libicu the official runner needs inside a podman
-// machine VM.
-func libicuStep(where string) Step {
-	return Step{ID: "libicu", Action: actInstallLibicu, Target: where, Next: "present"}
+// depsStep is the official runner's system dependencies inside a podman
+// machine VM, which its bin/installdependencies.sh installs.
+func depsStep(where string) Step {
+	return Step{ID: "runner-deps", Action: actInstallDeps, Target: where, Next: "present"}
 }
 
-// libsslStep is the libssl the official runner's .NET runtime needs inside a
-// podman machine VM.
-func libsslStep(where string) Step {
-	return Step{ID: "libssl", Action: actInstallLibssl, Target: where, Next: "present"}
+// depsState names what the .NET load checks found: "present" when libicu
+// and a loadable libssl are both there, else "missing: " and each missing
+// library.
+func depsState(icu, ssl bool) string {
+	var m []string
+	if !icu {
+		m = append(m, "libicu")
+	}
+	if !ssl {
+		m = append(m, "libssl.so.3")
+	}
+	if len(m) == 0 {
+		return "present"
+	}
+	return "missing: " + strings.Join(m, ", ")
 }
 
 func slotStep(slot string) Step {
@@ -511,9 +531,9 @@ func (a *runnerAdd) slots(inv *runners.Inventory) (slots []string, fresh int) {
 	return slots, fresh
 }
 
-// steps are the items of a running host: linger, libicu and libssl on a podman
-// machine, the tools volume, the login items and one item per chosen slot.
-// The host advice is returned as notes.
+// steps are the items of a running host: linger and the runner dependencies
+// on a podman machine, the tools volume, the login items and one item per
+// chosen slot. The host advice is returned as notes.
 func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, error) {
 	where := a.host.Describe()
 	steps := []Step{}
@@ -525,12 +545,11 @@ func (a *runnerAdd) steps(ctx context.Context, env *addEnv) ([]Step, []string, e
 	steps = append(steps, linger)
 	Checked(ctx, linger)
 	if !a.host.Local() {
-		icu := libicuStep(where)
-		icu.NoChange, icu.Current = env.probe.icu, presence(env.probe.icu)
-		ssl := libsslStep(where)
-		ssl.NoChange, ssl.Current = env.probe.ssl, presence(env.probe.ssl)
-		steps = append(steps, icu, ssl)
-		Checked(ctx, icu, ssl)
+		deps := depsStep(where)
+		deps.NoChange = env.probe.icu && env.probe.ssl
+		deps.Current = depsState(env.probe.icu, env.probe.ssl)
+		steps = append(steps, deps)
+		Checked(ctx, deps)
 	}
 	has, err := volumeExists(ctx, a.host, toolsVolume)
 	if err != nil {
@@ -739,8 +758,25 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 
-	// The order is fixed: linger, libicu, libssl, the tools volume, the login,
-	// the slots, so libicu and libssl are there before any config.sh runs.
+	// The runner archive's source by route. The archive is downloaded at
+	// most once, by the first item that needs it (the runner dependencies
+	// or a new slot), and removed when Apply returns.
+	download := func(ctx context.Context) (runnerDownload, error) { return a.pickDownload(ctx, env) }
+	if !env.admin {
+		download = func(ctx context.Context) (runnerDownload, error) {
+			arch, err := runnerArch(env.probe)
+			if err != nil {
+				return runnerDownload{}, err
+			}
+			return releaseDownload(ctx, arch)
+		}
+	}
+	arc := &runnerArchive{download: download}
+	defer arc.close()
+
+	// The order is fixed: linger, the runner dependencies, the tools volume,
+	// the login, the slots, so the dependencies are there before any
+	// config.sh runs.
 	for _, s := range w.pre {
 		if s.Action == actLinger {
 			if err := Track(ctx, s, func() error {
@@ -753,24 +789,8 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 			}
 			continue
 		}
-		if s.Action == actInstallLibicu {
-			if err := Track(ctx, s, func() error {
-				if _, err := a.script(ctx, "install libicu", libicuScript, nil, ""); err != nil {
-					return Errorf(CodeRunnerInstallFailed, "%w; install it inside the VM with: podman machine ssh %s sudo dnf install -y libicu", err, strings.TrimPrefix(s.Target, "podman machine "))
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			continue
-		}
-		if s.Action == actInstallLibssl {
-			if err := Track(ctx, s, func() error {
-				if _, err := a.script(ctx, "install libssl", libsslScript, nil, ""); err != nil {
-					return Errorf(CodeRunnerInstallFailed, "%w; install it inside the VM with: podman machine ssh %s sudo dnf install -y openssl3-libs", err, strings.TrimPrefix(s.Target, "podman machine "))
-				}
-				return nil
-			}); err != nil {
+		if s.Action == actInstallDeps {
+			if err := Track(ctx, s, func() error { return a.installDeps(ctx, arc, strings.TrimPrefix(s.Target, "podman machine ")) }); err != nil {
 				return err
 			}
 			continue
@@ -795,18 +815,11 @@ func (a *runnerAdd) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 	src := slotSource{
-		download: func(ctx context.Context) (runnerDownload, error) { return a.pickDownload(ctx, env) },
+		archive: arc,
 		// Fetched after the login, so a long login cannot expire it.
 		token: func(ctx context.Context) (string, error) { return env.gh.RegistrationToken(ctx, env.repo) },
 	}
 	if !env.admin {
-		src.download = func(ctx context.Context) (runnerDownload, error) {
-			arch, err := runnerArch(env.probe)
-			if err != nil {
-				return runnerDownload{}, err
-			}
-			return releaseDownload(ctx, arch)
-		}
 		src.token = func(ctx context.Context) (string, error) {
 			// A private repository is read with a deploy key, created
 			// (or reused) on the host before the request carries it.
@@ -838,7 +851,7 @@ func (a *runnerAdd) classify(steps []Step) (work, error) {
 	slotRE := regexp.MustCompile(`^` + a.prov.name + `-[1-9][0-9]{0,5}$`)
 	for _, s := range steps {
 		switch {
-		case (s.Action == actInstallLibicu || s.Action == actInstallLibssl) && !a.host.Local() && s.Target == a.host.Describe(),
+		case s.Action == actInstallDeps && !a.host.Local() && s.Target == a.host.Describe(),
 			s.Action == actLinger, s.Action == actCreateVolume && s.Target == toolsVolume:
 			w.pre = append(w.pre, s)
 		case s.Action == actCreateVolume && s.Target == a.prov.volume(), s.Action == actLogIn && s.Target == a.prov.name:
@@ -875,15 +888,16 @@ func findStep(steps []Step, action string) (Step, bool) {
 	return Step{}, false
 }
 
-// slotSource supplies what new slots need: the runner archive's download
-// and the registration token, by route.
+// slotSource supplies what new slots need: the runner archive and the
+// registration token, by route.
 type slotSource struct {
-	download func(context.Context) (runnerDownload, error)
-	token    func(context.Context) (string, error)
+	archive *runnerArchive
+	token   func(context.Context) (string, error)
 }
 
 // install installs each slot as one item: its files, its registration, its
-// .env and its service. The archive and the registration token they share
+// .env and its service. The archive (this Apply's, reused when the runner
+// dependencies already downloaded it) and the registration token they share
 // are fetched first, only when a slot is not configured yet; when that
 // fails, every slot fails with it.
 func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step, src slotSource) error {
@@ -896,15 +910,10 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step, src 
 	}
 	var archive, token string
 	if needFiles(env.inv, targets(slots)) {
-		d, err := src.download(ctx)
+		path, err := src.archive.get(ctx)
 		if err != nil {
 			return failAll(err)
 		}
-		path, cleanup, err := downloadArchive(ctx, d)
-		if err != nil {
-			return failAll(err)
-		}
-		defer cleanup()
 		archive = path
 		if token, err = src.token(ctx); err != nil {
 			return failAll(err)
@@ -935,6 +944,15 @@ func (a *runnerAdd) install(ctx context.Context, env *addEnv, slots []Step, src 
 				f.Close()
 				if err != nil {
 					return err
+				}
+				// runner add installs nothing on a Linux host: config.sh
+				// would fail without the runner's dependencies, so the slot
+				// stops here, extracted but not configured, and the next run
+				// reuses it.
+				if a.host.Local() {
+					if _, err := a.script(ctx, "check the runner dependencies of "+s, depsCheckScript, nil, ""); err != nil {
+						return Errorf(CodeRunnerInstallFailed, "%w; install them with: cd %s && sudo ./bin/installdependencies.sh, then run gh nibfin runner add again", err, dir)
+					}
 				}
 				_, err = a.script(ctx, "configure "+s, configureScript, strings.NewReader(token+"\n"), token,
 					dir, "--unattended", "--url", url, "--name", name, "--labels", labels, "--replace")
@@ -1090,9 +1108,9 @@ func (a *runnerAdd) envHasProvider(ctx context.Context, dir string) (bool, error
 }
 
 // ReadBack reads every item back: the host, its .wslconfig key and
-// autostart entry, linger, libicu and libssl on a podman machine, the tools
-// volume, the login and each slot. The items read so far are returned also
-// with an error.
+// autostart entry, linger, the runner dependencies on a podman machine, the
+// tools volume, the login and each slot. The items read so far are returned
+// also with an error.
 func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	if err := a.validate(); err != nil {
 		return nil, err
@@ -1111,9 +1129,9 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 		checks.Expect(as0)
 	}
 	checks.Expect(hs, ls)
-	is, ss := libicuStep(where), libsslStep(where)
+	ds := depsStep(where)
 	if !a.host.Local() {
-		checks.Expect(is, ss)
+		checks.Expect(ds)
 	}
 	checks.Expect(tools, volumeStep(a.prov.volume()), loginStep(a.prov))
 
@@ -1261,8 +1279,8 @@ func (a *runnerAdd) ReadBack(ctx context.Context, plan Plan) (Result, error) {
 	}
 	checks.Set(ls, pr.linger, linger, "linger is not enabled")
 	if !a.host.Local() {
-		checks.Set(is, pr.icu, presence(pr.icu), "libicu is not found inside the VM")
-		checks.Set(ss, pr.ssl, presence(pr.ssl), "libssl is not found inside the VM")
+		state := depsState(pr.icu, pr.ssl)
+		checks.Set(ds, pr.icu && pr.ssl, state, strings.TrimPrefix(state, "missing: ")+" not found inside the VM")
 	}
 	toolsHas, err := volumeExists(ctx, a.host, toolsVolume)
 	if err != nil {

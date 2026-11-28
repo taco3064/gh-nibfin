@@ -75,12 +75,9 @@ type fakeHost struct {
 	vm, wsl bool
 	probe   string
 	linger  bool
-	// icu is true once the libicu script succeeded; the probe then finds
-	// libicu.
-	icu bool
-	// ssl is true once the libssl script succeeded; the probe then finds
-	// libssl.
-	ssl       bool
+	// icu and ssl are true once the runner dependencies script succeeded;
+	// the probe then finds libicu and libssl.
+	icu, ssl  bool
 	shells    []shellCall
 	shellExit map[string]int
 	shellErr  map[string]string
