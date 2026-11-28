@@ -292,6 +292,9 @@
         "repair": {
           "$ref": "#/$defs/status.Repair"
         },
+        "needsPerson": {
+          "$ref": "#/$defs/status.NeedsPerson"
+        },
         "createdAt": {
           "type": "string"
         },
@@ -347,6 +350,28 @@
         }
       },
       "required": [],
+      "additionalProperties": false
+    },
+    "status.NeedsPerson": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "type": "string"
+        },
+        "items": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "comment",
+        "items"
+      ],
       "additionalProperties": false
     },
     "status.NibfinRepo": {

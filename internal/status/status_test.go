@@ -670,3 +670,89 @@ func TestRepairState(t *testing.T) {
 		t.Errorf("failed read = %+v", is)
 	}
 }
+
+// choiceBody is a choice comment as Core's formatChoice writes it, with the
+// marker line upsertMarkedComment adds.
+func choiceBody(status string, notApplied ...string) string {
+	b := repair.ChoiceMarker + "\n<!-- nibfin:choice-state for=0123456789abcdef comment=7 status=" + status + " -->\n" +
+		"`alice` decided in their own words in [this comment](https://github.com/o/r/issues/1#issuecomment-7) on the repair record.\n\n" +
+		"- Reason of the stop: Two merges conflict.\n- Status: applied."
+	for _, p := range notApplied {
+		b += "\n- Not applied: " + p
+	}
+	return b + "\n\n### Decision\n\nDrop it.\n- Not applied: from the decision text"
+}
+
+func TestNeedsPerson(t *testing.T) {
+	choiceRoutes := func(body string, author int64) map[string]any {
+		return map[string]any{
+			events1: []any{labeled(7, "pending", "2026-11-27T00:00:00Z"),
+				map[string]any{"event": "unlabeled", "created_at": "2026-11-27T02:00:00Z", "label": map[string]any{"name": "pending"}}},
+			comments1: []any{comment(9, author, body, "2026-11-27T03:00:00Z")},
+		}
+	}
+	read := func(routes map[string]any, is Issue) (Issue, []string) {
+		fx := setup(t, routes)
+		r := &reader{c: fx.gh, host: "github.com"}
+		return r.withPending(context.Background(), "o/r", is), fx.gh.gets
+	}
+
+	// A non-pending Issue with Core's applied choice and Not applied parts;
+	// the decision's own text adds nothing.
+	is, _ := read(choiceRoutes(choiceBody("applied", "add the `pause` label", "close the Issue"), 7), Issue{Number: 1, comments: 3})
+	want := &NeedsPerson{Comment: "https://github.com/o/r/issues/1#issuecomment-9", Items: []string{"add the `pause` label", "close the Issue"}}
+	if !reflect.DeepEqual(is.NeedsPerson, want) || is.Repair != nil || is.PendingCommentError != nil {
+		t.Errorf("issue = %+v", is)
+	}
+	if is, _ := read(choiceRoutes(choiceBody("applying", "rerun CI"), 7), Issue{Number: 1, comments: 3}); is.NeedsPerson == nil {
+		t.Errorf("applying = %+v", is)
+	}
+
+	// Nothing left, another status, someone else's look-alike comment.
+	for name, routes := range map[string]map[string]any{
+		"no parts":     choiceRoutes(choiceBody("applied"), 7),
+		"chosen":       choiceRoutes(choiceBody("chosen", "close the Issue"), 7),
+		"dropped":      choiceRoutes(choiceBody("dropped", "close the Issue"), 7),
+		"another user": choiceRoutes(choiceBody("applied", "close the Issue"), 8),
+	} {
+		if is, _ := read(routes, Issue{Number: 1, comments: 3}); is.NeedsPerson != nil {
+			t.Errorf("%s = %+v", name, is.NeedsPerson)
+		}
+	}
+
+	// A pending Issue reports them along with its repair state.
+	is, _ = read(choiceRoutes(choiceBody("applied", "close the Issue"), 7), Issue{Number: 1, Pending: true, comments: 3})
+	if is.NeedsPerson == nil || is.Repair == nil {
+		t.Errorf("pending = %+v", is)
+	}
+
+	// An Issue without comments reads nothing more.
+	if is, gets := read(choiceRoutes(choiceBody("applied", "x"), 7), Issue{Number: 1}); is.NeedsPerson != nil || len(gets) != 0 {
+		t.Errorf("no comments: %+v, reads %v", is, gets)
+	}
+
+	// A failed read of a non-pending Issue shows nothing.
+	is, _ = read(map[string]any{events1: &api.HTTPError{StatusCode: 502}}, Issue{Number: 1, comments: 3})
+	if is.NeedsPerson != nil || is.PendingCommentError != nil || is.Repair != nil {
+		t.Errorf("failed read = %+v", is)
+	}
+}
+
+func TestNeedsPersonInRepoView(t *testing.T) {
+	routes := repoRoutes()
+	it := item("o/r", 1, "scope")
+	it["comments"] = 4
+	routes["repos/o/r/issues?state=open&per_page=100&page=1"] = []any{it, item("o/r", 2, "scope")}
+	routes[events1] = []any{labeled(7, "pending", "2026-11-27T00:00:00Z")}
+	routes[comments1] = []any{comment(5, 7, choiceBody("applied", "close the Issue"), "2026-11-27T00:00:01Z")}
+	fx := setup(t, routes)
+	is := run(t, "github.com/o/r")["issues"].([]Issue)
+	if len(is) != 2 || is[0].NeedsPerson == nil || is[0].NeedsPerson.Items[0] != "close the Issue" || is[1].NeedsPerson != nil {
+		t.Errorf("issues = %+v", is)
+	}
+	for _, g := range fx.gh.gets {
+		if strings.Contains(g, "issues/2/") {
+			t.Errorf("read %s of an Issue without comments", g)
+		}
+	}
+}
