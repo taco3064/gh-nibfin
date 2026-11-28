@@ -131,7 +131,7 @@ func startFull(t *testing.T, commands []Command, watch func(context.Context, fun
 		Upgrade: func(p op.RepoParams) op.Operation { return entry("upgrade:" + p.Repo) },
 		Status:  func(p op.RepoParams) op.Operation { return entry("status:" + p.Repo) },
 		Pause:   func(p op.IssuesParams) op.Operation { return entry(p) },
-		Resume:  func(p op.IssuesParams) op.Operation { return entry(p) },
+		Resume:  func(p op.ResumeParams) op.Operation { return entry(p) },
 	}
 	ready := make(chan string, 1)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -474,10 +474,14 @@ func TestBodyChecks(t *testing.T) {
 		"trailing":      `{"repo":"o/r"} {}`,
 		"oversized":     `{"repo":"` + strings.Repeat("a", maxBody) + `"}`,
 		"hidden field":  `{"provider":"claude","Interact":{}}`,
+		"pause option":  `{"issues":["1"],"option":2}`,
 	} {
 		path := "/api/commands/status/plan"
 		if name == "hidden field" {
 			path = "/api/commands/login/plan"
+		}
+		if name == "pause option" {
+			path = "/api/commands/pause/plan"
 		}
 		status, b, _ := h.do("POST", path, body, nil)
 		if status != 400 || errCode(t, b) != op.CodeInvalidArgument {
@@ -510,6 +514,7 @@ func TestEveryCommandReachesItsEntry(t *testing.T) {
 		{"resume", `{"repo":"o/r","issues":["6"]}`},
 		{"pause", `{"issues":["https://github.com/a/b/issues/7"]}`},
 		{"resume", `{"repo":"x/y","issues":["https://github.com/a/b/issues/8"]}`},
+		{"resume", `{"issues":["9"],"option":2}`},
 	} {
 		if status, b, _ := h.do("POST", "/api/commands/"+c.command+"/plan", c.body, nil); status != 200 {
 			t.Errorf("%s %s: %d %s", c.command, c.body, status, b)
@@ -527,9 +532,10 @@ func TestEveryCommandReachesItsEntry(t *testing.T) {
 		"status:github.com/x/y",
 		"status:",
 		op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"4", "#5"}},
-		op.IssuesParams{Repo: "github.com/o/r", Issues: []string{"6"}},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/o/r", Issues: []string{"6"}}},
 		op.IssuesParams{Issues: []string{"https://github.com/a/b/issues/7"}},
-		op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}}},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"9"}}, Option: 2},
 	}
 	if !reflect.DeepEqual(h.params, want) {
 		t.Errorf("params = %#v\nwant %#v", h.params, want)

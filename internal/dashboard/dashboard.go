@@ -28,7 +28,7 @@ type Ops struct {
 	Upgrade      func(op.RepoParams) op.Operation
 	Status       func(op.RepoParams) op.Operation
 	Pause        func(op.IssuesParams) op.Operation
-	Resume       func(op.IssuesParams) op.Operation
+	Resume       func(op.ResumeParams) op.Operation
 }
 
 // Options configure Serve.

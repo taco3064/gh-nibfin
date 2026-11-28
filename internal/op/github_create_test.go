@@ -2,6 +2,7 @@ package op
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +43,7 @@ func (s *createServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(r.URL.Path, "/comments") {
 		// GitHub stores a comment's CRLF as LF.
 		one = strings.ReplaceAll(string(b), `\r\n`, `\n`)
+		one = strings.TrimSuffix(one, "}") + fmt.Sprintf(`,"id":%d}`, 40+len(s.created))
 	} else {
 		one = strings.TrimSuffix(string(b), "}") + `,"number":7,"html_url":"https://x/7"}`
 	}
@@ -117,5 +119,19 @@ func TestCreateCommentRetriesWithoutDuplicates(t *testing.T) {
 	s = &createServer{fails: 9}
 	if err := createClient(t, s).CreateComment(ctx, "ghe.example/o/r", 7, "hi"); Code(err) != CodeGitHubAPIFailed || s.sends != 4 {
 		t.Fatalf("all fail: %v after %d sends", err, s.sends)
+	}
+}
+
+func TestCreateCommentID(t *testing.T) {
+	ctx := context.Background()
+	s := &createServer{fails: 1}
+	if id, err := createClient(t, s).CreateCommentID(ctx, "ghe.example/o/r", 7, "hi"); err != nil || id != 40 || s.sends != 2 {
+		t.Fatalf("lost send: %d %v, %d sends", id, err, s.sends)
+	}
+	// The answer is lost: the id is the re-read comment's.
+	s = &createServer{fails: 1, landed: true}
+	s.created = []string{`{"body":"other","id":3}`}
+	if id, err := createClient(t, s).CreateCommentID(ctx, "ghe.example/o/r", 7, "hi"); err != nil || id != 41 || s.sends != 1 {
+		t.Fatalf("lost answer: %d %v, %d sends", id, err, s.sends)
 	}
 }

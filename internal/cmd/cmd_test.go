@@ -106,7 +106,7 @@ func TestFlagPlacement(t *testing.T) {
 		"upgrade":       {"repo", "yes"},
 		"status":        {"json", "repo"},
 		"pause":         {"repo"},
-		"resume":        {"repo"},
+		"resume":        {"option", "repo"},
 		"dashboard":     {"no-browser", "port"},
 	}
 	for path, flags := range want {
@@ -164,7 +164,7 @@ func TestHandlersPassArguments(t *testing.T) {
 	ops.Upgrade = func(p op.RepoParams) op.Operation { return rec("upgrade:" + p.Repo) }
 	ops.Status = func(p op.RepoParams) op.Operation { return rec("status:" + p.Repo) }
 	ops.Pause = func(p op.IssuesParams) op.Operation { return rec(p) }
-	ops.Resume = func(p op.IssuesParams) op.Operation { return rec(p) }
+	ops.Resume = func(p op.ResumeParams) op.Operation { return rec(p) }
 
 	for _, args := range [][]string{
 		{"runner", "add", "codex", "--count", "3"},
@@ -181,6 +181,7 @@ func TestHandlersPassArguments(t *testing.T) {
 		{"resume", "6", "-R", "o/r"},
 		{"pause", "https://github.com/a/b/issues/7"},
 		{"resume", "https://github.com/a/b/issues/8", "--repo", "x/y"},
+		{"resume", "9", "--option", "2"},
 	} {
 		if code, _, stderr := execute(t, args...); code == 0 || !strings.HasPrefix(stderr, "stop: ") {
 			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
@@ -198,14 +199,15 @@ func TestHandlersPassArguments(t *testing.T) {
 		"status:github.com/x/y",
 		"status:",
 		op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"4", "#5"}},
-		op.IssuesParams{Repo: "github.com/o/r", Issues: []string{"6"}},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/o/r", Issues: []string{"6"}}},
 		op.IssuesParams{Issues: []string{"https://github.com/a/b/issues/7"}},
-		op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/x/y", Issues: []string{"https://github.com/a/b/issues/8"}}},
+		op.ResumeParams{IssuesParams: op.IssuesParams{Repo: "github.com/cur/repo", Issues: []string{"9"}}, Option: 2},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("params = %#v\nwant %#v", got, want)
 	}
-	if !reflect.DeepEqual(*seenRepo, []string{"o/r", "", "x/y", "", "o/r", "x/y"}) {
+	if !reflect.DeepEqual(*seenRepo, []string{"o/r", "", "x/y", "", "o/r", "x/y", ""}) {
 		// URL-only pause without -R never resolves a repository.
 		t.Errorf("resolver saw %q", *seenRepo)
 	}
@@ -294,7 +296,7 @@ func TestPauseResumeOutput(t *testing.T) {
 	ops.Pause = func(op.IssuesParams) op.Operation {
 		return resultOp{op.Result{"https://github.com/o/r/issues/2": "paused", "https://github.com/o/r/issues/1": "paused"}}
 	}
-	ops.Resume = func(op.IssuesParams) op.Operation {
+	ops.Resume = func(op.ResumeParams) op.Operation {
 		return resultOp{op.Result{"https://github.com/o/r/issues/3": "resumed"}}
 	}
 	for args, want := range map[string]string{
@@ -362,5 +364,16 @@ func TestWriteResultManual(t *testing.T) {
 	writeResult(&b, r, true)
 	if !strings.Contains(b.String(), `"manual": {`) || !strings.Contains(b.String(), `"url": "https://github.com/o/r/settings"`) {
 		t.Errorf("json = %s", b.String())
+	}
+}
+
+func TestResumeOptionZero(t *testing.T) {
+	fakeRepo(t)
+	old := ops
+	t.Cleanup(func() { ops = old })
+	ops.Resume = func(p op.ResumeParams) op.Operation { t.Errorf("resume ran with %+v", p); return resultOp{} }
+	code, _, stderr := execute(t, "resume", "3", "--option", "0")
+	if code == 0 || !strings.Contains(stderr, "--option must be 1 or more, got 0") {
+		t.Errorf("exit %d, stderr %q", code, stderr)
 	}
 }

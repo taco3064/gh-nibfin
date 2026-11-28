@@ -77,10 +77,19 @@ func (s *server) build(command string, r *http.Request, ia *interactor) (op.Oper
 		}
 		return ops.Status(p), 0, nil
 	case "pause", "resume":
-		var p op.IssuesParams
-		if err := decode(r, &p); err != nil {
+		// Only resume takes an option; pause keeps rejecting it as an
+		// unknown field.
+		var rp op.ResumeParams
+		var err error
+		if command == "pause" {
+			err = decode(r, &rp.IssuesParams)
+		} else {
+			err = decode(r, &rp)
+		}
+		if err != nil {
 			return nil, http.StatusBadRequest, err
 		}
+		p := &rp.IssuesParams
 		// Only numbers need a repository.
 		if p.Repo != "" || op.HasIssueNumber(p.Issues) {
 			repo, err := resolve(p.Repo)
@@ -90,9 +99,9 @@ func (s *server) build(command string, r *http.Request, ia *interactor) (op.Oper
 			p.Repo = repo
 		}
 		if command == "pause" {
-			return ops.Pause(p), 0, nil
+			return ops.Pause(*p), 0, nil
 		}
-		return ops.Resume(p), 0, nil
+		return ops.Resume(rp), 0, nil
 	}
 	return nil, http.StatusNotFound, op.Errorf(op.CodeNotFound, "unknown command %q", command)
 }
