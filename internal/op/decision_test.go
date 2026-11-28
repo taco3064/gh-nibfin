@@ -174,7 +174,8 @@ func TestResumeOptionPlanErrors(t *testing.T) {
 			msg: "has no pending label"},
 		{name: "advice state", issues: []string{"1"}, n: 1, setup: func(_ *fakeGitHub, _ *fakeIssue, d *fakeDecision) {
 			d.comments[1]["body"] = strings.Replace(d.comments[1]["body"].(string), "status=waiting-for-choice action=options", "status=needs-person action=advice", 1)
-		}, msg: "in the act repair state (Two merges conflict.)"},
+			d.comments[1]["body"] = strings.Replace(d.comments[1]["body"].(string), "Two merges", "Two \x1b[31mmerges", 1)
+		}, msg: "in the act repair state (Two [31mmerges conflict.)"},
 		{name: "stale record", issues: []string{"1"}, n: 1, setup: func(_ *fakeGitHub, _ *fakeIssue, d *fakeDecision) {
 			d.comments[1]["body"] = recordBody("another stop", "waiting-for-choice", "options")
 		}, msg: "in the act repair state (" + repair.NoRecordReason + ")"},
