@@ -92,6 +92,14 @@ the latest attested main image.
   cannot approve their own pull request. So in an Owner-only repository
   that requires approvals, Nibfin's pull requests cannot merge. Existing
   repositories get the review trigger with `gh nibfin upgrade`.
+- Adding `pending` wakes the Issue like any other label change by a sender
+  with admin or write permission, so Core's repair stage looks at the stop
+  as soon as Nibfin stops. Only Nibfin's own `shaped` and `delivered` changes
+  are not routed. `nibfin-shared-runner.yml` accepts the `repair` stage, the
+  Job Core dispatches for the repair agent. Existing repositories get both
+  with `gh nibfin upgrade`; a Runner whose job-started hook comes from an
+  older gh-nibfin refuses Jobs until its owner updates gh-nibfin and runs
+  `gh nibfin runner add` again.
 
 ### Runner request
 

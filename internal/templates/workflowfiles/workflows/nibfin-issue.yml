@@ -122,9 +122,11 @@ jobs:
                 echo "#$ISSUE has no scope or request label; not routed"
                 exit 0
               fi
+              # Nibfin's own shaped and delivered changes are not routed. labeled:pending is:
+              # it wakes the Issue so Core's repair stage looks at the stop.
               case "$ACTION:$LABEL" in
                 labeled:shaped | unlabeled:shaped | labeled:delivered | \
-                  unlabeled:delivered | labeled:pending)
+                  unlabeled:delivered)
                   echo "Nibfin's own label change ($ACTION $LABEL); not routed"
                   exit 0
                   ;;
