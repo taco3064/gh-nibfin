@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Job, RepoRunners, Runner } from '../../worker/messages'
+import type { Job, RepoRunners, Runner } from '@/worker/messages'
 import { capacityCounts, jobTarget, runStageSteps, runnerCards, runnerErrors, safeUrl } from './runners'
 
 const job = (over: Partial<Job> = {}): Job => ({

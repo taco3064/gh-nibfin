@@ -1,6 +1,6 @@
 import { Bot, CircleCheckBig, CircleDot, GitMerge, ListChecks, PencilRuler, Rocket, Search, Settings2, UserRound, Workflow, Wrench } from 'lucide-react'
 
-import type { DiagramSpec } from '../components/diagram'
+import type { DiagramSpec } from '@/app/components/diagram'
 
 // Who acts at each step, as the How it works page describes it: agents do the
 // Shape, Deliver and review work; GitHub runs the checks and CD and performs

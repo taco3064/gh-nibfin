@@ -4,7 +4,7 @@
 // dashboard/src/ file that exists at that commit. Anything else, including a
 // missing token or a Sentry API error, is unverified; verify never throws.
 
-import type { SentryIssue } from '../payload.ts'
+import type { SentryIssue } from './payload.ts'
 import type { Client } from './http.ts'
 
 export const SENTRY_ORG = 'na-43k'

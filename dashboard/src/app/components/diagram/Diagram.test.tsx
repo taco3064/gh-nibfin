@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest'
 
 import { framesExample, lanesExample, pipelineExample } from '@/screenshots/diagram-fixtures'
 
-import { architecture } from '../../lib/architecture'
-import { issueFlow } from '../../lib/issue-flow'
-import { labelStateDiagram } from '../../lib/label-flow'
-import { labelStates } from '../../lib/labels'
-import { stageLanes } from '../../lib/stage-lanes'
+import { architecture } from '@/app/lib/architecture'
+import { issueFlow } from '@/app/lib/issue-flow'
+import { labelStateDiagram } from '@/app/lib/label-flow'
+import { labelStates } from '@/app/lib/labels'
+import { stageLanes } from '@/app/lib/stage-lanes'
 
 import { Diagram } from './Diagram'
 import type { DiagramSpec } from './layout'

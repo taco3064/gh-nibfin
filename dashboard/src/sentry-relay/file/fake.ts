@@ -1,8 +1,8 @@
 // An in-memory GitHub and Sentry for the filer tests. It serves only the
 // endpoints the filer calls, with GitHub's Link pagination.
 
-import { buildPayload, type SentryIssue } from '../payload.ts'
-import { webhookIssue } from '../testing.ts'
+import { buildPayload, type SentryIssue } from './payload.ts'
+import { webhookIssue } from './testing.ts'
 import type { Fetch } from './http.ts'
 
 export const REPO = 'taco3064/gh-nibfin'

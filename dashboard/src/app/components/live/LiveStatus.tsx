@@ -5,7 +5,7 @@ import { FreshnessIndicator } from '@/components/shell/freshness-indicator'
 import { Note } from '@/components/shell/note'
 import { Badge } from '@/components/ui/badge'
 
-import type { LiveFeedState } from '../../lib/live-feed'
+import type { LiveFeedState } from '@/app/lib/live-feed'
 
 // ConnectionBadge says whether the page receives updates.
 function ConnectionBadge({ feed }: { feed: LiveFeedState }) {

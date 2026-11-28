@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { LiveData } from '../../worker/messages'
+import type { LiveData } from '@/worker/messages'
 import { initialFeed, parseEvent, reconnectDelay, reduceLive, type LiveFeedState } from './live-feed'
 
 const data: LiveData = {

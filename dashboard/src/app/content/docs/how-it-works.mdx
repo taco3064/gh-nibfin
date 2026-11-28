@@ -3,9 +3,9 @@ title: How it works
 description: The stages an Issue goes through, the labels that steer them, and the key points of Nibfin's architecture and security.
 ---
 
-import { ArchitectureDiagram } from '../../components/ArchitectureDiagram'
-import { LabelStates } from '../../components/LabelStates'
-import { StageLanes } from '../../components/StageLanes'
+import { ArchitectureDiagram } from '@/app/components/ArchitectureDiagram'
+import { LabelStates } from '@/app/components/LabelStates'
+import { StageLanes } from '@/app/components/StageLanes'
 
 Nibfin keeps no state of its own. Every run reads the Issue, its labels, branches,
 pull requests and checks from GitHub, decides what runs next, and writes its result

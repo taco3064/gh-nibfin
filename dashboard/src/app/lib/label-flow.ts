@@ -2,7 +2,7 @@
 // the states top to bottom and stops at the first match, so each check has a
 // "yes" exit to its outcome and a "no" path to the next check.
 
-import type { DiagramNode, DiagramSpec } from '../components/diagram'
+import type { DiagramNode, DiagramSpec } from '@/app/components/diagram'
 
 import { outcomeText, type LabelState, type Outcome } from './labels'
 

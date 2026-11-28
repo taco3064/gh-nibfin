@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { encodedSize, MAX_DISPATCH_BYTES, MAX_TEXT } from './payload.ts'
-import { webhookIssue } from './testing.ts'
+import { encodedSize, MAX_DISPATCH_BYTES, MAX_TEXT } from '@/sentry-relay/file/payload.ts'
+import { webhookIssue } from '@/sentry-relay/file/testing.ts'
 import { BUDGET_MS, handle, type Deps, type Env } from './worker.ts'
 
 const secret = 'test-client-secret'

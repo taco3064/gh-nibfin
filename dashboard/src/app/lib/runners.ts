@@ -1,7 +1,7 @@
 // The runner cards of the Live page. A card names a runner only by its
 // place in the list: runner names include host names and are never shown.
 
-import type { ApiError, Job, RepoRunners } from '../../worker/messages'
+import type { ApiError, Job, RepoRunners } from '@/worker/messages'
 
 export type RunnerState = 'busy' | 'idle' | 'offline' | 'other'
 

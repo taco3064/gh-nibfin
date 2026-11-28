@@ -7,8 +7,8 @@
 // above brings in Starlight's App.Locals type for starlightRoute.
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data'
 
-import commands from './data/commands.json'
-import { tocItemsOf } from './lib/cli-reference'
+import commands from '@/app/data/commands.json'
+import { tocItemsOf } from '@/app/lib/cli-reference'
 
 export const onRequest = defineRouteMiddleware((context) => {
   const route = context.locals.starlightRoute

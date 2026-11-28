@@ -3,7 +3,7 @@
 // run's marker, so a re-run attempt of the same run finds what the earlier
 // attempt wrote instead of writing it twice.
 
-import type { SentryIssue } from '../payload.ts'
+import type { SentryIssue } from './payload.ts'
 import { commentBody, hasMarker, issueBody, title } from './body.ts'
 import type { Client } from './http.ts'
 import { verify, type Verification } from './verify.ts'

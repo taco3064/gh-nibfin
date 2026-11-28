@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { labelStates, outcomeText } from '../lib/labels'
+import { labelStates, outcomeText } from '@/app/lib/labels'
 
 import { LabelStates } from './LabelStates'
 

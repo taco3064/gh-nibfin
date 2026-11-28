@@ -2,7 +2,7 @@ import { AlarmClock, Check } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-import { runStageSteps, type RunStepState } from '../../lib/runners'
+import { runStageSteps, type RunStepState } from '@/app/lib/runners'
 
 const dotClass: Record<RunStepState, string> = {
   complete: 'border-success bg-success text-card',

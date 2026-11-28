@@ -1,4 +1,4 @@
-import type { DiagramSpec } from '../components/diagram'
+import type { DiagramSpec } from '@/app/components/diagram'
 
 // The stages of How it works (#459) as a swimlane: one lane per role or
 // actor, the forward hand-offs labelled with what is handed over and the

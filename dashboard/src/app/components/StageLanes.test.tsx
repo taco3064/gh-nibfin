@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { layoutDiagram } from './diagram'
-import { stageLanes } from '../lib/stage-lanes'
+import { stageLanes } from '@/app/lib/stage-lanes'
 import { StageLanes } from './StageLanes'
 
 const title = (id: string) => stageLanes.nodes.find((n) => n.id === id)!.title

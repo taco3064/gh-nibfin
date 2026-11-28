@@ -3,7 +3,7 @@
 // signed with SENTRY_CLIENT_SECRET are read. Logs carry fixed reasons and
 // status numbers only: never the secret, the signature, the token or the body.
 
-import { buildPayload, type SentryDispatch } from './payload.ts'
+import { buildPayload, type SentryDispatch } from '@/sentry-relay/file/payload.ts'
 
 export interface Env {
   SENTRY_CLIENT_SECRET?: string

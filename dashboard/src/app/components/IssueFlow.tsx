@@ -1,5 +1,5 @@
 import { Diagram } from './diagram'
-import { issueFlow } from '../lib/issue-flow'
+import { issueFlow } from '@/app/lib/issue-flow'
 
 /** The path of an Issue from scope to delivery, as a pipeline diagram with who acts at each step. */
 export function IssueFlow() {

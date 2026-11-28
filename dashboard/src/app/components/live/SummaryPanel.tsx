@@ -2,8 +2,8 @@ import { CircleCheckBig, CircleDot, type LucideIcon } from 'lucide-react'
 
 import { Note } from '@/components/shell/note'
 
-import type { LiveData } from '../../../worker/messages'
-import { repoNames, showcaseStart, sinceLabel } from '../../lib/summary'
+import type { LiveData } from '@/worker/messages'
+import { repoNames, showcaseStart, sinceLabel } from '@/app/lib/summary'
 import { DeliveredTrend } from './DeliveredTrend'
 import { RollingNumber } from './RollingNumber'
 

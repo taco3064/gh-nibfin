@@ -1,10 +1,14 @@
 // The per-repository data is shaped by the status --json schema: the
 // status.RepoView keys about Issues, validated against the committed file.
+// The schema lies outside src, so the test reads it rather than importing it.
+
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import Ajv2020 from 'ajv/dist/2020'
 import { describe, expect, it } from 'vitest'
 
-import schemaFile from '../../../schema/status.schema.json'
 import { createGitHub } from './github'
 import type { RepoData } from './messages'
 import { check } from './poller'
@@ -12,7 +16,8 @@ import { initialState } from './state'
 import { FakeGitHub, issueJSON, issuesPath, runJSON, runsPath, token, quick } from './testing'
 
 type Schema = { $defs: Record<string, { properties: Record<string, unknown> }> }
-const defs = (schemaFile as unknown as Schema).$defs
+const schemaFile: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../schema/status.schema.json', import.meta.url).href), 'utf8'))
+const defs = (schemaFile as Schema).$defs
 const view = defs['status.RepoView'].properties
 
 const ajv = new Ajv2020({ strict: false })

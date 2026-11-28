@@ -6,7 +6,7 @@
 
 import { appendFileSync, readFileSync } from 'node:fs'
 
-import { parsePayload } from '../payload.ts'
+import { parsePayload } from './payload.ts'
 import { fileRequest, summaryLine } from './file.ts'
 import { createClient, type Fetch } from './http.ts'
 

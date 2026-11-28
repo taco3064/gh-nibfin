@@ -5,8 +5,8 @@ import { Note } from '@/components/shell/note'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
-import type { RepoRunners } from '../../../worker/messages'
-import { capacityCounts, jobTarget, runnerCards, runnerErrors, safeUrl, type RunnerCard, type RunnerState } from '../../lib/runners'
+import type { RepoRunners } from '@/worker/messages'
+import { capacityCounts, jobTarget, runnerCards, runnerErrors, safeUrl, type RunnerCard, type RunnerState } from '@/app/lib/runners'
 import { RunStageTrack } from './RunStageTrack'
 
 const linkClass = 'rounded-sm text-link underline-offset-4 hover:underline'

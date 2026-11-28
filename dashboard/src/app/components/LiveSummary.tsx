@@ -1,9 +1,9 @@
 import { ArrowRight } from 'lucide-react'
 
-import { useLiveFeed } from '../lib/live-feed'
-import { liveUrl } from '../lib/live-url'
-import { LiveStatus } from './live/LiveStatus'
-import { SummaryPanel } from './live/SummaryPanel'
+import { useLiveFeed } from '@/app/lib/live-feed'
+import { liveUrl } from '@/app/lib/live-url'
+import { LiveStatus } from '@/app/components/live/LiveStatus'
+import { SummaryPanel } from '@/app/components/live/SummaryPanel'
 
 /**
  * The Home page's live summary: the Worker stream's connection and

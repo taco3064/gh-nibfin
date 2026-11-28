@@ -2,7 +2,7 @@
 // integers) enter structured fields; the Sentry title and culprit can be
 // forged through the public DSN, so they appear only inside a fence.
 
-import type { SentryIssue } from '../payload.ts'
+import type { SentryIssue } from './payload.ts'
 import type { Verification } from './verify.ts'
 
 export const MAX_BODY = 60_000

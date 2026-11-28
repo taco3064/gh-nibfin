@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { LiveData } from '../../worker/messages'
+import type { LiveData } from '@/worker/messages'
 import { liveRepoSource } from './live-repo-source'
 
 const err = { code: 'github_api_failed', message: 'HTTP 502' }

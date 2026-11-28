@@ -1,6 +1,6 @@
 {
-  // The Sentry relay Worker and the payload contract; the filer in file/ is
-  // its own Node project.
+  // The Sentry relay Worker. The filer in file/ is its own Node project and
+  // holds the payload contract, which the Worker imports as @/sentry-relay/file/.
   "compilerOptions": {
     "tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.sentry-relay.tsbuildinfo",
     "target": "es2023",
@@ -20,7 +20,9 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    "paths": { "@/*": ["../*"] }
   },
   "include": ["**/*.ts"],
   "exclude": ["file"]
