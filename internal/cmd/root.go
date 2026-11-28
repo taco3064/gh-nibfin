@@ -22,7 +22,6 @@ import (
 	"github.com/taco3064/gh-nibfin/internal/initrepo"
 	"github.com/taco3064/gh-nibfin/internal/live"
 	"github.com/taco3064/gh-nibfin/internal/op"
-	"github.com/taco3064/gh-nibfin/internal/runnerhook"
 	"github.com/taco3064/gh-nibfin/internal/status"
 	"github.com/taco3064/gh-nibfin/internal/upgrade"
 )
@@ -39,10 +38,6 @@ var ops = dashboard.Ops{
 	Pause:        op.Pause,
 	Resume:       op.Resume,
 }
-
-// runner add installs the job-started hook of a collaborator's Runner from
-// runnerhook's files, in the CLI and the Dashboard alike.
-func init() { op.SetRunnerHookFiles(runnerhook.Files) }
 
 var providers = []string{"claude", "codex"}
 
@@ -144,13 +139,16 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 			"A collaborator's Runners get a job-started hook in ~/.local/share/nibfin/hook (under\n" +
 			"XDG_DATA_HOME when set), so they run only official Nibfin Jobs for you. The hook checks\n" +
 			"that nibfin-shared-runner.yml started the Job for your user id, that it and\n" +
-			"nibfin-job.yml at that commit match this gh-nibfin's templates except the image digest,\n" +
-			"and that the image's Sigstore signature and signer (nibfin-core's image.yml on main)\n" +
-			"verify on the host. A refused Job fails before any step, with the reason under \"Set up\n" +
+			"nibfin-job.yml at that commit match the official files except the image digest and\n" +
+			"the nibfin-core Action commit, that the image's Sigstore signature and signer\n" +
+			"(nibfin-core's image.yml on main) verify on the host, and that the Action commit is\n" +
+			"the commit the image was built from. runner add renders the official files with\n" +
+			"nibfin render-workflows in the latest attested image on this host's Podman. A\n" +
+			"refused Job fails before any step, with the reason under \"Set up\n" +
 			"runner\" in its log. A private repository is read with the deploy key and needs git and\n" +
 			"ssh on the runner host. Each Job reads the attestation API without a credential (60\n" +
-			"requests per hour per IP). After the owner upgrades the repository, or Sigstore's root\n" +
-			"changes, update gh-nibfin and run runner add again.",
+			"requests per hour per IP). After the owner upgrades the repository, run runner add\n" +
+			"again; after Sigstore's root changes, update gh-nibfin and run runner add again.",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := checkCount(addCount); err != nil {
 				return err
@@ -260,13 +258,17 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, jsonOut *bool) *cobra.Co
 		"gh nibfin runner add. For the peer set the gh login must be admin of the Runners'\n" +
 		"repository too; otherwise init stops before any write. An initialized repository\n" +
 		"gets no PR; use gh nibfin upgrade.\n\n" +
+		"The workflow files are rendered by nibfin render-workflows in the latest attested\n" +
+		"Nibfin image, run with this host's Podman; they pin that image by digest and call\n" +
+		"nibfin-core's Action at the commit the image was built from.\n\n" +
 		"GitHub offers Issues \"Creation allowed by: Collaborators only\" only in the web UI;\n" +
 		"init prints the Settings link to set it there."
 	upgradeCmd := repoCmd("upgrade", "Upgrade Nibfin in a repository", func(p op.RepoParams) op.Operation { return ops.Upgrade(p) })
 	upgradeCmd.Long = "Upgrade Nibfin in a repository and bring this host's Runners to the current spec.\n\n" +
-		"The repository part renders the workflows from the current templates, pinned to\n" +
-		"the latest attested image, and opens one PR on branch nibfin/upgrade when they\n" +
-		"differ from the default branch.\n\n" +
+		"The repository part renders the workflows with nibfin render-workflows in the latest\n" +
+		"attested image, run with this host's Podman (a stopped podman machine stops upgrade\n" +
+		"before any write: start it and run upgrade again), and opens one PR on branch\n" +
+		"nibfin/upgrade when they differ from the default branch.\n\n" +
 		"The host part runs whether or not the workflows are current. Each configured\n" +
 		"Runner on this host gets what runner add sets up today: NIBFIN_PROVIDER in its\n" +
 		".env (other lines, such as NIBFIN_MODEL, are kept), the current systemd user unit, enabled and active, and, when the gh login\n" +

@@ -164,3 +164,69 @@ func TestHelperExit4(t *testing.T) {
 		os.Exit(4)
 	}
 }
+
+// verifiedJSON is gh attestation verify's JSON for attestations whose
+// signing certificates name commits as their Source Repository Digest.
+func verifiedJSON(commits ...string) string {
+	var entries []string
+	for _, c := range commits {
+		entries = append(entries, `{"attestation":{},"verificationResult":{"mediaType":"application/vnd.dev.sigstore.verificationresult+json;version=0.1","signature":{"certificate":{"sourceRepositoryURI":"https://github.com/taco3064/nibfin-core","sourceRepositoryDigest":"`+c+`"}}}}`)
+	}
+	return "[" + strings.Join(entries, ",") + "]\n"
+}
+
+func TestLatestRelease(t *testing.T) {
+	const commit = "4ed4c16bff8600000000000000000000000000ab"
+	reg := &fakeRegistry{digest: digest}
+	gh := &ghCall{stdout: verifiedJSON(commit, commit)}
+	setup(t, reg, gh)
+	ref, got, err := LatestRelease(context.Background())
+	if err != nil {
+		t.Fatalf("LatestRelease: %v", err)
+	}
+	if ref != "ghcr.io/taco3064/nibfin@"+digest || got != commit {
+		t.Errorf("LatestRelease = %q, %q", ref, got)
+	}
+	if !slices.Equal(gh.args, verifyArgs(ref)) {
+		t.Errorf("gh args %q", gh.args)
+	}
+}
+
+func TestLatestReleaseCommitFailures(t *testing.T) {
+	const a, b = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	for name, c := range map[string]struct{ stdout, contains string }{
+		"no verification result": {`[{"attestation":{}}]`, `source commit ""`},
+		"no commit":              {`[{"verificationResult":{}}]`, `source commit ""`},
+		"a short commit":         {verifiedJSON("4ed4c16"), `source commit "4ed4c16"`},
+		"an upper-case commit":   {verifiedJSON(strings.ToUpper(a)), "not a full commit SHA"},
+		"one entry without":      {verifiedJSON(a, ""), "attestation 2"},
+		"two commits":            {verifiedJSON(a, b), "two source commits, " + a + " and " + b},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setup(t, &fakeRegistry{digest: digest}, &ghCall{stdout: c.stdout})
+			ref, commit, err := LatestRelease(context.Background())
+			if ref != "" || commit != "" {
+				t.Errorf("returned %q, %q despite the failure", ref, commit)
+			}
+			if op.Code(err) != op.CodeImageUnverified || !strings.Contains(err.Error(), c.contains) {
+				t.Errorf("err = %v, want image_unverified with %q", err, c.contains)
+			}
+			// Latest, which status uses, does not need the commit.
+			if _, err := Latest(context.Background()); err != nil {
+				t.Errorf("Latest: %v", err)
+			}
+		})
+	}
+	t.Run("a verification failure", func(t *testing.T) {
+		setup(t, &fakeRegistry{digest: digest}, &ghCall{stderr: "Error: no attestations\n", err: errors.New("exit status 1")})
+		if _, _, err := LatestRelease(context.Background()); op.Code(err) != op.CodeImageUnverified || !strings.Contains(err.Error(), "no attestations") {
+			t.Errorf("err = %v", err)
+		}
+	})
+	t.Run("a registry failure", func(t *testing.T) {
+		setup(t, &fakeRegistry{digest: digest, headStatus: 404}, &ghCall{stdout: verifiedJSON(a)})
+		if _, _, err := LatestRelease(context.Background()); op.Code(err) != op.CodeImageUnresolved {
+			t.Errorf("err = %v", err)
+		}
+	})
+}

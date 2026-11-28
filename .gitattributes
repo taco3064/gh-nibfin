@@ -1,6 +1,3 @@
-# The embedded workflow templates render byte-identical output on every OS,
-# so a Windows checkout must not convert them to CRLF.
-/internal/templates/workflowfiles/workflows/*.yml text eol=lf
 # The collaborator runner hook's files run on Linux runner hosts, and its test
 # data is compared byte for byte.
 /internal/runnerhook/files/** text eol=lf

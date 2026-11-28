@@ -105,6 +105,10 @@ func (c *ca) trustedRoot() []byte {
 // bundleOpts change one aspect of a generated bundle.
 type bundleOpts struct {
 	signer, san, sourceRepo, ref, runner, issuer string
+	// sourceDigest is the Source Repository Digest (extension 13); empty
+	// means commit, noSourceDigest leaves the extension out.
+	sourceDigest   string
+	noSourceDigest bool
 	// at is the log time T; zero means signedAt.
 	at time.Time
 	// issuerCA signs the leaf instead of the intermediate.
@@ -167,6 +171,9 @@ func (c *ca) bundle(t *testing.T, digest string, o bundleOpts) map[string]any {
 			ext(t, 12, or(o.sourceRepo, "https://github.com/"+runnerhook.SourceRepo)),
 			ext(t, 14, or(o.ref, runnerhook.SourceRef)),
 		},
+	}
+	if !o.noSourceDigest {
+		tmpl.ExtraExtensions = append(tmpl.ExtraExtensions, ext(t, 13, or(o.sourceDigest, commit)))
 	}
 	leafDER, _ := mustCert(t, tmpl, issuer.inter, &leafKey.PublicKey, issuer.interKey)
 

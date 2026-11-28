@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -42,7 +43,10 @@ func useHookFiles(t *testing.T, f *fakeHost, err error) {
 	t.Helper()
 	old := runnerHookFiles
 	t.Cleanup(func() { runnerHookFiles = old })
-	runnerHookFiles = func(context.Context) (map[string][]byte, error) {
+	runnerHookFiles = func(_ context.Context, podman func(context.Context, ...string) *exec.Cmd) (map[string][]byte, error) {
+		if podman == nil {
+			return nil, errors.New("no podman to render the official files with")
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -287,6 +291,15 @@ func TestRunnerAddRequestHookStops(t *testing.T) {
 		useHookFiles(t, f, errors.New("gh attestation trusted-root: tuf: no network"))
 		_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
 		if Code(err) != CodeRunnerInstallFailed || !strings.Contains(err.Error(), "tuf: no network") || len(f.events) != 0 {
+			t.Errorf("err = %v, events %v", err, f.events)
+		}
+	})
+	t.Run("rendering the official files fails", func(t *testing.T) {
+		f := &fakeHost{}
+		useRequest(t, f)
+		useHookFiles(t, f, Errorf(CodePodmanFailed, "render the workflow files: pull refused"))
+		_, _, err := Run(context.Background(), RunnerAdd(RunnerAddParams{Provider: "claude", Count: 1}), &yes{})
+		if Code(err) != CodePodmanFailed || !strings.Contains(err.Error(), "pull refused") || len(f.events) != 0 {
 			t.Errorf("err = %v, events %v", err, f.events)
 		}
 	})

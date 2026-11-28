@@ -4,11 +4,13 @@
 // with only the GITHUB_* values it needs in its environment. It lets a Job
 // run only when the workflow that started it is the execution repository's
 // nibfin-shared-runner.yml, the dispatch assignee is the Runner's owner, that
-// file and nibfin-job.yml at GITHUB_WORKFLOW_SHA match this gh-nibfin's
-// official templates except the image digest, and the digest carries a
+// file and nibfin-job.yml at GITHUB_WORKFLOW_SHA match the official files
+// runner add installed (rendered by the Nibfin image) except the image digest
+// and the one commit they call nibfin-core's Action at, the digest carries a
 // Sigstore-signed attestation by nibfin-core's image.yml on main, built on a
-// GitHub-hosted runner. It exits 0 when every check passes, else 1 with the
-// reason. It uses only node: built-ins and never prints a file's content.
+// GitHub-hosted runner, and that attestation's source commit is the Action
+// commit. It exits 0 when every check passes, else 1 with the reason. It uses
+// only node: built-ins and never prints a file's content.
 
 import { X509Certificate, createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -28,10 +30,14 @@ const SHARED = "nibfin-shared-runner.yml";
 const JOB = "nibfin-job.yml";
 const PLACEHOLDER = "0".repeat(64);
 const IMAGE_LINE = /^  IMAGE_REF: ghcr\.io\/taco3064\/nibfin@sha256:([0-9a-f]{64})$/;
+// A call of nibfin-core's Action (SOURCE_REPO) pinned to a full commit; the
+// official files carry PLACEHOLDER_COMMIT there.
+const ACTION_REF = /(uses: taco3064\/nibfin-core\/action@)([0-9a-f]{40})/g;
+const PLACEHOLDER_COMMIT = "0".repeat(40);
 const TIMEOUT_MS = 30000;
 
 // The steps a refusal names.
-const NEXT_TEMPLATE = "the Owner runs gh nibfin upgrade; if it is current, update gh-nibfin (gh extension upgrade nibfin) and run gh nibfin runner add again";
+const NEXT_TEMPLATE = "the Owner runs gh nibfin upgrade; if it is current, run gh nibfin runner add again, which renders the official files from the latest image";
 const NEXT_TRUST = "update gh-nibfin and run gh nibfin runner add again";
 const NEXT_READD = "run gh nibfin runner remove, then gh nibfin runner add";
 const NEXT_RERUN = "run the Job again later";
@@ -132,13 +138,32 @@ async function readFiles(cfg, sha, fetched, rawBase) {
 }
 
 // checkTemplates compares the files with the official ones and returns the
-// image digest of nibfin-job.yml.
+// image digest of nibfin-job.yml and the one commit the files call
+// nibfin-core's Action at (null when the official files call no Action).
+// Each file is compared byte for byte (latin1 maps bytes one to one) after
+// its Action commit becomes PLACEHOLDER_COMMIT and, in nibfin-job.yml, its
+// one IMAGE_REF digest becomes PLACEHOLDER.
 function checkTemplates(hook, files) {
-  const official = (f) => readFileSync(join(hook, "official", f));
-  if (!files[SHARED].equals(official(SHARED))) {
-    refuse(`.github/workflows/${SHARED} differs from the official template of this gh-nibfin`, NEXT_TEMPLATE);
+  const official = (f) => readFileSync(join(hook, "official", f)).toString("latin1");
+  const commits = new Set();
+  let officialCalls = 0;
+  const text = {};
+  for (const f of [SHARED, JOB]) {
+    const t = files[f].toString("latin1");
+    for (const m of t.matchAll(ACTION_REF)) commits.add(m[2]);
+    officialCalls += [...official(f).matchAll(ACTION_REF)].length;
+    text[f] = t.replace(ACTION_REF, `$1${PLACEHOLDER_COMMIT}`);
   }
-  const lines = files[JOB].toString("latin1").split("\n");
+  if (commits.size > 1) {
+    refuse(`the workflow files call ${SOURCE_REPO}'s Action at ${commits.size} commits, not one`, NEXT_TEMPLATE);
+  }
+  if (officialCalls === 0 && commits.size > 0) {
+    refuse(`the workflow files call ${SOURCE_REPO}'s Action, which the official files do not`, NEXT_TEMPLATE);
+  }
+  if (text[SHARED] !== official(SHARED)) {
+    refuse(`.github/workflows/${SHARED} differs from the official template runner add installed`, NEXT_TEMPLATE);
+  }
+  const lines = text[JOB].split("\n");
   const at = [];
   lines.forEach((l, i) => {
     if (IMAGE_LINE.test(l)) at.push(i);
@@ -148,10 +173,10 @@ function checkTemplates(hook, files) {
   }
   const digest = IMAGE_LINE.exec(lines[at[0]])[1];
   lines[at[0]] = `  IMAGE_REF: ${IMAGE_REPOSITORY}@sha256:${PLACEHOLDER}`;
-  if (!Buffer.from(lines.join("\n"), "latin1").equals(official(JOB))) {
-    refuse(`.github/workflows/${JOB} differs from the official template of this gh-nibfin`, NEXT_TEMPLATE);
+  if (lines.join("\n") !== official(JOB)) {
+    refuse(`.github/workflows/${JOB} differs from the official template runner add installed`, NEXT_TEMPLATE);
   }
-  return digest;
+  return { digest, commit: commits.size === 1 ? [...commits][0] : null };
 }
 
 // --- DER ---------------------------------------------------------------
@@ -264,7 +289,7 @@ function digits(s, what) {
 
 // verifyBundle checks one attestation bundle against the trusted root and
 // the policy; it throws a Refusal at the first failed check.
-function verifyBundle(bundle, root, digest) {
+function verifyBundle(bundle, root, digest, commit) {
   if (!bundle || bundle.mediaType !== "application/vnd.dev.sigstore.bundle.v0.3+json") {
     refuse(`the bundle media type ${JSON.stringify(bundle && bundle.mediaType)} is not a Sigstore bundle v0.3`, NEXT_TRUST);
   }
@@ -382,6 +407,14 @@ function verifyBundle(bundle, root, digest) {
   if (ref !== SOURCE_REF) refuse(`the signer's ref is ${JSON.stringify(ref || "")}, want ${SOURCE_REF}`);
   const runner = ext(11);
   if (runner !== RUNNER_ENVIRONMENT) refuse(`the image was built on a ${JSON.stringify(runner || "")} runner, want ${RUNNER_ENVIRONMENT}`);
+  // The Action code the files run is the image's own: extension 13, the
+  // Source Repository Digest, is the commit the image was built from.
+  if (commit !== null) {
+    const source = ext(13);
+    if (source !== commit) {
+      refuse(`the Action commit ${commit} is not the image's source commit ${JSON.stringify(source || "")}`, NEXT_TEMPLATE);
+    }
+  }
 
   // Statement.
   let st;
@@ -398,7 +431,7 @@ function verifyBundle(bundle, root, digest) {
   }
 }
 
-async function checkImage(digest, apiBase) {
+async function checkImage(digest, commit, apiBase) {
   const what = `the attestations of ${IMAGE_REPOSITORY}@sha256:${digest}`;
   const r = await get(`${apiBase}/repos/${SOURCE_REPO}/attestations/sha256:${digest}`, what);
   if (r.status === 404) refuse(`${IMAGE_REPOSITORY}@sha256:${digest} has no attestation in ${SOURCE_REPO} (HTTP 404)`, NEXT_TEMPLATE);
@@ -417,7 +450,7 @@ async function checkImage(digest, apiBase) {
   let last;
   for (const a of list) {
     try {
-      verifyBundle(a && a.bundle, root, digest);
+      verifyBundle(a && a.bundle, root, digest, commit);
       return;
     } catch (e) {
       if (!(e instanceof Refusal)) throw e;
@@ -444,8 +477,8 @@ async function main() {
   checkWorkflowRef(cfg, env);
   checkEvent(cfg, env);
   const files = await readFiles(cfg, sha, fetched, rawBase);
-  const digest = checkTemplates(hook, files);
-  await checkImage(digest, apiBase);
+  const { digest, commit } = checkTemplates(hook, files);
+  await checkImage(digest, commit, apiBase);
   console.log(`Nibfin hook: accepted ${cfg.owner}/${cfg.name}@${sha}, image sha256:${digest}`);
 }
 

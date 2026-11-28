@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os/exec"
 	"path"
 	"regexp"
 	"sort"
@@ -35,12 +36,17 @@ const (
 	hookHost = "github.com"
 )
 
-var runnerHookFiles func(context.Context) (map[string][]byte, error)
+// HookFilesFunc builds the hook's constant files. podman runs podman where
+// the Runners live (the host runner add acts on), so the official workflow
+// files can be rendered in the Nibfin image there.
+type HookFilesFunc func(ctx context.Context, podman func(context.Context, ...string) *exec.Cmd) (map[string][]byte, error)
+
+var runnerHookFiles HookFilesFunc
 
 // SetRunnerHookFiles sets where runner add gets the hook's constant files:
 // the scripts, the official workflow files and the trusted root, keyed by
 // their path in the hook directory. internal/cmd sets it once at start-up.
-func SetRunnerHookFiles(f func(context.Context) (map[string][]byte, error)) { runnerHookFiles = f }
+func SetRunnerHookFiles(f HookFilesFunc) { runnerHookFiles = f }
 
 // The hook host scripts. They are constants; only paths travel as their
 // arguments and the files as a tar on stdin.
@@ -122,11 +128,14 @@ type hookSpec struct {
 	userID  int64
 	private bool
 	gh      github
+	// podman runs podman on the host whose hook is built.
+	podman func(context.Context, ...string) *exec.Cmd
 }
 
 // hookFiles are the files the hook directory must hold: the constant files,
 // the config and, for a private repository, GitHub's SSH host keys. A
-// failure is runner_install_failed with its cause.
+// failure keeps its code; one without a code is runner_install_failed with
+// its cause.
 func hookFiles(ctx context.Context, s hookSpec) (map[string][]byte, error) {
 	owner, name, err := hookRepo(s.repo)
 	if err != nil {
@@ -139,8 +148,12 @@ func hookFiles(ctx context.Context, s hookSpec) (map[string][]byte, error) {
 	if runnerHookFiles == nil {
 		return nil, Errorf(CodeRunnerInstallFailed, "the job-started hook files are not available in this build")
 	}
-	files, err := runnerHookFiles(ctx)
+	files, err := runnerHookFiles(ctx, s.podman)
 	if err != nil {
+		if Code(err) != "" {
+			// A coded cause (the image, Podman, the render) keeps its code.
+			return nil, err
+		}
 		return nil, Errorf(CodeRunnerInstallFailed, "the job-started hook files: %v", err)
 	}
 	out := make(map[string][]byte, len(files)+2)
@@ -306,7 +319,7 @@ func hookStep(inv *runners.Inventory, login string, private bool, current string
 // planHook reads the host's hook and returns its item; it keeps the files
 // expected for Apply and the read-back.
 func (a *runnerAdd) planHook(ctx context.Context, env *addEnv) (Step, error) {
-	want, err := hookFiles(ctx, env.hookSpec())
+	want, err := hookFiles(ctx, env.hookSpec(a.host))
 	if err != nil {
 		return Step{}, err
 	}
@@ -318,14 +331,14 @@ func (a *runnerAdd) planHook(ctx context.Context, env *addEnv) (Step, error) {
 	return hookStep(env.inv, env.user.Login, env.private, st.diff(want)), nil
 }
 
-func (env *addEnv) hookSpec() hookSpec {
-	return hookSpec{inv: env.inv, repo: env.repo, userID: env.user.ID, private: env.private, gh: env.gh}
+func (env *addEnv) hookSpec(h runnerHost) hookSpec {
+	return hookSpec{inv: env.inv, repo: env.repo, userID: env.user.ID, private: env.private, gh: env.gh, podman: h.Podman}
 }
 
 // writeHook is the hook item: it writes the expected files to the host's
 // hook directory, replacing the directory whole.
 func (a *runnerAdd) writeHook(ctx context.Context, env *addEnv) error {
-	want, err := hookFiles(ctx, env.hookSpec())
+	want, err := hookFiles(ctx, env.hookSpec(a.host))
 	if err != nil {
 		return err
 	}
@@ -387,7 +400,7 @@ func (a *runnerAdd) readBackHook(ctx context.Context, gh github, inv *runners.In
 		if err != nil {
 			return err
 		}
-		if want, err = hookFiles(ctx, hookSpec{inv: inv, repo: repo, userID: user.ID, private: perms.Private, gh: gh}); err != nil {
+		if want, err = hookFiles(ctx, hookSpec{inv: inv, repo: repo, userID: user.ID, private: perms.Private, gh: gh, podman: a.host.Podman}); err != nil {
 			return err
 		}
 	}

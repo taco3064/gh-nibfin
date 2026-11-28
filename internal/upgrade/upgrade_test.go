@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -24,10 +25,13 @@ const (
 	repo     = "github.com/o/r"
 	imageRef = "ghcr.io/taco3064/nibfin@sha256:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	oldImage = "ghcr.io/taco3064/nibfin@sha256:" + "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
-	issueP   = ".github/workflows/nibfin-issue.yml"
-	sharedP  = ".github/workflows/nibfin-shared-runner.yml"
-	jobP     = ".github/workflows/nibfin-job.yml"
-	requestP = ".github/workflows/nibfin-runner-request.yml"
+	// The nibfin-core commits imageRef and oldImage were built from.
+	imageCommit = "4ed4c16bff8600000000000000000000000000ab"
+	oldCommit   = "1111111111111111111111111111111111111111"
+	issueP      = ".github/workflows/nibfin-issue.yml"
+	sharedP     = ".github/workflows/nibfin-shared-runner.yml"
+	jobP        = ".github/workflows/nibfin-job.yml"
+	requestP    = ".github/workflows/nibfin-runner-request.yml"
 )
 
 // without returns files less the path p.
@@ -263,14 +267,21 @@ var ciNames = []string{"CI"}
 func stub(t *testing.T, f *fakeGitHub) *string {
 	t.Helper()
 	img := imageRef
-	oldClient, oldLatest, oldCI := newClient, latestImage, ciWorkflows
+	oldClient, oldLatest, oldCI, oldPodman, oldRender := newClient, latestImage, ciWorkflows, renderPodman, renderFiles
 	newClient = func(host string) (templates.RESTClient, error) {
 		if host != "github.com" {
 			return nil, fmt.Errorf("host %q", host)
 		}
 		return f, nil
 	}
-	latestImage = func(context.Context) (string, error) { return img, nil }
+	latestImage = func(context.Context) (string, string, error) { return img, commitOf(img), nil }
+	renderPodman = func(_ context.Context, command string) (func(context.Context, ...string) *exec.Cmd, error) {
+		if command != "upgrade" {
+			return nil, fmt.Errorf("render host for %q", command)
+		}
+		return fakePodman, nil
+	}
+	renderFiles = fakeRender
 	useHostPart(t, &fakeHostPart{})
 	ciWorkflows = func(_ context.Context, c templates.RESTClient, r string) ([]string, error) {
 		if c != f || r != repo {
@@ -278,8 +289,50 @@ func stub(t *testing.T, f *fakeGitHub) *string {
 		}
 		return ciNames, nil
 	}
-	t.Cleanup(func() { newClient, latestImage, ciWorkflows = oldClient, oldLatest, oldCI })
+	t.Cleanup(func() {
+		newClient, latestImage, ciWorkflows, renderPodman, renderFiles = oldClient, oldLatest, oldCI, oldPodman, oldRender
+	})
 	return &img
+}
+
+// commitOf is the commit the fake image img was built from.
+func commitOf(img string) string {
+	if img == oldImage {
+		return oldCommit
+	}
+	return imageCommit
+}
+
+// fakePodman stands for the render host's podman; fakeRender never runs it.
+func fakePodman(ctx context.Context, _ ...string) *exec.Cmd { return exec.CommandContext(ctx, "false") }
+
+// fakeRender stands for render-workflows: a made-up file for each path of
+// set, with the inputs where Core's files carry them. nibfin-issue.yml names
+// the Action commit, the branch and the CI workflows; nibfin-job.yml the
+// image and the Action commit; nibfin-runner-request.yml the Action commit;
+// nibfin-shared-runner.yml none. It is not a copy of Core's templates.
+func fakeRender(_ context.Context, podman templates.Podman, set templates.Set, p templates.Params) (map[string][]byte, error) {
+	if podman == nil {
+		return nil, errors.New("no podman")
+	}
+	if p.Image == "" || p.Commit != commitOf(p.Image) || p.Run != "" {
+		return nil, fmt.Errorf("render with %+v", p)
+	}
+	names := slices.Sorted(slices.Values(p.Workflows))
+	out := map[string][]byte{}
+	for _, f := range templates.Files(set) {
+		body := ""
+		switch f {
+		case issueP:
+			body = fmt.Sprintf("# action %s\n# branch %s\n# workflows %q\n", p.Commit, p.DefaultBranch, names)
+		case jobP:
+			body = fmt.Sprintf("# image %s\n# action %s\n", p.Image, p.Commit)
+		case requestP:
+			body = fmt.Sprintf("# action %s\n", p.Commit)
+		}
+		out[f] = []byte(templates.GeneratedPrefix + "\n# " + f + "\n" + body)
+	}
+	return out, nil
 }
 
 func render(t *testing.T, set templates.Set, image string) map[string]string {
@@ -294,7 +347,7 @@ func stale(t *testing.T, set templates.Set) map[string]string {
 
 func renderWith(t *testing.T, set templates.Set, image string, workflows []string) map[string]string {
 	t.Helper()
-	out, err := templates.Render(set, templates.Params{Image: image, DefaultBranch: "main", Workflows: workflows})
+	out, err := fakeRender(context.Background(), fakePodman, set, templates.Params{Image: image, Commit: commitOf(image), DefaultBranch: "main", Workflows: workflows})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +423,7 @@ func TestFirstRunOpensOnePR(t *testing.T) {
 		"execution": {
 			have:    stale(t, templates.Execution),
 			set:     "execution",
-			actions: []string{"update " + issueP, "update " + jobP, "write branch " + Branch, "open PR " + Branch + " into main"},
+			actions: []string{"update " + issueP, "update " + jobP, "update " + requestP, "write branch " + Branch, "open PR " + Branch + " into main"},
 		},
 		"partial execution": {
 			have:    map[string]string{issueP: "old\n", jobP: "old\n"},
@@ -449,8 +502,8 @@ func TestNotInitialized(t *testing.T) {
 func TestImageFailureWritesNothing(t *testing.T) {
 	f := newFake(map[string]string{issueP: "old"})
 	stub(t, f)
-	latestImage = func(context.Context) (string, error) {
-		return "", op.Errorf(op.CodeImageUnverified, "verify failed")
+	latestImage = func(context.Context) (string, string, error) {
+		return "", "", op.Errorf(op.CodeImageUnverified, "verify failed")
 	}
 	if _, _, _, err := run(t); op.Code(err) != op.CodeImageUnverified {
 		t.Errorf("err = %v", err)
@@ -798,4 +851,57 @@ func toStrings(v any) []string {
 		out = append(out, str)
 	}
 	return out
+}
+
+func TestRenderHostAndRenderFailuresWriteNothing(t *testing.T) {
+	for name, fail := range map[string]struct {
+		podman, render error
+		code           string
+	}{
+		"podman missing":  {podman: op.Errorf(op.CodePodmanMissing, "podman is not installed; install it from https://podman.io/docs/installation"), code: op.CodePodmanMissing},
+		"machine stopped": {podman: op.Errorf(op.CodeMachineStopped, "podman machine m is stopped; start it and run gh nibfin upgrade again"), code: op.CodeMachineStopped},
+		"pull fails":      {render: op.Errorf(op.CodePodmanFailed, "render the workflow files: unauthorized"), code: op.CodePodmanFailed},
+		"Core rejects":    {render: op.Errorf(op.CodeInvalidTemplateInput, "rejected the input: bad branch"), code: op.CodeInvalidTemplateInput},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFake(stale(t, templates.Peer))
+			stub(t, f)
+			if fail.podman != nil {
+				renderPodman = func(context.Context, string) (func(context.Context, ...string) *exec.Cmd, error) { return nil, fail.podman }
+			}
+			if fail.render != nil {
+				renderFiles = func(context.Context, templates.Podman, templates.Set, templates.Params) (map[string][]byte, error) {
+					return nil, fail.render
+				}
+			}
+			_, _, _, err := run(t)
+			if op.Code(err) != fail.code {
+				t.Errorf("err = %v, want %s", err, fail.code)
+			}
+			if len(f.writes()) != 0 {
+				t.Errorf("writes %v", f.writes())
+			}
+		})
+	}
+}
+
+func TestRenderGetsTheImageAndItsCommit(t *testing.T) {
+	f := newFake(stale(t, templates.Execution))
+	stub(t, f)
+	var got templates.Params
+	var gotSet templates.Set
+	renderFiles = func(ctx context.Context, podman templates.Podman, set templates.Set, p templates.Params) (map[string][]byte, error) {
+		gotSet, got = set, p
+		return fakeRender(ctx, podman, set, p)
+	}
+	o := New(op.RepoParams{Repo: repo})
+	if _, err := o.Plan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if gotSet != templates.Execution || got.Image != imageRef || got.Commit != imageCommit || got.DefaultBranch != "main" || !slices.Equal(got.Workflows, ciNames) {
+		t.Errorf("rendered %v with %+v", gotSet, got)
+	}
+	if body := o.(*upgrade).prBody(); !strings.Contains(body, imageCommit) {
+		t.Errorf("the PR body does not name the Action commit:\n%s", body)
+	}
 }

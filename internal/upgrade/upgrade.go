@@ -1,6 +1,6 @@
 // Package upgrade is the upgrade operation of the shared operation layer. It
-// renders a repository's Nibfin workflow set from the current templates,
-// pinned to the latest attested image digest, and opens one PR when the
+// renders a repository's Nibfin workflow set with `nibfin render-workflows` in
+// the latest attested image, pinned to its digest, and opens one PR when the
 // result differs from the default branch. It lives outside internal/op
 // because templates and image import op for their error codes.
 package upgrade
@@ -33,8 +33,10 @@ var (
 	newClient = func(host string) (templates.RESTClient, error) {
 		return api.NewRESTClient(api.ClientOptions{Host: host, Transport: ghretry.Transport(nil)})
 	}
-	latestImage = image.Latest
-	ciWorkflows = templates.CIWorkflows
+	latestImage  = image.LatestRelease
+	renderPodman = op.RenderPodman
+	renderFiles  = templates.Render
+	ciWorkflows  = templates.CIWorkflows
 	// hostPart returns the host part: the runners on this host.
 	hostPart = func() hostUpgrade { return op.RunnersUpgrade() }
 )
@@ -72,6 +74,7 @@ type upgrade struct {
 	planned       bool
 	repo          workflowpr.Repo
 	image         string
+	commit        string // the nibfin-core commit the image was built from
 	set           templates.Set
 	defaultBranch string
 	files         map[string][]byte // the rendered set, keyed by path
@@ -155,7 +158,7 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 	}
 
 	op.Checking(ctx, "latest image")
-	if u.image, err = latestImage(ctx); err != nil {
+	if u.image, u.commit, err = latestImage(ctx); err != nil {
 		return plan, err
 	}
 	op.Checking(ctx, "CI workflows")
@@ -163,7 +166,12 @@ func (u *upgrade) planRepo(ctx context.Context) (op.Plan, error) {
 	if err != nil {
 		return plan, err
 	}
-	if u.files, err = templates.Render(u.set, templates.Params{Image: u.image, DefaultBranch: u.defaultBranch, Workflows: workflows}); err != nil {
+	podman, err := renderPodman(ctx, "upgrade")
+	if err != nil {
+		return plan, err
+	}
+	op.Checking(ctx, "workflow files from "+u.image)
+	if u.files, err = renderFiles(ctx, podman, u.set, templates.Params{Image: u.image, Commit: u.commit, DefaultBranch: u.defaultBranch, Workflows: workflows}); err != nil {
 		return plan, err
 	}
 	for _, p := range u.paths() {
@@ -229,8 +237,8 @@ func (u *upgrade) Apply(ctx context.Context, _ op.Plan) error {
 
 func (u *upgrade) prBody() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Moves this repository's Nibfin workflows (the %s set) to the current templates and the latest attested image:\n\n", setName(u.set))
-	fmt.Fprintf(&b, "`%s`\n\nChanged files:\n\n", u.image)
+	fmt.Fprintf(&b, "Moves this repository's Nibfin workflows (the %s set) to the workflow files of the latest attested image:\n\n", setName(u.set))
+	fmt.Fprintf(&b, "`%s`\n\nThe image's `nibfin render-workflows` rendered them; they call nibfin-core's Action at that image's commit `%s`.\n\nChanged files:\n\n", u.image, u.commit)
 	for _, p := range u.changed {
 		fmt.Fprintf(&b, "- `%s`\n", p)
 	}

@@ -1,20 +1,22 @@
-// Package templates renders the workflow templates gh nibfin writes into a
-// user repository (internal/templates/workflowfiles embeds them). The templates mirror Core's workflows but call
-// nothing in the Owner's repositories: the Job runs the Nibfin image pinned by
-// digest.
+// Package templates obtains the workflow files gh nibfin writes into a user
+// repository. gh nibfin keeps no copy of them: Render runs Core's
+// `nibfin render-workflows` inside the pinned Nibfin image, so the files are
+// always the ones that image ships. The files pin the image by digest and
+// call nibfin-core's Action pinned to the commit the image was built from.
 package templates
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"os/exec"
 	"path"
-	"regexp"
 	"slices"
+	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
-	"github.com/taco3064/gh-nibfin/internal/templates/workflowfiles"
 )
 
 // Set selects which workflow files a repository gets.
@@ -39,6 +41,9 @@ var setFiles = map[Set][]string{
 	Peer:      {"nibfin-issue.yml"},
 }
 
+// setNames are the values of render-workflows' --set.
+var setNames = map[Set]string{Execution: "execution", Peer: "peer"}
+
 // Files returns the paths in the target repository of the files of set, in a
 // fixed order that starts with nibfin-issue.yml, which every set has. It
 // returns nil for an unknown set.
@@ -54,81 +59,128 @@ func Files(set Set) []string {
 	return out
 }
 
-// Params are the values a template is rendered with.
+// Podman returns a podman command where the Runners live, the signature of
+// host.Host.Podman; tests pass a fake.
+type Podman func(ctx context.Context, args ...string) *exec.Cmd
+
+// Params are the values the files are rendered with.
 type Params struct {
-	// Image is the pinned image, ghcr.io/taco3064/nibfin@sha256:<digest>.
+	// Image is the image the files pin, ghcr.io/taco3064/nibfin@sha256:<digest>.
 	Image string
+	// Commit is the full nibfin-core commit the image was built from; the
+	// files call nibfin-core's Action at this commit.
+	Commit string
+	// Run is the image whose render-workflows renders the files; Image when
+	// empty. It must be a verified digest reference.
+	Run string
 	// DefaultBranch is the target repository's default branch.
 	DefaultBranch string
 	// Workflows are the names of the target repository's CI/CD workflows.
 	Workflows []string
 }
 
-var imagePattern = regexp.MustCompile(`^ghcr\.io/taco3064/nibfin@sha256:[0-9a-f]{64}$`)
+// inputInvalid starts Core's message for an input it rejects.
+const inputInvalid = "nibfin: WORKFLOW_INPUT_INVALID: "
 
-// Render returns the files of set, keyed by their path in the repository.
-// The output is deterministic: the same input gives the same bytes.
-func Render(set Set, p Params) (map[string][]byte, error) {
-	names, ok := setFiles[set]
+// stderrTail is how much of podman's stderr an error keeps.
+const stderrTail = 2000
+
+// Render runs `nibfin render-workflows` for set in the image p.Run (or
+// p.Image) through podman and returns the files of set, keyed by their path
+// in the repository. The container gets no network, mount or environment;
+// only its stdout is read, and it must hold exactly the files of set, each
+// starting with GeneratedPrefix. Core validates the branch and workflow
+// names; its refusal is invalid_template_input with Core's reason.
+func Render(ctx context.Context, podman Podman, set Set, p Params) (map[string][]byte, error) {
+	setName, ok := setNames[set]
 	if !ok {
 		return nil, op.Errorf(op.CodeInvalidTemplateInput, "unknown template set %d", set)
 	}
-	data, err := values(p)
-	if err != nil {
-		return nil, err
+	run := p.Run
+	if run == "" {
+		run = p.Image
 	}
-	out := make(map[string][]byte, len(names))
-	for _, name := range names {
-		b, err := workflowfiles.Render(name, data)
-		if err != nil {
-			return nil, op.Wrap(op.CodeInvalidTemplateInput, err)
+	var stdout, stderr bytes.Buffer
+	c := podman(ctx, renderArgs(run, setName, p)...)
+	c.Stdout = &stdout
+	c.Stderr = &stderr
+	if err := c.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, op.Errorf(op.CodeCancelled, "cancelled")
 		}
-		out[path.Join(Dir, name)] = b
+		msg := strings.TrimSpace(stderr.String())
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			for _, line := range strings.Split(msg, "\n") {
+				if reason, found := strings.CutPrefix(strings.TrimSpace(line), inputInvalid); found {
+					return nil, op.Errorf(op.CodeInvalidTemplateInput, "nibfin render-workflows in %s rejected the input: %s", run, reason)
+				}
+			}
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		if len(msg) > stderrTail {
+			msg = "…" + msg[len(msg)-stderrTail:]
+		}
+		return nil, op.Errorf(op.CodePodmanFailed, "render the workflow files in %s: %s", run, msg)
+	}
+	return parseOutput(run, set, stdout.Bytes())
+}
+
+// renderArgs is the podman command line. Every value is one argument in
+// --name=value form, so a value that starts with "-" stays a value.
+func renderArgs(run, setName string, p Params) []string {
+	args := []string{"run", "--rm", "--network=none", run,
+		"nibfin", "render-workflows",
+		"--set=" + setName,
+		"--channel=user",
+		"--image=" + p.Image,
+		"--commit=" + p.Commit,
+		"--default-branch=" + p.DefaultBranch,
+	}
+	for _, w := range p.Workflows {
+		args = append(args, "--workflow="+w)
+	}
+	return args
+}
+
+// parseOutput checks render-workflows' stdout: one JSON object whose keys are
+// exactly the files of set, each value starting with GeneratedPrefix.
+func parseOutput(run string, set Set, stdout []byte) (map[string][]byte, error) {
+	var raw map[string]string
+	if err := json.Unmarshal(bytes.TrimSpace(stdout), &raw); err != nil || raw == nil {
+		return nil, op.Errorf(op.CodeInvalidTemplateInput, "nibfin render-workflows in %s printed no JSON object of files", run)
+	}
+	want := Files(set)
+	var missing, extra []string
+	for _, p := range want {
+		if _, ok := raw[p]; !ok {
+			missing = append(missing, p)
+		}
+	}
+	for p := range raw {
+		if !slices.Contains(want, p) {
+			extra = append(extra, p)
+		}
+	}
+	sort.Strings(extra)
+	if len(missing) > 0 || len(extra) > 0 {
+		var parts []string
+		if len(missing) > 0 {
+			parts = append(parts, "it lacks "+strings.Join(missing, ", "))
+		}
+		if len(extra) > 0 {
+			parts = append(parts, "it adds "+strings.Join(extra, ", "))
+		}
+		return nil, op.Errorf(op.CodeInvalidTemplateInput, "nibfin render-workflows in %s did not print the %s set: %s", run, setNames[set], strings.Join(parts, "; "))
+	}
+	out := make(map[string][]byte, len(raw))
+	for _, p := range want {
+		if !strings.HasPrefix(raw[p], GeneratedPrefix) {
+			return nil, op.Errorf(op.CodeInvalidTemplateInput, "nibfin render-workflows in %s printed %s without the %q header", run, p, GeneratedPrefix)
+		}
+		out[p] = []byte(raw[p])
 	}
 	return out, nil
-}
-
-// values validates p and turns it into the strings the templates insert.
-func values(p Params) (map[string]string, error) {
-	if !imagePattern.MatchString(p.Image) {
-		return nil, op.Errorf(op.CodeInvalidTemplateInput, "image %q is not ghcr.io/taco3064/nibfin@sha256:<digest>", p.Image)
-	}
-	if p.DefaultBranch == "" || strings.ContainsAny(p.DefaultBranch, "\"'") || hasControl(p.DefaultBranch) {
-		return nil, op.Errorf(op.CodeInvalidTemplateInput, "default branch %q is empty or has a quote or control character", p.DefaultBranch)
-	}
-	names := slices.Clone(p.Workflows)
-	for _, n := range names {
-		if strings.TrimSpace(n) == "" || hasControl(n) {
-			return nil, op.Errorf(op.CodeInvalidTemplateInput, "workflow name %q is empty or has a control character", n)
-		}
-	}
-	slices.Sort(names)
-	names = slices.Compact(names)
-	workflows := ""
-	if len(names) > 0 {
-		workflows = flow(names)
-	}
-	return map[string]string{
-		"Image":     p.Image,
-		"Branches":  flow([]string{p.DefaultBranch}),
-		"Workflows": workflows,
-	}, nil
-}
-
-// flow writes items as a YAML flow sequence of JSON-quoted strings. JSON string
-// escapes are valid YAML double-quoted escapes.
-func flow(items []string) string {
-	quoted := make([]string, len(items))
-	for i, s := range items {
-		var b bytes.Buffer
-		enc := json.NewEncoder(&b)
-		enc.SetEscapeHTML(false)
-		_ = enc.Encode(s) // a string always encodes
-		quoted[i] = strings.TrimSuffix(b.String(), "\n")
-	}
-	return "[" + strings.Join(quoted, ", ") + "]"
-}
-
-func hasControl(s string) bool {
-	return strings.ContainsFunc(s, unicode.IsControl)
 }
