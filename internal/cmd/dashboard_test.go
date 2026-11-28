@@ -15,15 +15,23 @@ import (
 )
 
 // lockedBuffer is safe for the concurrent writes of the dashboard handler.
+// When want is set, hit is closed once the written text contains want.
 type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
+	mu   sync.Mutex
+	b    bytes.Buffer
+	want string
+	hit  chan struct{}
 }
 
 func (l *lockedBuffer) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.b.Write(p)
+	n, err := l.b.Write(p)
+	if l.want != "" && strings.Contains(l.b.String(), l.want) {
+		close(l.hit)
+		l.want = ""
+	}
+	return n, err
 }
 
 func (l *lockedBuffer) String() string {
@@ -49,6 +57,12 @@ func runDashboard(t *testing.T, browserErr error, exchange bool, args ...string)
 		defer func() { browserDone <- struct{}{} }()
 		return browserErr
 	}
+	// The command prints a browser failure after openBrowser returns, so the
+	// server is stopped only once that line is out.
+	var out, errOut lockedBuffer
+	if browserErr != nil {
+		out.want, out.hit = "cannot open a browser: ", make(chan struct{})
+	}
 	noBrowser := false
 	for _, a := range args {
 		noBrowser = noBrowser || a == "--no-browser"
@@ -63,6 +77,9 @@ func runDashboard(t *testing.T, browserErr error, exchange bool, args ...string)
 				defer cancel()
 				if !noBrowser {
 					<-browserDone
+					if out.hit != nil {
+						<-out.hit
+					}
 				}
 				if exchange {
 					proof := url[strings.Index(url, "#proof=")+len("#proof="):]
@@ -82,7 +99,6 @@ func runDashboard(t *testing.T, browserErr error, exchange bool, args ...string)
 		}
 		return oldServe(ctx, o)
 	}
-	var out, errOut lockedBuffer
 	code = Execute(append([]string{"dashboard"}, args...), strings.NewReader(""), &out, &errOut)
 	mu.Lock()
 	defer mu.Unlock()
