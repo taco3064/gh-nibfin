@@ -70,7 +70,8 @@ func TestStatusPersonText(t *testing.T) {
 		"repos": []status.RepoIssues{
 			{Repo: "o/r", Image: status.RepoImage{Set: "execution", Ref: &ref, Latest: &yes}, Issues: []status.Issue{
 				{Number: 1, Title: "One\x1b[31m", Pause: true},
-				{Number: 2, Title: "Two", Pending: true, PendingComment: "https://github.com/o/r/issues/2#issuecomment-9"},
+				{Number: 2, Title: "Two", Pending: true, PendingComment: "https://github.com/o/r/issues/2#issuecomment-9",
+					Repair: &status.Repair{State: "choose", Reason: "Two merges\nconflict."}},
 				{Number: 3, Title: "Three", Pending: true},
 				{Number: 4, Title: "Four", Pending: true, PendingCommentError: &op.Error{Code: op.CodeGitHubAPIFailed, Err: errStop}},
 			}},
@@ -88,7 +89,7 @@ func TestStatusPersonText(t *testing.T) {
 		"scope or request Issues assigned to me on github.com:\n",
 		"o/r  image: sha256:aaaaaaaaaaaa (latest)\n",
 		"  #1 One[31m  [pause]\n",
-		"  #2 Two  [pending https://github.com/o/r/issues/2#issuecomment-9]\n",
+		"  #2 Two  [pending https://github.com/o/r/issues/2#issuecomment-9]  [choose: Two mergesconflict.]\n",
 		"  #3 Three  [pending (no marked comment)]\n",
 		"  #4 Four  [pending]\n    pending comment: github_api_failed: stop\n",
 		"o/peer  image: peer\n",

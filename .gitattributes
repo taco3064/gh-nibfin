@@ -7,3 +7,5 @@
 /internal/runnerhook/testdata/** text eol=lf
 # The host smoke test's stand-in runner scripts run in the Linux VM.
 /internal/op/testdata/hostsmoke/** text eol=lf
+# The repair contract's fixtures are hashed byte for byte (the pending digest).
+/internal/repair/testdata/** text eol=lf

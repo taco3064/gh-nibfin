@@ -1,7 +1,8 @@
 // Package status is the status operation of the shared operation layer: a
 // read-only report of the runner host, the providers' logins and the Issues
 // Nibfin works on. Labels, comments, workflow files and runs are reported as
-// GitHub returns them; nothing is derived, diagnosed or repaired. It lives
+// GitHub returns them, and the repair state of a pending Issue by Core's
+// reader rule (internal/repair); nothing is diagnosed or repaired. It lives
 // outside internal/op because image and templates import op for their error
 // codes.
 package status
@@ -24,6 +25,7 @@ import (
 	"github.com/taco3064/gh-nibfin/internal/ghretry"
 	"github.com/taco3064/gh-nibfin/internal/image"
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/repair"
 	"github.com/taco3064/gh-nibfin/internal/templates"
 )
 
@@ -47,7 +49,6 @@ const (
 	jobFile   = templates.Dir + "/nibfin-job.yml"
 	issueFile = templates.Dir + "/nibfin-issue.yml"
 
-	pendingMarker = "<!-- nibfin:pending -->"
 	runPrefix     = "Nibfin · "
 )
 
@@ -95,6 +96,9 @@ type Issue struct {
 	// the pending label last.
 	PendingComment      string    `json:"pendingComment,omitempty"`
 	PendingCommentError *op.Error `json:"pendingCommentError,omitempty"`
+	// Repair is the repair state of a pending Issue whose events and
+	// comments were read: what Core's repair stage says about the stop.
+	Repair *Repair `json:"repair,omitempty"`
 	// CreatedAt is GitHub's creation time of the Issue (RFC 3339).
 	CreatedAt string `json:"createdAt"`
 	// BlockedBy is every Issue GitHub lists as blocking this one, open and
@@ -506,92 +510,33 @@ func (r *reader) repoIssues(ctx context.Context, repo string) ([]Issue, error) {
 	}
 }
 
-type eventJSON struct {
-	Event     string `json:"event"`
-	CreatedAt string `json:"created_at"`
-	Actor     *struct {
-		ID int64 `json:"id"`
-	} `json:"actor"`
-	Label *labelJSON `json:"label"`
-}
-
-type commentJSON struct {
-	ID   int64 `json:"id"`
-	User *struct {
-		ID int64 `json:"id"`
-	} `json:"user"`
-	Body      string `json:"body"`
-	HTMLURL   string `json:"html_url"`
-	CreatedAt string `json:"created_at"`
-}
-
-// withPending links the pending comment of a pending Issue: the oldest
-// comment starting with the pending marker by the account that added the
-// pending label last. That is Core's own rule, with Core's account taken
-// from the label event. Nothing found is no link and no error.
+// withPending reads the repair state of a pending Issue (repair.Read): it
+// links the pending comment, the oldest comment starting with the pending
+// marker by the account that added the pending label last (Core's own
+// rule, with Core's account taken from the label event), and reports the
+// repair record that covers the stop. Nothing found is no link and the act
+// state; a failed read is PendingCommentError and no Repair.
 func (r *reader) withPending(ctx context.Context, repo string, is Issue) Issue {
 	if !is.Pending {
 		return is
 	}
 	issue := fmt.Sprintf("%s/issues/%d", base(repo), is.Number)
 	what := fmt.Sprintf("read %s#%d", repo, is.Number)
-
-	var actor int64
-	var at time.Time
-	for page := 1; ; page++ {
-		var events []eventJSON
-		if err := r.get(ctx, fmt.Sprintf("%s/events?per_page=%d&page=%d", issue, perPage, page), &events); err != nil {
-			is.PendingCommentError = apiErr(op.CodeGitHubAPIFailed, what+" events", err)
-			return is
+	s, err := repair.Read(ctx, r.get, issue)
+	if err != nil {
+		var re *repair.ReadError
+		if errors.As(err, &re) {
+			is.PendingCommentError = apiErr(op.CodeGitHubAPIFailed, what+" "+re.Part, re.Err)
+		} else {
+			is.PendingCommentError = apiErr(op.CodeGitHubAPIFailed, what, err)
 		}
-		for _, e := range events {
-			if e.Event != "labeled" || e.Label == nil || !strings.EqualFold(e.Label.Name, "pending") || e.Actor == nil {
-				continue
-			}
-			t, err := time.Parse(time.RFC3339, e.CreatedAt)
-			if err != nil {
-				continue
-			}
-			if actor == 0 || !t.Before(at) {
-				actor, at = e.Actor.ID, t
-			}
-		}
-		if len(events) < perPage {
-			break
-		}
-	}
-	if actor == 0 {
 		return is
 	}
-
-	var best *commentJSON
-	var bestAt time.Time
-	for page := 1; ; page++ {
-		var comments []commentJSON
-		if err := r.get(ctx, fmt.Sprintf("%s/comments?per_page=%d&page=%d", issue, perPage, page), &comments); err != nil {
-			is.PendingCommentError = apiErr(op.CodeGitHubAPIFailed, what+" comments", err)
-			return is
-		}
-		for i := range comments {
-			c := &comments[i]
-			if c.User == nil || c.User.ID != actor || !strings.HasPrefix(c.Body, pendingMarker) {
-				continue
-			}
-			t, err := time.Parse(time.RFC3339, c.CreatedAt)
-			if err != nil {
-				continue
-			}
-			if best == nil || t.Before(bestAt) || (t.Equal(bestAt) && c.ID < best.ID) {
-				cc := *c
-				best, bestAt = &cc, t
-			}
-		}
-		if len(comments) < perPage {
-			break
-		}
+	if s.Pending != nil {
+		is.PendingComment = s.Pending.URL
 	}
-	if best != nil {
-		is.PendingComment = best.HTMLURL
+	if rep, ok := s.Evaluate(true); ok {
+		is.Repair = toRepair(rep)
 	}
 	return is
 }

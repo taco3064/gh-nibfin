@@ -216,6 +216,9 @@ func writeIssues(w io.Writer, issues []status.Issue) {
 			default:
 				line += "  [pending]"
 			}
+			if is.Repair != nil {
+				line += "  [" + clean(is.Repair.State) + ": " + clean(is.Repair.Reason) + "]"
+			}
 		}
 		fmt.Fprintln(w, line)
 		writeErr(w, "    pending comment", is.PendingCommentError)

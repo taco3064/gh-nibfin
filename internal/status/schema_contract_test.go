@@ -86,7 +86,8 @@ func TestSchemaContract(t *testing.T) {
 	routes := personRoutes(item("a/one", 3, "scope", "pending"), item("b/two", 7, "request"))
 	routes["repos/a/one/contents/.github/workflows/nibfin-job.yml"] = file(jobYML(imgA))
 	routes["repos/a/one/issues/3/events?per_page=100&page=1"] = []any{labeled(7, "pending", "2026-11-20T00:00:00Z")}
-	routes["repos/a/one/issues/3/comments?per_page=100&page=1"] = []any{comment(5, 7, marker+"x", "2026-11-20T00:00:01Z")}
+	routes["repos/a/one/issues/3/comments?per_page=100&page=1"] = []any{comment(5, 7, marker+"x", "2026-11-20T00:00:01Z"),
+		comment(6, 7, record(marker+"x", "waiting-for-choice", "options", twoOptions+"\n\n### Steps\n\n1. Read it.\n   Link: https://example.com\n\n### Bug report for Nibfin\n\nFile it at https://github.com/taco3064/nibfin-core/issues/new with this title and body.\n\nTitle: t\n\n```markdown\nb\n```"), "2026-11-20T00:00:02Z")}
 	routes[runsPath("a/one", ">=2026-11-04T00:00:00+00:00", 1)] = map[string]any{"workflow_runs": []any{
 		runJSONOf("Nibfin · a/one#3 · wake", "2026-11-05T00:00:00Z", "u1")}}
 	routes[runsPath("b/two", ">=2026-11-08T00:00:00+00:00", 1)] = map[string]any{"workflow_runs": []any{}}
@@ -102,7 +103,7 @@ func TestSchemaContract(t *testing.T) {
 	fx.graph.repo("a/one", "TRIAGE").blockers[3] = []map[string]any{blocker("a/one", 1, "OPEN"), blocker("x/y", 2, "CLOSED")}
 	fx.graph.repo("b/two", nil)
 	fx.graph.viewer = []map[string]any{nibfinNode("a/one", "TRIAGE", true), nibfinNode("e/exec", "ADMIN", true)}
-	check("person read", run(t, ""), "user", "pendingComment", "blockedBy", "CLOSED", "conclusion", "permission", "execution", "slot")
+	check("person read", run(t, ""), "user", "pendingComment", "repair", "recommended", "bugReport", "link", "blockedBy", "CLOSED", "conclusion", "permission", "execution", "slot")
 
 	// Repository view, every part read.
 	routes = repoRoutes()

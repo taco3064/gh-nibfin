@@ -12,6 +12,7 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/repair"
 	"github.com/taco3064/gh-nibfin/internal/templates"
 )
 
@@ -47,7 +48,7 @@ func TestReadIssueListed(t *testing.T) {
 			map[string]any{"event": "labeled", "created_at": "2026-11-05T00:00:00Z", "actor": map[string]any{"id": 7}, "label": map[string]any{"name": "pending"}},
 		},
 		"repos/a/one/issues/3/comments?per_page=100&page=1": []any{
-			map[string]any{"id": 1, "user": map[string]any{"id": 7}, "body": pendingMarker + "\nwhy", "html_url": "https://github.com/a/one/issues/3#c1", "created_at": "2026-11-05T00:00:01Z"},
+			map[string]any{"id": 1, "user": map[string]any{"id": 7}, "body": repair.PendingMarker + "\nwhy", "html_url": "https://github.com/a/one/issues/3#c1", "created_at": "2026-11-05T00:00:01Z"},
 		},
 	}
 	fx := setup(t, routes)

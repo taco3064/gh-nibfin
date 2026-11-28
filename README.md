@@ -564,7 +564,17 @@ Without `-R` it shows the person view: the open Issues labelled `scope` or
 search, up to its 1,000 results), grouped by repository. Each Issue shows
 `pause` and `pending`; a `pending` Issue links the oldest
 `<!-- nibfin:pending -->` comment by the account that added the `pending`
-label last, or shows `pending (no marked comment)`. Each repository shows
+label last, or shows `pending (no marked comment)`. It also shows the
+repair state Core's repair stage records for the stop (`"repair"` in `--json`):
+`repairing` (the stage is retrying, waiting, running the repair agent,
+rerunning CI or amending the Issue), `choose` (numbered options wait for your
+choice; answer with `gh nibfin resume <issue> --option N`) or `act` (follow the
+record's advice and steps, then `resume`), with its one-line reason. The
+record counts only when the account that added `pending` last wrote it for the
+current `pending` comment; otherwise the state is `act` with the reason "No
+repair record covers this stop yet; see the pending comment". `--json` also
+gives the record's link, category, what was done, advice, options (with the
+recommended one), steps and bug report. Each repository shows
 whether its workflows pin the latest attested image (`execution` set), or
 that it has the `peer` set or none.
 
