@@ -385,26 +385,36 @@ Windows and macOS.
   `sudo -n chown`, without recursing; a refused `sudo` stops the Runner
   (`runner_install_failed`) with the `chown` to run inside the VM.
 - On a `podman machine` (Windows and macOS), before any Runner is configured,
-  the command checks for libicu the way the official Runner's `config.sh`
-  does. When it is missing, as on the default Windows (WSL) machine, it
-  installs the distribution's `libicu` package inside the VM with
-  `sudo -n dnf install -y libicu`; the default macOS machine image already
-  ships it, so nothing changes there. A refused `sudo`, a missing `dnf` or a
-  failed install stops before any Runner is configured
-  (`runner_install_failed`) with the command to run:
-  `podman machine ssh <machine> sudo dnf install -y libicu`. Nothing is
-  installed on the host itself, nor on a Linux host.
-- Then it checks, the same way, for a libssl the Runner's .NET runtime can
-  load (`libssl.so.3`, or an older `libssl.so.1.1`, `.1.0.2`, `.1.0.0`, `.10`,
-  `.11` or `.111`; OpenSSL 4's `libssl.so.4` does not count). When none is
-  found, as on a Fedora 45 based machine whose `openssl-libs` is OpenSSL 4,
-  it installs `openssl3-libs` inside the VM with
+  the command installs the official Runner's system dependencies inside the
+  VM with the Runner's own `bin/installdependencies.sh`. It first checks for
+  libicu the way the Runner's `config.sh` does, and for a libssl the Runner's
+  .NET runtime can load (`libssl.so.3`, or an older `libssl.so.1.1`,
+  `.1.0.2`, `.1.0.0`, `.10`, `.11` or `.111`; OpenSSL 4's `libssl.so.4` does
+  not count). When both are found, as on the default macOS machine image,
+  the plan shows `install runner dependencies` as no change and nothing runs.
+  Otherwise, as on the default Windows (WSL) machine, it takes the script from
+  the Runner archive (downloaded once per run, checked against its sha256 and
+  reused for the Runners), runs it inside the VM with `sudo -n`, and checks
+  again. When `libssl.so.3` is still missing, as on a Fedora 45 based machine
+  whose `openssl-libs` is OpenSSL 4, it installs `openssl3-libs` with
   `sudo -n dnf install -y openssl3-libs`, or `openssl-libs` where the
-  distribution has no `openssl3-libs`. Without this, the Runner's `config.sh`
-  aborts with `No usable version of libssl was found`. A failure stops before
-  any Runner is configured (`runner_install_failed`) with dnf's output and
-  the command to run:
-  `podman machine ssh <machine> sudo dnf install -y openssl3-libs`.
+  distribution has no `openssl3-libs`, and checks once more. Without these,
+  the Runner's `config.sh` aborts (for example with
+  `No usable version of libssl was found`). A refused `sudo`, a failed
+  script, a missing `dnf`, a failed install, a library still missing or a
+  failed download stops before any Runner is configured
+  (`runner_install_failed`, or `runner_download_failed`). The error keeps
+  the script's or dnf's output and names what to run inside the VM
+  (`podman machine ssh <machine>`): `sudo ./bin/installdependencies.sh` from
+  an extracted Runner directory, and `sudo dnf install -y openssl3-libs`
+  where libssl.so.3 is still missing. A rerun installs only what is still
+  missing. Nothing is installed on the host itself.
+- On a Linux host the command installs no system software. After it unpacks a
+  new Runner and before `config.sh`, it runs the same checks; when libicu or
+  libssl.so.3 is missing, that Runner stops (`runner_install_failed`) naming
+  the missing library and the command to run,
+  `cd <runner directory> && sudo ./bin/installdependencies.sh`. The Runner
+  stays unpacked but not configured, and the next `runner add` completes it.
 - It creates the `nibfin-tools` Podman volume and runs `login` for the
   provider when it is not logged in.
 - A rerun after an interruption completes the provider's unfinished slots
@@ -1080,6 +1090,6 @@ machine has no Runner slot of any provider, and the `Nibfin podman machine`
 task does not exist, so it never touches a host with real Runners. A failed run
 removes the slots it added. Afterwards the host keeps what `runner remove`
 keeps: the `[wsl2] vmIdleTimeout=-1` key in `%UserProfile%\.wslconfig`, linger,
-libicu and libssl in the VM and the `nibfin-tools` volume. A CI job for it (a separate
-maintenance change) installs WSL 2 and Podman, runs `podman machine init
---now`, then the two commands above.
+the official Runner's system dependencies in the VM and the `nibfin-tools`
+volume. A CI job for it (a separate maintenance change) installs WSL 2 and
+Podman, runs `podman machine init --now`, then the two commands above.
