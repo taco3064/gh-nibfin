@@ -115,7 +115,11 @@ const applyLines: Record<string, string[]> = {
       },
     }),
   ],
-  PLANINIT: [progress('label:scope', 'create label', 'acme/app scope', 'started'), progress('label:scope', 'create label', 'acme/app scope', 'done'), '{"event":"res'],
+  PLANINIT: [
+    progress('label:scope', 'create label', 'acme/app scope', 'started'),
+    progress('label:scope', 'create label', 'acme/app scope', 'done'),
+    '{"event":"res',
+  ],
 }
 
 // The login streams (#354): a provider login without a terminal, as the
@@ -159,7 +163,10 @@ const loginLines: Record<string, string[]> = {
     loginStep('claude', 'code_requested', { message: 'paste the code shown in your browser' }),
     loginStep('claude', 'succeeded', { message: 'claude login finished' }),
     progress('login:claude', 'log in', 'claude', 'done'),
-    JSON.stringify({ event: 'result', result: { host: 'podman machine nibfin-dev', providers: { claude: { loggedIn: true } }, items: loginItems('claude', true) } }),
+    JSON.stringify({
+      event: 'result',
+      result: { host: 'podman machine nibfin-dev', providers: { claude: { loggedIn: true } }, items: loginItems('claude', true) },
+    }),
   ],
   // Held at 3: the one-time code is shown; 4 is the CLI's success.
   PLANLOGINCODEX: [
@@ -168,7 +175,10 @@ const loginLines: Record<string, string[]> = {
     loginStep('codex', 'device_code', { code: deviceCode, message: 'enter this one-time code at the URL' }),
     loginStep('codex', 'succeeded', { message: 'codex login finished' }),
     progress('login:codex', 'log in', 'codex', 'done'),
-    JSON.stringify({ event: 'result', result: { host: 'podman machine nibfin-dev', providers: { codex: { loggedIn: true } }, items: loginItems('codex', true) } }),
+    JSON.stringify({
+      event: 'result',
+      result: { host: 'podman machine nibfin-dev', providers: { codex: { loggedIn: true } }, items: loginItems('codex', true) },
+    }),
   ],
   // runner add logs codex in, and the CLI fails.
   PLANADDCODEX: [
@@ -198,7 +208,10 @@ const providerPlans: Record<string, { id: string; plan: unknown }> = {
     id: 'PLANADDCODEX',
     plan: {
       operation: 'runner add',
-      steps: [step('login:codex', 'log in', 'codex', { current: 'not logged in', next: 'logged in' }), step('slots', 'start Runners', '1 new slot', { next: 'running' })],
+      steps: [
+        step('login:codex', 'log in', 'codex', { current: 'not logged in', next: 'logged in' }),
+        step('slots', 'start Runners', '1 new slot', { next: 'running' }),
+      ],
       confirm: true,
       readOnly: false,
     },
@@ -241,7 +254,12 @@ async function mockOps(page: Page): Promise<Api> {
     if (pp) return fulfillPlanStream(route, pp as { id: string; plan: { steps: [] } })
     if (name === 'login') {
       return fulfillPlanStream(route, {
-        plan: { operation: 'login', steps: [step('login:claude', 'log in', 'claude', { current: 'logged in', next: 'logged in', noChange: true })], confirm: false, readOnly: true },
+        plan: {
+          operation: 'login',
+          steps: [step('login:claude', 'log in', 'claude', { current: 'logged in', next: 'logged in', noChange: true })],
+          confirm: false,
+          readOnly: true,
+        },
         result: { items: [check('login:claude', 'log in', 'claude', true, 'logged in')], notes: ['Every provider is already logged in.'] },
       })
     }
@@ -249,7 +267,13 @@ async function mockOps(page: Page): Promise<Api> {
       if (body.repo === 'acme/broken') {
         return fulfillPlanStream(route, {
           error: { code: 'github_error', message: 'reading the workflows of acme/broken: HTTP 502' },
-          plan: { operation: 'upgrade', repo: 'acme/broken', steps: [step('workflow', 'keep workflow', '.github/workflows/nibfin.yml', { noChange: true })], confirm: false, readOnly: true },
+          plan: {
+            operation: 'upgrade',
+            repo: 'acme/broken',
+            steps: [step('workflow', 'keep workflow', '.github/workflows/nibfin.yml', { noChange: true })],
+            confirm: false,
+            readOnly: true,
+          },
           result: { items: [check('workflow', 'keep workflow', '.github/workflows/nibfin.yml', false, '', 'the read failed: HTTP 502')] },
         })
       }
@@ -514,7 +538,12 @@ for (const width of widths) {
       await releasePlan(page)
       const planned = dialog.getByRole('list', { name: 'Planned items' })
       await expect(planned.locator('li[data-item]')).toHaveCount(4)
-      expect(await planned.locator('li[data-item]').evaluateAll((ls) => ls.map((l) => l.getAttribute('data-item')))).toEqual(['machine', 'image', 'login', 'slots'])
+      expect(await planned.locator('li[data-item]').evaluateAll((ls) => ls.map((l) => l.getAttribute('data-item')))).toEqual([
+        'machine',
+        'image',
+        'login',
+        'slots',
+      ])
       await expect(dialog.locator('[data-slot=planning]')).toHaveCount(0)
       await expectClean(w)
     })

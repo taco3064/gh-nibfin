@@ -29,14 +29,12 @@ let exchange: Promise<Outcome<string>> | null = null
 // load: a repeated call gets the first result, so the single-use proof is
 // never sent twice.
 export function openSession(proof: string, fetcher: Fetch = fetch): Promise<Outcome<string>> {
-  exchange ??= post<{ session?: string }>(fetcher, '/api/session', { 'X-Nibfin-Proof': proof }).then(
-    (r) => {
-      if (!r.ok) return r
-      if (!r.value.session) return failure('error', 'the session exchange returned no session')
-      session = r.value.session
-      return { ok: true, value: session }
-    },
-  )
+  exchange ??= post<{ session?: string }>(fetcher, '/api/session', { 'X-Nibfin-Proof': proof }).then((r) => {
+    if (!r.ok) return r
+    if (!r.value.session) return failure('error', 'the session exchange returned no session')
+    session = r.value.session
+    return { ok: true, value: session }
+  })
   return exchange
 }
 
@@ -55,9 +53,7 @@ export async function apiGet<T>(path: string, fetcher: Fetch = fetch): Promise<O
 // PlanOutcome is the answer of a plan route. A failure keeps the plan and the
 // result its error body carries: a read-only plan whose read-back failed
 // answers 422 with both.
-export type PlanOutcome<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: ApiError; status?: number; plan?: unknown; result?: unknown }
+export type PlanOutcome<T> = { ok: true; value: T } | { ok: false; error: ApiError; status?: number; plan?: unknown; result?: unknown }
 
 // planRequest posts body as JSON to a plan route with the session.
 export async function planRequest<T>(path: string, body: unknown, fetcher: Fetch = fetch): Promise<PlanOutcome<T>> {
@@ -84,9 +80,7 @@ export type ApplyOutcome<T> = { ok: true; value: T } | { ok: false; error: ApiEr
 
 // StreamOutcome is ApplyOutcome with the result an error line carries when
 // the read-back returned one.
-export type StreamOutcome<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: ApiError; unknown?: boolean; status?: number; result?: T }
+export type StreamOutcome<T> = { ok: true; value: T } | { ok: false; error: ApiError; unknown?: boolean; status?: number; result?: T }
 
 // StreamLine is one parsed NDJSON line: of an apply, progress, login_step,
 // result or error; of the status read, partial (with loading), result or
@@ -323,11 +317,7 @@ async function post<T>(fetcher: Fetch, path: string, headers: Record<string, str
 
 // send makes one JSON request. It returns the outcome and, for an answer that
 // was read, its status and parsed body.
-async function send<T>(
-  fetcher: Fetch,
-  path: string,
-  init: RequestInit,
-): Promise<{ outcome: Outcome<T>; status?: number; parsed?: unknown }> {
+async function send<T>(fetcher: Fetch, path: string, init: RequestInit): Promise<{ outcome: Outcome<T>; status?: number; parsed?: unknown }> {
   let res: Response
   let parsed: unknown
   try {

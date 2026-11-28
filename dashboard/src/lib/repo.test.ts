@@ -111,6 +111,11 @@ describe('workflowsLook', () => {
       label: 'Could not be read',
       files: [],
     })
-    expect(workflowsLook({ set: 'other', ref: null, latest: null })).toEqual({ state: 'unknown', tone: 'neutral', label: 'Unknown workflow set other', files: [] })
+    expect(workflowsLook({ set: 'other', ref: null, latest: null })).toEqual({
+      state: 'unknown',
+      tone: 'neutral',
+      label: 'Unknown workflow set other',
+      files: [],
+    })
   })
 })

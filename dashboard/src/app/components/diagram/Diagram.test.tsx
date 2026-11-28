@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest'
 
 import { framesExample, lanesExample, pipelineExample } from '@/screenshots/diagram-fixtures'
 
-import { architecture } from '../../lib/architecture'
-import { issueFlow } from '../../lib/issue-flow'
-import { labelStateDiagram } from '../../lib/label-flow'
-import { labelStates } from '../../lib/labels'
-import { stageLanes } from '../../lib/stage-lanes'
+import { architecture } from '@/app/lib/architecture'
+import { issueFlow } from '@/app/lib/issue-flow'
+import { labelStateDiagram } from '@/app/lib/label-flow'
+import { labelStates } from '@/app/lib/labels'
+import { stageLanes } from '@/app/lib/stage-lanes'
 
 import { Diagram } from './Diagram'
 import type { DiagramSpec } from './layout'
@@ -18,9 +18,7 @@ const siteSpecs = [issueFlow, stageLanes, labelStateDiagram(labelStates), archit
 // on the server without a DOM, as Astro does at build time.
 describe('Diagram', () => {
   it('renders statically with a caption, hidden presentations and a text list', () => {
-    const html = renderToStaticMarkup(
-      <Diagram spec={framesExample} title="From idea to shelf" description="A fictional example." />,
-    )
+    const html = renderToStaticMarkup(<Diagram spec={framesExample} title="From idea to shelf" description="A fictional example." />)
     expect(html).toMatch(/^<figure[^>]*class="[^"]*not-content/)
     expect(html).toContain('<figcaption')
     expect(html).toContain('From idea to shelf')
@@ -50,9 +48,7 @@ describe('Diagram', () => {
     const list = html.match(/<ol class="sr-only">(.*)<\/ol>/)![1]
     const items = [...list.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1].replaceAll('<!-- -->', ''))
     expect(items).toHaveLength(framesExample.nodes.length)
-    expect(items[0]).toBe(
-      'Idea: Someone writes down a wish. Labels: draft. Group: Plan at the desk. Leads to Sketch, to Notes (unclear).',
-    )
+    expect(items[0]).toBe('Idea: Someone writes down a wish. Labels: draft. Group: Plan at the desk. Leads to Sketch, to Notes (unclear).')
     expect(items).toContain('Archive the notes.')
   })
 
@@ -101,9 +97,9 @@ describe('Diagram', () => {
   })
 
   it('fails loudly on an invalid spec', () => {
-    expect(() =>
-      renderToStaticMarkup(<Diagram spec={{ nodes: [{ id: 'a', title: 'A' }], edges: [{ from: 'a', to: 'b' }] }} title="x" />),
-    ).toThrow('unknown node "b"')
+    expect(() => renderToStaticMarkup(<Diagram spec={{ nodes: [{ id: 'a', title: 'A' }], edges: [{ from: 'a', to: 'b' }] }} title="x" />)).toThrow(
+      'unknown node "b"',
+    )
   })
 })
 
@@ -142,28 +138,28 @@ describe('Diagram options', () => {
   })
 
   it('lists the nodes in the drawing order by default', () => {
-    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" />))).toEqual([
-      'First. Leads to Second.',
-      'Second.',
-    ])
-    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" layout="vertical" />))).toEqual([
-      'First. Leads to Second.',
-      'Second.',
-    ])
+    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" />))).toEqual(['First. Leads to Second.', 'Second.'])
+    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" layout="vertical" />))).toEqual(['First. Leads to Second.', 'Second.'])
   })
 
   it('lists the nodes in declaration order with readingOrder="spec"', () => {
-    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" readingOrder="spec" />))).toEqual([
-      'Second.',
-      'First. Leads to Second.',
-    ])
+    expect(listItems(renderToStaticMarkup(<Diagram spec={declaredLast} title="x" readingOrder="spec" />))).toEqual(['Second.', 'First. Leads to Second.'])
   })
 })
 
 describe('Diagram text list', () => {
   it('adds no second full stop after text that ends with one', () => {
     const html = renderToStaticMarkup(
-      <Diagram spec={{ nodes: [{ id: 'a', title: 'A', detail: 'Ends here.' }, { id: 'b', title: 'B?' }], edges: [] }} title="x" />,
+      <Diagram
+        spec={{
+          nodes: [
+            { id: 'a', title: 'A', detail: 'Ends here.' },
+            { id: 'b', title: 'B?' },
+          ],
+          edges: [],
+        }}
+        title="x"
+      />,
     )
     expect(listItems(html)).toEqual(['A: Ends here.', 'B?'])
   })
@@ -194,7 +190,9 @@ describe('Diagram presentations', () => {
 
   it('lists every node in the stacked layout in reading order, with its group, badges, kinds and hand-offs', () => {
     const html = renderToStaticMarkup(<Diagram spec={framesExample} title="x" />)
-    const stacked = html.match(/data-slot="diagram-stacked">(.*?)<\/div><\/div><div class="flex flex-col gap-2" data-slot="diagram-legend"|data-slot="diagram-stacked">(.*)<\/div><\/div><ol/)!
+    const stacked = html.match(
+      /data-slot="diagram-stacked">(.*?)<\/div><\/div><div class="flex flex-col gap-2" data-slot="diagram-legend"|data-slot="diagram-stacked">(.*)<\/div><\/div><ol/,
+    )!
     const blocks = [...(stacked[1] ?? stacked[2]).matchAll(/data-block="([^"]+)"/g)].map((m) => m[1])
     expect(blocks).toEqual(listOrder(html, framesExample))
     const idea = block(html, 'idea')

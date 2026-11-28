@@ -299,7 +299,9 @@ test('the CLI page lists every command on this page', async ({ page }) => {
     await mobile.locator('summary').click()
     hrefs = await mobile.locator('a[href^="#"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!.slice(1)))
     expect(hrefs.slice(1, 1 + ids.length)).toEqual(ids)
-    await expect(mobile.getByRole('link', { name: `gh nibfin ${(await page.locator('[data-command]').first().getAttribute('data-command'))!}`, exact: true })).toBeVisible()
+    await expect(
+      mobile.getByRole('link', { name: `gh nibfin ${(await page.locator('[data-command]').first().getAttribute('data-command'))!}`, exact: true }),
+    ).toBeVisible()
     await page.screenshot({ path: `${outDir}site-cli-toc-${theme}-375.png` })
     expect(errors).toEqual([])
   }
@@ -364,7 +366,11 @@ for (const theme of themes) {
 }
 
 // The stage track of the busy card of runner n (1-based), by its place.
-const track = (page: Page, n: number) => page.locator('[data-slot=runner-card]').nth(n - 1).locator('[data-slot=runner-stage]')
+const track = (page: Page, n: number) =>
+  page
+    .locator('[data-slot=runner-card]')
+    .nth(n - 1)
+    .locator('[data-slot=runner-stage]')
 
 async function expectTrack(page: Page, n: number, states: string, current: string | null) {
   const steps = track(page, n).locator('[data-slot=run-stage-track] li')
@@ -378,13 +384,18 @@ async function expectTrack(page: Page, n: number, states: string, current: strin
 for (const theme of themes) {
   test(`live page delivered trend and runner stage tracks ${theme}`, async ({ page }) => {
     const worker = await mockWorker(page)
-    worker.greeting = [event({ event: 'snapshot', at: '2026-11-25T08:00:00Z', result: liveData(128, 57, true) }), event({ event: 'checked', at: new Date().toISOString() })]
+    worker.greeting = [
+      event({ event: 'snapshot', at: '2026-11-25T08:00:00Z', result: liveData(128, 57, true) }),
+      event({ event: 'checked', at: new Date().toISOString() }),
+    ]
     for (const width of widths) {
       const errors = await open(page, 'live/', theme, width, worker)
       const trend = page.locator('[data-slot=summary] [data-slot=delivered-trend]')
       await expect(trend).toBeVisible()
       // The trend has its own row below both stat cards, not inside either.
-      await expect(page.locator('[data-slot=summary-delivered] [data-slot=delivered-trend], [data-slot=summary-created] [data-slot=delivered-trend]')).toHaveCount(0)
+      await expect(
+        page.locator('[data-slot=summary-delivered] [data-slot=delivered-trend], [data-slot=summary-created] [data-slot=delivered-trend]'),
+      ).toHaveCount(0)
       const row = await trend.locator('xpath=..').boundingBox()
       const cards = await page.locator('[data-slot=summary] dl').boundingBox()
       expect(row && cards && row.y >= cards.y + cards.height).toBe(true)
@@ -406,7 +417,11 @@ for (const theme of themes) {
       await expectTrack(page, 2, 'uuuuu', null)
       await expectTrack(page, 4, 'ccuuu', 'shape')
       // Idle and offline cards have no track.
-      await expect(page.locator('[data-slot=runner-card][data-runner-state=idle], [data-slot=runner-card][data-runner-state=offline]').locator('[data-slot=run-stage-track]')).toHaveCount(0)
+      await expect(
+        page
+          .locator('[data-slot=runner-card][data-runner-state=idle], [data-slot=runner-card][data-runner-state=offline]')
+          .locator('[data-slot=run-stage-track]'),
+      ).toHaveCount(0)
       await expectNoPageScroll(page)
       await expectNoRunnerName(page)
       await page.locator('[data-slot=summary]').screenshot({ path: `${outDir}site-live-trend-${theme}-${width}.png` })
@@ -465,7 +480,12 @@ test('live page Issue lists have no list markers', async ({ page }) => {
   }
   // The site's Markdown lists keep their bullets.
   await open(page, 'cli/', 'dark', 1280)
-  expect(await page.locator('.sl-markdown-content > ul > li').first().evaluate((li) => getComputedStyle(li).listStyleType)).not.toBe('none')
+  expect(
+    await page
+      .locator('.sl-markdown-content > ul > li')
+      .first()
+      .evaluate((li) => getComputedStyle(li).listStyleType),
+  ).not.toBe('none')
 })
 
 test('live page: runs dialog, links and the repository picker', async ({ page }) => {
@@ -538,7 +558,6 @@ test('live page updates without a reload, shows errors and reconnects', async ({
   expect(errors).toEqual([])
 })
 
-
 // A snapshot without Issues that stand in the graph used to blank the whole
 // page (#454): the graph redraws, and the rest of the page stays.
 for (const width of [375, 1280]) {
@@ -594,11 +613,12 @@ test('home shows the Issue flow as a pipeline', async ({ page }) => {
 
 test('home flow respects reduced motion', async ({ page }) => {
   const flowing = () =>
-    page.evaluate(() =>
-      document
-        .getAnimations()
-        .filter((a) => a instanceof CSSAnimation && a.animationName === 'nf-diagram-flow')
-        .filter((a) => (a.effect as KeyframeEffect | null)?.target?.closest('figure[data-slot=diagram]')).length,
+    page.evaluate(
+      () =>
+        document
+          .getAnimations()
+          .filter((a) => a instanceof CSSAnimation && a.animationName === 'nf-diagram-flow')
+          .filter((a) => (a.effect as KeyframeEffect | null)?.target?.closest('figure[data-slot=diagram]')).length,
     )
   // A straight overlay has an empty box, so read its display instead.
   const overlayDisplay = () =>
@@ -719,10 +739,22 @@ test('the Setup and CLI sections open with a summary and fold advanced detail', 
     )
   const errors = await open(page, 'setup/', 'dark', 1280)
   const setup = await sectionsOpenWithSummary()
-  expect(setup.map((s) => s.id)).toEqual(['runners', 'the-claude-login-and-connectors', 'collaborators-runners', 'working-with-several-people', 'required-reviews', 'dashboard', 'nibfinjson'])
+  expect(setup.map((s) => s.id)).toEqual([
+    'runners',
+    'the-claude-login-and-connectors',
+    'collaborators-runners',
+    'working-with-several-people',
+    'required-reviews',
+    'dashboard',
+    'nibfinjson',
+  ])
   for (const s of setup) expect(s, s.id).toEqual({ id: s.id, summary: true })
   const folded = page.locator('.sl-markdown-content details')
-  await expect(folded.locator('> summary')).toHaveText(['Example rule in .rulesync/rules/', 'Example settings.json', 'How image updates, upgrade and runner remove treat these settings'])
+  await expect(folded.locator('> summary')).toHaveText([
+    'Example rule in .rulesync/rules/',
+    'Example settings.json',
+    'How image updates, upgrade and runner remove treat these settings',
+  ])
   for (const d of await folded.all()) await expect(d).not.toHaveAttribute('open')
   await expect(page.getByText('"deniedMcpServers": [')).toBeHidden()
   await folded.nth(1).locator('> summary').focus()
@@ -759,7 +791,8 @@ test('the Setup and CLI pages link to anchors that exist', async ({ page }) => {
 // The rounded-border scan (#488) catches the accent stripe the summary cards
 // once had (a wider inline-start side) and a side that differs only in colour.
 test('the rounded-border scan catches a one-sided card border', async ({ page }) => {
-  const cards = (found: Awaited<ReturnType<typeof unevenRoundedBorders>>) => found.filter((f) => /^article(\.|$)/.test(f.element) && f.element.includes('.card'))
+  const cards = (found: Awaited<ReturnType<typeof unevenRoundedBorders>>) =>
+    found.filter((f) => /^article(\.|$)/.test(f.element) && f.element.includes('.card'))
   for (const path of ['cli/', 'setup/']) {
     const errors = await open(page, path, 'dark', 1280)
     expect(await unevenRoundedBorders(page), `${path} before the fixture`).toEqual([])
@@ -772,7 +805,10 @@ test('the rounded-border scan catches a one-sided card border', async ({ page })
     await stripe.evaluate((s) => (s as Element).remove())
     expect(await unevenRoundedBorders(page), `${path} after the stripe is removed`).toEqual([])
 
-    await page.locator('.sl-markdown-content article.card').first().evaluate((el) => el.setAttribute('data-border-fixture', ''))
+    await page
+      .locator('.sl-markdown-content article.card')
+      .first()
+      .evaluate((el) => el.setAttribute('data-border-fixture', ''))
     await page.addStyleTag({ content: `.sl-markdown-content article.card[data-border-fixture] { border-inline-start-color: var(--nf-accent); }` })
     const coloured = cards(await unevenRoundedBorders(page))
     expect(coloured, `${path}: the coloured side is reported`).toHaveLength(1)

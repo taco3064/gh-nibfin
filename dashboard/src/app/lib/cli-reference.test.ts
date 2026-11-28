@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Command } from '@/lib/operation'
 
-import commands from '../data/commands.json'
+import commands from '@/app/data/commands.json'
 import { flagRow, referenceOf, slugOf, tocItemsOf, usageOf } from './cli-reference'
 
 const command = (c: Partial<Command>): Command => ({ path: 'x', short: '', long: '', flags: [], args: [], ...c })

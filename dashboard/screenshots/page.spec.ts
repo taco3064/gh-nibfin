@@ -12,10 +12,7 @@ async function settle(page: Page, state: string) {
   const ready = state === 'connected' ? '[data-view="person"]' : `[role=status][data-state="${state}"]`
   await expect(page.locator(ready)).toBeVisible()
   await page.evaluate(() => document.fonts.ready.then(() => undefined))
-  const fonts = await page.evaluate(() => [
-    document.fonts.check('16px "DM Sans Variable"'),
-    document.fonts.check('16px "Space Grotesk Variable"'),
-  ])
+  const fonts = await page.evaluate(() => [document.fonts.check('16px "DM Sans Variable"'), document.fonts.check('16px "Space Grotesk Variable"')])
   expect(fonts).toEqual([true, true])
   // No horizontal page scroll at any width.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

@@ -50,13 +50,7 @@ export function App() {
                 artwork is drawn for a dark background; nf-brand-image gives it
                 dark letters in the light theme only (theme.css). */}
             <img src={wordmark} alt="Nibfin" width={287} height={96} className="nf-brand-image hidden h-8 w-auto sm:block" />
-            <img
-              src="/apple-touch-icon.png"
-              alt="Nibfin"
-              width={180}
-              height={180}
-              className="nf-brand-image h-8 w-auto sm:hidden"
-            />
+            <img src="/apple-touch-icon.png" alt="Nibfin" width={180} height={180} className="nf-brand-image h-8 w-auto sm:hidden" />
             <span className="sr-only"> dashboard</span>
           </h1>
           <ThemeControl />
@@ -77,11 +71,7 @@ export function App() {
                 {active === status ? <LiveBadge live={status.live} /> : <RefreshOnlyBadge />}
                 <FreshnessIndicator readAt={active.readAt} />
                 <Button variant="outline" size="sm" onClick={active.refresh} disabled={active.reading} data-action="refresh">
-                  {active.reading ? (
-                    <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
-                  ) : (
-                    <RefreshCw aria-hidden="true" />
-                  )}
+                  {active.reading ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" /> : <RefreshCw aria-hidden="true" />}
                   {active.reading ? 'Refreshing…' : 'Refresh'}
                 </Button>
               </div>
@@ -90,7 +80,11 @@ export function App() {
         </div>
       </header>
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 sm:py-8">
-        {connected ? <Shell status={status} repoStatus={repoStatus} onShowRunners={() => setPicked('runner')} /> : <ConnectionCard connection={status.connection} />}
+        {connected ? (
+          <Shell status={status} repoStatus={repoStatus} onShowRunners={() => setPicked('runner')} />
+        ) : (
+          <ConnectionCard connection={status.connection} />
+        )}
       </main>
     </Tabs>
   )
@@ -100,13 +94,7 @@ function Shell({ status, repoStatus, onShowRunners }: { status: Status; repoStat
   const { data, readError } = status
   return (
     <>
-      <LiveNotes
-        live={status.live}
-        podman={status.podman}
-        checkError={status.checkError}
-        liveReadError={status.liveReadError}
-        data={data}
-      />
+      <LiveNotes live={status.live} podman={status.podman} checkError={status.checkError} liveReadError={status.liveReadError} data={data} />
       {readError && (
         <Note tone="danger" data-note="read-error">
           {data ? 'Refresh failed' : 'Status could not be read'}: {readError.code}: {readError.message}
@@ -122,14 +110,7 @@ function Shell({ status, repoStatus, onShowRunners }: { status: Status; repoStat
             />
           ) : data ? (
             <LoadingContext value={status.loading}>
-              <ViewContent
-                view={v}
-                data={data}
-                loading={status.loading}
-                onChanged={status.onChanged}
-                refresh={status.refresh}
-                onShowRunners={onShowRunners}
-              />
+              <ViewContent view={v} data={data} loading={status.loading} onChanged={status.onChanged} refresh={status.refresh} onShowRunners={onShowRunners} />
             </LoadingContext>
           ) : (
             <NoData reading={status.reading} />

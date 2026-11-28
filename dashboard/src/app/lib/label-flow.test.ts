@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { layoutDiagram } from '../components/diagram'
+import { layoutDiagram } from '@/app/components/diagram'
 
 import { checkId, labelStateDiagram } from './label-flow'
 import { labelStates } from './labels'

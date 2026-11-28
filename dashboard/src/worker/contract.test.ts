@@ -1,10 +1,14 @@
 // The per-repository data is shaped by the status --json schema: the
 // status.RepoView keys about Issues, validated against the committed file.
+// The schema lies outside src, so the test reads it rather than importing it.
+
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import Ajv2020 from 'ajv/dist/2020'
 import { describe, expect, it } from 'vitest'
 
-import schemaFile from '../../../schema/status.schema.json'
 import { createGitHub } from './github'
 import type { RepoData } from './messages'
 import { check } from './poller'
@@ -12,7 +16,8 @@ import { initialState } from './state'
 import { FakeGitHub, issueJSON, issuesPath, runJSON, runsPath, token, quick } from './testing'
 
 type Schema = { $defs: Record<string, { properties: Record<string, unknown> }> }
-const defs = (schemaFile as unknown as Schema).$defs
+const schemaFile: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../../../schema/status.schema.json', import.meta.url).href), 'utf8'))
+const defs = (schemaFile as Schema).$defs
 const view = defs['status.RepoView'].properties
 
 const ajv = new Ajv2020({ strict: false })
@@ -41,14 +46,20 @@ function expectValid(v: unknown): void {
 describe('repo data against schema/status.schema.json', () => {
   it('validates Issues with blockers, runs, runsTruncated and blockedByError', async () => {
     const fake = new FakeGitHub()
-    fake.set(issuesPath(cli), [issueJSON(1, { labels: [{ name: 'pending' }] }), issueJSON(2, { created_at: '2026-11-01T00:00:00Z' }), issueJSON(3, { labels: [{ name: 'request' }] })])
+    fake.set(issuesPath(cli), [
+      issueJSON(1, { labels: [{ name: 'pending' }] }),
+      issueJSON(2, { created_at: '2026-11-01T00:00:00Z' }),
+      issueJSON(3, { labels: [{ name: 'request' }] }),
+    ])
     fake.blockers['taco3064/gh-nibfin#1'] = [
       { repo: 'taco3064/nibfin-core', number: 4, title: 'Open', state: 'OPEN', url: 'https://github.com/taco3064/nibfin-core/issues/4' },
       { repo: cli, number: 3, title: 'Closed', state: 'CLOSED', url: 'https://github.com/taco3064/gh-nibfin/issues/3' },
     ]
     fake.graphqlErrors = [{ message: 'boom', path: ['r0', 'i2'] }]
     fake.set(runsPath(cli, 'nibfin-issue.yml'), {
-      workflow_runs: Array.from({ length: 100 }, (_, i) => runJSON(`Nibfin · ${cli}#${(i % 2) + 1} · shape`, `2026-11-2${i % 3}T00:00:00Z`, { conclusion: i % 5 ? 'success' : null })),
+      workflow_runs: Array.from({ length: 100 }, (_, i) =>
+        runJSON(`Nibfin · ${cli}#${(i % 2) + 1} · shape`, `2026-11-2${i % 3}T00:00:00Z`, { conclusion: i % 5 ? 'success' : null }),
+      ),
     })
     const repos = await built(fake)
     const repo = repos.find((r) => r.repo === `github.com/${cli}`)
@@ -86,7 +97,12 @@ describe('repo data against schema/status.schema.json', () => {
 
 // The Summary is Worker-only: status --json has none. Its schema is the
 // Summary type of messages.ts, written out here.
-const apiError = { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } }, required: ['code', 'message'], additionalProperties: false }
+const apiError = {
+  type: 'object',
+  properties: { code: { type: 'string' }, message: { type: 'string' } },
+  required: ['code', 'message'],
+  additionalProperties: false,
+}
 const validateSummary = ajv.compile({
   type: 'object',
   properties: {

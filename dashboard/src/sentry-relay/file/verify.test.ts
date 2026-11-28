@@ -43,7 +43,11 @@ describe('normalizePath', () => {
 describe('verify', () => {
   it('verifies a release with a green run and resolved frames', async () => {
     const fake = new Fake()
-    fake.event = sentryEvent([frame('../../src/components/diagram.tsx', 42), frame('../../src/lib/format.ts', 7), frame('../../src/components/diagram.tsx', 42)])
+    fake.event = sentryEvent([
+      frame('../../src/components/diagram.tsx', 42),
+      frame('../../src/lib/format.ts', 7),
+      frame('../../src/components/diagram.tsx', 42),
+    ])
     expect(await verify(sentryIssue(), setup(fake))).toEqual({
       verified: true,
       release: SHA,
@@ -52,7 +56,10 @@ describe('verify', () => {
         { path: 'dashboard/src/lib/format.ts', line: 7, column: 5 },
       ],
     })
-    expect(fake.requests.find((r) => r.url.startsWith(SENTRY))).toMatchObject({ url: `${SENTRY}organizations/na-43k/issues/1234567890/events/latest/`, auth: 'Bearer st' })
+    expect(fake.requests.find((r) => r.url.startsWith(SENTRY))).toMatchObject({
+      url: `${SENTRY}organizations/na-43k/issues/1234567890/events/latest/`,
+      auth: 'Bearer st',
+    })
   })
 
   it('accepts a release given as a plain string', async () => {
@@ -63,16 +70,40 @@ describe('verify', () => {
 
   const unverified: [string, (f: Fake) => void, string][] = [
     ['no release', (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { release: null })), 'release: missing or not a full commit SHA'],
-    ['a short release', (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { release: { version: 'abc1234' } })), 'release: missing or not a full commit SHA'],
-    ['a named release', (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { release: { version: 'website@1.0.0' } })), 'release: missing or not a full commit SHA'],
+    [
+      'a short release',
+      (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { release: { version: 'abc1234' } })),
+      'release: missing or not a full commit SHA',
+    ],
+    [
+      'a named release',
+      (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { release: { version: 'website@1.0.0' } })),
+      'release: missing or not a full commit SHA',
+    ],
     ['no green Website run', (f) => f.greenRuns.clear(), 'release: no successful Website run on main'],
-    ['a source map error', (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { errors: [{ type: 'js_invalid_sourcemap_location' }] })), 'frames: source map processing error js_invalid_sourcemap_location'],
+    [
+      'a source map error',
+      (f) => (f.event = sentryEvent([frame('src/lib/format.ts')], { errors: [{ type: 'js_invalid_sourcemap_location' }] })),
+      'frames: source map processing error js_invalid_sourcemap_location',
+    ],
     ['no in-app frame', (f) => (f.event = sentryEvent([])), 'frames: no in-app frame'],
-    ['an unresolved frame (raw URL)', (f) => (f.event = sentryEvent([frame('src/lib/format.ts'), frame('https://taco3064.github.io/gh-nibfin/_astro/index.abc123.js')])), 'frames: 1 not resolved to dashboard/src/'],
-    ['a frame equal to its raw frame', (f) => (f.event = sentryEvent([frame('src/lib/format.ts', 3, 'src/lib/format.ts')])), 'frames: 0 not resolved to dashboard/src/'],
+    [
+      'an unresolved frame (raw URL)',
+      (f) => (f.event = sentryEvent([frame('src/lib/format.ts'), frame('https://taco3064.github.io/gh-nibfin/_astro/index.abc123.js')])),
+      'frames: 1 not resolved to dashboard/src/',
+    ],
+    [
+      'a frame equal to its raw frame',
+      (f) => (f.event = sentryEvent([frame('src/lib/format.ts', 3, 'src/lib/format.ts')])),
+      'frames: 0 not resolved to dashboard/src/',
+    ],
     ['a frame outside the repository', (f) => (f.event = sentryEvent([frame('../node_modules/react/index.js')])), 'frames: 0 not resolved to dashboard/src/'],
     ['a frame without a line', (f) => (f.event = sentryEvent([frame('src/lib/format.ts', 0)])), 'frames: 0 not resolved to dashboard/src/'],
-    ['a path missing at the release', (f) => (f.event = sentryEvent([frame('src/lib/gone.ts')])), `frames: dashboard/src/lib/gone.ts not in the repository at ${SHA.slice(0, 7)}`],
+    [
+      'a path missing at the release',
+      (f) => (f.event = sentryEvent([frame('src/lib/gone.ts')])),
+      `frames: dashboard/src/lib/gone.ts not in the repository at ${SHA.slice(0, 7)}`,
+    ],
     ['a truncated tree', (f) => f.trees.set(SHA, { paths: ['dashboard/src/lib/format.ts'], truncated: true }), 'frames: tree truncated'],
     ['a Sentry API error', (f) => (f.sentryStatus = 403), 'sentry api: HTTP 403'],
     ['an unexpected Sentry answer', (f) => (f.event = []), 'sentry api: unexpected answer'],

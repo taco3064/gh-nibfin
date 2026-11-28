@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { layoutDiagram, type Direction } from '../components/diagram'
+import { layoutDiagram, type Direction } from '@/app/components/diagram'
 
 import { architecture } from './architecture'
 

@@ -2,7 +2,7 @@
 
 import { ownerRepo } from '@/lib/status'
 
-import type { RepoData, Summary, TrendDay } from '../../worker/messages'
+import type { RepoData, Summary, TrendDay } from '@/worker/messages'
 
 export const showcaseStart: Summary['since'] = '2026-11-21T00:00:00+08:00'
 

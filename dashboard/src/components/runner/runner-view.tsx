@@ -121,7 +121,11 @@ function RunnerSections({
   return (
     <>
       <HostCard host={host} activity={act} now={now} />
-      {runnersError && error && <Note tone="warning">Runners could not be read: {error.code}: {error.message}</Note>}
+      {runnersError && error && (
+        <Note tone="warning">
+          Runners could not be read: {error.code}: {error.message}
+        </Note>
+      )}
       {githubError && (
         <Note tone="warning" data-note="github-error">
           GitHub&apos;s Runner list could not be read; the local state is shown. {githubError.code}: {githubError.message}
@@ -263,14 +267,7 @@ function OpenButton({
   children: ReactNode
 }) {
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={!open || !has(api)}
-      onClick={() => open?.(api, provider)}
-      data-open={api}
-      className="flex-1 sm:flex-none"
-    >
+    <Button variant="outline" size="sm" disabled={!open || !has(api)} onClick={() => open?.(api, provider)} data-open={api} className="flex-1 sm:flex-none">
       <I aria-hidden="true" />
       {children}
     </Button>
@@ -380,8 +377,7 @@ function NoRunnerGuide({ host, open }: { host: HostReport; open?: Opener }) {
         <ol className="flex flex-col gap-4">
           <Step n={1}>
             <p>
-              Run <code className={code}>gh nibfin runner add &lt;claude|codex&gt;</code> in the repository the Runners
-              should serve.
+              Run <code className={code}>gh nibfin runner add &lt;claude|codex&gt;</code> in the repository the Runners should serve.
             </p>
             <p className="text-sm text-muted-foreground">It also completes Runners an interrupted add left.</p>
             {open && (
@@ -409,10 +405,7 @@ function NoRunnerGuide({ host, open }: { host: HostReport; open?: Opener }) {
 function Step({ n, children }: { n: number; children: ReactNode }) {
   return (
     <li className="flex items-start gap-3">
-      <span
-        aria-hidden="true"
-        className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-sm font-semibold"
-      >
+      <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-sm font-semibold">
         {n}
       </span>
       <div className="flex min-w-0 flex-col gap-1 pt-0.5">{children}</div>

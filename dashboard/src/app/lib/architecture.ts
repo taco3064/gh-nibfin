@@ -1,4 +1,4 @@
-import type { DiagramSpec } from '../components/diagram'
+import type { DiagramSpec } from '@/app/components/diagram'
 
 // The architecture figure of How it works (#460). It draws the page's own
 // Architecture and Security bullets (content/docs/how-it-works.mdx) and adds

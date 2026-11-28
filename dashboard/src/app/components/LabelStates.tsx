@@ -7,8 +7,8 @@ import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 import { DiagramText, describeDiagram, toneClasses, type KindTone } from './diagram'
-import { checkId, labelStateDiagram } from '../lib/label-flow'
-import { labelStates, outcomeText, type Outcome } from '../lib/labels'
+import { checkId, labelStateDiagram } from '@/app/lib/label-flow'
+import { labelStates, outcomeText, type Outcome } from '@/app/lib/labels'
 
 // Each outcome has a fixed tone and icon; its text is always shown beside
 // them, so the meaning never rests on color alone.

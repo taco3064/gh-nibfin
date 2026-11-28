@@ -8,7 +8,7 @@ import type { PickerSource } from '@/lib/repo'
 import type { RepoSource, RepoViewData } from '@/lib/repo-source'
 import { ownerRepo, repoHost } from '@/lib/status'
 
-import type { LiveData } from '../../worker/messages'
+import type { LiveData } from '@/worker/messages'
 
 export interface LiveRepoView {
   // data is the chosen repository, or the first one.

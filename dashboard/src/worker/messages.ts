@@ -12,9 +12,7 @@ export interface ApiError {
 // LiveEvent is one message. The Worker sends no issue or podman events:
 // a change sends the whole snapshot.
 export type LiveEvent =
-  | { event: 'snapshot'; at: string; result: LiveData }
-  | { event: 'checked'; at: string }
-  | { event: 'error'; source: 'github'; error: ApiError }
+  { event: 'snapshot'; at: string; result: LiveData } | { event: 'checked'; at: string } | { event: 'error'; source: 'github'; error: ApiError }
 
 export interface LiveData {
   repos: RepoData[] // the three repositories, in a fixed order

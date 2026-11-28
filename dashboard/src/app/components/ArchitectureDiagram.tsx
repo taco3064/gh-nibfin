@@ -1,4 +1,4 @@
-import { architecture } from '../lib/architecture'
+import { architecture } from '@/app/lib/architecture'
 
 import { Diagram } from './diagram'
 

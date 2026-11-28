@@ -110,9 +110,7 @@ export function PersonView({ data, onChanged, onShowRunners }: PersonViewProps) 
           No open Issues with scope or request are assigned to you.
         </p>
       )}
-      {chosen.length > 0 && (
-        <IssueBulkActions selected={chosen} onChanged={onChanged} className="sticky top-2 z-10 shadow-sm" />
-      )}
+      {chosen.length > 0 && <IssueBulkActions selected={chosen} onChanged={onChanged} className="sticky top-2 z-10 shadow-sm" />}
       {repos.map((r, i) => (
         <RepoGroup
           key={r.repo}

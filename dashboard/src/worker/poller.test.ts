@@ -34,8 +34,20 @@ describe('issueOfTitle and parseJobTitle', () => {
   })
 
   it('read a job title into repo, Issue or ref, and stage', () => {
-    expect(parseJobTitle('Nibfin · taco3064/gh-nibfin#355 · review', 'u')).toEqual({ title: 'Nibfin · taco3064/gh-nibfin#355 · review', repo: 'taco3064/gh-nibfin', issue: 355, ref: null, stage: 'review', url: 'u' })
-    expect(parseJobTitle('Nibfin · taco3064/gh-nibfin@nibfin/issue-354 · route', 'u')).toMatchObject({ repo: 'taco3064/gh-nibfin', issue: null, ref: 'nibfin/issue-354', stage: 'route' })
+    expect(parseJobTitle('Nibfin · taco3064/gh-nibfin#355 · review', 'u')).toEqual({
+      title: 'Nibfin · taco3064/gh-nibfin#355 · review',
+      repo: 'taco3064/gh-nibfin',
+      issue: 355,
+      ref: null,
+      stage: 'review',
+      url: 'u',
+    })
+    expect(parseJobTitle('Nibfin · taco3064/gh-nibfin@nibfin/issue-354 · route', 'u')).toMatchObject({
+      repo: 'taco3064/gh-nibfin',
+      issue: null,
+      ref: 'nibfin/issue-354',
+      stage: 'route',
+    })
     expect(parseJobTitle('CI', 'u')).toEqual({ title: 'CI', repo: null, issue: null, ref: null, stage: null, url: 'u' })
   })
 })
@@ -90,12 +102,18 @@ describe('check', () => {
     expect(two.changed).toBe(true)
     expect(fake.graphqlCalls()).toHaveLength(1)
     expect(issuesOf(two.state, cli).map((i) => i.number)).toEqual([1, 3])
-    expect(issuesOf(two.state, cli)[1].blockedBy).toEqual([{ repo: core, number: 9, title: 'Core', state: 'OPEN', url: 'https://github.com/taco3064/nibfin-core/issues/9' }])
+    expect(issuesOf(two.state, cli)[1].blockedBy).toEqual([
+      { repo: core, number: 9, title: 'Core', state: 'OPEN', url: 'https://github.com/taco3064/nibfin-core/issues/9' },
+    ])
   })
 
   it('counts a page count change as a change', async () => {
     const fake = new FakeGitHub()
-    fake.set(issuesPath(cli), Array.from({ length: 100 }, (_, i) => issueJSON(i + 1)), 'W/"p1"')
+    fake.set(
+      issuesPath(cli),
+      Array.from({ length: 100 }, (_, i) => issueJSON(i + 1)),
+      'W/"p1"',
+    )
     fake.set(issuesPath(cli, 2), [issueJSON(101)], 'W/"p2"')
     const one = await first(fake)
     expect(issuesOf(one.state, cli)).toHaveLength(101)
@@ -125,7 +143,15 @@ describe('check', () => {
     const { state } = await first(fake)
     const [five, six] = issuesOf(state, cli)
     expect(five.runs?.map((r) => r.name)).toEqual(['Nibfin · taco3064/gh-nibfin#5 · deliver', 'Nibfin · Taco3064/GH-Nibfin#5 · shape'])
-    expect(five.runs?.[0]).toEqual({ repo: core, name: 'Nibfin · taco3064/gh-nibfin#5 · deliver', workflow: 'Nibfin shared runner', status: 'completed', conclusion: 'success', createdAt: '2026-11-24T00:00:00Z', url: expect.any(String) })
+    expect(five.runs?.[0]).toEqual({
+      repo: core,
+      name: 'Nibfin · taco3064/gh-nibfin#5 · deliver',
+      workflow: 'Nibfin shared runner',
+      status: 'completed',
+      conclusion: 'success',
+      createdAt: '2026-11-24T00:00:00Z',
+      url: expect.any(String),
+    })
     // The page's oldest run (11-23) is newer than #5 (11-22): older runs
     // may exist. #6 was created after it, so its runs are complete.
     expect(five.runsTruncated).toBe(true)
@@ -156,17 +182,52 @@ describe('check', () => {
       ],
     })
     fake.set(inProgressPath(core), { workflow_runs: [{ id: 501 }, { id: 502 }] })
-    fake.set(jobsPath(core, 501), { jobs: [{ runner_id: 7, status: 'in_progress', name: 'job / stage', workflow_name: 'Nibfin · taco3064/gh-nibfin#355 · review', html_url: 'https://github.com/j/1' }] }, null)
-    fake.set(jobsPath(core, 502), {
-      jobs: [
-        { runner_id: 8, status: 'in_progress', name: 'job / route', workflow_name: 'Nibfin · taco3064/gh-nibfin@nibfin/issue-354 · route', html_url: 'https://github.com/j/2' },
-        { runner_id: 10, status: 'completed', name: 'job / stage', workflow_name: 'Nibfin · taco3064/gh-nibfin#1 · shape', html_url: 'https://github.com/j/3' },
-      ],
-    }, null)
+    fake.set(
+      jobsPath(core, 501),
+      {
+        jobs: [
+          {
+            runner_id: 7,
+            status: 'in_progress',
+            name: 'job / stage',
+            workflow_name: 'Nibfin · taco3064/gh-nibfin#355 · review',
+            html_url: 'https://github.com/j/1',
+          },
+        ],
+      },
+      null,
+    )
+    fake.set(
+      jobsPath(core, 502),
+      {
+        jobs: [
+          {
+            runner_id: 8,
+            status: 'in_progress',
+            name: 'job / route',
+            workflow_name: 'Nibfin · taco3064/gh-nibfin@nibfin/issue-354 · route',
+            html_url: 'https://github.com/j/2',
+          },
+          {
+            runner_id: 10,
+            status: 'completed',
+            name: 'job / stage',
+            workflow_name: 'Nibfin · taco3064/gh-nibfin#1 · shape',
+            html_url: 'https://github.com/j/3',
+          },
+        ],
+      },
+      null,
+    )
     const { state, errors } = await first(fake)
     expect(errors).toEqual([])
     const rs = state.data?.runners.find((r) => r.repo === core)?.runners ?? []
-    expect(rs[0]).toEqual({ id: 7, status: 'online', busy: true, job: { title: 'Nibfin · taco3064/gh-nibfin#355 · review', repo: cli, issue: 355, ref: null, stage: 'review', url: 'https://github.com/j/1' } })
+    expect(rs[0]).toEqual({
+      id: 7,
+      status: 'online',
+      busy: true,
+      job: { title: 'Nibfin · taco3064/gh-nibfin#355 · review', repo: cli, issue: 355, ref: null, stage: 'review', url: 'https://github.com/j/1' },
+    })
     expect(rs[1].job).toMatchObject({ repo: cli, issue: null, ref: 'nibfin/issue-354', stage: 'route' })
     expect(rs[2]).toEqual({ id: 9, status: 'offline', busy: false, job: null })
     // Runner names include host names: no built runner carries one.
@@ -180,10 +241,18 @@ describe('check', () => {
     const fake = new FakeGitHub()
     fake.set(runnersPath(core), { runners: [{ id: 7, name: 'nibfin-1', status: 'online', busy: true }] })
     fake.set(inProgressPath(core), { workflow_runs: [{ id: 501 }] })
-    fake.set(jobsPath(core, 501), { jobs: [{ runner_id: 7, status: 'in_progress', workflow_name: 'Nibfin · taco3064/gh-nibfin#1 · shape', html_url: 'u1' }] }, null)
+    fake.set(
+      jobsPath(core, 501),
+      { jobs: [{ runner_id: 7, status: 'in_progress', workflow_name: 'Nibfin · taco3064/gh-nibfin#1 · shape', html_url: 'u1' }] },
+      null,
+    )
     const one = await first(fake)
     fake.set(inProgressPath(core), { workflow_runs: [{ id: 502 }] })
-    fake.set(jobsPath(core, 502), { jobs: [{ runner_id: 7, status: 'in_progress', workflow_name: 'Nibfin · taco3064/gh-nibfin#2 · deliver', html_url: 'u2' }] }, null)
+    fake.set(
+      jobsPath(core, 502),
+      { jobs: [{ runner_id: 7, status: 'in_progress', workflow_name: 'Nibfin · taco3064/gh-nibfin#2 · deliver', html_url: 'u2' }] },
+      null,
+    )
     const two = await run(fake, one.state, t0 + minInterval)
     expect(fake.gets()).toContain(jobsPath(core, 502))
     expect(two.changed).toBe(true)
@@ -326,7 +395,11 @@ describe('check', () => {
     fake.fail(issuesPath(cli), 404, 'Not Found')
     const { state } = await first(fake)
     const repo = state.data?.repos.find((r) => r.repo === `github.com/${cli}`)
-    expect(repo).toEqual({ repo: `github.com/${cli}`, issues: [], issuesError: { code: 'github_api_failed', message: `GET ${issuesPath(cli)}: HTTP 404: Not Found` } })
+    expect(repo).toEqual({
+      repo: `github.com/${cli}`,
+      issues: [],
+      issuesError: { code: 'github_api_failed', message: `GET ${issuesPath(cli)}: HTTP 404: Not Found` },
+    })
   })
 
   it('makes no request and reports auth_unavailable without a token', async () => {
@@ -339,7 +412,8 @@ describe('check', () => {
 
   describe('Summary', () => {
     const created = 'repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue created:>=2026-11-21T00:00:00+08:00'
-    const delivered = 'repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=2026-11-21T00:00:00+08:00'
+    const delivered =
+      'repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=2026-11-21T00:00:00+08:00'
 
     it('sends exactly the two queries, the delivered one without created:', async () => {
       const fake = new FakeGitHub()
@@ -387,7 +461,8 @@ describe('delivered trend', () => {
   // closed builds a trend item; n makes its URL unique.
   const closed = (n: number, at: string) => ({ html_url: `https://github.com/taco3064/gh-nibfin/issues/${n}`, closed_at: at })
   const trend = (state: State) => state.data?.summary.days
-  const trendQ = 'repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=2026-11-19T00:00:00+08:00'
+  const trendQ =
+    'repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue is:closed label:delivered closed:>=2026-11-19T00:00:00+08:00'
 
   it('reads the Issues closed since Taipei midnight 6 days ago and buckets them by Taipei day', async () => {
     const fake = new FakeGitHub()
@@ -445,7 +520,11 @@ describe('delivered trend', () => {
     expect(fake.trendQueries()).toHaveLength(1)
     expect(errors.map((e) => e.message)).toEqual(['read the delivered trend: 301 Issues need more than 3 pages'])
     expect(trend(state)).toBeUndefined()
-    expect(state.data?.summary).toMatchObject({ created: 50, delivered: 42, error: { code: 'github_api_failed', message: 'read the delivered trend: 301 Issues need more than 3 pages' } })
+    expect(state.data?.summary).toMatchObject({
+      created: 50,
+      delivered: 42,
+      error: { code: 'github_api_failed', message: 'read the delivered trend: 301 Issues need more than 3 pages' },
+    })
   })
 
   it('fails on incomplete results and on a count that differs from total_count', async () => {
@@ -484,7 +563,11 @@ describe('delivered trend', () => {
 
   it('names the count error before the trend error', async () => {
     const fake = new FakeGitHub()
-    fake.fail(searchPathOf('repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue created:>=2026-11-21T00:00:00+08:00'), 403, 'rate limit')
+    fake.fail(
+      searchPathOf('repo:taco3064/nibfin-core repo:taco3064/gh-nibfin repo:taco3064/nibfin-e2e is:issue created:>=2026-11-21T00:00:00+08:00'),
+      403,
+      'rate limit',
+    )
     fake.trend.incomplete = true
     const { state } = await first(fake)
     expect(state.data?.summary.error?.message).toContain('HTTP 403: rate limit')
@@ -529,7 +612,11 @@ describe('delivered trend', () => {
     expect(fake.trendQueries()).toEqual([])
     expect(one.errors).toHaveLength(1)
     expect(one.errors[0].message).toContain('request budget of this check reached')
-    expect(one.state.data?.summary).toMatchObject({ created: 50, delivered: 42, error: { message: expect.stringContaining('request budget of this check reached') } })
+    expect(one.state.data?.summary).toMatchObject({
+      created: 50,
+      delivered: 42,
+      error: { message: expect.stringContaining('request budget of this check reached') },
+    })
     expect(one.state.data?.summary.days).toBeUndefined()
     expect(issuesOf(one.state, cli).map((i) => i.number)).toEqual([1])
     expect(one.state.blockers.lastError).toBeNull()

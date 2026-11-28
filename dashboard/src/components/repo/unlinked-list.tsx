@@ -68,7 +68,10 @@ export function UnlinkedList({ keys, query, context, blocks, ...shared }: Unlink
                 focusRing,
               )}
             >
-              <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground group-data-[state=open]:rotate-90 motion-safe:transition-transform" />
+              <ChevronRight
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground group-data-[state=open]:rotate-90 motion-safe:transition-transform"
+              />
               <span className="min-w-0 break-words">
                 {g.label} <span className="text-muted-foreground">· {issuesCount(g.keys.length)}</span>
               </span>
@@ -76,11 +79,7 @@ export function UnlinkedList({ keys, query, context, blocks, ...shared }: Unlink
             <CollapsibleContent>
               <ul className={cn('flex flex-col', compact ? 'gap-2' : 'gap-3')}>
                 {g.keys.map((k) =>
-                  compact ? (
-                    <UnlinkedRow key={k} k={k} node={shared.graph.nodes.get(k)!} held={g.id === 'held'} item={item(k)} />
-                  ) : (
-                    <li key={k}>{item(k)}</li>
-                  ),
+                  compact ? <UnlinkedRow key={k} k={k} node={shared.graph.nodes.get(k)!} held={g.id === 'held'} item={item(k)} /> : <li key={k}>{item(k)}</li>,
                 )}
               </ul>
             </CollapsibleContent>
@@ -179,12 +178,7 @@ function UnlinkedRow({ k, node, held, item }: { k: string; node: GraphNode; held
                   </span>
                 </span>
               </CollapsibleTrigger>
-              <a
-                href={issue.url}
-                target="_blank"
-                rel="noreferrer"
-                className={cn('shrink-0 rounded-sm p-2.5 text-link hover:bg-muted', focusRing)}
-              >
+              <a href={issue.url} target="_blank" rel="noreferrer" className={cn('shrink-0 rounded-sm p-2.5 text-link hover:bg-muted', focusRing)}>
                 <ExternalMark label={`#${issue.number} on GitHub (opens in a new tab)`} />
               </a>
             </div>

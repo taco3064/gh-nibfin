@@ -23,10 +23,7 @@ export async function measureDiagram(figure: Locator): Promise<Fit> {
     const eps = 0.75
     const problems: string[] = []
     const inside = (outer: DOMRect, inner: DOMRect) =>
-      inner.left >= outer.left - eps &&
-      inner.right <= outer.right + eps &&
-      inner.top >= outer.top - eps &&
-      inner.bottom <= outer.bottom + eps
+      inner.left >= outer.left - eps && inner.right <= outer.right + eps && inner.top >= outer.top - eps && inner.bottom <= outer.bottom + eps
     const showing = (el: Element) => getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0
     const box = fig.getBoundingClientRect()
     if (box.right > window.innerWidth + eps) problems.push(`figure ends at ${box.right} past the viewport ${window.innerWidth}`)

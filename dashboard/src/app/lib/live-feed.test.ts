@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { LiveData } from '../../worker/messages'
+import type { LiveData } from '@/worker/messages'
 import { initialFeed, parseEvent, reconnectDelay, reduceLive, type LiveFeedState } from './live-feed'
 
 const data: LiveData = {
@@ -39,7 +39,14 @@ describe('reduceLive', () => {
   })
 
   it('ignores malformed JSON and unknown or incomplete events', () => {
-    const s = apply(initialFeed, '{', msg({ event: 'issue', at: 't' }), msg({ event: 'snapshot', at: 't', result: { repos: 1 } }), msg(null), msg({ event: 'error' }))
+    const s = apply(
+      initialFeed,
+      '{',
+      msg({ event: 'issue', at: 't' }),
+      msg({ event: 'snapshot', at: 't', result: { repos: 1 } }),
+      msg(null),
+      msg({ event: 'error' }),
+    )
     expect(s).toBe(initialFeed)
     expect(parseEvent('[]')).toBeUndefined()
   })

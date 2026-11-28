@@ -1,0 +1,15 @@
+# The entries in .gitignore (build output, caches, screenshots, coverage) apply too.
+
+# npm writes the lockfile.
+package-lock.json
+
+# Static assets are served as they are.
+public/
+
+# Written by `go test ./internal/cmd -run TestCommandReferenceFile -update` and
+# compared byte for byte by that test.
+src/app/data/commands.json
+
+# Starlight content; Prettier documents only MDX v1.
+src/app/content/**/*.mdx
+src/app/content/**/*.md

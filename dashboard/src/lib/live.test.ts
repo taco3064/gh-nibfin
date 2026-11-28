@@ -36,7 +36,10 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
 }
 
 async function withSession() {
-  await openSession('P', vi.fn(async () => new Response(JSON.stringify({ session: 'S1' }), { status: 200 })))
+  await openSession(
+    'P',
+    vi.fn(async () => new Response(JSON.stringify({ session: 'S1' }), { status: 200 })),
+  )
 }
 
 describe('openLive', () => {
@@ -61,7 +64,11 @@ describe('openLive', () => {
   it('ends with the last status error the server sent', async () => {
     await withSession()
     const body = 'data: {"event":"error","source":"status","error":{"code":"auth_unavailable","message":"no login"}}\n\n'
-    const end = await openLive(() => {}, new AbortController().signal, vi.fn(async () => new Response(streamOf([body]), { status: 200 })))
+    const end = await openLive(
+      () => {},
+      new AbortController().signal,
+      vi.fn(async () => new Response(streamOf([body]), { status: 200 })),
+    )
     expect(end).toEqual({ reason: 'closed', error: { code: 'auth_unavailable', message: 'no login' } })
   })
 

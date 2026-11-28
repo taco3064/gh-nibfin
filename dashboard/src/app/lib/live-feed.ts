@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react'
 
-import type { ApiError, LiveData, LiveEvent } from '../../worker/messages'
+import type { ApiError, LiveData, LiveEvent } from '@/worker/messages'
 
 export type Connection = 'connecting' | 'open' | 'closed'
 

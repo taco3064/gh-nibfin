@@ -32,8 +32,8 @@ export function BlockerItem({ blocker, blocks, className }: BlockerItemProps) {
     >
       <h3 id={`${id}-title`} className="text-base leading-snug font-semibold">
         <a href={blocker.url} target="_blank" rel="noreferrer" className={cn(linkClass, 'text-foreground')}>
-          <span className="break-all text-muted-foreground tabular-nums">{`${blocker.repo}#${blocker.number}`}</span>{' '}
-          {blocker.title} <ExternalMark label="(opens on GitHub in a new tab)" />
+          <span className="break-all text-muted-foreground tabular-nums">{`${blocker.repo}#${blocker.number}`}</span> {blocker.title}{' '}
+          <ExternalMark label="(opens on GitHub in a new tab)" />
         </a>
       </h3>
       <div className="flex flex-wrap items-center gap-1.5">

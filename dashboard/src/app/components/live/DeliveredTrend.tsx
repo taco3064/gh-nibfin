@@ -1,5 +1,5 @@
-import type { TrendDay } from '../../../worker/messages'
-import { trendBarPercent, trendDay, trendDayText, trendTotal } from '../../lib/summary'
+import type { TrendDay } from '@/worker/messages'
+import { trendBarPercent, trendDay, trendDayText, trendTotal } from '@/app/lib/summary'
 
 // DeliveredTrend draws the delivered count of each of the last 7 Taipei
 // days as bars in a full-width row, today last; the week's maximum fills

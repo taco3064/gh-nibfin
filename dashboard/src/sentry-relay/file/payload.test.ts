@@ -49,13 +49,32 @@ describe('buildPayload', () => {
   })
 
   it('rejects malformed numeric fields', () => {
-    for (const bad of [{ id: -1 }, { id: '12a' }, { id: '1'.repeat(21) }, { count: 1.5 }, { count: null }, { userCount: '-2' }, { userCount: '9'.repeat(16) }, { userCount: true }]) {
+    for (const bad of [
+      { id: -1 },
+      { id: '12a' },
+      { id: '1'.repeat(21) },
+      { count: 1.5 },
+      { count: null },
+      { userCount: '-2' },
+      { userCount: '9'.repeat(16) },
+      { userCount: true },
+    ]) {
       expect(buildPayload('created', webhookIssue(bad)), JSON.stringify(bad)).toBeNull()
     }
   })
 
   it('rejects other malformed fields and actions', () => {
-    for (const bad of [{ shortId: 'lower-case' }, { level: 'loud' }, { title: 3 }, { permalink: 'http://na-43k.sentry.io/x', web_url: undefined }, { permalink: 'https://sentry.io.evil.example/x', web_url: undefined }, { permalink: 'https://na-43k.sentry.io/a b', web_url: undefined }, { permalink: 'https://na-43k.sentry.io/a>', web_url: undefined }, { firstSeen: 'yesterday' }, { lastSeen: '2026-11-27T04:05:06+08:00' }]) {
+    for (const bad of [
+      { shortId: 'lower-case' },
+      { level: 'loud' },
+      { title: 3 },
+      { permalink: 'http://na-43k.sentry.io/x', web_url: undefined },
+      { permalink: 'https://sentry.io.evil.example/x', web_url: undefined },
+      { permalink: 'https://na-43k.sentry.io/a b', web_url: undefined },
+      { permalink: 'https://na-43k.sentry.io/a>', web_url: undefined },
+      { firstSeen: 'yesterday' },
+      { lastSeen: '2026-11-27T04:05:06+08:00' },
+    ]) {
       expect(buildPayload('created', webhookIssue(bad)), JSON.stringify(bad)).toBeNull()
     }
     expect(buildPayload('resolved', webhookIssue())).toBeNull()
@@ -80,7 +99,18 @@ describe('buildPayload', () => {
 
   it('keeps the encoded body under the limit with every field at its cap', () => {
     const wide = '\u0001'.repeat(MAX_TEXT) // JSON escapes each as six bytes, the widest form
-    const out = buildPayload('created', webhookIssue({ id: '9'.repeat(20), shortId: 'A'.repeat(64), title: wide, culprit: wide, permalink: `https://sentry.io/${'a'.repeat(MAX_TEXT - 18)}`, count: '9'.repeat(15), userCount: 999_999_999_999_999 }))
+    const out = buildPayload(
+      'created',
+      webhookIssue({
+        id: '9'.repeat(20),
+        shortId: 'A'.repeat(64),
+        title: wide,
+        culprit: wide,
+        permalink: `https://sentry.io/${'a'.repeat(MAX_TEXT - 18)}`,
+        count: '9'.repeat(15),
+        userCount: 999_999_999_999_999,
+      }),
+    )
     expect(out).not.toBeNull()
     expect(encodedSize(out)).toBeLessThan(MAX_DISPATCH_BYTES)
   })

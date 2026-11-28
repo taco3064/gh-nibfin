@@ -22,9 +22,7 @@ export function gib(kb: number): string {
 // serviceLabel is a slot's local systemd service: active or inactive for a
 // complete slot, or what an incomplete slot misses.
 export function serviceLabel(s: RunnerState): Label {
-  const missing = [!s.configured && 'not configured', !s.unit && 'no unit', !s.enabled && 'not enabled'].filter(
-    (m): m is string => typeof m === 'string',
-  )
+  const missing = [!s.configured && 'not configured', !s.unit && 'no unit', !s.enabled && 'not enabled'].filter((m): m is string => typeof m === 'string')
   if (missing.length > 0) return { text: `Incomplete: ${missing.join(', ')}`, tone: 'warning' }
   return s.active ? { text: 'Service active', tone: 'success' } : { text: 'Service inactive', tone: 'danger' }
 }
@@ -172,10 +170,7 @@ export interface ActivityCycle {
 
 // TimelineState is what the "Last 24 hours" card shows: loading (with the
 // last history shown while a newer one loads), a history, or a failed read.
-export type TimelineState =
-  | { state: 'loading'; activity?: Activity }
-  | { state: 'loaded'; activity: Activity }
-  | { state: 'failed'; error: ApiError }
+export type TimelineState = { state: 'loading'; activity?: Activity } | { state: 'loaded'; activity: Activity } | { state: 'failed'; error: ApiError }
 
 // ActivityView is the activity the Runner view shows: tiles is the answer
 // the tiles and the host card use, absent while none is in.

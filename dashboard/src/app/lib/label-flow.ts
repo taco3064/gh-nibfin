@@ -2,7 +2,7 @@
 // the states top to bottom and stops at the first match, so each check has a
 // "yes" exit to its outcome and a "no" path to the next check.
 
-import type { DiagramNode, DiagramSpec } from '../components/diagram'
+import type { DiagramNode, DiagramSpec } from '@/app/components/diagram'
 
 import { outcomeText, type LabelState, type Outcome } from './labels'
 
@@ -23,10 +23,7 @@ export function labelStateDiagram(states: LabelState[]): DiagramSpec {
   ])
   const edges = states.flatMap((state, i) => {
     const next = states[i + 1]
-    return [
-      { from: checkId(state), to: state.id, label: 'yes' },
-      ...(next ? [{ from: checkId(state), to: checkId(next), label: 'no' }] : []),
-    ]
+    return [{ from: checkId(state), to: state.id, label: 'yes' }, ...(next ? [{ from: checkId(state), to: checkId(next), label: 'no' }] : [])]
   })
   return {
     nodes,

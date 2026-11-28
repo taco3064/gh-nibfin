@@ -21,8 +21,14 @@ function client(answers: (() => Response)[], slept: number[] = []) {
   return { c, urls }
 }
 
-const ok = (body: unknown, headers: Record<string, string> = {}) => () => new Response(JSON.stringify(body), { status: 200, headers })
-const status = (s: number, headers: Record<string, string> = {}) => () => new Response('{"message":"secret body"}', { status: s, headers })
+const ok =
+  (body: unknown, headers: Record<string, string> = {}) =>
+  () =>
+    new Response(JSON.stringify(body), { status: 200, headers })
+const status =
+  (s: number, headers: Record<string, string> = {}) =>
+  () =>
+    new Response('{"message":"secret body"}', { status: s, headers })
 
 describe('createClient', () => {
   it('retries any error up to 3 times with backoff', async () => {
@@ -80,7 +86,10 @@ describe('createClient', () => {
 
 describe('parseLinks', () => {
   it('reads GitHub Link headers', () => {
-    expect(parseLinks('<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x?page=5>; rel="last"')).toEqual({ next: 'https://api.github.com/x?page=2', last: 'https://api.github.com/x?page=5' })
+    expect(parseLinks('<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x?page=5>; rel="last"')).toEqual({
+      next: 'https://api.github.com/x?page=2',
+      last: 'https://api.github.com/x?page=5',
+    })
     expect(parseLinks(null)).toEqual({})
   })
 })

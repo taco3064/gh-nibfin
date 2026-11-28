@@ -179,9 +179,7 @@ export function fieldIds(key: string) {
 // initialValues are the fields' defaults; a value of initial replaces the
 // default of the field with its key, and keys no field has are ignored.
 export function initialValues(fields: readonly Field[], initial?: Values): Values {
-  return Object.fromEntries(
-    fields.map((f) => [f.key, initial && Object.hasOwn(initial, f.key) ? initial[f.key] : f.initial]),
-  )
+  return Object.fromEntries(fields.map((f) => [f.key, initial && Object.hasOwn(initial, f.key) ? initial[f.key] : f.initial]))
 }
 
 function splitList(v: string): string[] {

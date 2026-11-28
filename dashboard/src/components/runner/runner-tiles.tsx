@@ -25,7 +25,17 @@ export function StateRing({ state }: { state: TileState['state'] }) {
         <>
           <circle cx="20" cy="20" r="16" fill="none" strokeWidth="3" className="stroke-primary/35" />
           <g className="origin-center motion-safe:animate-[spin_4s_linear_infinite]">
-            <circle cx="20" cy="20" r="16" fill="none" strokeWidth="3" strokeLinecap="round" pathLength={100} strokeDasharray="30 70" className="stroke-primary" />
+            <circle
+              cx="20"
+              cy="20"
+              r="16"
+              fill="none"
+              strokeWidth="3"
+              strokeLinecap="round"
+              pathLength={100}
+              strokeDasharray="30 70"
+              className="stroke-primary"
+            />
           </g>
           <circle cx="20" cy="20" r="5" className="fill-primary" />
         </>
@@ -69,7 +79,9 @@ export function RunnerTile({ slot: s, current, githubError, needsAdmin, activity
             {s.name && <span className="text-sm text-muted-foreground"> · {s.name}</span>}
           </p>
           <p data-slot="state" className="text-sm">
-            <span className={cn('font-semibold', busy ? 'text-primary' : t.state === 'idle' ? 'text-success' : 'text-muted-foreground')}>{stateText[t.state]}</span>
+            <span className={cn('font-semibold', busy ? 'text-primary' : t.state === 'idle' ? 'text-success' : 'text-muted-foreground')}>
+              {stateText[t.state]}
+            </span>
             {!t.github && <span className="text-muted-foreground"> · local state</span>}
           </p>
         </div>

@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import type { Command } from '@/lib/operation'
 
-import { referenceOf, rootCommand, type ArgRow, type CommandEntry, type FlagRow } from '../lib/cli-reference'
+import { referenceOf, rootCommand, type ArgRow, type CommandEntry, type FlagRow } from '@/app/lib/cli-reference'
 
 const cell = 'border-b border-border-subtle px-3 py-2 text-left align-top'
 const head = `${cell} font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground`
@@ -133,7 +133,10 @@ function Entry({ entry }: { entry: CommandEntry }) {
           {entry.more.length > 0 ? (
             <details data-slot="details">
               <summary>
-                More about <code>{rootCommand} {entry.path}</code>
+                More about{' '}
+                <code>
+                  {rootCommand} {entry.path}
+                </code>
               </summary>
               {entry.more.map((p, i) => (
                 <p key={i}>{p}</p>

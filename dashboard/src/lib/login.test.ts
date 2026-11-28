@@ -70,7 +70,11 @@ describe('loginReducer', () => {
       { type: 'step', step: step('codex', 'succeeded'), at: 2 },
       {
         type: 'outcome',
-        outcome: { ok: false, error: { code: 'not_logged_in', message: 'codex is not logged in after login' }, result: { items: [item('codex', false, 'codex is not logged in')] } },
+        outcome: {
+          ok: false,
+          error: { code: 'not_logged_in', message: 'codex is not logged in after login' },
+          result: { items: [item('codex', false, 'codex is not logged in')] },
+        },
       },
     ])
     expect(s[0]).toMatchObject({ stage: 'failed', message: 'codex is not logged in' })

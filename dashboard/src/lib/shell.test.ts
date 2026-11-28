@@ -28,9 +28,7 @@ describe('hasNoRunner', () => {
   it('is true for an empty list', () => expect(hasNoRunner(host([]))).toBe(true))
   it('is true for a null list', () => expect(hasNoRunner(host(null))).toBe(true))
   it('is true when only incomplete slots exist', () => {
-    expect(
-      hasNoRunner(host([slot({ configured: false }), slot({ slot: 'claude-2', unit: false }), slot({ slot: 'codex-1', enabled: false })])),
-    ).toBe(true)
+    expect(hasNoRunner(host([slot({ configured: false }), slot({ slot: 'claude-2', unit: false }), slot({ slot: 'codex-1', enabled: false })]))).toBe(true)
   })
   it('is false with one complete slot', () => {
     expect(hasNoRunner(host([slot({ configured: false }), slot({ slot: 'codex-1', active: false })]))).toBe(false)

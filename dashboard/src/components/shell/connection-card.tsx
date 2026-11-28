@@ -4,8 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import type { Connection } from '@/lib/use-status'
 import { cn } from '@/lib/utils'
 
-const proofInvalidMessage =
-  'This session URL was already used or is invalid. If you did not open it yourself, stop gh nibfin dashboard (Ctrl-C).'
+const proofInvalidMessage = 'This session URL was already used or is invalid. If you did not open it yourself, stop gh nibfin dashboard (Ctrl-C).'
 
 const tones = {
   info: 'bg-info-bg text-info',
@@ -42,11 +41,7 @@ export function ConnectionCard({ connection }: { connection: Connection }) {
         <CardDescription>This page talks only to the local gh nibfin dashboard server.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div
-          role="status"
-          data-state={connection.state}
-          className={cn('flex items-start gap-3 rounded-md px-4 py-3', tones[d.tone])}
-        >
+        <div role="status" data-state={connection.state} className={cn('flex items-start gap-3 rounded-md px-4 py-3', tones[d.tone])}>
           <Icon aria-hidden="true" className={cn('mt-0.5 size-5 shrink-0', d.spin && 'motion-safe:animate-spin')} />
           <div className="min-w-0">
             <p className="font-semibold">{d.label}</p>

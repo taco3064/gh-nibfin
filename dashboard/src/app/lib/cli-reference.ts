@@ -47,7 +47,11 @@ export const rootCommand = 'gh nibfin'
 const zeroDefault: Record<string, string> = { bool: 'false', int: '0', string: '' }
 
 export function slugOf(path: string): string {
-  return path.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return path
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
 }
 
 // placeholder is the value a flag takes in a usage line: its allowed values,
@@ -122,9 +126,7 @@ export function referenceOf(commands: readonly Command[]): CommandEntry[] {
     usage: usagePartsOf(c),
     flags: (c.flags ?? []).map(flagRow),
     args: (c.args ?? []).map((a) => ({ name: a.name, required: a.required, repeatable: a.repeatable, allowed: a.allowed ?? [] })),
-    subcommands: commands
-      .filter((s) => s.path.startsWith(`${c.path} `))
-      .map((s) => ({ path: s.path, slug: slugOf(s.path), short: s.short })),
+    subcommands: commands.filter((s) => s.path.startsWith(`${c.path} `)).map((s) => ({ path: s.path, slug: slugOf(s.path), short: s.short })),
   }))
 }
 

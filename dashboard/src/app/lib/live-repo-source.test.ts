@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { LiveData } from '../../worker/messages'
+import type { LiveData } from '@/worker/messages'
 import { liveRepoSource } from './live-repo-source'
 
 const err = { code: 'github_api_failed', message: 'HTTP 502' }
@@ -34,7 +34,13 @@ describe('liveRepoSource', () => {
   it('lists every repository on its host for the picker, without permission', () => {
     expect(liveRepoSource(data).source).toEqual({
       host: 'github.com',
-      repos: ['core', 'cli', 'e2e'].map((n) => ({ repo: `acme/${n}`, url: `https://github.com/acme/${n}`, visibility: 'PUBLIC', permission: null, execution: null })),
+      repos: ['core', 'cli', 'e2e'].map((n) => ({
+        repo: `acme/${n}`,
+        url: `https://github.com/acme/${n}`,
+        visibility: 'PUBLIC',
+        permission: null,
+        execution: null,
+      })),
     })
   })
 

@@ -112,9 +112,7 @@ describe('bulkAccess', () => {
     ])
     expect(a.enabled).toBe(false)
     if (a.enabled) return
-    expect(a.reason).toBe(
-      'Needs triage permission or higher; this account has READ on o/b. GitHub reported no permission for this account on o/c.',
-    )
+    expect(a.reason).toBe('Needs triage permission or higher; this account has READ on o/b. GitHub reported no permission for this account on o/c.')
     expect(a.reason).not.toContain('o/a')
   })
 
@@ -275,7 +273,10 @@ describe('changeIssues', () => {
 
   beforeEach(async () => {
     calls = []
-    await openSession('P', server(() => ndjson()))
+    await openSession(
+      'P',
+      server(() => ndjson()),
+    )
     calls = []
   })
   afterEach(() => resetSession())

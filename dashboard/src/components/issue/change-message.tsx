@@ -35,16 +35,15 @@ export function ChangeMessage({ outcome, done }: { outcome: ChangeOutcome | null
   const unknown = outcome.state === 'unknown'
   const Icon = unknown ? CircleHelp : CircleAlert
   return (
-    <div
-      role="alert"
-      data-state={outcome.state}
-      className={cn('flex items-start gap-2 rounded-md px-3 py-2 text-sm', unknown ? tones.warning : tones.danger)}
-    >
+    <div role="alert" data-state={outcome.state} className={cn('flex items-start gap-2 rounded-md px-3 py-2 text-sm', unknown ? tones.warning : tones.danger)}>
       <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
       <p className="min-w-0 break-words">
         {unknown ? (
           <>
-            {unknownText} <span>({outcome.error.code}: {outcome.error.message})</span>
+            {unknownText}{' '}
+            <span>
+              ({outcome.error.code}: {outcome.error.message})
+            </span>
           </>
         ) : (
           <>

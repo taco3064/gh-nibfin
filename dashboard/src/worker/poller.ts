@@ -63,7 +63,11 @@ function pass(s: Source): void {
 }
 
 // Outcome is one probe's read: unchanged, new (to commit) or failed.
-type Outcome<T> = { kind: 'skip' } | { kind: 'same'; poll: number | null } | { kind: 'new'; result: T; etags: (string | null)[]; poll: number | null } | { kind: 'failed'; error: GitHubError }
+type Outcome<T> =
+  | { kind: 'skip' }
+  | { kind: 'same'; poll: number | null }
+  | { kind: 'new'; result: T; etags: (string | null)[]; poll: number | null }
+  | { kind: 'failed'; error: GitHubError }
 
 function commit<T>(p: Probe<T>, o: Outcome<T>, now: number): void {
   switch (o.kind) {
@@ -146,7 +150,13 @@ async function readIssues(gh: GitHub, repo: string, p: Probe<IssuesResult>, now:
         etags.push(p.etags[page - 1] ?? null)
       } else {
         const items = list(res.body)
-        cur = { issues: items.map(obj).filter((it) => !('pull_request' in it)).map(toIssueBase), full: items.length >= perPage }
+        cur = {
+          issues: items
+            .map(obj)
+            .filter((it) => !('pull_request' in it))
+            .map(toIssueBase),
+          full: items.length >= perPage,
+        }
         etags.push(res.etag)
         changed = true
       }
@@ -252,7 +262,8 @@ async function readJobs(gh: GitHub, repo: string, ids: number[]): Promise<JobBas
   for (const id of ids) {
     const path = `repos/${repo}/actions/runs/${id}/jobs?filter=latest&per_page=${perPage}`
     const res = await gh.get(path)
-    if (res.status !== 200) throw new GitHubError(res.status, null, { code: 'github_api_failed', message: `GET ${path}: HTTP ${res.status} without a stored answer` })
+    if (res.status !== 200)
+      throw new GitHubError(res.status, null, { code: 'github_api_failed', message: `GET ${path}: HTTP ${res.status} without a stored answer` })
     for (const j of list(obj(res.body).jobs).map(obj)) {
       if (j.status !== 'in_progress' || typeof j.runner_id !== 'number') continue
       out.push({ runnerId: j.runner_id, status: str(j.status), workflowName: str(j.workflow_name), url: str(j.html_url) })
@@ -293,7 +304,7 @@ export async function readBlockers(gh: GitHub, listed: { repo: string; issues: n
   let cur: Part[] = []
   let n = 0
   for (const g of listed) {
-    for (let rest = g.issues; rest.length > 0; ) {
+    for (let rest = g.issues; rest.length > 0;) {
       if (n === issuesPerQuery) {
         queries.push(cur)
         cur = []
@@ -317,7 +328,9 @@ export async function readBlockers(gh: GitHub, listed: { repo: string; issues: n
       decl.push(`$r${k}o: String!`, `$r${k}n: String!`)
       vars[`r${k}o`] = owner
       vars[`r${k}n`] = name
-      body.push(`r${k}: repository(owner: $r${k}o, name: $r${k}n) {${p.issues.map((num, j) => ` i${j}: issue(number: ${num}) { blockedBy(first: 100) { ${blockedFields} } }`).join('')} }`)
+      body.push(
+        `r${k}: repository(owner: $r${k}o, name: $r${k}n) {${p.issues.map((num, j) => ` i${j}: issue(number: ${num}) { blockedBy(first: 100) { ${blockedFields} } }`).join('')} }`,
+      )
       for (const num of p.issues) out[issueKey(p.repo, num)] = { blockedBy: [] }
     })
     const query = `query(${decl.join(', ')}) { ${body.join(' ')} }`
@@ -482,7 +495,9 @@ export async function check(input: State, gh: GitHub, now: number): Promise<Chec
     return { repo, issues: (result?.pages ?? []).flatMap((pg) => pg.issues.map((i) => i.number)) }
   })
   const anyNew = repos.some((repo) => issueOutcomes[repo].kind === 'new')
-  const retry = listed.some((g) => g.issues.some((num) => state.blockers.byIssue[issueKey(g.repo, num)]?.error !== undefined || !state.blockers.byIssue[issueKey(g.repo, num)]))
+  const retry = listed.some((g) =>
+    g.issues.some((num) => state.blockers.byIssue[issueKey(g.repo, num)]?.error !== undefined || !state.blockers.byIssue[issueKey(g.repo, num)]),
+  )
   // A failed blocker query is retried on the next check even when the
   // lists then answer 304, so its error clears.
   let blockersOk = true

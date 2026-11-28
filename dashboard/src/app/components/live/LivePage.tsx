@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 
 import { RepoView } from '@/components/repo/repo-view'
 
-import { useLiveFeed } from '../../lib/live-feed'
-import { useLiveRepoSource } from '../../lib/live-repo-source'
-import { liveUrl } from '../../lib/live-url'
+import { useLiveFeed } from '@/app/lib/live-feed'
+import { useLiveRepoSource } from '@/app/lib/live-repo-source'
+import { liveUrl } from '@/app/lib/live-url'
 import { Capacity } from './Capacity'
 import { LiveStatus } from './LiveStatus'
 import { SummaryPanel } from './SummaryPanel'

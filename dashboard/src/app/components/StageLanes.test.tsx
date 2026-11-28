@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { layoutDiagram } from './diagram'
-import { stageLanes } from '../lib/stage-lanes'
+import { stageLanes } from '@/app/lib/stage-lanes'
 import { StageLanes } from './StageLanes'
 
 const title = (id: string) => stageLanes.nodes.find((n) => n.id === id)!.title
@@ -43,26 +43,13 @@ describe('StageLanes', () => {
   })
 
   it('reads the steps in stage order', () => {
-    expect(layoutDiagram(stageLanes, 'TB').order).toEqual([
-      'split',
-      'write',
-      'validate',
-      'implement',
-      'accept',
-      'checks',
-      'review',
-      'merge',
-      'cd',
-      'closed',
-    ])
+    expect(layoutDiagram(stageLanes, 'TB').order).toEqual(['split', 'write', 'validate', 'implement', 'accept', 'checks', 'review', 'merge', 'cd', 'closed'])
   })
 
   it('labels every hand-off and the five paths back', () => {
     for (const e of stageLanes.edges) expect(e.label, `${e.from} -> ${e.to}`).toBeTruthy()
     const order = layoutDiagram(stageLanes, 'TB').order
-    const backs = stageLanes.edges
-      .filter((e) => order.indexOf(e.to) < order.indexOf(e.from))
-      .map((e) => [title(e.from), title(e.to), e.label])
+    const backs = stageLanes.edges.filter((e) => order.indexOf(e.to) < order.indexOf(e.from)).map((e) => [title(e.from), title(e.to), e.label])
     expect(backs).toEqual([
       ['Validate the Shape', 'Write the Shape', 'findings'],
       ['Implement', 'Write the Shape', 'Shape wrong, with the reason'],

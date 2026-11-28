@@ -116,11 +116,24 @@ export function liveData(created = 128, delivered = 57, second = false): LiveDat
             name: runnerName(2),
             status: 'online',
             busy: true,
-            job: { title: `Nibfin · ${cli}@nibfin/issue-354 · route`, repo: cli, issue: null, ref: 'nibfin/issue-354', stage: 'route', url: `${gh}/${core}/actions/runs/7002/job/2` },
+            job: {
+              title: `Nibfin · ${cli}@nibfin/issue-354 · route`,
+              repo: cli,
+              issue: null,
+              ref: 'nibfin/issue-354',
+              stage: 'route',
+              url: `${gh}/${core}/actions/runs/7002/job/2`,
+            },
           },
           { id: 13, name: runnerName(3), status: 'online', busy: true, job: null },
           second
-            ? { id: 14, name: runnerName(4), status: 'online', busy: true, job: { title: `Nibfin · ${core}#41 · shape`, repo: core, issue: 41, ref: null, stage: 'shape', url: `${gh}/${core}/actions/runs/7003/job/3` } }
+            ? {
+                id: 14,
+                name: runnerName(4),
+                status: 'online',
+                busy: true,
+                job: { title: `Nibfin · ${core}#41 · shape`, repo: core, issue: 41, ref: null, stage: 'shape', url: `${gh}/${core}/actions/runs/7003/job/3` },
+              }
             : { id: 14, name: runnerName(4), status: 'online', busy: false, job: null },
           { id: 15, name: runnerName(5), status: 'offline', busy: false, job: null },
         ] satisfies object[] as unknown as LiveData['runners'][number]['runners'],

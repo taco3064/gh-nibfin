@@ -226,9 +226,7 @@ export const repoStatus: Record<string, { result: unknown }> = {
   'ghe.example.test/corp/api': {
     result: repoView('ghe.example.test/corp/api', {
       nibfinRepos: corpRepos,
-      issues: [
-        issue('corp/api', 5, 'Rate limit the public endpoints', [blocker('corp/web', 2, 'Shared gateway config', 'OPEN', ghe)], {}, ghe),
-      ],
+      issues: [issue('corp/api', 5, 'Rate limit the public endpoints', [blocker('corp/web', 2, 'Shared gateway config', 'OPEN', ghe)], {}, ghe)],
     }),
   },
   'ghe.example.test/corp/web': { result: repoView('ghe.example.test/corp/web', { nibfinRepos: corpRepos, issues: [] }) },

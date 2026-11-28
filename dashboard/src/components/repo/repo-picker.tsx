@@ -75,17 +75,7 @@ export function RepoPicker({ source, listReading, current, onOpen }: RepoPickerP
   )
 }
 
-function RepoList({
-  source,
-  listReading,
-  current,
-  onPick,
-}: {
-  source?: PickerSource
-  listReading: boolean
-  current?: string
-  onPick: (repo: string) => void
-}) {
+function RepoList({ source, listReading, current, onPick }: { source?: PickerSource; listReading: boolean; current?: string; onPick: (repo: string) => void }) {
   const id = useId()
   const readOnly = useReadOnly()
   const [query, setQuery] = useState('')

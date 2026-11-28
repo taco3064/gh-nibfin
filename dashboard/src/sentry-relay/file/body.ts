@@ -2,7 +2,7 @@
 // integers) enter structured fields; the Sentry title and culprit can be
 // forged through the public DSN, so they appear only inside a fence.
 
-import type { SentryIssue } from '../payload.ts'
+import type { SentryIssue } from './payload.ts'
 import type { Verification } from './verify.ts'
 
 export const MAX_BODY = 60_000
@@ -71,7 +71,10 @@ function untrusted(issue: SentryIssue): string[] {
 
 function forgeryNote(v: Verification): string[] {
   if (v.verified) return []
-  return ['', 'This error could not be verified against a deployed build. Event text can be forged through the public DSN, so this request waits for the Owner to remove `pause`.']
+  return [
+    '',
+    'This error could not be verified against a deployed build. Event text can be forged through the public DSN, so this request waits for the Owner to remove `pause`.',
+  ]
 }
 
 function capBody(s: string): string {

@@ -38,8 +38,7 @@ function plan(option: number): PlanAnswer {
   }
 }
 
-const progress = (id: string, action: string, target: string, phase: string) =>
-  JSON.stringify({ event: 'progress', progress: { id, action, target, phase } })
+const progress = (id: string, action: string, target: string, phase: string) => JSON.stringify({ event: 'progress', progress: { id, action, target, phase } })
 
 type ApplyMode = 'confirmed' | 'newer'
 

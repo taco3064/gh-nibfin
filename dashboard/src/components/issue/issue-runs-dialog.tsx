@@ -3,14 +3,7 @@ import { CircleAlert, CircleHelp, ExternalLink, History, TriangleAlert } from 'l
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { runBucket, runsView, type RunBucket, type RunsNote } from '@/lib/issue'
 import type { Run, StatusIssue } from '@/lib/status'
 import { cn, formatTime } from '@/lib/utils'

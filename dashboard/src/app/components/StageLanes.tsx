@@ -1,4 +1,4 @@
-import { stageLanes } from '../lib/stage-lanes'
+import { stageLanes } from '@/app/lib/stage-lanes'
 
 import { Diagram } from './diagram'
 

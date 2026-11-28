@@ -7,11 +7,7 @@ import { complete, dropPartial, fillPersonView, takePartial, type Loading, type 
 import { openSession, readProof, readStatus, type ApiError } from '@/lib/session'
 import type { PersonView } from '@/lib/status'
 
-export type Connection =
-  | { state: 'no-proof' }
-  | { state: 'connecting' }
-  | { state: 'connected' }
-  | { state: 'failed'; error: ApiError }
+export type Connection = { state: 'no-proof' } | { state: 'connecting' } | { state: 'connected' } | { state: 'failed'; error: ApiError }
 
 // Live is the live stream: connecting until its first snapshot, on while it
 // runs, off with the reason once it ended.

@@ -121,7 +121,7 @@ for (const width of widths) {
         const form = width === 375 ? 'compact' : 'full'
         for (const t of await tracks.all()) await expect(t).toHaveAttribute('data-form', form)
       }
-      for (const t of await tracks.all()) expect(await oneLine(t), await t.getAttribute('data-stage') ?? '').toBe(true)
+      for (const t of await tracks.all()) expect(await oneLine(t), (await t.getAttribute('data-stage')) ?? '').toBe(true)
       if (width === 1280) {
         for (const t of await tracks.all()) {
           for (const l of await t.locator('li > span > span:not([aria-hidden])').all()) await expect(l).toBeVisible()
@@ -139,10 +139,7 @@ for (const width of widths) {
         await expect(item(page, 'acme/app', 104).locator('[data-slot=stage-current]')).toHaveText('Done')
       }
       await expect(item(page, 'acme/app', 102).locator('[data-badge=paused]')).toHaveText('Paused')
-      await expect(item(page, 'acme/app', 103).locator('[data-badge=pending] a')).toHaveAttribute(
-        'href',
-        `${url('acme/app', 103)}#issuecomment-5001`,
-      )
+      await expect(item(page, 'acme/app', 103).locator('[data-badge=pending] a')).toHaveAttribute('href', `${url('acme/app', 103)}#issuecomment-5001`)
       await expect(item(page, 'acme/app', 104)).toContainText('Reason comment could not be read: github_error: comments of acme/app#104: HTTP 500')
       await expect(item(page, 'acme/docs', 7)).toContainText('Reason comment not found')
 
@@ -300,9 +297,7 @@ test('permission below triage, unknown or unread disables the action with the re
   await page.getByRole('checkbox', { name: 'Select #7' }).check()
   const bulk = page.getByRole('region', { name: 'Selected Issues' })
   await expect(bulk.getByRole('button', { name: 'Pause selected' })).toBeDisabled()
-  await expect(bulk.locator('[data-slot=disabled-reason]')).toHaveText(
-    'Needs triage permission or higher; this account has READ on acme/docs.',
-  )
+  await expect(bulk.locator('[data-slot=disabled-reason]')).toHaveText('Needs triage permission or higher; this account has READ on acme/docs.')
   await shot(page, 'issue-permission-768')
   expect(api.plans).toEqual([])
   await expectClean(w)
@@ -339,11 +334,7 @@ test('the runs dialog does not animate when reduced motion is requested', async 
   const { w } = await open(page, 1280, 'dark')
   const { dialog } = await openRuns(page, item(page, 'acme/app', 101))
   const animations = async () =>
-    page.evaluate(() =>
-      ['[data-slot=dialog-content]', '[data-slot=dialog-overlay]'].map(
-        (s) => getComputedStyle(document.querySelector(s)!).animationName,
-      ),
-    )
+    page.evaluate(() => ['[data-slot=dialog-content]', '[data-slot=dialog-overlay]'].map((s) => getComputedStyle(document.querySelector(s)!).animationName))
   expect(await animations()).toEqual(['none', 'none'])
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
@@ -361,8 +352,7 @@ test('a zoomed-out stage track keeps its natural width', async ({ page }) => {
   // so the form it shows never overflows its box.
   const { w } = await open(page, 1280, 'dark')
   const tracks = page.locator('article[data-issue] ol[data-slot=stage-track]')
-  const widthsOf = () =>
-    tracks.evaluateAll((ols) => ols.map((ol) => ({ box: (ol.parentElement as HTMLElement).clientWidth, track: ol.scrollWidth })))
+  const widthsOf = () => tracks.evaluateAll((ols) => ols.map((ol) => ({ box: (ol.parentElement as HTMLElement).clientWidth, track: ol.scrollWidth })))
   const before = await widthsOf()
   await page.evaluate(() => {
     const main = document.querySelector('main') as HTMLElement

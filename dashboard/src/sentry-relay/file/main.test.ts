@@ -6,7 +6,14 @@ import { main } from './main.ts'
 function run(fake: Fake, payload: unknown, env: Record<string, string | undefined> = {}) {
   const lines: string[] = []
   const code = main({
-    env: { GITHUB_REPOSITORY: REPO, GITHUB_RUN_ID: '77', GITHUB_EVENT_PATH: '/event.json', NIBFIN_GITHUB_TOKEN: 'gh-token', SENTRY_API_TOKEN: 'sentry-token', ...env },
+    env: {
+      GITHUB_REPOSITORY: REPO,
+      GITHUB_RUN_ID: '77',
+      GITHUB_EVENT_PATH: '/event.json',
+      NIBFIN_GITHUB_TOKEN: 'gh-token',
+      SENTRY_API_TOKEN: 'sentry-token',
+      ...env,
+    },
     readFile: (path) => {
       if (path !== '/event.json') throw new Error('no such file')
       return JSON.stringify({ action: 'sentry-issue', client_payload: payload })

@@ -39,7 +39,11 @@ export function NodeView({ node, graph, context, blocks, closed, access, graphNo
       data-context={context ? 'true' : undefined}
       data-stage={graphNode ? stage : undefined}
       style={width !== undefined ? { width } : undefined}
-      className={cn('relative flex flex-col gap-1', context && 'rounded-xl border border-dashed border-muted-foreground p-1.5', graphNode && !context && 'rounded-xl')}
+      className={cn(
+        'relative flex flex-col gap-1',
+        context && 'rounded-xl border border-dashed border-muted-foreground p-1.5',
+        graphNode && !context && 'rounded-xl',
+      )}
     >
       {context && <p className="px-1 text-xs font-medium text-muted-foreground">Context: blocks a shown Issue</p>}
       {node.kind === 'issue' ? (
@@ -88,7 +92,8 @@ function ClosedMarker({ graph, owner, group }: { graph: Graph; owner: GraphNode;
               b.kind === 'blocker' && (
                 <li key={b.key}>
                   <a href={b.blocker.url} target="_blank" rel="noreferrer" className="rounded-sm text-link underline-offset-4 hover:underline">
-                    <span className="break-all tabular-nums">{nodeLabel(graph, b)}</span> {b.blocker.title} <ExternalMark label="(opens on GitHub in a new tab)" />
+                    <span className="break-all tabular-nums">{nodeLabel(graph, b)}</span> {b.blocker.title}{' '}
+                    <ExternalMark label="(opens on GitHub in a new tab)" />
                   </a>
                 </li>
               ),

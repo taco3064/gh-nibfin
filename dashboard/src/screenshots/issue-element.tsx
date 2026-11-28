@@ -60,25 +60,26 @@ function Harness() {
         {/* The Issues render once the session is open, as in the
             product, whose views read data only with a session. */}
         <ul className="flex flex-col gap-3">
-          {ready !== 'opening' && items.map((f) => (
-            <li key={f.issue.url}>
-              <IssueItem
-                issue={f.issue}
-                repo={f.repo}
-                access={permissions[f.repo]}
-                selected={selected.has(f.issue.url)}
-                onSelectedChange={(on) =>
-                  setSelected((prev) => {
-                    const next = new Set(prev)
-                    if (on) next.add(f.issue.url)
-                    else next.delete(f.issue.url)
-                    return next
-                  })
-                }
-                onChanged={onChanged}
-              />
-            </li>
-          ))}
+          {ready !== 'opening' &&
+            items.map((f) => (
+              <li key={f.issue.url}>
+                <IssueItem
+                  issue={f.issue}
+                  repo={f.repo}
+                  access={permissions[f.repo]}
+                  selected={selected.has(f.issue.url)}
+                  onSelectedChange={(on) =>
+                    setSelected((prev) => {
+                      const next = new Set(prev)
+                      if (on) next.add(f.issue.url)
+                      else next.delete(f.issue.url)
+                      return next
+                    })
+                  }
+                  onChanged={onChanged}
+                />
+              </li>
+            ))}
         </ul>
       </main>
     </div>
