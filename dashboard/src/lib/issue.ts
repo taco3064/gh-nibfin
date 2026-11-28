@@ -3,7 +3,7 @@
 // reason, and pause/resume through the plan and apply routes.
 
 import { api, applyPlan, deletePlan, type ApiError } from '@/lib/session'
-import type { Blocker, RepoPermission, Run, StatusIssue } from '@/lib/status'
+import type { Blocker, Repair, RepairState, RepoPermission, Run, StatusIssue } from '@/lib/status'
 import type { Loading } from '@/lib/partial'
 
 type Fetch = typeof fetch
@@ -175,6 +175,76 @@ export function pendingView(issue: StatusIssue): PendingView {
   if (issue.pendingComment) return { kind: 'link', url: issue.pendingComment }
   if (issue.pendingCommentError) return { kind: 'failed', error: issue.pendingCommentError }
   return { kind: 'notFound' }
+}
+
+export type RepairTone = 'info' | 'warning'
+
+export interface RepairLook {
+  // state is the record's state; unknown for a state this Dashboard does
+  // not know, which is shown but never answered.
+  state: RepairState | 'unknown'
+  label: string
+  tone: RepairTone
+}
+
+export const repairLabels: Record<RepairState, string> = {
+  repairing: 'Repairing',
+  choose: 'Waiting for your choice',
+  act: 'Needs your action',
+}
+
+// repairLook is the badge of a repair state (Proposal R9.52). Repairing is
+// Nibfin's own work; the other two wait on a person.
+export function repairLook(repair: Pick<Repair, 'state'>): RepairLook {
+  const s = repair.state
+  if (s === 'repairing') return { state: s, label: repairLabels[s], tone: 'info' }
+  if (s === 'choose' || s === 'act') return { state: s, label: repairLabels[s], tone: 'warning' }
+  return { state: 'unknown', label: `Unknown repair state ${String(s)}`, tone: 'warning' }
+}
+
+// answerable says whether the Repair dialog is offered: the two states
+// that wait on a person (Proposal R9.53).
+export function answerable(issue: StatusIssue): boolean {
+  const s = issue.pending ? issue.repair?.state : undefined
+  return s === 'choose' || s === 'act'
+}
+
+// pendingLabel is the text of a pending Issue's flag: its repair state when
+// it was read, or Pending.
+export function pendingLabel(issue: StatusIssue): string {
+  return issue.repair ? repairLook(issue.repair).label : 'Pending'
+}
+
+// recommendedOption is the number of the recommended option of a choose
+// record, or else its first option's; undefined without options.
+export function recommendedOption(repair: Repair): number | undefined {
+  const options = repair.options ?? []
+  return (options.find((o) => o.recommended) ?? options[0])?.number
+}
+
+// safeLink returns url only when it is an absolute http or https URL. The
+// repair record's links are partly agent-written; any other scheme is shown
+// as text, never as a link.
+export function safeLink(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export type LatestRunView = { kind: 'run'; run: Run } | { kind: 'failed'; error: ApiError } | { kind: 'notRead' } | { kind: 'none' }
+
+// latestRun is the Issue's newest Nibfin run, or why there is none to link.
+export function latestRun(issue: StatusIssue): LatestRunView {
+  const v = runsView(issue)
+  if (v.runs[0]) return { kind: 'run', run: v.runs[0] }
+  const failed = v.notes.find((n) => n.kind === 'failed')
+  if (failed) return { kind: 'failed', error: failed.error }
+  if (v.notes.some((n) => n.kind === 'notRead')) return { kind: 'notRead' }
+  return { kind: 'none' }
 }
 
 export type ChangeResult = 'paused' | 'resumed'

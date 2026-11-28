@@ -66,10 +66,16 @@ export function replaceIssue(view: PersonView, repo: string, issue: StatusIssue)
   return found ? { ...view, repos } : view
 }
 
-// needsYou reports whether an Issue waits on a person: it has pending or
-// pause.
+// needsYou reports whether an Issue waits on a person: it has pause, or
+// pending while Nibfin is not repairing it itself (Proposal R9.52). A
+// pending Issue whose repair state was not read still counts.
 export function needsYou(issue: StatusIssue): boolean {
-  return issue.pending || issue.pause
+  return issue.pause || (issue.pending && !repairing(issue))
+}
+
+// repairing reports whether Core's repair stage works on a pending Issue.
+export function repairing(issue: StatusIssue): boolean {
+  return issue.pending && issue.repair?.state === 'repairing'
 }
 
 function listed(view: PersonView): StatusIssue[] {
@@ -98,9 +104,15 @@ export function stageCounts(view: PersonView): StageCounts {
   return out
 }
 
-// needsYouCount is the number of listed Issues with pending or pause.
+// needsYouCount is the number of listed Issues that need a person.
 export function needsYouCount(view: PersonView): number {
   return listed(view).filter(needsYou).length
+}
+
+// repairingCount is the number of listed Issues Nibfin repairs itself and
+// that need no person: the pending Issues needsYouCount leaves out.
+export function repairingCount(view: PersonView): number {
+  return listed(view).filter((i) => repairing(i) && !i.pause).length
 }
 
 export interface RunCounts extends Record<RunBucket, number> {
@@ -154,7 +166,7 @@ export function runnerCounts(host: HostReport): RunnerCounts {
   }
 }
 
-// filterNeedsYou keeps only the Issues with pending or pause, and drops the
+// filterNeedsYou keeps only the Issues that need a person, and drops the
 // repositories left without one.
 export function filterNeedsYou(view: PersonView): PersonView {
   const repos = (view.repos ?? [])

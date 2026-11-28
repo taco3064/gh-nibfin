@@ -9,6 +9,7 @@ import {
   filterGraph,
   graphSpacing,
   groupLabel,
+  heldFlags,
   laneX,
   layoutGraph,
   nodeKey,
@@ -401,6 +402,29 @@ describe('unlinkedGroups', () => {
       issues: [issue(1, [], { labels: ['scope', 'shaped'], pending: true }), issue(2, [], { labels: [], pause: true, pending: true })],
     })
     expect(unlinkedGroups(g, [k(1), k(2)])).toEqual([{ id: 'held', label: 'Paused or Pending', keys: [k(1), k(2)] }])
+  })
+
+  it('keeps a pending Issue held whatever its repair state, and flags it by that state', () => {
+    const r = (state: 'repairing' | 'choose' | 'act') => ({ state, reason: 'r' })
+    const issues = [
+      issue(1, [], { pending: true, repair: r('repairing') }),
+      issue(2, [], { pending: true, repair: r('choose') }),
+      issue(3, [], { pending: true, pause: true, repair: r('act') }),
+      issue(4, [], { pending: true }),
+    ]
+    const g = buildGraph({ repo, issues })
+    expect(unlinkedGroups(g, [k(1), k(2), k(3), k(4)])).toEqual([{ id: 'held', label: 'Paused or Pending', keys: [k(1), k(2), k(3), k(4)] }])
+    expect(issues.map(heldFlags)).toEqual([
+      [{ key: 'pending', label: 'Repairing', tone: 'info' }],
+      [{ key: 'pending', label: 'Waiting for your choice', tone: 'warning' }],
+      [
+        { key: 'paused', label: 'Paused', tone: 'warning' },
+        { key: 'pending', label: 'Needs your action', tone: 'warning' },
+      ],
+      [{ key: 'pending', label: 'Pending', tone: 'warning' }],
+    ])
+    // The toolbar's Pending filter still matches every pending Issue.
+    expect(filterGraph(g, { ...emptyFilter, pending: true }).matched).toEqual([k(1), k(2), k(3), k(4)])
   })
 
   it('drops empty groups and keeps the given order of keys', () => {

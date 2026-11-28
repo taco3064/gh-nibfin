@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  answerable,
   applyChanges,
   blockersView,
   bulkAccess,
   changeAccess,
   changeIssues,
+  latestRun,
+  pendingLabel,
   pendingView,
+  recommendedOption,
+  repairLook,
+  safeLink,
   recentRuns,
   runBucket,
   runsView,
@@ -14,7 +20,7 @@ import {
   stageSteps,
 } from './issue'
 import { openSession, resetSession } from './session'
-import type { Run, StatusIssue } from './status'
+import type { Repair, Run, StatusIssue } from './status'
 
 const url = 'https://github.com/o/r/issues/1'
 
@@ -177,6 +183,59 @@ describe('pendingView', () => {
   })
   it('says when none was found', () => {
     expect(pendingView(issue({ pending: true }))).toEqual({ kind: 'notFound' })
+  })
+})
+
+describe('repair state', () => {
+  const repair = (state: string) => ({ state, reason: 'r' }) as Repair
+  it('labels each state with its tone; repairing is info, the two that wait on a person warning', () => {
+    expect(repairLook(repair('repairing'))).toEqual({ state: 'repairing', label: 'Repairing', tone: 'info' })
+    expect(repairLook(repair('choose'))).toEqual({ state: 'choose', label: 'Waiting for your choice', tone: 'warning' })
+    expect(repairLook(repair('act'))).toEqual({ state: 'act', label: 'Needs your action', tone: 'warning' })
+    expect(repairLook(repair('later'))).toEqual({ state: 'unknown', label: 'Unknown repair state later', tone: 'warning' })
+  })
+  it('offers the Repair dialog only for choose and act on a pending Issue', () => {
+    expect(answerable(issue({ pending: true, repair: repair('choose') }))).toBe(true)
+    expect(answerable(issue({ pending: true, repair: repair('act') }))).toBe(true)
+    expect(answerable(issue({ pending: true, repair: repair('repairing') }))).toBe(false)
+    expect(answerable(issue({ pending: true, repair: repair('later') }))).toBe(false)
+    expect(answerable(issue({ pending: true }))).toBe(false)
+    expect(answerable(issue({ pending: false, repair: repair('choose') }))).toBe(false)
+  })
+  it('names the flag by the repair state, or Pending without one', () => {
+    expect(pendingLabel(issue({ pending: true, repair: repair('act') }))).toBe('Needs your action')
+    expect(pendingLabel(issue({ pending: true }))).toBe('Pending')
+  })
+  it('preselects the recommended option, else the first', () => {
+    const o = (number: number, recommended = false) => ({ number, title: 't', consequence: 'c', issueChange: 'i', recommended })
+    expect(recommendedOption({ ...repair('choose'), options: [o(1), o(2, true), o(3)] })).toBe(2)
+    expect(recommendedOption({ ...repair('choose'), options: [o(4), o(5)] })).toBe(4)
+    expect(recommendedOption(repair('choose'))).toBeUndefined()
+  })
+})
+
+describe('safeLink', () => {
+  it('keeps http and https URLs only', () => {
+    expect(safeLink('https://github.com/o/r/issues/1#issuecomment-2')).toBe('https://github.com/o/r/issues/1#issuecomment-2')
+    expect(safeLink('http://example.test/a')).toBe('http://example.test/a')
+    expect(safeLink('javascript:alert(1)')).toBeUndefined()
+    expect(safeLink('data:text/html,x')).toBeUndefined()
+    expect(safeLink('/relative')).toBeUndefined()
+    expect(safeLink('')).toBeUndefined()
+    expect(safeLink(undefined)).toBeUndefined()
+  })
+})
+
+describe('latestRun', () => {
+  it('is the newest run, or why there is none', () => {
+    expect(latestRun(issue({ runs: [run('2026-11-01T00:00:00Z', 'a'), run('2026-11-03T00:00:00Z', 'b')] }))).toMatchObject({
+      kind: 'run',
+      run: { name: 'b' },
+    })
+    const error = { code: 'github_error', message: 'x' }
+    expect(latestRun(issue({ runs: null, runsError: error }))).toEqual({ kind: 'failed', error })
+    expect(latestRun(issue({ runs: undefined }))).toEqual({ kind: 'notRead' })
+    expect(latestRun(issue())).toEqual({ kind: 'none' })
   })
 })
 

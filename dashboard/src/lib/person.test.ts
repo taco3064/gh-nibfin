@@ -7,12 +7,14 @@ import {
   keepSelection,
   needsYou,
   needsYouCount,
+  repairing,
+  repairingCount,
   replaceIssue,
   runCounts,
   runnerCounts,
   stageCounts,
 } from '@/lib/person'
-import type { HostReport, PersonView, RepoIssues, Run, RunnerState, StatusIssue } from '@/lib/status'
+import type { HostReport, PersonView, RepairState, RepoIssues, Run, RunnerState, StatusIssue } from '@/lib/status'
 
 const err = { code: 'github_error', message: 'HTTP 502' }
 
@@ -149,6 +151,36 @@ describe('needsYou', () => {
     expect(needsYou(issue('u', ['scope']))).toBe(false)
     const v = view([repo('a/x', [issue('u1', ['pause']), issue('u2', ['scope'])]), repo('a/y', [issue('u3', ['pending', 'pause'])])])
     expect(needsYouCount(v)).toBe(2)
+  })
+
+  const withRepair = (u: string, labels: string[], state: RepairState) => ({ ...issue(u, labels), repair: { state, reason: 'r' } })
+  it('leaves out a pending Issue Nibfin is repairing, and keeps the other states and an unread one', () => {
+    expect(needsYou(withRepair('u', ['pending'], 'repairing'))).toBe(false)
+    expect(needsYou(withRepair('u', ['pending'], 'choose'))).toBe(true)
+    expect(needsYou(withRepair('u', ['pending'], 'act'))).toBe(true)
+    // Not read yet, or the read failed: it still counts.
+    expect(needsYou(issue('u', ['pending']))).toBe(true)
+    // A paused Issue waits on a person whatever its repair state.
+    expect(needsYou(withRepair('u', ['pending', 'pause'], 'repairing'))).toBe(true)
+    expect(repairing(withRepair('u', ['pending'], 'repairing'))).toBe(true)
+    expect(repairing(withRepair('u', ['scope'], 'repairing'))).toBe(false)
+  })
+  it('counts and filters the same set, and counts the repairing ones it leaves out', () => {
+    const v = view([
+      repo('a/x', [
+        withRepair('u1', ['pending'], 'repairing'),
+        withRepair('u2', ['pending'], 'choose'),
+        withRepair('u3', ['pending'], 'act'),
+        issue('u4', ['pending']),
+        withRepair('u5', ['pending', 'pause'], 'repairing'),
+      ]),
+      repo('a/y', [withRepair('u6', ['pending'], 'repairing')]),
+    ])
+    expect(needsYouCount(v)).toBe(4)
+    expect(repairingCount(v)).toBe(2)
+    const f = filterNeedsYou(v)
+    expect(f.repos!.map((r) => r.repo)).toEqual(['a/x'])
+    expect(f.repos![0].issues!.map((i) => i.url)).toEqual(['u2', 'u3', 'u4', 'u5'])
   })
 })
 
