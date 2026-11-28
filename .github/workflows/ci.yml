@@ -25,30 +25,24 @@ jobs:
           go-version-file: go.mod
           cache: false
       # The Dashboard frontend builds into internal/dashboard/dist/ before the Go steps,
-      # so they embed it. Skipped until dashboard/ exists. Node matches the Job image.
+      # so they embed it. Node matches the Job image.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        if: hashFiles('dashboard/package-lock.json') != ''
         with:
           node-version: 24
           package-manager-cache: false
       - name: Dashboard install
-        if: hashFiles('dashboard/package-lock.json') != ''
         working-directory: dashboard
         run: npm ci
       - name: Dashboard build
-        if: hashFiles('dashboard/package-lock.json') != ''
         working-directory: dashboard
         run: npm run build
       - name: Dashboard typecheck
-        if: hashFiles('dashboard/package-lock.json') != ''
         working-directory: dashboard
         run: npm run typecheck
       - name: Dashboard lint
-        if: hashFiles('dashboard/package-lock.json') != ''
         working-directory: dashboard
         run: npm run lint
       - name: Dashboard unit tests
-        if: hashFiles('dashboard/package-lock.json') != ''
         working-directory: dashboard
         run: npm test
       - run: go vet ./...
