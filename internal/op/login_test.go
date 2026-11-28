@@ -89,7 +89,10 @@ type fakeHost struct {
 	// stopExit is the stop script's exit status per slot; purgeNoop makes the
 	// purge script succeed without removing anything; rmExit is podman
 	// volume rm's exit status.
-	stopExit  map[string]int
+	stopExit map[string]int
+	// onDrain runs when the drain script of a slot succeeds: the Jobs on
+	// the host ended.
+	onDrain   func(slot string)
 	purgeNoop bool
 	rmExit    int
 	// existsExit, when non-zero, is podman volume exists's exit status,

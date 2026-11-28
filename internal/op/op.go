@@ -66,6 +66,14 @@ type Operation interface {
 	ReadBack(ctx context.Context, p Plan) (Result, error)
 }
 
+// ReadsBackAfterApplyError is an Operation whose Apply can fail for some of
+// its items while others were applied, such as runner remove. When
+// ReadBackAfterApplyError reports true after a failed Apply, Finish still
+// reads back, so the result shows what was applied and what remains.
+type ReadsBackAfterApplyError interface {
+	ReadBackAfterApplyError() bool
+}
+
 // Confirmer decides whether a plan may be applied.
 type Confirmer interface {
 	Confirm(p Plan) (bool, error)
@@ -95,7 +103,10 @@ func Run(ctx context.Context, o Operation, c Confirmer) (Plan, Result, error) {
 // Finish runs what follows a plan: a read-only plan is read back; a plan
 // that needs confirmation and is not confirmed fails with
 // confirmation_required and nothing is applied; any other plan is applied and
-// read back. The CLI (through Run) and the Dashboard API share it.
+// read back. An operation that implements ReadsBackAfterApplyError and asks
+// for it is read back after a failed Apply too: the result comes with the
+// Apply error, which keeps its cause. The CLI (through Run) and the Dashboard
+// API share it.
 func Finish(ctx context.Context, o Operation, p Plan, confirmed bool) (Result, error) {
 	if p.ReadOnly {
 		return o.ReadBack(ctx, p)
@@ -104,6 +115,11 @@ func Finish(ctx context.Context, o Operation, p Plan, confirmed bool) (Result, e
 		return nil, Errorf(CodeConfirmationRequired, "%s needs confirmation", p.Operation)
 	}
 	if err := o.Apply(ctx, p); err != nil {
+		// A cancelled command reads nothing back: nothing can be read.
+		if rb, ok := o.(ReadsBackAfterApplyError); ok && ctx.Err() == nil && rb.ReadBackAfterApplyError() {
+			r, _ := o.ReadBack(ctx, p)
+			return r, err
+		}
 		return nil, err
 	}
 	return o.ReadBack(ctx, p)

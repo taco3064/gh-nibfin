@@ -41,7 +41,6 @@ const (
 	CodeRunnerDownloadFailed = "runner_download_failed"
 	CodeRunnerInstallFailed  = "runner_install_failed"
 	CodeRunnerMissing        = "runner_missing"
-	CodeRunnerBusy           = "runner_busy"
 	CodeRunnerRemoveFailed   = "runner_remove_failed"
 	// CodeAutostartFailed is a refused autostart entry registration or
 	// removal, a launchctl failure, or a .wslconfig gh nibfin cannot edit.

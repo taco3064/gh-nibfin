@@ -69,6 +69,13 @@ func TestProgressAndCheckLines(t *testing.T) {
 	if got := progressLine(op.Event{Action: "open PR", Target: "b", Phase: op.PhaseFailed, Code: "repo_write_failed", Message: "boom"}); got != "failed: open PR b (repo_write_failed: boom)" {
 		t.Errorf("progress = %q", got)
 	}
+	if got := progressLine(op.Event{Action: "remove runner", Target: "claude-1", Phase: op.PhaseStarted}); got != "started: remove runner claude-1" {
+		t.Errorf("started = %q", got)
+	}
+	waiting := op.Event{Action: "remove runner", Target: "claude-1", Phase: op.PhaseStarted, Message: "waiting for its Job to end: h-claude-1 in github.com/o/r"}
+	if got := progressLine(waiting); got != "started: remove runner claude-1 (waiting for its Job to end: h-claude-1 in github.com/o/r)" {
+		t.Errorf("waiting = %q", got)
+	}
 	if got := checkLine(op.Check{Action: "set secret", Target: "S", Confirmed: true, State: "set"}); got != "[confirmed] set secret S: set" {
 		t.Errorf("check = %q", got)
 	}

@@ -82,11 +82,15 @@ func writeChecks(w io.Writer, items []op.Check) {
 	}
 }
 
-// progressLine is one progress event.
+// progressLine is one progress event. A started event with a message is an
+// item that waits, such as a Runner waiting for its Job to end.
 func progressLine(e op.Event) string {
 	line := e.Phase + ": " + strings.TrimSpace(e.Action+" "+e.Target)
-	if e.Phase == op.PhaseFailed {
+	switch {
+	case e.Phase == op.PhaseFailed:
 		line += " (" + e.Code + ": " + e.Message + ")"
+	case e.Phase == op.PhaseStarted && e.Message != "":
+		line += " (" + e.Message + ")"
 	}
 	return line
 }

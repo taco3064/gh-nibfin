@@ -13,7 +13,8 @@ const (
 )
 
 // Event is the progress of one plan item during Apply. Code and Message are
-// set only when the item failed.
+// set when the item failed. A started event may come again for an item that
+// has to wait, with Message saying what it waits for (see Waiting).
 type Event struct {
 	ID      string `json:"id"`
 	Action  string `json:"action"`
@@ -51,6 +52,16 @@ func emit(ctx context.Context, s Step, phase string, err error) {
 func Started(ctx context.Context, s Step)           { emit(ctx, s, PhaseStarted, nil) }
 func Done(ctx context.Context, s Step)              { emit(ctx, s, PhaseDone, nil) }
 func Failed(ctx context.Context, s Step, err error) { emit(ctx, s, PhaseFailed, err) }
+
+// Waiting emits another started event for the item s, whose Message says what
+// it waits for, such as the end of a Runner's Job.
+func Waiting(ctx context.Context, s Step, message string) {
+	fn, _ := ctx.Value(progressKey{}).(func(Event))
+	if fn == nil {
+		return
+	}
+	fn(Event{ID: s.ID, Action: s.Action, Target: s.Target, Phase: PhaseStarted, Message: message})
+}
 
 // Track runs one item's write: it emits started, then done or failed, and
 // returns fn's error unchanged.

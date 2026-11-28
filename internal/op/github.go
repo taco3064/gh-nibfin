@@ -201,14 +201,37 @@ func (g restGitHub) SetCustomLabels(ctx context.Context, repo string, id int64, 
 }
 
 // DeleteRunner deletes the registration of the runner id. A runner that is
-// gone already is success.
+// gone already is success. GitHub's 422 for a runner that is running a Job
+// keeps its github_api_failed code and message, and also matches
+// errRunningJob, so the caller waits for the Job instead of failing.
 func (g restGitHub) DeleteRunner(ctx context.Context, repo string, id int64) error {
 	err := g.c.DoWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/actions/runners/%d", repoPath(repo), id), nil, nil)
 	if notFound(err) {
 		return nil
 	}
-	return apiError(fmt.Sprintf("delete runner %d from %s", id, repo), err)
+	out := apiError(fmt.Sprintf("delete runner %d from %s", id, repo), err)
+	var h *api.HTTPError
+	if errors.As(err, &h) && h.StatusCode == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(h.Message), "currently running a job") {
+		return runningJobError(out)
+	}
+	return out
 }
+
+// errRunningJob matches a refused runner delete because the runner is
+// running a Job (errors.Is).
+var errRunningJob = errors.New("the runner is running a Job")
+
+// runningJob is an error that also matches errRunningJob; its text and
+// code are those of the error it wraps.
+type runningJob struct{ err error }
+
+func (e runningJob) Error() string        { return e.err.Error() }
+func (e runningJob) Unwrap() error        { return e.err }
+func (e runningJob) Is(target error) bool { return target == errRunningJob }
+
+// runningJobError marks err as a delete refused because the runner is
+// running a Job.
+func runningJobError(err error) error { return runningJob{err} }
 
 func notFound(err error) bool {
 	var h *api.HTTPError
