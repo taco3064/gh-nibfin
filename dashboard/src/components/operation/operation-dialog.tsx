@@ -62,9 +62,19 @@ export interface OperationDialogProps {
   // confirm false applies a stored plan that asks no confirmation right
   // after it is planned, with no preview stop (Proposal R9.21: resume is not
   // confirmed). A plan that asks for confirmation still stops at the
-  // preview. The default is true: every plan stops at the preview.
-  confirm?: boolean
+  // preview. The default is true: every plan stops at the preview. A
+  // function decides it from the input values, for an opener whose inputs
+  // send different kinds of change.
+  confirm?: boolean | ((values: Values) => boolean)
+  // labels names the inputs' send button and the preview's apply button
+  // for the input values; a label left out keeps its default.
+  labels?: (values: Values) => ActionLabels
   fetcher?: Fetch
+}
+
+export interface ActionLabels {
+  submit?: string
+  apply?: string
 }
 
 // OperationDialog runs one changing command: inputs from its schema, the
@@ -159,7 +169,8 @@ function OperationContent({
   title,
   intro,
   inputs,
-  confirm = true,
+  confirm: confirmOf = true,
+  labels,
 }: {
   command: Command
   initial?: Values
@@ -169,10 +180,13 @@ function OperationContent({
   title?: string
   intro?: ReactNode
   inputs?: FieldInputs
-  confirm?: boolean
+  confirm?: boolean | ((values: Values) => boolean)
+  labels?: (values: Values) => ActionLabels
 }) {
   const fields = useMemo(() => fieldsOf(command), [command])
   const [values, setValues] = useState(() => initialValues(fields, initial))
+  const confirm = typeof confirmOf === 'function' ? confirmOf(values) : confirmOf
+  const label = labels?.(values) ?? {}
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [state, dispatch] = useReducer(runReducer, initialRun)
   const [logins, loginDispatch] = useReducer(loginReducer, [])
@@ -493,7 +507,7 @@ function OperationContent({
             </Button>
             <Button type="submit" form="operation-form" disabled={phase === 'planning'}>
               {phase === 'planning' && <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />}
-              {phase === 'planning' ? 'Planning…' : confirm ? 'Preview' : 'Submit'}
+              {phase === 'planning' ? 'Planning…' : (label.submit ?? (confirm ? 'Preview' : 'Submit'))}
             </Button>
           </>
         )}
@@ -503,7 +517,7 @@ function OperationContent({
               <Button variant="outline" onClick={cancel}>
                 Cancel
               </Button>
-              <Button onClick={() => void apply()}>{refused ? 'Apply again' : 'Apply'}</Button>
+              <Button onClick={() => void apply()}>{refused ? 'Apply again' : (label.apply ?? 'Apply')}</Button>
             </>
           ) : (
             <Button variant="outline" onClick={cancel}>

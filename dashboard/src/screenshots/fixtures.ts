@@ -109,6 +109,8 @@ export const fixtures: FixtureIssue[] = [
     issue: {
       ...base('acme/app', 108, 'Move uploaded attachments to object storage', ['scope', 'shaped', 'pending']),
       pendingComment: `${issueURL('acme/app', 108)}#issuecomment-5201`,
+      // An earlier decision left a part for a person.
+      needsPerson: { comment: `${issueURL('acme/app', 108)}#issuecomment-5150`, items: ['Close the duplicate Issue acme/app#97.'] },
       runs: [
         run('acme/nibfin-exec', 7108, 'Deliver #108 Move uploaded attachments', 'completed', 'failure', '2026-11-26T10:00:00Z'),
         run('acme/app', 9040, 'Shape #108 Move uploaded attachments', 'completed', 'success', '2026-11-25T09:00:00Z'),
@@ -194,7 +196,14 @@ export const fixtures: FixtureIssue[] = [
   },
   {
     repo: 'acme/infra',
-    issue: { ...base('acme/infra', 12, 'Object storage bucket for exports', ['scope', 'shaped']) },
+    // A decision was applied; Core left two parts for a person.
+    issue: {
+      ...base('acme/infra', 12, 'Object storage bucket for exports', ['scope', 'shaped']),
+      needsPerson: {
+        comment: `${issueURL('acme/infra', 12)}#issuecomment-6101`,
+        items: ['Add the `pause` label until the bucket policy is reviewed.', 'Rerun the failed CI job on the default branch.'],
+      },
+    },
   },
   {
     repo: 'acme/legacy',

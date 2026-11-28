@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 
 import { ChangeMessage, DisabledReason } from './change-message'
 import { ExternalMark } from './external-mark'
+import { NeedsPerson } from './needs-person'
 import { RepairAction, RepairBadge } from './repair-dialog'
 import { useRepairTarget } from './use-repair-target'
 import { RunStrip } from './run-strip'
@@ -148,10 +149,11 @@ function Blockers({ issue }: { issue: StatusIssue }) {
 
 // IssueItem is the shared Dashboard element of one Issue: its stage from
 // labels, its GitHub link, its runs, its open blockers, pause/resume and,
-// for a pending Issue that waits on a person, the Repair dialog.
+// for a pending Issue that waits on a person, the Repair dialog, and the
+// parts of a repair decision Core left for a person.
 // It renders only from its props; the placing view applies onChanged.
-// Read-only, it offers no selection, pause, resume or Repair; its runs dialog and
-// links stay.
+// Read-only, it offers no selection, pause, resume or Repair; its runs dialog,
+// links and the parts left for a person stay.
 export function IssueItem({ issue, repo, access, selected, onSelectedChange, onChanged, stacked = false, className }: IssueItemProps) {
   const id = useId()
   const loading = useLoading()
@@ -198,6 +200,7 @@ export function IssueItem({ issue, repo, access, selected, onSelectedChange, onC
           <span className="sr-only">{repo}</span>
           <StageMarkers issue={issue} />
           <Blockers issue={issue} />
+          {issue.needsPerson && <NeedsPerson data={issue.needsPerson} />}
         </div>
         <div className={cn('flex shrink-0 flex-col gap-2', !stacked && 'sm:items-end')}>
           <div className="flex flex-wrap items-center gap-2">

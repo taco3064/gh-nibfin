@@ -63,7 +63,7 @@ export const commands = [
   },
 ]
 
-// resume with its --option flag, as the CLI defines it
+// resume with its --option and --reply flags, as the CLI defines it
 // (src/app/data/commands.json). The Issue element spec adds it to the
 // schema; the operation dialog harness lists only commands.
 export const resumeCommand = {
@@ -80,6 +80,15 @@ export const resumeCommand = {
       usage: "answer the repair record's options with option N (one Issue)",
       required: false,
       param: 'option',
+    },
+    {
+      name: 'reply',
+      shorthand: '',
+      type: 'string',
+      default: '',
+      usage: 'answer the repair record in your own words; posted as written (one Issue)',
+      required: false,
+      param: 'reply',
     },
     repo,
   ],

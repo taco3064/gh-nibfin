@@ -101,7 +101,7 @@ function ItemRow({ row, phase }: { row: Row; phase: Phase }) {
           {phase === 'finished' && !(s?.afterStart && !row.check) && <ReadBackTag row={row} />}
         </div>
       </div>
-      {s?.detail && <p className="text-sm break-words text-muted-foreground">{s.detail}</p>}
+      {s?.detail && <p data-slot="item-detail" className="text-sm break-words whitespace-pre-wrap text-muted-foreground">{s.detail}</p>}
       {s?.afterStart && !row.check && (phase === 'applying' || phase === 'finished') && (
         <p data-slot="placeholder" className="text-sm break-words text-muted-foreground">
           Placeholder: the items known after the machine starts are listed on their own as they report.

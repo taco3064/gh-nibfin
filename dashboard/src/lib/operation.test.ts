@@ -448,13 +448,21 @@ describe('applyAtOnce', () => {
   })
 })
 
-describe('resume --option body', () => {
+describe('resume --option and --reply body', () => {
   it('sends the Issue as a list and the option as an integer, without the repository', () => {
     const resume = (commands as Command[]).find((c) => c.api === 'resume')!
     const f = fieldsOf(resume)
-    expect(f.map((x) => x.key).sort()).toEqual(['issues', 'option', 'repo'])
-    const values = initialValues(f, { issues: 'https://github.com/o/r/issues/7', option: '2' })
+    expect(f.map((x) => x.key).sort()).toEqual(['issues', 'option', 'reply', 'repo'])
+    const values = initialValues(f, { issues: 'https://github.com/o/r/issues/7', option: '2', reply: '' })
     expect(requestBody(f, values)).toEqual({ ok: true, body: { issues: ['https://github.com/o/r/issues/7'], option: 2 } })
+  })
+
+  it('sends a reply trimmed, without the option', () => {
+    const resume = (commands as Command[]).find((c) => c.api === 'resume')!
+    const f = fieldsOf(resume)
+    expect(f.find((x) => x.key === 'reply')?.kind).toBe('text')
+    const values = initialValues(f, { issues: 'https://github.com/o/r/issues/7', option: '', reply: '\n Keep it,\nthen ship.  ' })
+    expect(requestBody(f, values)).toEqual({ ok: true, body: { issues: ['https://github.com/o/r/issues/7'], reply: 'Keep it,\nthen ship.' } })
   })
 })
 
