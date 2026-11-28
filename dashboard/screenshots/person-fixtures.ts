@@ -167,7 +167,23 @@ export const repos = [
       ),
     ],
   },
-  { repo: 'acme/docs', image: image.notLatest, permission: 'READ', issues: [issue('acme/docs', 7, 'Rewrite the getting started guide', ['scope'])] },
+  {
+    repo: 'acme/docs',
+    image: image.notLatest,
+    permission: 'READ',
+    issues: [
+      // Nibfin repairs it itself: pending, but not counted in Needs you.
+      issue('acme/docs', 7, 'Rewrite the getting started guide', ['scope', 'pending'], {
+        pendingComment: `${issueURL('acme/docs', 7)}#issuecomment-5101`,
+        repair: {
+          state: 'repairing',
+          reason: 'CI failed on a flaky link check; the repair stage reruns it.',
+          category: 'CI failure',
+          record: `${issueURL('acme/docs', 7)}#issuecomment-5102`,
+        },
+      }),
+    ],
+  },
   {
     repo: 'acme/infra',
     image: image.unknown,

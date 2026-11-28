@@ -1,12 +1,12 @@
 import { useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 
-import { ExternalMark } from '@/components/issue/issue-item'
+import { ExternalMark } from '@/components/issue/external-mark'
 import { tones } from '@/components/issue/tones'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { unlinkedGroups, type GraphNode, type UnlinkedGroupId } from '@/lib/graph'
+import { heldFlags, unlinkedGroups, type GraphNode, type UnlinkedGroupId } from '@/lib/graph'
 import { runBucket, runBucketLabels, runsView, stageLabels, stageOf, type RunBucket } from '@/lib/issue'
 import type { StatusIssue } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -123,10 +123,10 @@ function UnlinkedRow({ k, node, held, item }: { k: string; node: GraphNode; held
   const issue = node.issue
   const run = latestRun(issue)
   const stage = stageLabels[stageOf(issue.labels)]
-  const flags = held ? [issue.pause && 'Paused', issue.pending && 'Pending'].filter(Boolean) : []
+  const flags = held ? heldFlags(issue) : []
   // The visible text in reading order, with separators the layout shows as
   // spacing.
-  const name = [`#${issue.number} ${issue.title}`, `stage ${[stage, ...flags].join(' ')}`, run.text].join(', ')
+  const name = [`#${issue.number} ${issue.title}`, `stage ${[stage, ...flags.map((f) => f.label)].join(' ')}`, run.text].join(', ')
   const onFocus = (e: FocusEvent<HTMLButtonElement>) => {
     if (e.currentTarget.matches(':focus-visible')) setPreview(true)
   }
@@ -160,22 +160,14 @@ function UnlinkedRow({ k, node, held, item }: { k: string; node: GraphNode; held
                   <span className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
                     <span data-slot="row-stage">
                       {stage}
-                      {held && issue.pause && (
-                        <>
+                      {flags.map((f) => (
+                        <span key={f.key}>
                           {' '}
-                          <Badge variant="outline" className={cn(tones.warning, 'align-middle')}>
-                            Paused
+                          <Badge variant="outline" data-flag={f.key} className={cn(tones[f.tone], 'align-middle whitespace-normal')}>
+                            {f.label}
                           </Badge>
-                        </>
-                      )}
-                      {held && issue.pending && (
-                        <>
-                          {' '}
-                          <Badge variant="outline" className={cn(tones.warning, 'align-middle')}>
-                            Pending
-                          </Badge>
-                        </>
-                      )}
+                        </span>
+                      ))}
                     </span>
                     <span data-slot="row-run" data-run={run.bucket} className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <span

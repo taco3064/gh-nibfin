@@ -62,3 +62,26 @@ export const commands = [
     args: [],
   },
 ]
+
+// resume with its --option flag, as the CLI defines it
+// (src/app/data/commands.json). The Issue element spec adds it to the
+// schema; the operation dialog harness lists only commands.
+export const resumeCommand = {
+  path: 'resume',
+  api: 'resume',
+  short: 'Resume Nibfin work on Issues',
+  long: 'Resume Nibfin work on Issues.\n\nWith --option N it answers the options of the repair record on one pending Issue.',
+  flags: [
+    {
+      name: 'option',
+      shorthand: '',
+      type: 'int',
+      default: '0',
+      usage: "answer the repair record's options with option N (one Issue)",
+      required: false,
+      param: 'option',
+    },
+    repo,
+  ],
+  args: [{ name: 'issue', required: true, repeatable: true, param: 'issues' }],
+}

@@ -91,6 +91,88 @@ export const fixtures: FixtureIssue[] = [
   },
   {
     repo: 'acme/app',
+    issue: {
+      ...base('acme/app', 107, 'Cache the search index between deploys', ['scope', 'shaped', 'pending']),
+      pendingComment: `${issueURL('acme/app', 107)}#issuecomment-5101`,
+      runs: [run('acme/app', 9030, 'Deliver #107 Cache the search index', 'completed', 'failure', '2026-11-25T08:00:00Z')],
+      repair: {
+        state: 'repairing',
+        reason: 'CI failed on a flaky integration test; the repair stage reruns CI.',
+        category: 'CI failure',
+        done: 'Read the failed job log.',
+        record: `${issueURL('acme/app', 107)}#issuecomment-5102`,
+      },
+    },
+  },
+  {
+    repo: 'acme/app',
+    issue: {
+      ...base('acme/app', 108, 'Move uploaded attachments to object storage', ['scope', 'shaped', 'pending']),
+      pendingComment: `${issueURL('acme/app', 108)}#issuecomment-5201`,
+      runs: [
+        run('acme/nibfin-exec', 7108, 'Deliver #108 Move uploaded attachments', 'completed', 'failure', '2026-11-26T10:00:00Z'),
+        run('acme/app', 9040, 'Shape #108 Move uploaded attachments', 'completed', 'success', '2026-11-25T09:00:00Z'),
+      ],
+      repair: {
+        state: 'choose',
+        reason: 'The Shape and the Issue disagree on whether existing attachments move as well; pick which one holds.',
+        category: 'Requirement conflict',
+        done: 'Compared the Shape with the current Issue text and the product rules; both readings are possible, so the repair stage stopped for a choice instead of guessing.',
+        record: `${issueURL('acme/app', 108)}#issuecomment-5202`,
+        options: [
+          {
+            number: 1,
+            title: 'Move new uploads only',
+            consequence: 'Deliver goes on as shaped; existing attachments stay where they are until a later Issue.',
+            issueChange: 'none',
+            recommended: false,
+          },
+          {
+            number: 2,
+            title: 'Move new uploads and migrate every existing attachment in the same change',
+            consequence: 'The Shape runs again with a migration step, and Deliver starts over from the new Shape; this takes longer but leaves no attachment behind.',
+            issueChange: 'adds a clause: existing attachments are migrated to object storage',
+            recommended: true,
+          },
+          {
+            number: 3,
+            title: 'Stop and split the Issue',
+            consequence: 'Nibfin closes nothing; a person splits the migration into its own Issue.',
+            issueChange: 'removes the migration from this Issue',
+            recommended: false,
+          },
+        ],
+      },
+    },
+  },
+  {
+    repo: 'acme/app',
+    issue: {
+      ...base('acme/app', 109, 'Publish the nightly report to the team channel', ['scope', 'shaped', 'pending']),
+      pendingComment: `${issueURL('acme/app', 109)}#issuecomment-5301`,
+      runs: undefined,
+      repair: {
+        state: 'act',
+        reason: 'The Runner has no provider login, so no agent could start.',
+        category: 'Environment',
+        done: 'Retried the Job twice; both stopped before the agent started.',
+        advice: 'Log in to the provider on the runner host, then resume the Issue.',
+        record: `${issueURL('acme/app', 109)}#issuecomment-5302`,
+        steps: [
+          { text: 'Open the failed Job to confirm the login error.', link: `${gh}/acme/app/actions/runs/9050` },
+          { text: 'Log in on the runner host.', command: 'gh nibfin login claude' },
+          { text: 'This link is not http(s) and shows as text.', link: 'javascript:alert(1)' },
+        ],
+        bugReport: {
+          url: `${gh}/acme/nibfin/issues/new`,
+          title: 'Runner started a Job without a provider login',
+          body: 'The Job nibfin-job ran on a Runner whose provider login was missing.\nExpected: the Runner is not offered Jobs until it is logged in.',
+        },
+      },
+    },
+  },
+  {
+    repo: 'acme/app',
     issue: { ...base('acme/app', 105, 'Spike: evaluate a new charting library', []), runs: undefined, blockedBy: undefined },
   },
   {
@@ -100,6 +182,15 @@ export const fixtures: FixtureIssue[] = [
   {
     repo: 'acme/docs',
     issue: { ...base('acme/docs', 7, 'Rewrite the getting started guide', ['scope', 'pending']) },
+  },
+  {
+    repo: 'acme/docs',
+    // No repair record covers the stop; the account may not answer it.
+    issue: {
+      ...base('acme/docs', 8, 'Translate the FAQ', ['scope', 'shaped', 'pending']),
+      pendingComment: `${issueURL('acme/docs', 8)}#issuecomment-5401`,
+      repair: { state: 'act', reason: 'No repair record covers this stop yet; see the pending comment' },
+    },
   },
   {
     repo: 'acme/infra',

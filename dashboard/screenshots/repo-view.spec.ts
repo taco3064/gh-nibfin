@@ -252,7 +252,16 @@ for (const theme of themes) {
       // A paused or pending Issue names its flags in its row.
       await openGroups(page)
       const held = unlinkedGroups.at(-1)!.issues[0]
-      await expect(rowButton(held.number)).toContainText(held.pause ? 'Paused' : 'Pending')
+      const repairLabel: Record<string, string> = { repairing: 'Repairing', choose: 'Waiting for your choice', act: 'Needs your action' }
+      const pendingFlag = (i: object) => {
+        const state = 'repair' in i ? (i.repair as { state?: string }).state : undefined
+        return state ? repairLabel[state] : 'Pending'
+      }
+      await expect(rowButton(held.number)).toContainText(held.pause ? 'Paused' : pendingFlag(held))
+      // Every held row names its repair state, or Pending when it was not read.
+      for (const i of unlinkedGroups.at(-1)!.issues.filter((x) => x.pending)) {
+        await expect(rowButton(i.number).locator('[data-flag=pending]')).toHaveText(pendingFlag(i))
+      }
       expect(await unevenRoundedBorders(page, list), 'unlinked: rounded boxes with uneven borders').toEqual([])
       await list.screenshot({ path: `${outDir}repo-unlinked-open-${theme}-${width}.png`, animations: 'disabled' })
 

@@ -92,6 +92,8 @@ for (const theme of themes) {
       await expect(tile(page, 'issues').locator('[data-slot=tile-count]')).toHaveText('9Issues')
       await expect(tile(page, 'issues').getByRole('img')).toHaveAttribute('aria-label', 'Open Issues by stage: Shape 4, Deliver 3, Other 2')
       await expect(tile(page, 'needs-you').locator('[data-slot=tile-count]')).toHaveText('3pending or paused')
+      // A pending Issue Nibfin repairs itself is left out, and said so.
+      await expect(tile(page, 'needs-you').locator('[data-note=repairing]')).toHaveText('1 repairing not counted: Nibfin is repairing it itself.')
       await expect(tile(page, 'runs').getByRole('img')).toHaveAttribute('aria-label', 'Runs by conclusion: Succeeded 0, Failed 0, Running 1')
       await expect(tile(page, 'runners').locator('[data-slot=runner-counts]')).toHaveText('2 online · 0 busy')
       await expect(tile(page, 'runners').locator('[data-slot=memory-used]')).toContainText('Memory 10.3 GiB of 15.5 GiB in use')
@@ -267,7 +269,7 @@ for (const theme of themes) {
       await expect(view.locator('[data-empty]')).toHaveText('No open Issues with scope or request are assigned to you.')
       await expect(tile(page, 'issues').locator('[data-slot=tile-count]')).toHaveText('0Issues')
       await expect(tile(page, 'needs-you').getByRole('button', { name: 'Show only these' })).toBeDisabled()
-      await expect(tile(page, 'needs-you').locator('[data-slot=disabled-reason]')).toHaveText('No Issue is pending or paused.')
+      await expect(tile(page, 'needs-you').locator('[data-slot=disabled-reason]')).toHaveText('No Issue waits on you.')
       await expect(tile(page, 'runs').locator('[data-state=no-runs]')).toHaveText('No runs')
       // No run strips, so no run legend.
       await expect(view.locator('[data-slot=run-legend]')).toHaveCount(0)

@@ -20,6 +20,32 @@ const blocker = (repo: string, number: number, title: string, state: 'OPEN' | 'C
 
 const stageLabels = [['scope'], ['scope', 'shaped'], ['scope', 'shaped', 'delivered'], []]
 
+// repairOf gives the pending Issues the repair states in turn (Proposal
+// R9.52), and every fourth none: its repair state was not read.
+function repairOf(number: number, record: string): Record<string, unknown> {
+  switch ((number / 13) % 4) {
+    case 1:
+      return { repair: { state: 'repairing', reason: 'Shape review failed; the repair stage amends the Shape.', record } }
+    case 2:
+      return {
+        repair: {
+          state: 'choose',
+          reason: 'The Issue asks for two storage backends; pick one.',
+          category: 'Unclear requirement',
+          record,
+          options: [
+            { number: 1, title: 'Keep object storage', consequence: 'Deliver goes on as shaped.', issueChange: 'none', recommended: true },
+            { number: 2, title: 'Use the database', consequence: 'Shape runs again.', issueChange: 'adds a storage clause', recommended: false },
+          ],
+        },
+      }
+    case 3:
+      return { repair: { state: 'act', reason: 'The Runner has no provider login.', category: 'Environment', record, advice: 'Log in on the runner host.' } }
+    default:
+      return {}
+  }
+}
+
 function issue(repo: string, number: number, title: string, blockedBy: Blocker[] | undefined, over: Record<string, unknown> = {}, base = gh) {
   const labels = [...stageLabels[number % 4]]
   const pause = number % 11 === 0
@@ -34,6 +60,7 @@ function issue(repo: string, number: number, title: string, blockedBy: Blocker[]
     pause,
     pending,
     ...(pending ? { pendingComment: `${base}/${repo}/issues/${number}#issuecomment-${7000 + number}` } : {}),
+    ...(pending ? repairOf(number, `${base}/${repo}/issues/${number}#issuecomment-${8000 + number}`) : {}),
     createdAt: '2026-11-02T09:00:00Z',
     ...(blockedBy !== undefined ? { blockedBy } : {}),
     runs: [],
