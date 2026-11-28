@@ -15,7 +15,7 @@ gh nibfin init [-R OWNER/REPO] [--yes]
 gh nibfin upgrade [-R OWNER/REPO] [--yes]
 gh nibfin status [-R OWNER/REPO] [--json]
 gh nibfin pause <issue>... [-R OWNER/REPO]
-gh nibfin resume <issue>... [-R OWNER/REPO] [--option N]
+gh nibfin resume <issue>... [-R OWNER/REPO] [--option N | --reply TEXT]
 gh nibfin dashboard [--port N] [--no-browser]
 ```
 
@@ -24,20 +24,29 @@ gh nibfin dashboard [--port N] [--no-browser]
 an Issue URL, and several can be given at once. Both commands write all
 changes in one GraphQL mutation, read them back, and ask no confirmation.
 
-`resume <issue> --option N` answers the options of the repair record on one
-`pending` Issue in the `choose` state (`status` lists them; Proposal R4.51,
-R9.54). It reads the repair state first and fails with `invalid_argument`,
-writing nothing, for several Issues, another state or a number that is not an
-option. It writes the decision comment `<!-- nibfin:decision option=N -->`
-with the line `Chose option N.`, then removes `pause` and `pending` as
-`resume` does, and reads both back. The comment is confirmed only when it is
-the newest decision comment after the record, by anyone, since Core decides by
-the newest one; when someone else answers meanwhile it is reported not
-confirmed, naming their option. If your own decision for N is already the
-newest, it is not written again, so a rerun after a failed label change only
-removes the labels. Just before writing it reads the repair state again and
-writes nothing when the record changed. Without `--option`, `resume` removing
-`pending` makes Core run the Issue once more (R4.52).
+`resume <issue> --option N` and `resume <issue> --reply TEXT` answer the
+repair record on one `pending` Issue in the `choose` state (`status` lists its
+options, which are suggestions; Proposal R4.51, R9.54). `--option N` writes
+the decision comment `<!-- nibfin:decision option=N -->` with the line
+`Chose option N.`; `--reply` posts TEXT, trimmed, as one ordinary comment
+without a marker, which Core's next Shape run takes as written (a reply that
+is only a number is that option). For a long reply use the shell, for example
+`--reply "$(cat reply.md)"`. Both read the repair state first and fail with
+`invalid_argument`, writing nothing, for several Issues, another state, a
+number that is not an option, an empty or blank reply, or `--option` and
+`--reply` together. Then they remove `pause` and `pending` as `resume` does,
+and read both back.
+
+Core takes as the decision the newest comment after the record's last update
+by a Collaborator with write permission, skipping empty comments and Nibfin's
+own marked ones. So the comment is confirmed only when it is the newest such
+comment, by anyone (gh-nibfin does not check the other authors' permission);
+when someone else comments meanwhile it is reported not confirmed, naming
+their option or reply. If your own identical decision is already the newest,
+it is not written again, so a rerun after a failed label change only removes
+the labels. Just before writing it reads the repair state again and writes
+nothing when the record changed. Without `--option` or `--reply`, `resume`
+removing `pending` makes Core run the Issue once more (R4.52).
 
 `login`, `init`, `upgrade`, `runner add`, `runner remove`, `status` and
 `dashboard` are also implemented (see [Dashboard](#dashboard)). The behaviour
@@ -638,7 +647,7 @@ label last, or shows `pending (no marked comment)`. It also shows the
 repair state Core's repair stage records for the stop (`"repair"` in `--json`):
 `repairing` (the stage is retrying, waiting, running the repair agent,
 rerunning CI or amending the Issue), `choose` (numbered options wait for your
-choice; answer with `gh nibfin resume <issue> --option N`) or `act` (follow the
+choice; answer with `gh nibfin resume <issue> --option N` or `--reply TEXT`) or `act` (follow the
 record's advice and steps, then `resume`), with its one-line reason. The
 record counts only when the account that added `pending` last wrote it for the
 current `pending` comment; otherwise the state is `act` with the reason "No
@@ -783,7 +792,7 @@ also for `localhost`), and an `Origin` header, when present, must be exactly
   - `login` `{"provider"}` (empty: every provider that needs it);
   - `init`, `upgrade` `{"repo"}` (empty: the directory the server started in);
   - `status` `{"repo"}` (empty: the person view; set: the repository view);
-  - `pause` `{"repo", "issues"}`, `resume` `{"repo", "issues", "option"}`.
+  - `pause` `{"repo", "issues"}`, `resume` `{"repo", "issues", "option", "reply"}`.
 
   A plan is `{"operation", "repo", "steps", "notes", "confirm",
   "readOnly"}`. Every changing command lists each item it considers in

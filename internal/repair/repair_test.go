@@ -185,23 +185,112 @@ func at(s string) time.Time {
 	return t
 }
 
-func TestLatestDecision(t *testing.T) {
-	cs := []Comment{
-		{ID: 10, Author: "a", Body: FormatDecision(1), CreatedAt: at("2026-11-28T01:00:00Z")},
-		{ID: 12, Author: "b", Body: "3", CreatedAt: at("2026-11-28T02:00:00Z")},
-		{ID: 11, Author: "c", Body: "I think 2", CreatedAt: at("2026-11-28T03:00:00Z")},
+func TestCandidate(t *testing.T) {
+	rec := &Comment{ID: 5, CreatedAt: at("2026-11-28T00:00:00Z"), UpdatedAt: at("2026-11-28T00:30:00Z")}
+	s := Snapshot{Record: rec, After: []Comment{
+		// Created after the record but before its last update: not a candidate.
+		{ID: 6, Author: "a", Body: "1", CreatedAt: at("2026-11-28T00:10:00Z")},
+		{ID: 10, Author: "a", Body: FormatDecision(1) + "\nChose option 1.", CreatedAt: at("2026-11-28T01:00:00Z")},
+		{ID: 12, Author: "b", Body: " 3\r\n", CreatedAt: at("2026-11-28T02:00:00Z")},
+		{ID: 11, Author: "c", Body: "I think 2,\r\nbut maybe not", CreatedAt: at("2026-11-28T03:00:00Z")},
+	}}
+	c, n, ok := s.Candidate()
+	if !ok || c.ID != 11 || n != 0 {
+		t.Fatalf("Candidate = %+v %d %v", c, n, ok)
 	}
-	c, n, ok := LatestDecision(cs)
-	if !ok || c.ID != 12 || n != 3 {
-		t.Fatalf("LatestDecision = %+v %d %v", c, n, ok)
+	// Nibfin's own marked comments, empty bodies and authorless comments are
+	// skipped; the decision marker is not one of Nibfin's own.
+	s.After = append(s.After,
+		Comment{ID: 20, Author: "nibfin", Body: ChoiceMarker + "\nstate", CreatedAt: at("2026-11-28T04:00:00Z")},
+		Comment{ID: 21, Author: "d", Body: " \n\t", CreatedAt: at("2026-11-28T04:00:00Z")},
+		Comment{ID: 22, Body: "ghost", CreatedAt: at("2026-11-28T04:00:00Z")},
+		Comment{ID: 23, Author: "e", Body: "  <!-- nibfin:pending -->  \nx", CreatedAt: at("2026-11-28T04:00:00Z")},
+	)
+	if c, n, _ := s.Candidate(); c.ID != 11 || n != 0 {
+		t.Fatalf("Candidate = %+v %d", c, n)
 	}
-	// The same time: the higher id is newer.
-	cs = append(cs, Comment{ID: 13, Author: "a", Body: FormatDecision(2), CreatedAt: at("2026-11-28T02:00:00Z")})
-	if c, n, _ := LatestDecision(cs); c.ID != 13 || n != 2 {
-		t.Fatalf("LatestDecision = %+v %d", c, n)
+	// The same time: the higher id is newer; the marker maps to its option.
+	s.After = append(s.After, Comment{ID: 13, Author: "a", Body: FormatDecision(2), CreatedAt: at("2026-11-28T03:00:00Z")})
+	if c, n, _ := s.Candidate(); c.ID != 13 || n != 2 {
+		t.Fatalf("Candidate = %+v %d", c, n)
 	}
-	if _, _, ok := LatestDecision([]Comment{{Body: "hi"}}); ok {
-		t.Fatal("a comment without a decision is a decision")
+	s.After = append(s.After, Comment{ID: 30, Author: "b", Body: "4\n", CreatedAt: at("2026-11-28T05:00:00Z")})
+	if c, n, _ := s.Candidate(); c.ID != 30 || n != 4 {
+		t.Fatalf("Candidate = %+v %d", c, n)
+	}
+	if _, _, ok := (Snapshot{After: s.After}).Candidate(); ok {
+		t.Fatal("a candidate without a record")
+	}
+	if _, _, ok := (Snapshot{Record: rec, After: []Comment{{ID: 6, Author: "a", Body: "", CreatedAt: at("2026-11-28T09:00:00Z")}}}).Candidate(); ok {
+		t.Fatal("an empty comment is a candidate")
+	}
+}
+
+func TestIsNibfinComment(t *testing.T) {
+	for body, want := range map[string]bool{
+		RecordMarker + "\nx":                 true,
+		ChoiceMarker:                         true,
+		" " + PendingMarker + " \nx":         true,
+		"<!-- nibfin:decision -->":           false,
+		FormatDecision(2):                    false,
+		"<!-- nibfin:repair-state for=x -->": false,
+		"text\n" + RecordMarker:              false,
+		"<!-- nibfin:Choice -->":             false,
+	} {
+		if got := IsNibfinComment(body); got != want {
+			t.Errorf("IsNibfinComment(%q) = %v", body, got)
+		}
+	}
+}
+
+// choice-applied.md was written by the formatChoice of the nibfin-core build
+// in the Nibfin image (dist/stages/choice.js), with the choice marker line
+// upsertMarkedComment adds. Its decision text holds look-alike lines.
+func TestParseChoice(t *testing.T) {
+	body := fixture(t, "choice-applied.md")
+	ch, ok := ParseChoice(body)
+	want := Choice{Status: ChoiceApplied, NotApplied: []string{"add the `pause` label", "close the Issue"}}
+	if !ok || !reflect.DeepEqual(ch, want) {
+		t.Fatalf("ParseChoice = %+v %v", ch, ok)
+	}
+	if ch, ok := ParseChoice(strings.ReplaceAll(body, "\n", "\r\n")); !ok || !reflect.DeepEqual(ch, want) {
+		t.Fatalf("CRLF ParseChoice = %+v %v", ch, ok)
+	}
+	// Without the marker line, and for another status.
+	noMarker := strings.TrimPrefix(body, ChoiceMarker+"\n")
+	if ch, ok := ParseChoice(strings.Replace(noMarker, "status=applied", "status=chosen", 1)); !ok || ch.Status != ChoiceChosen {
+		t.Fatalf("chosen = %+v %v", ch, ok)
+	}
+	for name, b := range map[string]string{
+		"no state line":  ChoiceMarker + "\n- Not applied: x",
+		"unknown status": strings.Replace(body, "status=applied", "status=done", 1),
+		"empty":          "",
+	} {
+		if ch, ok := ParseChoice(b); ok {
+			t.Errorf("%s: ParseChoice = %+v", name, ch)
+		}
+	}
+}
+
+func TestReadChoice(t *testing.T) {
+	choice := fixture(t, "choice-applied.md")
+	f := &fakeAPI{
+		events: []map[string]any{event("labeled", "pending", core, "2026-11-28T00:00:00Z"),
+			event("unlabeled", "pending", 7, "2026-11-28T01:00:00Z")},
+		comments: []map[string]any{
+			comment(1, 6, "mallory", choice, "2026-11-28T00:30:00Z", "2026-11-28T00:30:00Z"),
+			comment(2, core, "nibfin", choice, "2026-11-28T02:00:00Z", "2026-11-28T03:00:00Z"),
+			comment(3, core, "nibfin", choice, "2026-11-28T02:10:00Z", "2026-11-28T02:10:00Z"),
+		},
+	}
+	s, err := Read(context.Background(), f.get, "repos/o/r/issues/7")
+	if err != nil || s.Choice == nil || s.Choice.ID != 2 || s.Choice.URL != "https://github.com/o/r/issues/7#issuecomment-2" {
+		t.Fatalf("Read = %+v %v", s.Choice, err)
+	}
+	// Only the account that added pending writes the choice comment.
+	f.comments = f.comments[:1]
+	if s, _ := Read(context.Background(), f.get, "repos/o/r/issues/7"); s.Choice != nil {
+		t.Fatalf("look-alike choice = %+v", s.Choice)
 	}
 }
 

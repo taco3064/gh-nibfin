@@ -234,7 +234,7 @@ func TestResumeOptionRewritesAfterAnotherDecision(t *testing.T) {
 				t.Errorf("item = %+v", c)
 			}
 			s, _ := repair.Read(context.Background(), d.Get, "repos/o/r/issues/1")
-			if c, n, _ := repair.LatestDecision(s.After); n != 2 || c.Author != "me" {
+			if c, n, _ := s.Candidate(); n != 2 || c.Author != "me" {
 				t.Errorf("latest = %+v %d", c, n)
 			}
 		})
@@ -367,4 +367,150 @@ func (f *failingGet) Get(ctx context.Context, path string, v any) error {
 		return errors.New("HTTP 502")
 	}
 	return f.fakeDecision.Get(ctx, path, v)
+}
+
+func resumeReply(issues []string, reply string) Operation {
+	return Resume(ResumeParams{IssuesParams: IssuesParams{Repo: "github.com/o/r", Issues: issues}, Reply: reply})
+}
+
+func TestResumeReply(t *testing.T) {
+	g, is, d := decisionSetup(t, "pause", "pending")
+	reply := "\n  Keep the sentence,\r\nbut \x1b[31mmove it to the end.\n\n"
+	body := "Keep the sentence,\r\nbut \x1b[31mmove it to the end."
+	p, res, err := Run(context.Background(), resumeReply([]string{"1"}, reply), noConfirm())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Step{ID: "decision:" + issueURL, Action: "add comment", Target: issueURL,
+		Detail: "Keep the sentence,\nbut [31mmove it to the end.", Current: "no decision", Next: "a reply by me"}
+	if len(p.Steps) != 2 || !reflect.DeepEqual(p.Steps[0], want) || p.Steps[1].Detail != "pause, pending" {
+		t.Fatalf("plan = %+v", p.Steps)
+	}
+	// The comment is the text trimmed, with no marker.
+	if !reflect.DeepEqual(d.posts, []string{body}) || strings.Contains(d.posts[0], "nibfin:") {
+		t.Errorf("posts = %q", d.posts)
+	}
+	if len(is.labels) != 0 || !reflect.DeepEqual(g.calls, []string{"query", "mutation", "readback"}) {
+		t.Errorf("labels = %v, calls = %v", is.labels, g.calls)
+	}
+	items := takeItems(t, res)
+	if len(items) != 2 || !items[0].Confirmed || items[0].State != "a reply by me" || !items[1].Confirmed {
+		t.Errorf("items = %+v", items)
+	}
+	if res[issueURL] != "resumed" {
+		t.Errorf("result = %v", res)
+	}
+}
+
+// A reply that is only a number is that option to Core, and says so.
+func TestResumeReplyNumber(t *testing.T) {
+	_, _, d := decisionSetup(t)
+	p, res, err := Run(context.Background(), resumeReply([]string{"1"}, " 3 "), noConfirm())
+	if err != nil || p.Steps[0].Next != "option 3 by me" || !reflect.DeepEqual(d.posts, []string{"3"}) {
+		t.Fatalf("err %v, plan %+v, posts %q", err, p.Steps, d.posts)
+	}
+	if c := itemByID(takeItems(t, res), "decision:"+issueURL); !c.Confirmed || c.State != "option 3 by me" {
+		t.Errorf("item = %+v", c)
+	}
+}
+
+func TestResumeReplyRefused(t *testing.T) {
+	cases := []struct {
+		name   string
+		issues []string
+		params ResumeParams
+		msg    string
+	}{
+		{name: "empty", params: ResumeParams{Reply: " \n\t\ufeff "}, msg: "--reply is empty"},
+		{name: "with option", params: ResumeParams{Option: 2, Reply: "keep it"}, msg: "--option and --reply cannot be used together"},
+		{name: "two Issues", issues: []string{"1", "2"}, params: ResumeParams{Reply: "keep it"}, msg: "--reply answers one Issue; 2 were given"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g, _, d := decisionSetup(t)
+			g.repos["o/r"].issue("o/r", 2, "pending")
+			issues := c.issues
+			if issues == nil {
+				issues = []string{"1"}
+			}
+			c.params.IssuesParams = IssuesParams{Repo: "github.com/o/r", Issues: issues}
+			_, _, err := Run(context.Background(), Resume(c.params), noConfirm())
+			if Code(err) != CodeInvalidArgument || !strings.Contains(err.Error(), c.msg) {
+				t.Fatalf("err = %v", err)
+			}
+			if len(d.posts) != 0 || contains(g.calls, "mutation") {
+				t.Errorf("wrote: posts %v, calls %v", d.posts, g.calls)
+			}
+		})
+	}
+	t.Run("no pending", func(t *testing.T) {
+		_, is, _ := decisionSetup(t)
+		is.labels = []string{"pause"}
+		_, _, err := Run(context.Background(), resumeReply([]string{"1"}, "keep it"), noConfirm())
+		if Code(err) != CodeInvalidArgument || !strings.Contains(err.Error(), "use resume without --reply") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+// A rerun after a failed label change finds the user's own identical reply
+// (line endings aside) as the newest candidate and does not post it again.
+func TestResumeReplyRerun(t *testing.T) {
+	g, is, d := decisionSetup(t)
+	g.failIDs[is.id] = true
+	if _, _, err := Run(context.Background(), resumeReply([]string{"1"}, "Keep it.\nThen ship."), noConfirm()); Code(err) != CodeGitHubError {
+		t.Fatalf("err = %v", err)
+	}
+	if len(d.posts) != 1 || !contains(is.labels, "pending") {
+		t.Fatalf("posts %v, labels %v", d.posts, is.labels)
+	}
+	delete(g.failIDs, is.id)
+	// Nibfin's own marked comment after it does not count as a decision.
+	d.add(coreID, "nibfin", repair.ChoiceMarker+"\nstate")
+	p, res, err := Run(context.Background(), resumeReply([]string{"1"}, "Keep it.\r\nThen ship.\n"), noConfirm())
+	if err != nil || !p.Steps[0].NoChange || p.Steps[0].Current != "a reply by me" || len(d.posts) != 1 || len(is.labels) != 0 {
+		t.Fatalf("rerun: err %v, plan %+v, posts %v, labels %v", err, p.Steps, d.posts, is.labels)
+	}
+	if !strings.HasPrefix(p.Steps[0].Detail, "already your newest decision: ") {
+		t.Errorf("detail = %q", p.Steps[0].Detail)
+	}
+	for _, c := range takeItems(t, res) {
+		if !c.Confirmed {
+			t.Errorf("item = %+v", c)
+		}
+	}
+	// Another text is a new comment.
+	is.labels = []string{"pending"}
+	if _, _, err := Run(context.Background(), resumeReply([]string{"1"}, "Something else"), noConfirm()); err != nil || len(d.posts) != 2 {
+		t.Fatalf("err %v, posts %v", err, d.posts)
+	}
+}
+
+// Under R4.51 any newer comment is the decision, so a free-text comment
+// after --option's marked comment makes it not the newest.
+func TestResumeOptionNewerReplyBeforeReadBack(t *testing.T) {
+	g, _, d := decisionSetup(t)
+	g.afterMut = func() { d.add(5, "bob", "Actually, split it into two Issues.") }
+	_, res, err := Run(context.Background(), resumeOption([]string{"1"}, 2), noConfirm())
+	if Code(err) != CodeNotApplied || !strings.Contains(err.Error(), "a reply by bob") {
+		t.Fatalf("err = %v", err)
+	}
+	if c := itemByID(takeItems(t, res), "decision:"+issueURL); c.Confirmed || c.Reason != "the newest decision is a reply by bob" {
+		t.Errorf("item = %+v", c)
+	}
+}
+
+// A reply the person wrote earlier is superseded by a newer one by someone
+// else, so the plan writes it again.
+func TestResumeReplyNewerCommentWritesAgain(t *testing.T) {
+	_, _, d := decisionSetup(t)
+	d.add(meID, "me", "Keep it.")
+	d.add(5, "bob", "I disagree.")
+	p, res, err := Run(context.Background(), resumeReply([]string{"1"}, "Keep it."), noConfirm())
+	if err != nil || p.Steps[0].NoChange || p.Steps[0].Current != "a reply by bob" || len(d.posts) != 1 {
+		t.Fatalf("err %v, plan %+v, posts %v", err, p.Steps, d.posts)
+	}
+	if c := itemByID(takeItems(t, res), "decision:"+issueURL); !c.Confirmed {
+		t.Errorf("item = %+v", c)
+	}
 }
