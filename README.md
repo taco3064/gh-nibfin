@@ -359,6 +359,17 @@ Windows and macOS.
   (`runner_install_failed`) with the command to run:
   `podman machine ssh <machine> sudo dnf install -y libicu`. Nothing is
   installed on the host itself, nor on a Linux host.
+- Then it checks, the same way, for a libssl the Runner's .NET runtime can
+  load (`libssl.so.3`, or an older `libssl.so.1.1`, `.1.0.2`, `.1.0.0`, `.10`,
+  `.11` or `.111`; OpenSSL 4's `libssl.so.4` does not count). When none is
+  found, as on a Fedora 45 based machine whose `openssl-libs` is OpenSSL 4,
+  it installs `openssl3-libs` inside the VM with
+  `sudo -n dnf install -y openssl3-libs`, or `openssl-libs` where the
+  distribution has no `openssl3-libs`. Without this, the Runner's `config.sh`
+  aborts with `No usable version of libssl was found`. A failure stops before
+  any Runner is configured (`runner_install_failed`) with dnf's output and
+  the command to run:
+  `podman machine ssh <machine> sudo dnf install -y openssl3-libs`.
 - It creates the `nibfin-tools` Podman volume and runs `login` for the
   provider when it is not logged in.
 - A rerun after an interruption completes the provider's unfinished slots
@@ -1016,7 +1027,7 @@ anything it fails unless that name is the running default WSL machine, the
 machine has no Runner slot of any provider, and the `Nibfin podman machine`
 task does not exist, so it never touches a host with real Runners. A failed run
 removes the slots it added. Afterwards the host keeps what `runner remove`
-keeps: the `[wsl2] vmIdleTimeout=-1` key in `%UserProfile%\.wslconfig`, linger
-and libicu in the VM and the `nibfin-tools` volume. A CI job for it (a separate
+keeps: the `[wsl2] vmIdleTimeout=-1` key in `%UserProfile%\.wslconfig`, linger,
+libicu and libssl in the VM and the `nibfin-tools` volume. A CI job for it (a separate
 maintenance change) installs WSL 2 and Podman, runs `podman machine init
 --now`, then the two commands above.
