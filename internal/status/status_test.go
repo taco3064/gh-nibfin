@@ -17,6 +17,7 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 
 	"github.com/taco3064/gh-nibfin/internal/op"
+	"github.com/taco3064/gh-nibfin/internal/repair"
 	"github.com/taco3064/gh-nibfin/internal/templates"
 )
 
@@ -596,5 +597,76 @@ func TestRepoOfURL(t *testing.T) {
 		if got != want || ok != (want != "") {
 			t.Errorf("%q: %q, %v", in, got, ok)
 		}
+	}
+}
+
+// record is a repair record for pendingBody as Core's formatRepairRecord
+// writes it, with details after the visible lines.
+func record(pendingBody, status, action, details string) string {
+	b := repair.RecordMarker + "\n<!-- nibfin:repair-state for=" + repair.Digest(pendingBody) + " status=" + status +
+		" action=" + action + " handled= -->\nNibfin's repair stage looked at the latest `pending` stop.\n\n" +
+		"- Category: E, product decision\n- Reason: Two merges conflict.\n- Evidence: code `X`\n" +
+		"- Done: Nothing; `pending` stays.\n- Advice: Choose one option below."
+	if details != "" {
+		b += "\n\n" + details
+	}
+	return b
+}
+
+const twoOptions = "### Options\n\n1. **Keep it**\n   It stays.\n   Issue change: None.\n" +
+	"2. **Drop it** (recommended)\n   It goes.\n   Issue change: The sentence goes."
+
+func TestRepairState(t *testing.T) {
+	pending := marker + "why"
+	routes := func(rec string) map[string]any {
+		cs := []any{comment(5, 7, pending, "2026-11-27T00:00:01Z")}
+		if rec != "" {
+			cs = append(cs, comment(6, 7, rec, "2026-11-27T00:00:02Z"))
+		}
+		return map[string]any{events1: []any{labeled(7, "pending", "2026-11-27T00:00:00Z")}, comments1: cs}
+	}
+
+	is := pendingIssue(t, routes(record(pending, "waiting-for-choice", "options", twoOptions)))
+	want := &Repair{State: "choose", Reason: "Two merges conflict.", Category: "E, product decision", Done: "Nothing; `pending` stays.",
+		Advice: "Choose one option below.", Record: "https://github.com/o/r/issues/1#issuecomment-6",
+		Options: []RepairOption{{Number: 1, Title: "Keep it", Consequence: "It stays.", IssueChange: "None."},
+			{Number: 2, Title: "Drop it", Consequence: "It goes.", IssueChange: "The sentence goes.", Recommended: true}}}
+	if !reflect.DeepEqual(is.Repair, want) || is.PendingComment != "https://github.com/o/r/issues/1#issuecomment-5" {
+		t.Errorf("choose = %+v", is.Repair)
+	}
+
+	if is := pendingIssue(t, routes(record(pending, "repairing", "agent", ""))); is.Repair == nil || is.Repair.State != "repairing" || is.Repair.Options != nil {
+		t.Errorf("repairing = %+v", is.Repair)
+	}
+
+	steps := "### Steps\n\n1. Upgrade.\n   ```sh\n   gh nibfin upgrade\n   ```"
+	is = pendingIssue(t, routes(record(pending, "needs-person", "advice", steps)))
+	if is.Repair == nil || is.Repair.State != "act" || !reflect.DeepEqual(is.Repair.Steps, []RepairStep{{Text: "Upgrade.", Command: "gh nibfin upgrade"}}) {
+		t.Errorf("act = %+v", is.Repair)
+	}
+
+	// Options that are not 2–4 with one recommended: act, no options.
+	one := "### Options\n\n1. **Keep it** (recommended)\n   It stays.\n   Issue change: None."
+	is = pendingIssue(t, routes(record(pending, "waiting-for-choice", "options", one)))
+	if is.Repair == nil || is.Repair.State != "act" || is.Repair.Options != nil || is.Repair.Record == "" || is.Repair.Reason != "Two merges conflict." {
+		t.Errorf("degraded choose = %+v", is.Repair)
+	}
+
+	// A record for another stop, and no Nibfin comment at all.
+	for name, r := range map[string]map[string]any{
+		"stale record": routes(record(marker+"older stop", "waiting-for-choice", "options", twoOptions)),
+		"no comment":   {events1: []any{labeled(7, "pending", "2026-11-27T00:00:00Z")}, comments1: []any{}},
+		"no event":     {events1: []any{}},
+	} {
+		is := pendingIssue(t, r)
+		if !reflect.DeepEqual(is.Repair, &Repair{State: "act", Reason: repair.NoRecordReason}) {
+			t.Errorf("%s = %+v", name, is.Repair)
+		}
+	}
+
+	// A failed read keeps pendingCommentError and gives no repair.
+	is = pendingIssue(t, map[string]any{events1: &api.HTTPError{StatusCode: 502}})
+	if is.Repair != nil || is.PendingCommentError == nil || !strings.Contains(is.PendingCommentError.Error(), "read o/r#1 events") {
+		t.Errorf("failed read = %+v", is)
 	}
 }

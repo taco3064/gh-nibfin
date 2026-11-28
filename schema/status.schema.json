@@ -289,6 +289,9 @@
         "pendingCommentError": {
           "$ref": "#/$defs/op.Error"
         },
+        "repair": {
+          "$ref": "#/$defs/status.Repair"
+        },
         "createdAt": {
           "type": "string"
         },
@@ -483,6 +486,115 @@
       "required": [
         "number",
         "url"
+      ],
+      "additionalProperties": false
+    },
+    "status.Repair": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "done": {
+          "type": "string"
+        },
+        "advice": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/status.RepairOption"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/status.RepairStep"
+          }
+        },
+        "bugReport": {
+          "$ref": "#/$defs/status.RepairBugReport"
+        },
+        "record": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "status.RepairBugReport": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "title",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "status.RepairOption": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "consequence": {
+          "type": "string"
+        },
+        "issueChange": {
+          "type": "string"
+        },
+        "recommended": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "consequence",
+        "issueChange",
+        "recommended"
+      ],
+      "additionalProperties": false
+    },
+    "status.RepairStep": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "link": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
       ],
       "additionalProperties": false
     },
