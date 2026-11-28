@@ -49,7 +49,7 @@ const (
 	jobFile   = templates.Dir + "/nibfin-job.yml"
 	issueFile = templates.Dir + "/nibfin-issue.yml"
 
-	runPrefix     = "Nibfin · "
+	runPrefix = "Nibfin · "
 )
 
 var (
