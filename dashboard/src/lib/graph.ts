@@ -6,7 +6,7 @@
 
 import dagre from '@dagrejs/dagre'
 
-import { blockersView, stageLabels, stageOf, type Stage } from '@/lib/issue'
+import { blockersView, repairLook, stageLabels, stageOf, type Stage } from '@/lib/issue'
 import { ownerRepo, type Blocker, type RepoView, type StatusIssue } from '@/lib/status'
 
 export type GraphNode =
@@ -491,6 +491,24 @@ export interface UnlinkedGroup {
 const unlinkedOrder: readonly UnlinkedGroupId[] = ['scope', 'shape', 'deliver', 'done', 'none', 'held']
 
 export const heldLabel = 'Paused or Pending'
+
+export interface HeldFlag {
+  key: 'paused' | 'pending'
+  label: string
+  tone: 'info' | 'warning'
+}
+
+// heldFlags are the flags of a held row: Paused, and the repair state of a
+// pending Issue (Proposal R9.52), or Pending when it was not read.
+export function heldFlags(issue: StatusIssue): HeldFlag[] {
+  const out: HeldFlag[] = []
+  if (issue.pause) out.push({ key: 'paused', label: 'Paused', tone: 'warning' })
+  if (issue.pending) {
+    const look = issue.repair ? repairLook(issue.repair) : { label: 'Pending', tone: 'warning' as const }
+    out.push({ key: 'pending', label: look.label, tone: look.tone })
+  }
+  return out
+}
 
 // unlinkedGroups groups the Issues without dependencies (#496): a paused or
 // pending Issue only under Paused or Pending, any other under its stage from

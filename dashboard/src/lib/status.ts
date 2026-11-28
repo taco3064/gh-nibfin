@@ -1,7 +1,8 @@
 // Status data types: the parts of `gh nibfin status --json` the Dashboard
 // reads. They mirror schema/status.schema.json ($defs status.PersonView,
 // status.RepoView, status.RepoIssues, status.RepoImage, status.LatestImage,
-// status.Issue, status.Blocker, status.Run, status.NibfinRepo,
+// status.Issue, status.Repair, status.RepairOption, status.RepairStep,
+// status.RepairBugReport, status.Blocker, status.Run, status.NibfinRepo,
 // status.NibfinRun, status.PullRequest, op.HostReport, op.HostInfo,
 // op.MemoryReport, op.ProviderReport, op.RunnersReport, op.RunnerState and
 // op.Error); follow that file when it changes.
@@ -34,6 +35,58 @@ export interface Run {
   url: string
 }
 
+// RepairState is the repair state of a pending Issue (Proposal R9.52):
+// repairing while Core's repair stage works on it, choose while options wait
+// for a person's choice, act when a person follows the advice or no record
+// covers the stop.
+export type RepairState = 'repairing' | 'choose' | 'act'
+
+// RepairOption is one numbered option of a choose record
+// (status.RepairOption); resume --option N answers it.
+export interface RepairOption {
+  number: number
+  title: string
+  consequence: string
+  // issueChange is how the Issue changes when this option is chosen.
+  issueChange: string
+  recommended: boolean
+}
+
+// RepairStep is one follow-up step, with a link or a command to run
+// (status.RepairStep).
+export interface RepairStep {
+  text: string
+  link?: string
+  command?: string
+}
+
+// RepairBugReport is what to file at Nibfin for a Nibfin process error
+// (status.RepairBugReport).
+export interface RepairBugReport {
+  url: string
+  title: string
+  body: string
+}
+
+// Repair is the repair state of a pending Issue, read from Core's repair
+// record (status.Repair). Its text is partly written by an agent: it is
+// shown only as text.
+export interface Repair {
+  state: RepairState
+  // reason is one line: the record's, or why there is none.
+  reason: string
+  category?: string
+  // done is what the repair stage did.
+  done?: string
+  advice?: string
+  options?: RepairOption[]
+  steps?: RepairStep[]
+  bugReport?: RepairBugReport
+  // record links the repair record comment; empty when no record covers
+  // the stop.
+  record?: string
+}
+
 // StatusIssue is one Issue of the status data (status.Issue). runs and
 // blockedBy are optional here: a value missing from the data, with no error,
 // was not read, which is never the same as none.
@@ -46,6 +99,8 @@ export interface StatusIssue {
   pending: boolean
   pendingComment?: string
   pendingCommentError?: ApiError
+  // repair is set only for a pending Issue whose comments were read.
+  repair?: Repair
   createdAt: string
   blockedBy?: Blocker[] | null
   blockedByError?: ApiError
