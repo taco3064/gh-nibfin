@@ -487,8 +487,13 @@ N of the provider's Runners on this host, all of them without `--count`.
   default labels (`self-hosted`, the OS, the architecture) in the same
   repository; removal waits for such a Job too.
 - A busy Runner is removed after its Job ends: the command waits until no Job
-  runs on it, then stops its service. The running Job is never cancelled.
-  The wait uses GNU coreutils `tail --pid` on the host.
+  runs on it on the host, then asks GitHub to delete its registration. While
+  GitHub refuses because the Runner is running a Job (HTTP 422 "currently
+  running a job"), the command reads the Runner again every 15 seconds and
+  prints `started: remove runner <slot> (waiting for its Job to end: <name> in
+  <repo>)`. Its service keeps running until GitHub accepts the delete, so the
+  running Job is never cancelled; then the service is stopped and the
+  directory deleted. The wait uses GNU coreutils `tail --pid` on the host.
 - Each removal deletes the GitHub registration (this needs admin access to
   the repository), the systemd user service and the Runner's directory. The
   command then reads back how many Runners of the provider remain.
@@ -511,7 +516,7 @@ N of the provider's Runners on this host, all of them without `--count`.
 - When no Runner of any provider remains on the host, the command also
   removes the task or LaunchAgent that starts the machine. It leaves
   `%UserProfile%\.wslconfig` as it is, since other WSL users may rely on
-  `vmIdleTimeout`, and says so. A Runner left busy keeps the entry.
+  `vmIdleTimeout`, and says so. A Runner left after a failure keeps the entry.
 - When no Runner of any provider remains on the host, the command also
   removes the job-started hook directory (`remove job-started hook`), on
   every host including Linux, after the Runners. When no Runner remains but
@@ -521,9 +526,12 @@ N of the provider's Runners on this host, all of them without `--count`.
 - An interrupted removal is finished by running `runner remove` again. Do that
   before `runner add`, which would otherwise restart a Runner whose
   registration is already gone.
-- `runner_busy` means GitHub reports a Runner busy but no Job of it runs on
-  the host; the Runner keeps running without its nibfin labels until the next
-  `runner remove` finishes it.
+- One Runner's failure does not stop the others, and the remaining Runners
+  are read back even after a failure; the command then exits with the first
+  failure's error. A Runner that GitHub reports offline while its Job still
+  runs fails alone (`github_api_failed`, with GitHub's refusal in the
+  message): it keeps its slot without its nibfin labels. Run `runner remove`
+  again once the Runner is back or its Job is resolved.
 
 ## Login
 
