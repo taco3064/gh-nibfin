@@ -4,5 +4,23 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\.?/.*/|^\\.\\./",
+                "message": "Inside src, import same-directory files as ./x and everything else as @/…"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
